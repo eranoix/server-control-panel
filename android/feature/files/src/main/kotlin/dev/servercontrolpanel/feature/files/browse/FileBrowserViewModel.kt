@@ -10,19 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/**
- * Starting directory for the browser. `validatePath` on the BFF already
- * denies the genuinely sensitive subtrees, so the root of the filesystem is
- * a simple, defensible default rather than a locked product decision --
- * changing it later is a one-line edit here, no architectural rework.
- */
 internal const val ROOT_PATH = "/"
 
-/**
- * State rendered by [dev.servercontrolpanel.feature.files.browse.FileBrowserScreen].
- * Distinguishes "directory has zero entries" ([Empty]) from a hard failure
- * ([Error]) so the UI never has to guess.
- */
 sealed interface FileBrowserUiState {
     data object Loading : FileBrowserUiState
     data class Error(val message: String) : FileBrowserUiState
@@ -30,13 +19,6 @@ sealed interface FileBrowserUiState {
     data class Success(val currentPath: String, val entries: List<FileEntry>) : FileBrowserUiState
 }
 
-/**
- * Drives the file browser vertical slice. The only data source is
- * [FilesRepository.list], itself the single call site into the generated
- * mobile BFF client. Every navigation event (entering a directory,
- * navigating up, retrying) re-fetches through the repository -- there is no
- * client-side directory cache to go stale.
- */
 class FileBrowserViewModel(
     private val filesRepository: FilesRepository = FilesRepository(),
 ) : ViewModel() {
@@ -44,7 +26,6 @@ class FileBrowserViewModel(
     private val _uiState = MutableStateFlow<FileBrowserUiState>(FileBrowserUiState.Loading)
     val uiState: StateFlow<FileBrowserUiState> = _uiState.asStateFlow()
 
-    /** The directory currently requested -- read by the screen to decide whether "up" applies. */
     var currentPath: String = ROOT_PATH
         private set
 
@@ -52,7 +33,6 @@ class FileBrowserViewModel(
         load(ROOT_PATH)
     }
 
-    /** Only meaningful for a directory entry; a no-op for files (the screen routes those elsewhere). */
     fun navigateInto(entry: FileEntry) {
         if (!entry.isDir) return
         load(joinPath(currentPath, entry.name))
@@ -67,30 +47,11 @@ class FileBrowserViewModel(
         load(currentPath)
     }
 
-    /**
-     * Goes straight to [path] — the jump the header's breadcrumb makes.
-     *
-     * It exists apart from [navigateInto] because the breadcrumb does not
-     * navigate to a CHILD: it jumps to an arbitrary ANCESTOR, possibly several
-     * levels up. Doing that with repeated [navigateUp] would load one
-     * intermediate folder per level — four requests and four repaints to reach
-     * a place that was already known.
-     *
-     * It ignores the current path: a tap on the step you are already on is the
-     * only way to reload by accident, and the breadcrumb already disables that
-     * step.
-     */
     fun goTo(path: String) {
         if (path == currentPath) return
         load(path)
     }
 
-    /**
-     * [FileEntry] carries no path of its own (only name/size/isDir) -- the
-     * screen needs the full path to hand off to the file editor, so this
-     * reuses the same join logic [navigateInto] already applies for
-     * directories.
-     */
     fun pathFor(entry: FileEntry): String = joinPath(currentPath, entry.name)
 
     private fun load(path: String) {
@@ -112,7 +73,6 @@ class FileBrowserViewModel(
 private fun joinPath(base: String, name: String): String =
     if (base.endsWith("/")) "$base$name" else "$base/$name"
 
-/** Mirrors the server's `filepath.Dir` semantics closely enough for "go up one level". */
 private fun parentOf(path: String): String {
     val trimmed = path.trimEnd('/')
     if (trimmed.isEmpty()) return ROOT_PATH

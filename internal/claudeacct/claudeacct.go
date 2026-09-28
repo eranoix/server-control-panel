@@ -1,32 +1,3 @@
-// Package claudeacct is the per-consumer Claude account selector.
-//
-// # Why this exists
-//
-// The Bearer that identifies the account is minted by Claude Code itself from
-// its *config dir* (.credentials.json). So switching accounts == switching the
-// CLAUDE_CONFIG_DIR a given consumer spawns with.
-//
-// This package owns the registry of known accounts (compiled-in allowlist)
-// and the mutable map of consumer→account assignments (persisted in
-// <DataDir>/claude_accounts.json). The hot path is ConfigDirFor(consumer),
-// called by the jiraai runner and the PTY layer to decide which
-// CLAUDE_CONFIG_DIR to export per spawn.
-//
-// # Sharing model (decided empirically)
-//
-//	.credentials.json  → per-account (the OAuth login). NOT shared.
-//	.claude.json       → per-account (oauthAccount identity + MCP state).
-//	                     mcpServers pre-seeded so MCPs work for both accounts.
-//	settings.json      → symlink to /root/.claude. Shared.
-//	CLAUDE.md          → symlink to /root/.claude (global rules). Shared.
-//	prompts            → internal/aiprompts, server-side, already account-agnostic.
-//
-// Default = "sam" (the owner's decision): the owner of this machine is sam
-// (the 20x account), so EVERY session/consumer without an explicit assignment
-// uses his account (CLAUDE_CONFIG_DIR=/srv/agent-accounts/sam), not jordan
-// (jordan, the global ~/.claude). jordan stays selectable when it is chosen on
-// purpose. The default used to be jordan (ConfigDir="") — which ran sam's work
-// on jordan's account, mixing identities.
 package claudeacct
 
 import (
@@ -39,28 +10,16 @@ import (
 	"time"
 )
 
-// DefaultAccountID is the account every consumer falls back to. sam (the machine
-// owner's 20x account) → CLAUDE_CONFIG_DIR=/srv/agent-accounts/sam.
 const DefaultAccountID = "sam"
 
-// Consumer IDs — the class-(A) OAuth/Max consumers the switch covers. These
-// are an allowlist: Assign rejects anything else. They mirror the three spawn
-// seams in the codebase (jiraai/runner.go, pty/aienv.go, pty/spawn.go).
 const (
-	ConsumerJobs     = "jobs"     // jiraai analysis: `claude -p` (runner.go:189/:465)
-	ConsumerTerminal = "terminal" // interactive Claude panels (pty/pty.go + aienv.go)
-	ConsumerFork     = "fork"     // fork / restart / jira-work sessions (pty/spawn.go)
+	ConsumerJobs     = "jobs"
+	ConsumerTerminal = "terminal"
+	ConsumerFork     = "fork"
 )
 
-// consumerOrder is the canonical display+iteration order.
 var consumerOrder = []string{ConsumerJobs, ConsumerTerminal, ConsumerFork}
 
-// Account is a Claude identity backed by its own config dir.
-//
-// ConfigDir == "" is special: it means "inherit the process default"
-// (no CLAUDE_CONFIG_DIR export → Claude Code reads $HOME/.claude). Only the
-// default account uses "". Every other account points at a provisioned dir
-// under /srv/agent-accounts/<id>.
 type Account struct {
 	ID        string `json:"id"`
 	Label     string `json:"label"`
@@ -68,9 +27,6 @@ type Account struct {
 	ConfigDir string `json:"config_dir"`
 }
 
-// accountsBaseDir is where non-default account config dirs are provisioned.
-// Overridable via PANEL_CLAUDE_ACCOUNTS_DIR (portability for non-root deploys +
-// hermetic tests); defaults to /srv/agent-accounts.
 func accountsBaseDir() string {
 	if v := strings.TrimSpace(os.Getenv("PANEL_CLAUDE_ACCOUNTS_DIR")); v != "" {
 		return v
@@ -78,10 +34,6 @@ func accountsBaseDir() string {
 	return "/srv/agent-accounts"
 }
 
-// registry is the compiled-in allowlist of known accounts. Adding an account
-// is a deliberate code change (the config dir must be provisioned + logged in
-// out-of-band first), which is exactly the guarantee we want: no UI action can
-// conjure an account that has no real credential dir behind it.
 func defaultRegistry() []Account {
 	return []Account{
 		{ID: "jordan", Label: "Jordan", Email: "jordan@northwind.example", ConfigDir: ""},
@@ -89,15 +41,13 @@ func defaultRegistry() []Account {
 	}
 }
 
-// Store holds the registry + the persisted consumer→account assignment map.
-// All public methods are safe for concurrent use.
 type Store struct {
 	mu               sync.RWMutex
-	path             string            // <DataDir>/claude_accounts.json
-	claudeHome       string            // resolved default config dir (e.g. /root/.claude)
-	accounts         []Account         // compiled-in allowlist
-	assignments      map[string]string // consumer → accountID
-	sessionOverrides map[string]string // session name → accountID
+	path             string
+	claudeHome       string
+	accounts         []Account
+	assignments      map[string]string
+	sessionOverrides map[string]string
 }
 
 type persisted struct {
@@ -105,10 +55,6 @@ type persisted struct {
 	SessionOverrides map[string]string `json:"session_overrides,omitempty"`
 }
 
-// Open loads (or seeds) the assignment store. claudeHome is the default
-// account's config dir (cfg.ClaudeHome, normally /root/.claude); it anchors
-// LoginStatus path resolution for the default account. A missing file is not
-// an error — it is seeded with every consumer pointing at DefaultAccountID.
 func Open(dataDir, claudeHome string) (*Store, error) {
 	if claudeHome == "" {
 		claudeHome = "/root/.claude"
@@ -129,8 +75,6 @@ func Open(dataDir, claudeHome string) (*Store, error) {
 func (s *Store) load() error {
 	data, err := os.ReadFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
-		// Seed: every consumer → default. Persist so the file exists for
-		// later hand-edits and so the shape is discoverable.
 		s.assignments = s.seedDefaults()
 		return s.saveLocked()
 	}
@@ -142,8 +86,6 @@ func (s *Store) load() error {
 		return err
 	}
 	out := s.seedDefaults()
-	// Overlay persisted values, but only for known consumer→account pairs.
-	// Unknown/garbage entries are dropped (forward/backward-compat + safety).
 	for c, a := range p.Assignments {
 		if isConsumer(c) && s.hasAccount(a) {
 			out[c] = a
@@ -171,10 +113,6 @@ func (s *Store) seedDefaults() map[string]string {
 	return m
 }
 
-// ConfigDirFor returns the CLAUDE_CONFIG_DIR to export for the given consumer,
-// or "" to inherit the process default ($HOME/.claude). This is the hot path
-// — callers do `if dir := store.ConfigDirFor(c); dir != "" { env += dir }`.
-// An unknown consumer falls back to the default account (→ "").
 func (s *Store) ConfigDirFor(consumer string) string {
 	id := s.AccountIDFor(consumer)
 	s.mu.RLock()
@@ -187,8 +125,6 @@ func (s *Store) ConfigDirFor(consumer string) string {
 	return ""
 }
 
-// AccountIDFor returns the account ID assigned to a consumer, defaulting to
-// DefaultAccountID for unknown consumers or unset assignments.
 func (s *Store) AccountIDFor(consumer string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -198,8 +134,6 @@ func (s *Store) AccountIDFor(consumer string) string {
 	return DefaultAccountID
 }
 
-// Assign points a consumer at an account. Both are validated against the
-// allowlists; an invalid pair is rejected without touching disk.
 func (s *Store) Assign(consumer, accountID string) error {
 	if !isConsumer(consumer) {
 		return errors.New("unknown consumer: " + consumer)
@@ -213,9 +147,6 @@ func (s *Store) Assign(consumer, accountID string) error {
 	return s.saveLocked()
 }
 
-// SetSessionAccount associates a specific session with an account, enabling
-// per-session hotswap without touching the global consumer assignment. accountID=""
-// removes the override, falling back to the consumer-level assignment.
 func (s *Store) SetSessionAccount(session, accountID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -230,9 +161,6 @@ func (s *Store) SetSessionAccount(session, accountID string) error {
 	return s.saveLocked()
 }
 
-// ConfigDirForSession returns the CLAUDE_CONFIG_DIR for a specific session.
-// Session override takes priority; falls back to the consumer-level assignment.
-// Three sequential (never nested) lock acquisitions.
 func (s *Store) ConfigDirForSession(session, consumer string) string {
 	s.mu.RLock()
 	id, hasOverride := s.sessionOverrides[session]
@@ -240,7 +168,7 @@ func (s *Store) ConfigDirForSession(session, consumer string) string {
 	s.mu.RUnlock()
 
 	if !overrideValid {
-		id = s.AccountIDFor(consumer) // acquires its own lock — sequential, not nested
+		id = s.AccountIDFor(consumer)
 	}
 
 	s.mu.RLock()
@@ -253,8 +181,6 @@ func (s *Store) ConfigDirForSession(session, consumer string) string {
 	return ""
 }
 
-// SessionAccountID returns the effective accountID for a session. Inline to
-// avoid nested RLock (does not call AccountIDFor while holding the lock).
 func (s *Store) SessionAccountID(session, consumer string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -267,7 +193,6 @@ func (s *Store) SessionAccountID(session, consumer string) string {
 	return DefaultAccountID
 }
 
-// Accounts returns a copy of the registry.
 func (s *Store) Accounts() []Account {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -276,14 +201,12 @@ func (s *Store) Accounts() []Account {
 	return out
 }
 
-// Consumers returns the canonical ordered list of class-(A) consumer IDs.
 func (s *Store) Consumers() []string {
 	out := make([]string, len(consumerOrder))
 	copy(out, consumerOrder)
 	return out
 }
 
-// Assignments returns a copy of the consumer→accountID map.
 func (s *Store) Assignments() map[string]string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -294,7 +217,6 @@ func (s *Store) Assignments() map[string]string {
 	return out
 }
 
-// AccountByID looks up an account in the registry.
 func (s *Store) AccountByID(id string) (Account, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -330,8 +252,6 @@ func isConsumer(c string) bool {
 	return false
 }
 
-// saveLocked atomically persists the assignment map. Caller holds s.mu.
-// Mirrors the tmp→fsync→rename pattern used across the codebase (todos.go).
 func (s *Store) saveLocked() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
@@ -365,46 +285,19 @@ func (s *Store) saveLocked() error {
 	return os.Rename(tmp, s.path)
 }
 
-// ─── Login status (metadata only — NEVER exposes the token) ───────────────
-
-// LoginStatus is the safe-to-serialize view of an account's credential. It is
-// built by parsing ONLY metadata fields out of .credentials.json/.claude.json;
-// the access/refresh tokens are never unmarshaled into memory, let alone
-// returned. The frontend renders "logged in as <email>, expires in Nd".
 type LoginStatus struct {
 	AccountID        string `json:"account_id"`
 	LoggedIn         bool   `json:"logged_in"`
 	Email            string `json:"email,omitempty"`
 	SubscriptionType string `json:"subscription_type,omitempty"`
-	ExpiresAt        int64  `json:"expires_at,omitempty"` // ms epoch
+	ExpiresAt        int64  `json:"expires_at,omitempty"`
 	ExpiresInDays    int    `json:"expires_in_days,omitempty"`
 	Expired          bool   `json:"expired,omitempty"`
-	// CanRefresh is true when a refresh token is present. An expired access
-	// token with CanRefresh=true is BENIGN: the CLI silently mints a new one
-	// on the next spawn. Only Expired && !CanRefresh means the user must
-	// actually re-login. This is what lets the UI avoid the alarming
-	// "expired token" for accounts that simply went idle overnight.
-	CanRefresh bool `json:"can_refresh,omitempty"`
-	// AccountUUID is the Anthropic account the credential ACTUALLY belongs to,
-	// read from oauthAccount in .claude.json. It is the only trustworthy
-	// identity: Account.Label/Email are compiled-in declarations that a
-	// re-login can silently invalidate.
-	AccountUUID string `json:"account_uuid,omitempty"`
-	// IdentityMismatch is true when the credential sitting in this slot's
-	// config dir belongs to a DIFFERENT identity than the slot declares.
-	// The jordan slot hit exactly this: it was re-logged as sam,
-	// so the panel rendered sam's quota and tokens under the label "Jordan" —
-	// the same account drawn twice, one of them with the wrong name.
-	//
-	// A mismatched slot is treated as NOT logged in for display purposes: it
-	// shows "awaiting login" and the login button, never the other
-	// account's numbers. Showing a plausible wrong number is worse than
-	// showing none, because nothing about it looks wrong.
-	IdentityMismatch bool `json:"identity_mismatch,omitempty"`
+	CanRefresh       bool   `json:"can_refresh,omitempty"`
+	AccountUUID      string `json:"account_uuid,omitempty"`
+	IdentityMismatch bool   `json:"identity_mismatch,omitempty"`
 }
 
-// LoginStatus reads the credential metadata for an account without ever
-// touching the token. Unknown account → zero value with LoggedIn=false.
 func (s *Store) LoginStatus(accountID string) LoginStatus {
 	acct, ok := s.AccountByID(accountID)
 	if !ok {
@@ -413,7 +306,6 @@ func (s *Store) LoginStatus(accountID string) LoginStatus {
 	credPath, jsonPath := s.pathsFor(acct)
 	st := LoginStatus{AccountID: accountID, Email: acct.Email}
 
-	// claudeAiOauth lives in .credentials.json — its presence == logged in.
 	if cred := readCredMeta(credPath); cred != nil {
 		st.LoggedIn = true
 		st.SubscriptionType = cred.SubscriptionType
@@ -425,9 +317,6 @@ func (s *Store) LoginStatus(accountID string) LoginStatus {
 			st.Expired = delta <= 0
 		}
 	}
-	// Prefer the live identity from oauthAccount (.claude.json) over the
-	// declared registry value when the account is actually logged in. The
-	// declared value is an intention; the credential on disk is the fact.
 	if id := readOauthIdentity(jsonPath); id.Email != "" {
 		st.Email = id.Email
 		st.AccountUUID = id.AccountUUID
@@ -436,17 +325,12 @@ func (s *Store) LoginStatus(accountID string) LoginStatus {
 	return st
 }
 
-// sameIdentity compares a declared email against the live one. Empty declared
-// means the slot makes no claim, so nothing can contradict it.
 func sameIdentity(declared, live string) bool {
 	d := strings.ToLower(strings.TrimSpace(declared))
 	v := strings.ToLower(strings.TrimSpace(live))
 	return d == "" || d == v
 }
 
-// asOtherAccount explains, without hedging, WHY the slot is awaiting login:
-// there is a credential there, it just is not this account's. Without that
-// sentence the operator sees "awaiting login" on a slot the panel calls logged in.
 func asOtherAccount(liveEmail string) string {
 	if strings.TrimSpace(liveEmail) == "" {
 		return ""
@@ -454,30 +338,19 @@ func asOtherAccount(liveEmail string) string {
 	return " (the credential in this dir belongs to " + liveEmail + ")"
 }
 
-// Identity is the live identity behind a config dir: who the credential
-// REALLY belongs to, as opposed to who the registry says it should.
 type Identity struct {
 	AccountUUID string `json:"account_uuid,omitempty"`
 	Email       string `json:"email,omitempty"`
 	DisplayName string `json:"display_name,omitempty"`
 }
 
-// AccountIdentity resolves an account's live identity from its config dir.
-// Offline by design: accountUuid is already in .claude.json, so the panel
-// never has to spend a request on the very rate limit it is trying to report.
 func (s *Store) AccountIdentity(a Account) Identity {
 	_, jsonPath := s.pathsFor(a)
 	return readOauthIdentity(jsonPath)
 }
 
-// pathsFor resolves the credential + state file paths for an account, handling
-// the two layouts: default ($HOME mode → .claude.json sits one level ABOVE
-// .claude/) vs CLAUDE_CONFIG_DIR mode (.claude.json sits INSIDE the dir).
 func (s *Store) pathsFor(a Account) (credPath, jsonPath string) {
 	if a.ConfigDir == "" {
-		// Default account: <claudeHome>/.credentials.json and the sibling
-		// <parent>/.claude.json (e.g. /root/.claude/.credentials.json +
-		// /root/.claude.json).
 		return filepath.Join(s.claudeHome, ".credentials.json"),
 			filepath.Join(filepath.Dir(s.claudeHome), ".claude.json")
 	}
@@ -491,11 +364,6 @@ type credMeta struct {
 	HasRefresh       bool
 }
 
-// readCredMeta parses ONLY expiresAt + subscriptionType + the PRESENCE of a
-// refresh token from claudeAiOauth. The accessToken value is never decoded;
-// the refreshToken is decoded transiently only to compute a presence bool and
-// is never returned — credMeta carries HasRefresh, not the token itself, so no
-// secret escapes this function.
 func readCredMeta(path string) *credMeta {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -518,10 +386,6 @@ func readCredMeta(path string) *credMeta {
 	}
 }
 
-// readOauthIdentity extracts the identity fields of oauthAccount from a
-// .claude.json (zero value if absent/unreadable). No credential material is
-// read — accountUuid/emailAddress/displayName are profile metadata, and the
-// tokens live in .credentials.json, a different file this never opens.
 func readOauthIdentity(path string) Identity {
 	data, err := os.ReadFile(path)
 	if err != nil {

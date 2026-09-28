@@ -1,48 +1,13 @@
-// 00-shell.js — the complete SPA shell for server-control-panel.
-//
-// Extracted from internal/webassets/web/index.html (it used to be an inline
-// <script> of 12552 lines). Kept as ONE file for now so the behaviour stays
-// IDENTICAL to before: same execution order, same variables in the <script>
-// scope (notably `app` and the global helpers).
-//
-// The next step is to break this file into per-view modules via Alpine.data():
-//   - shell.js (token, currentView, focusMode, api(), showToast, logout)
-//   - stores.js (Alpine.store('auth' / 'toast' / 'prefs'))
-//   - views/dashboard.js, views/whatsapp.js, views/videocall.js, etc.
-//
-// It is loaded by a synchronous <script src> tag (parser-blocking), ahead of
-// the deferred alpine.min.js — which guarantees `app()` is defined by the time
-// Alpine.start() runs on DOMContentLoaded.
-// ============================================================================
-// PER-USER LOCALSTORAGE ISOLATION — runs BEFORE any localStorage read.
-// Monkey-patches get/set/removeItem to prefix "panel_*" keys with
-// "panel_u_<active_user>_". Guarantees by construction that profiles do NOT see
-// the preferences/snapshots/tabs of other profiles.
-//
-// KEEP_RAW: keys that are NEVER prefixed (token, identity, build stamp).
-// The JWT and "who is logged in" have to stay reachable in the global slot so
-// they survive across profiles.
-//
-// Pre-login (no active_user), "panel_*" reads/writes pass through raw — that is
-// how the login form reads `panel_last_user` directly. Post-login every
-// "panel_*" key (except KEEP_RAW) goes to the namespace of that user.
-//
-// Migration: legacy localStorage (panel_* keys written before isolation) becomes
-// unreachable after the patch — silent garbage until the build-stamp guard
-// purges it. Accepted (UX prefs in localStorage are disposable).
-// ============================================================================
 (function installPerUserStoragePrefix(){
   if (typeof window === 'undefined' || !window.localStorage) return;
-  // Global keys — do not prefix.
   const KEEP_RAW = new Set([
-    'panel_token',         // JWT — read before we know who the user is
-    'panel_user',          // mirror of the username (compat with app state init)
-    'panel_active_user',   // the "who is logged in" value itself — cannot namespace itself
-    'panel_last_user',     // pre-fill for the login form
-    'panel_build',         // build stamp from the server
-    'panel_recovery_token',// cookie recovery (unused in localStorage, but defensive)
+    'panel_token',
+    'panel_user',
+    'panel_active_user',
+    'panel_last_user',
+    'panel_build',
+    'panel_recovery_token',
   ]);
-  // Cache of the original methods — any code holding a direct ref keeps working.
   const proto = Storage.prototype;
   const orig = {
     getItem: proto.getItem,
@@ -55,28 +20,20 @@
   function ns(k){
     if (typeof k !== 'string') return k;
     if (KEEP_RAW.has(k)) return k;
-    if (!k.startsWith('panel_')) return k; // third-party libs pass through untouched
+    if (!k.startsWith('panel_')) return k;
     const u = activeUser();
-    if (!u) return k; // pre-login: raw
+    if (!u) return k;
     return 'panel_u_' + u + '_' + k.slice(5);
   }
-  // Auto-sync active_user from panel_user (pre-existing sessions have not
-  // written active_user yet). Idempotent.
   try {
     if (!orig.getItem.call(localStorage, 'panel_active_user')) {
       const u = orig.getItem.call(localStorage, 'panel_user');
       if (u) orig.setItem.call(localStorage, 'panel_active_user', u);
     }
   } catch(_) {}
-  // Patch the localStorage/sessionStorage instances (overriding the prototype
-  // would affect iframes/third-party libs; overwriting just these two is safer).
-  // Defensive try/catch: Safari Private Browsing and Edge Tracking Prevention can
-  // throw QuotaExceededError / SecurityError on setItem; we swallow it so the UI
-  // does not break (UX prefs in localStorage are disposable).
   Storage.prototype.getItem = function(k){ try { return orig.getItem.call(this, ns(k)); } catch(_) { return null; } };
   Storage.prototype.setItem = function(k,v){ try { return orig.setItem.call(this, ns(k), v); } catch(_) { return undefined; } };
   Storage.prototype.removeItem = function(k){ try { return orig.removeItem.call(this, ns(k)); } catch(_) { return undefined; } };
-  // Exposed for debugging and used by logout (clears ONLY the keys of the current user).
   window.__panelStorageInternal = {
     rawGet: (k) => orig.getItem.call(localStorage, k),
     rawSet: (k,v) => orig.setItem.call(localStorage, k, v),
@@ -90,9 +47,7 @@
       const toRemove = [];
       for (let i=0; i<localStorage.length; i++){
         const k = orig.getItem.call(localStorage, 'key__placeholder');
-        // the key came from localStorage.key(i), which was NOT patched (read-only)
       }
-      // localStorage.key() was not monkey-patched (read-only), so iterate directly:
       const keys = [];
       for (let i=0; i<localStorage.length; i++) keys.push(localStorage.key(i));
       keys.forEach(k => {
@@ -104,54 +59,13 @@
   };
 })();
 
-// ============================================================================
-// LIGHT/DARK THEME. Global theme state in a block of its own.
-//
-// SINGLE POINT for reading/writing the preference: _read()/_write() below.
-// Moving persistence to the server means changing ONLY those two functions
-// (e.g. PUT /api/prefs) and everything else stays as it is.
-//
-// - First visit (no saved choice): respects prefers-color-scheme.
-// - Explicit choice: persisted in localStorage 'panel_theme' (namespaced per
-//   user by the patch above; survives the build-stamp guard).
-// - apply() stamps data-theme="light" on the root (dark = absence of the
-//   attribute, to match the base :root) and syncs <meta name="theme-color">.
-// - Fires CustomEvent('theme-changed') so any UI can mirror the icon.
-//
-// Runs right here (synchronous script, before Alpine/paint) to minimise flash.
-// ============================================================================
-// ============================================================================
-// PREFERENCES THAT FOLLOW THE USER ACROSS DEVICES.
-//
-// localStorage remains the SYNCHRONOUS read cache (boot does not block, the
-// theme does not flash). Writes are asynchronous write-through to the backend
-// (POST /api/user/prefs {key,value}) - the backend merges per key and writes
-// to data/users/<user>/prefs.json (0600). Contract confirmed in the Go side
-// (handleUserPrefs): GET ?key=X -> {key,value}; no key -> the whole map; POST
-// {key,value} -> merge per key. There is NO PUT.
-//
-// SYNCED keys (only what "follows the user"): panel_theme, panel_page,
-// panel_tabs. The value stored on the server is the raw localStorage STRING
-// (round-trip without ambiguity). The server already isolates per user, so the
-// key sent is the logical one (without the panel_u_<user>_ namespace prefix).
-//
-// Boot reconciliation: server-wins (the canonical value on the server beats
-// the local cache) - see _prefsReconcile in the Alpine component. Reading the
-// theme at boot stays SYNCHRONOUS via localStorage (no FOUC); the server only
-// reconciles afterwards, with Alpine already up.
-//
-// One-shot migration: if the server does not have the key but localStorage
-// does, push it once (flag panel_prefs_migrated, namespaced per user).
-// ============================================================================
 window.panelPrefs = (function(){
   var SYNCED = ['panel_theme', 'panel_page', 'panel_tabs'];
   function _token(){ try { return localStorage.getItem('panel_token') || ''; } catch(_){ return ''; } }
-  // Local cache (synchronous). Goes through the per-user namespaced localStorage.
   function get(key){ try { return localStorage.getItem(key); } catch(_){ return null; } }
   function setLocal(key, val){
     try { if (val == null) localStorage.removeItem(key); else localStorage.setItem(key, val); } catch(_){}
   }
-  // Asynchronous write-through (best-effort). Does NOT block the UI; fails silently.
   function push(key, val){
     var tok = _token();
     if (!tok) return Promise.resolve(false);
@@ -164,9 +78,7 @@ window.panelPrefs = (function(){
       }).then(function(r){ return !!(r && r.ok); }).catch(function(){ return false; });
     } catch(_){ return Promise.resolve(false); }
   }
-  // set = cache + write-through. Single write point for the synced prefs.
   function set(key, val){ setLocal(key, val); push(key, val); }
-  // Reads the whole map from the server (GET without a key). {} on any failure.
   function pull(){
     var tok = _token();
     if (!tok) return Promise.resolve({});
@@ -185,18 +97,14 @@ window.panelPrefs = (function(){
 
 window.panelTheme = (function(){
   var KEY = 'panel_theme';
-  var META_DARK  = '#020617'; // = the base --surface of the dark theme (matches the original meta)
-  var META_LIGHT = '#eef1f6'; // = --surface-0 of the light theme
-  // Delegates to the single panelPrefs entry point. _read stays SYNCHRONOUS
-  // (localStorage as cache) - the theme boot does not become async, so no FOUC.
-  // _write does the write-through to the server via panelPrefs.set.
+  var META_DARK  = '#020617';
+  var META_LIGHT = '#eef1f6';
   function _read(){ return window.panelPrefs.get(KEY); }
   function _write(v){ window.panelPrefs.set(KEY, v); }
   function _systemPref(){
     try { return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; }
     catch(_){ return 'dark'; }
   }
-  // Effective theme: a valid saved choice, otherwise the OS preference.
   function resolved(){
     var s = _read();
     return (s === 'light' || s === 'dark') ? s : _systemPref();
@@ -208,7 +116,6 @@ window.panelTheme = (function(){
       for (var i = 0; i < targets.length; i++) targets[i].setAttribute('content', c);
     } catch(_){}
   }
-  // Stamps the theme onto the DOM (idempotent). Does not persist.
   function apply(theme){
     var t = theme === 'light' ? 'light' : 'dark';
     try {
@@ -223,53 +130,28 @@ window.panelTheme = (function(){
   function get(){ return resolved(); }
   function set(theme){ var t = theme === 'light' ? 'light' : 'dark'; _write(t); return apply(t); }
   function toggle(){ return set(resolved() === 'light' ? 'dark' : 'light'); }
-  // Boot: applies the effective theme as soon as the script loads.
   apply(resolved());
   return { get: get, set: set, toggle: toggle, apply: apply, resolved: resolved };
 })();
 
-// ============================================================================
-// BOOT SANITIZER — runs BEFORE the Alpine bootstrap (this script is
-// synchronous; Alpine is deferred). Defends against EVERY known cause of the
-// recurring "Cannot read properties of undefined (reading 'after')" crash in
-// alpine.min.js, which fires when <template x-for :key="X"> has X undefined or
-// duplicated.
-//
-// Layers of defence (in order):
-//   1. URL escape hatches: ?safe=1 purges only dangerous state; ?nuke=1 purges all.
-//   2. Build-stamp guard: if the binary was redeployed, dangerous state is
-//      purged automatically (the schema may have changed).
-//   3. Per-key sanitizer: every localStorage array used in an x-for is
-//      validated/deduped/filtered BEFORE Alpine reads it.
-//   4. Warn interceptor: if Alpine still complains about the :key, force a
-//      safe-mode reload (cookie/auth preserved — only visual state is dropped).
-// ============================================================================
 (function bootSanitizer(){
   const SAFE_PURGE_KEYS = [
-    'panel_tabs_snapshot',         // Terminal panes
-    'panel_browser_tabs',          // browser tabs
-    // 'panel_term_workspaces' does NOT belong here: the user creates workspaces
-    // explicitly, by name — purging on deploy would erase their work. The layer-3
-    // sanitisation (sanitizeArrayKey with :key='name') already covers the risk of
-    // a schema change corrupting the x-for; a build-stamp guard would be overkill.
-    'panel_filters',               // container/image/unit filters
-    'panel_ports_filter',          // ports table filter
-    'panel_conns_filter',          // connections table filter
-    'panel_jira_filter',           // board quick-filter (all/mine/todo/…)
-    'panel_jira_jql',              // custom JQL that goes with the 'custom' filter
-    'panel_jira_search',           // free-text search across the issues
-    'panel_sort_state',            // sort state of the tables
-    // Added after an audit: safeJSON() returns a fallback when localStorage is
-    // corrupted, but a preventive purge by build stamp keeps a user with broken
-    // keys from past deploys stuck looking at empty state forever. Tabs/snippets/
-    // recent are purely UI.
-    'panel_tabs',                  // active tab per page (system/docker/etc)
-    'panel_term_snippets',         // terminal snippets (user-edited)
-    'panel_term_recent',           // recent command history
+    'panel_tabs_snapshot',
+    'panel_browser_tabs',
+    'panel_filters',
+    'panel_ports_filter',
+    'panel_conns_filter',
+    'panel_jira_filter',
+    'panel_jira_jql',
+    'panel_jira_search',
+    'panel_sort_state',
+    'panel_tabs',
+    'panel_term_snippets',
+    'panel_term_recent',
   ];
   const KEEP_ALWAYS = new Set([
     'panel_token', 'panel_user', 'panel_last_user',
-    'panel_build', // build stamp; preserved to avoid a purge loop
+    'panel_build',
   ]);
 
   function purgeUnsafe() {
@@ -282,7 +164,6 @@ window.panelTheme = (function(){
     Object.entries(keep).forEach(([k,v]) => { try { localStorage.setItem(k,v); } catch(_){} });
   }
 
-  // ---- Layer 1: URL escape hatches ----
   try {
     const params = new URLSearchParams(location.search);
     if (params.has('nuke')) {
@@ -292,16 +173,10 @@ window.panelTheme = (function(){
     if (params.has('safe')) {
       purgeAllExceptAuth();
       try { sessionStorage.clear(); } catch(_){}
-      // strip ?safe=1 from the URL so the user can hit F5 without purging again
       location.replace(location.pathname); return;
     }
   } catch(_) {}
 
-  // ---- Layer 2: build-stamp guard ----
-  // The server injects the build ID through a meta tag (server-rendered). If it
-  // changed since the last visit, purge state whose schema may be incompatible.
-  // That eliminates the whole class of "a snapshot of the old code crashes the
-  // new code" bugs.
   try {
     const metaBuild = document.querySelector('meta[name="panel-build"]');
     const cur = metaBuild ? metaBuild.getAttribute('content') : '';
@@ -314,17 +189,12 @@ window.panelTheme = (function(){
     }
   } catch(_) {}
 
-  // ---- Layer 3: per-key sanitizer ----
-  // Every localStorage entry that feeds an x-for is validated. Malformed items
-  // (missing the field used as :key, or with a duplicated :key) are removed — so
-  // Alpine never sees an array with invalid keys.
   function sanitizeArrayKey(storageKey, keyField, opts) {
     opts = opts || {};
     try {
       const raw = localStorage.getItem(storageKey);
       if (!raw) return;
       let arr = JSON.parse(raw);
-      // Accepts the wrapper {tabs:[...]} (the panel_browser_tabs format)
       let wrapper = null, listPath = null;
       if (opts.wrapperListField && arr && typeof arr === 'object' && !Array.isArray(arr) && Array.isArray(arr[opts.wrapperListField])) {
         wrapper = arr; listPath = opts.wrapperListField; arr = arr[listPath];
@@ -348,18 +218,13 @@ window.panelTheme = (function(){
         localStorage.setItem(storageKey, JSON.stringify(clean));
       }
     } catch(_) {
-      // invalid / corrupted JSON = purge
       try { localStorage.removeItem(storageKey); } catch(__){}
     }
   }
 
-  // termWorkspaces: array of {name, ...}; :key="ws.name"
   sanitizeArrayKey('panel_term_workspaces', 'name');
-  // browserTabs: { tabs:[{id,...}], active:... }; :key="tab.id"
   sanitizeArrayKey('panel_browser_tabs', 'id', { wrapperListField: 'tabs' });
 
-  // tabs_snapshot: special validation (panes regenerate IDs in restoreState).
-  // Here we only make sure the JSON parses; if it breaks, discard it.
   for (const key of ['panel_tabs_snapshot']) {
     try {
       const raw = localStorage.getItem(key);
@@ -381,7 +246,6 @@ window.panelTheme = (function(){
     }
   }
 
-  // Exposed for the error boundary to call
   window.__panelSafeMode = function(){
     purgeAllExceptAuth();
     try { sessionStorage.clear(); } catch(_){}
@@ -389,18 +253,7 @@ window.panelTheme = (function(){
   };
 })();
 
-// ---- Layer 4: warn interceptor (last resort) ----
-// If Alpine still complains about the :key after the sanitizer, it found a case
-// we did not anticipate (e.g. the API returned a malformed object). Instead of
-// letting the page crash, trigger a safe-mode reload — once per session so it
-// cannot loop.
 (function installAlpineKeyDiagnostic(){
-  // We replaced the old "safe-mode reload" reaction (which purged state and
-  // reloaded silently) with DIAGNOSTICS: when Alpine complains about an
-  // undefined/invalid :key, we log the offending ELEMENT to the console and to
-  // the global window.__alpineKeyBugs. The user/dev opens DevTools, copies the
-  // outerHTML of the template, and we know exactly which x-for needs a fallback.
-  // A destructive reload was worse than the disease — it erased legitimate panes.
   window.__alpineKeyBugs = [];
   const origWarn = console.warn.bind(console);
   console.warn = function(...args) {
@@ -425,10 +278,6 @@ window.panelTheme = (function(){
   };
 })();
 
-// Focus trap helper — for a11y on modals. Usage:
-//   const trap = window.installFocusTrap(modalEl);
-//   ...
-//   trap.release(); // when closing
 window.installFocusTrap = function (root) {
   if (!root || root.__panelTrap) return root && root.__panelTrap;
   const SELECTOR = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -457,26 +306,13 @@ window.installFocusTrap = function (root) {
   return trap;
 };
 
-// A11Y: the modals of the app are <div role="dialog" aria-modal="true"> toggled
-// by the x-show of Alpine, which only touches style.display. installFocusTrap
-// above existed but was never called — with Tab the focus escaped the modal
-// into the content behind it. The wiring is done 100% from here (and not by
-// calls in the HTML) because index.html is maintained in parallel by another
-// flow: a single MutationObserver discovers each dialog and turns the trap
-// on/off as it becomes visible/hidden, which also avoids leaking one listener
 (function autoWireModalFocusTraps(){
   var SEL = '[role="dialog"][aria-modal="true"]';
   var known = new Set();
 
-  // The pattern in the app is a role=dialog backdrop wrapping a role=dialog card.
-  // Installing the trap on both would handle the keydown twice (the outer one
-  // receives it by bubbling), so only the outermost dialog gets the trap.
   function isOutermost(el){
     return !el.parentElement || !el.parentElement.closest(SEL);
   }
-  // offsetParent is ALWAYS null on position:fixed, and every modal here is fixed
-  // — which is why visibility is measured with getClientRects() rather than the
-  // usual offsetParent test.
   function isVisible(el){
     return el.isConnected && el.getClientRects().length > 0;
   }
@@ -510,8 +346,6 @@ window.installFocusTrap = function (root) {
     for (var i = 0; i < muts.length; i++) {
       var m = muts[i];
       if (m.type === 'attributes') {
-        // known.has() is O(1) on purpose: xterm generates thousands of attribute
-        // mutations per second and a matches() per mutation would be costly on the hot path.
         if (known.has(m.target)) evaluate(m.target);
         continue;
       }
@@ -531,13 +365,10 @@ window.installFocusTrap = function (root) {
   else start();
 })();
 
-// Global error boundary. Catches uncaught JS exceptions and unhandled promise
-// rejections; replaces the body with a minimal recovery UI instead of a white
-// screen, so the user always has a way out (and we have a way to ship fixes).
 (function installErrorBoundary(){
   let active = false;
   function show(err){
-    if (active) return; // only once
+    if (active) return;
     active = true;
     const msg = (err && (err.stack || err.message)) ? String(err.stack || err.message) : String(err);
     document.body.innerHTML =
@@ -548,23 +379,15 @@ window.installFocusTrap = function (root) {
       '<div style="font-size:12px;color:#9ca3af;margin-bottom:12px">The server itself may be fine. Recover the state below. If it keeps happening, connect over SSH and run <code style="background:#111827;padding:2px 6px;border-radius:4px">panelctl rollback</code>.</div>'+
       '<pre style="font-size:10px;background:#020617;border:1px solid #1f2937;border-radius:6px;padding:10px;overflow:auto;max-height:200px;margin-bottom:16px">'+escapeHtml(msg)+'</pre>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-      // Safe Mode preserves auth/theme; it only erases dangerous visual state. Preferred path.
       '<button onclick="(window.__panelSafeMode||function(){localStorage.clear();location.reload()})()" style="background:#2563eb;color:white;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px">Safe Mode (keeps you signed in)</button>'+
       '<button onclick="localStorage.clear();sessionStorage.clear();location.reload()" style="background:transparent;color:#ef4444;border:1px solid #7f1d1d;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px">Clear everything (sign in again)</button>'+
       '<button onclick="location.reload()" style="background:transparent;color:#9ca3af;border:1px solid #1f2937;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px">Just reload</button>'+
       '<a href="/api/health" target="_blank" style="background:transparent;color:#9ca3af;border:1px solid #1f2937;padding:8px 14px;border-radius:6px;text-decoration:none;font-size:13px">View /api/health</a>'+
       '</div></div></div>';
   }
-  // Benign errors that must NOT trigger the crash overlay. The main one is the
-  // "ResizeObserver loop ..." warning — a harmless browser notice when an
-  // observer changes layout inside its own callback (common with xterm/Monaco/iframes).
   function isBenign(err){
     const msg = (err && (err.message || (typeof err === 'string' ? err : ''))) || '';
     if (/ResizeObserver loop/i.test(msg)) return true;
-    // Alpine x-for :key undefined crashes: ALWAYS swallowed (Alpine retries the
-    // diff on every render, so swallowing just once is not enough — the second
-    // crash would take the UI down). The log is rate-limited so the console is not
-    // flooded. Diagnostics for the offending template live in window.__alpineKeyBugs.
     if (/Cannot read properties of undefined \(reading 'after'\)/i.test(msg)) {
       window.__alpineKeyCrashCount = (window.__alpineKeyCrashCount || 0) + 1;
       if (window.__alpineKeyCrashCount <= 3 || window.__alpineKeyCrashCount % 50 === 0) {
@@ -585,16 +408,8 @@ window.installFocusTrap = function (root) {
   });
 })();
 
-// Module-scope helpers. Used both by the error boundary (above) and by app()
-// (below) plus the modules that follow (xterm, picker, etc).
-// Keep them OUTSIDE any IIFE — inside one they would vanish after the `})()`
-// and any external call would become a ReferenceError at boot.
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-// base64ToText decodes base64 or base64url and returns the text as UTF-8.
-// atob alone returns one character per BYTE (Latin-1), so every multi-byte
-// character turns into mojibake. Every text that arrives as base64 (terminal OSC 52, the JWT
-// payload) goes through here, never through atob directly.
 function base64ToText(b64) {
   let s = String(b64 == null ? '' : b64).replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
   if (s.length % 4) s += '='.repeat(4 - (s.length % 4));
@@ -604,12 +419,6 @@ function base64ToText(b64) {
   return new TextDecoder('utf-8').decode(bytes);
 }
 
-// safeJSON(key, fallback) reads localStorage[key] and parses it. If
-// localStorage is corrupted (e.g. an extension injected a non-JSON string, or
-// the user edited it in DevTools), it returns the fallback instead of throwing
-// a SyntaxError in top-level state — which used to crash the whole app before
-// Alpine could boot. Corruption pattern seen in production: panel_tabs="undefined"
-// (the literal string).
 function safeJSON(key, fallback){
   try {
     const raw = localStorage.getItem(key);
@@ -621,20 +430,9 @@ function safeJSON(key, fallback){
   }
 }
 
-// Chart.js instances are kept OUTSIDE the reactive state of Alpine. Chart has
-// circular refs ($context → chart → $context) that blow up JSON.stringify when
-// Alpine tries to serialise/clone the state (the Vue Reactivity underneath
-// trips over some reactive paths). Keep the Map module-scoped.
 const __panelCharts = new Map();
 
-// Memo for the list filters. It lives at MODULE scope, outside the Alpine
-// object, on purpose: if the cache lived in reactive state, writing to it
-// during a render would invalidate the very effect that read it and turn into
-// an infinite re-render loop.
 const __panelFilterMemo = Object.create(null);
-// Invalidated by the identity of the dependencies (source array + search terms),
-// never by time. Callers build `deps` on the spot, so the reactive properties
-// are still read on every call and Alpine keeps seeing the dependency.
 function __panelMemo(key, deps, compute) {
   const hit = __panelFilterMemo[key];
   if (hit && hit.deps.length === deps.length) {
@@ -649,187 +447,125 @@ function __panelMemo(key, deps, compute) {
 
 function app() {
   return {
-    // State and methods of the visual Git client, defined in 10-git.js. Spread in
-    // here so they become part of the app() component — that way they use
-    // this.api/this.showToast/this._ensureMonaco natively.
-    // Spread at the TOP: the names are namespaced (git/gitLoad/…), so no collision.
     ...(window.PanelGitModule ? window.PanelGitModule() : { git: { repos: [], repo: '' } }),
     ...(window.PanelDeployModule ? window.PanelDeployModule() : { deploy: { apps: [] } }),
     ...(window.PanelNodesModule ? window.PanelNodesModule() : { nodes: { list: [] } }),
     ...(window.PanelProxmoxModule ? window.PanelProxmoxModule() : { pvx: { health: null } }),
     ...(window.PanelAgentsModule ? window.PanelAgentsModule() : { agents: { sessions: [] } }),
 
-    // The deploy reentrancy guard now lives in deployRun itself, in 20-deploy.js,
-    // and is PER APP (deploy.running + isDeploying()).
-
     token: localStorage.getItem('panel_token') || '',
     username: localStorage.getItem('panel_user') || '',
     userEmail: localStorage.getItem('panel_email') || '',
     hostname: '',
-    // Guest mode: set by init when arriving from /join (entry by PIN).
-    // Hides the sidebar and forces entry straight into the video call.
     guestMode: false,
     guestRoomId: '',
     guestRoomName: '',
-    guestEnded: false,  // true after hangup in guest mode (shows the "Call ended" screen)
-    // Styled confirm modal (replaces the thread-blocking confirm())
+    guestEnded: false,
     vcConfirm: { open: false, title: '', desc: '', confirmLabel: 'Confirm', danger: false, onYes: null },
     loginForm: {username: localStorage.getItem('panel_last_user') || '', password:'', totp:'', remember_device:false},
     loginError: '',
     loginNeedTOTP: false,
-    loginNeedSetup: false,  // Kept for HTML x-show binding compat; never true.
+    loginNeedSetup: false,
     loginBusy: false,
-    // First-login TOTP enroll wizard state (cleared after success)
     setupToken: '',
     setupQR: {},
     setupForm: { main_code:'', recovery_code:'' },
     refreshTimer: null,
-    // The legacy totpUI was removed (local TOTP nuked).
-    // MFA TOTP via Supabase GoTrue.
-    // step: idle | starting | confirm | backup | done
     mfaUI: {
       enrolled: false, factorId: '', factorStatus: '',
       step: 'idle', qr: '', secret: '', code: '',
       backupCodes: [], backupCodesUnused: 0, busy: false, err: ''
     },
-    // Paired devices (passkeys from the native Android app). Lists pending and
-    // approved ones; every action (approve/deny/revoke) reloads this list from the
-    // backend instead of mutating `items` locally — what is shown is always what
-    // the server confirmed, never an optimistic guess.
     mobileDevicesUI: {
       items: [], busy: false, loaded: false, err: ''
     },
-    // Pairing QR generation — minted on demand (never automatically when the
-    // screen opens: each generation invalidates the previous ticket on the server,
-    // so only generate when the admin is actually about to show the QR to a
-    // phone). qrPngB64 arrives ready from the backend (handleMobilePairStart),
-    // already carrying the destination server — the app never asks the user to
-    // type an address.
     mobilePairUI: {
       qrPngB64: '', serverUrl: '', expiresAt: 0, busy: false, err: ''
     },
-    // WhatsApp integration (WAHA gateway). Complete state of the feature:
-    // status/QR arrive over the WebSocket; chats arrive by fetch and update on each received message.
     whatsapp: {
       enabled: false, status: 'UNPAIRED', phone: '', pushName: '',
       qrDataURL: '', wahaReachable: false, hookOK: false, lastSync: 0,
       chats: [], chatById: {}, totalUnread: 0, syncing: false,
-      activeJid: null, messages: {}, // messages[jid] = [Message...]
-      loadingMessages: false, hasMoreMessages: {}, // hasMoreMessages[jid] = bool
+      activeJid: null, messages: {},
+      loadingMessages: false, hasMoreMessages: {},
       composer: '', attachment: null, attachmentPreview: '',
       ws: null, wsBackoff: 1000,
       notifPermission: (typeof Notification !== 'undefined' ? Notification.permission : 'default'),
       starting: false, busy: false, error: '',
       search: '',
-      filter: 'all', // all|unread|groups|favorites (tabs at the top of the sidebar)
-      // WhatsApp-like features: reply (quote), emoji picker, context menu,
-      // voice recording.
-      replyTo: null,                                // {id, body, type, fromMe, label}
-      emojiOpen: false,                             // composer emoji picker
-      msgMenu: { open:false, x:0, y:0, msg:null },  // right-click on a message
-      chatMenu: false,                              // the ⋮ menu in the header
+      filter: 'all',
+      replyTo: null,
+      emojiOpen: false,
+      msgMenu: { open:false, x:0, y:0, msg:null },
+      chatMenu: false,
       voiceRec: { active:false, recorder:null, chunks:[], startedAt:0, elapsed:0, timer:null },
-      // Extra WhatsApp-faithful features
-      chatSearch: '',          // search inside the conversation
-      chatSearchOpen: false,   // toggles the search bar
-      infoPanelOpen: false,    // contact info panel (slides in from the right)
-      dragOver: false,         // overlay drag-and-drop
-      imagePreview: null,      // {file, dataURL, caption} before sending an image
-      typingTimer: null,       // debounce for sendTyping
-      statusBySender: [],      // Status (Stories) tab — listed per contact
+      chatSearch: '',
+      chatSearchOpen: false,
+      infoPanelOpen: false,
+      dragOver: false,
+      imagePreview: null,
+      typingTimer: null,
+      statusBySender: [],
       statusLoading: false,
-      // scrollPinned: true when the history is stuck to the bottom (<150px). The
-      // auto-scroll only fires when pinned, so it does not steal the manual scroll
-      // from someone reading old messages. Measured BEFORE each push.
       scrollPinned: true,
-      // New conversation (phone-number modal) + group info (participants).
-      newChatOpen: false,      // "start a new chat" modal
-      newChatPhone: '',        // number input (digits + country code)
-      newChatBusy: false,      // blocks the button while check-number is in flight
-      groupInfo: null,         // {name, participants:[{jid,name,is_admin}]} of the active group
-      groupInfoLoading: false, // spinner while group-info loads
+      newChatOpen: false,
+      newChatPhone: '',
+      newChatBusy: false,
+      groupInfo: null,
+      groupInfoLoading: false,
     },
-    // P2P video call (WebRTC). Media travels peer-to-peer; the server only
-    // routes signalling. Live stats are updated by onStats in the JS client.
     videocall: {
       rooms: [],
       newRoomName: '',
-      newMember: '',           // input in the "add member" field of the detail panel
-      selectedRoom: null,      // Room currently being viewed/edited
-      // In-call state
+      newMember: '',
+      selectedRoom: null,
       inCall: false,
       activeRoomId: '',
       callDisplayName: '',
       chat: [],
       chatComposer: '',
-      // Controls
       muted: false,
       videoOff: false,
       screenSharing: false,
       recording: false,
       audioFirstMode: localStorage.getItem('panel_vc_audio_first') === '1',
-      autoVideoOff: false,     // set by client on auto-degrade
+      autoVideoOff: false,
       budgetKbps: parseInt(localStorage.getItem('panel_vc_budget_kbps') || '60', 10),
       codec: localStorage.getItem('panel_vc_codec') || 'auto',
-      // E2EE
       e2eeWanted: localStorage.getItem('panel_vc_e2ee_wanted') === '1',
-      e2eePassphraseInput: '',  // bound to modal input only — not persisted
+      e2eePassphraseInput: '',
       e2eeActive: false,
       e2eePromptOpen: false,
-      e2eePendingRoomId: '',    // room to join once passphrase is entered
+      e2eePendingRoomId: '',
       e2eeSupported: !!(window.PanelVideoCallE2EE && window.PanelVideoCallE2EE.isSupported()),
-      // Magic-link invite generator
       inviteOpen: false,
       inviteTTLMin: 60,
-      // anonymous PIN (no account)
       pinTTLHours: 24,
-      // PIN modal reachable from INSIDE the call (Settings button → PIN)
       pinModalOpen: false,
-      // Reactive tick so the UI reacts to PIN expiry (without heavy polling).
-      // Updated in init() every 30s.
       _nowTick: Math.floor(Date.now() / 1000),
-      // Inline room rename
       renamingRoomId: '',
       renameDraft: '',
       inviteURL: '',
       inviteExpiresAt: 0,
       inviteCopyDone: false,
-      // Bandwidth history (last N call sessions). The Chart.js instance lives in
-      // __panelCharts['vc-history-chart'] (outside the reactive state — its
-      // circular refs blow up JSON.stringify).
       history: [],
-      // File transfer
       filesPanelOpen: false,
-      transfers: [],            // {id, name, size, received|sent, direction, from, to, done}
-      // Whiteboard
+      transfers: [],
       wbActive: false,
       wbColor: '#60a5fa',
-      // Live annotation over the shared screen (own transparent layer,
-      // shares wbColor + the whiteboard transport via surface:'screen').
       annotActive: false,
-      annotTool: 'pen',   // 'pen' | 'hl' (highlighter)
-      // Privacy frost (full-frame blur)
+      annotTool: 'pen',
       frostActive: false,
-      // Incoming call (from presence WS)
-      incoming: null,           // {roomId, roomName, from, ts, callId}
+      incoming: null,
       presenceConnected: false,
-      // Devices that ring when a call comes in. `ringDevices` is the list coming
-      // from the server; `thisDeviceId` identifies THIS device inside it (for the
-      // "Do not ring on this device" button and to mark it in the UI).
       ringDevices: [],
       ringDevicesBusy: false,
       thisDeviceId: (window.PanelDevice ? window.PanelDevice.id() : ''),
-      // Web Push (off-app)
       pushSupported: !!(window.PanelPush && window.PanelPush.isSupported()),
       pushSubscribed: false,
       pushPermission: (typeof Notification !== 'undefined' ? Notification.permission : 'default'),
       pushBusy: false,
-      // Share menu (in invite modal)
       shareOpen: false,
-      // Device selection (lobby + in-call settings)
-      // setSinkId only works in Chrome/Edge — in Firefox/Safari the speaker
-      // dropdown lies to the user (they pick one but the audio still comes out
-      // of the default). Detect that and hide it.
       sinkIdSupported: (function() {
         try { return typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype; }
         catch (_) { return false; }
@@ -850,77 +586,41 @@ function app() {
         mic:     localStorage.getItem('panel_vc_mic_id')     || 'default',
         speaker: localStorage.getItem('panel_vc_speaker_id') || 'default',
       },
-      // MiroTalk-style in-call UI
-      qualityMode: localStorage.getItem('panel_vc_quality') || 'economy', // phone|low|economy|medium|high|custom
-      // QoL: keyboard shortcuts toggle (M/V/C/P/F/Space/?)
+      qualityMode: localStorage.getItem('panel_vc_quality') || 'economy',
       shortcutsEnabled: localStorage.getItem('panel_vc_shortcuts') !== '0',
       shortcutsOverlay: false,
-      // Peer state mirrors what each remote peer broadcasts
-      peerStates: {},         // peerId -> { mic, cam, hand, sharing }
-      peerCount: 0,           // updated via callback (this.peers cannot be read through Alpine)
-      peersList: [],          // [{id, user}] — populated through cbState peer-count
-      // Chat unread badge
+      peerStates: {},
+      peerCount: 0,
+      peersList: [],
       chatLastRead: 0,
-      // Reactions floating animation queue
-      reactions: [],          // [{ id, emoji, from, ts }]
+      reactions: [],
       reactionsPickerOpen: false,
-      // Drag-and-drop file overlay
       dropOverlay: false,
-      // Capabilities measured by the lobby (probe per type). One side is enough.
       lobbyCaps: { audio: true, video: true },
-      // Flashes the check on the audio-output test button (lobby and in-call).
       lobbyTone: false,
       settingsTone: false,
-      // Push-to-talk state (Space hold while muted)
       pttActive: false,
-      // Picture-in-Picture
       pipActive: false,
-      // You-are-muted-but-speaking detector
       speakingMuted: false,
-      // Auto-reconnect overlay
       reconnectingOverlay: false,
-      // Subtitles
       subtitlesActive: false,
-      // subtitlesSupported: true if ANY STT backend is available in this browser —
-      // not just web-speech. availableBackends() (stt.js) tests each driver via
-      // .available(); whisper-local only requires AudioWorklet + MediaStream +
-      // WebSocket (all present in Firefox/Safari, which do NOT expose
-      // SpeechRecognition). The old gating depended on isSupported(), which only
-      // looks at the default 'web-speech' backend → it left the button :disabled
-      // on FF/Safari even with whisper-local fully working.
       subtitlesSupported: !!(window.PanelSTT && typeof window.PanelSTT.availableBackends === 'function' && window.PanelSTT.availableBackends().length > 0),
-      // subtitlesNoEngine: true when NO engine exists in this browser. Drives the
-      // honest message in the UI ("No transcription engine available in this
-      // browser") in place of the old "use Chrome/Edge", which was false for FF
-      // with whisper. Re-derived in the boot probe and in init() (idempotent).
       subtitlesNoEngine: false,
-      subtitlesBackend: '', // 'whisper-local' | 'web-speech' | '' (not started)
+      subtitlesBackend: '',
       currentCaption: { from: '', text: '', expireAt: 0 },
-      // Live partials per peer — shown in the transcript panel as an ephemeral
-      // preview (italic, faded). Replaced when the final result arrives.
-      // Shape: { [peerId]: { text, fromLabel, ts } }
       livePartials: {},
       callStartedAt: 0,
-      peerAudioLevels: {}, // {peerId: level 0..1}
-      // Full transcript accumulated during the call (Web Speech) — used for the AI
-      // summary after hangup. Reset on each new call. Kept as a string for
-      // back-compat with summarize.
+      peerAudioLevels: {},
       transcript: '',
-      // Rich entry structure for the Tactiq-style panel.
-      // Capped at ~500 entries (FIFO cleanup).
-      transcriptEntries: [], // [{id, from, fromLabel, text, polishedText?, polishing?, ts, final}]
+      transcriptEntries: [],
       transcriptSearch: '',
-      transcriptHasMore: false, // the user scrolled up and there are new entries below
-      // Polish via Claude — toggle. Default OFF (it costs $$) — the user enables it at will.
+      transcriptHasMore: false,
       polishWithAI: localStorage.getItem('panel_vc_polish_ai') === '1',
-      polishQueue: [],     // ids of the entries awaiting polish (in-order)
-      polishBusy: false,   // worker running right now
-      showOriginalIds: {}, // {entryId: true} — the user clicked to see the original (toggle)
-      // Language for Web Speech recognition.
+      polishQueue: [],
+      polishBusy: false,
+      showOriginalIds: {},
       subtitlesLang: localStorage.getItem('panel_vc_subtitles_lang') || 'en-US',
       subtitlesLangPickerOpen: false,
-      // Outgoing mic volume (1.0 = 100%), what the others hear. Transcription
-      // reads the raw mic and is not affected. Persisted across sessions.
       micGain: Math.min(4, Math.max(0.25, parseFloat(localStorage.getItem('panel_vc_mic_gain') || '1.0') || 1.0)),
       micProc: (() => {
         let p = {};
@@ -932,55 +632,30 @@ function app() {
         };
       })(),
       micProcBusy: false,
-      // Level of what goes OUT to the peers (after the volume): 0..100.
       micLevel: 0,
       micLimiting: false,
-      // Separate toggle from the transcription itself (subtitlesActive). Default true.
-      // When false: STT keeps running, the text still goes to the transcript panel
-      // and the summary, but does NOT appear as an overlay on top of the videos.
-      // Default OFF: overlay captions on the stage clutter the screen (captions pile
-      // up over the video). The transcript stays in the side panel. The user can turn
-      // it back on with the "Captions visible" toggle in the settings.
       subtitlesShow: localStorage.getItem('panel_vc_subtitles_show') === '1',
-      // Preferred STT backend. Default whisper-local (more accurate, and
-      // after the CTranslate2 optimisation it is viable in real time with ~3-5s lag).
-      // web-speech becomes the automatic fallback if whisper-local is unavailable.
       sttBackend: localStorage.getItem('panel_vc_stt_backend') || 'whisper-local',
-      // whisper-local probe run when joining the call. Enables/disables the Whisper
-      // button in the UI.
       whisperLocalAvailable: false,
-      // The backend actually in use (may differ from sttBackend if whisper-local was
-      // requested but fell back to web-speech).
       subtitlesBackendActive: '',
-      // Owner controls — derived at runtime when the call is joined.
       amOwner: false,
       roomOwnerName: '',
       roomLocked: false,
-      peers: [], // [{id, user, displayName}] — updated on peer-joined/left and _notifyPeerCount
-      // Caption per peer (anchored below the video tile of the speaker)
+      peers: [],
       captionsByPeer: {},
-      // ---- Layout controls (local PiP + remote fit + spotlight) ----
-      // Whitelisted in the defaults to armour against corrupted localStorage (an
-      // invalid value would land in a data-attr with no CSS match, leaving the UI unstyled).
       localPipSize: (['sm','md','lg','hidden'].includes(localStorage.getItem('panel_vc_local_size')) ? localStorage.getItem('panel_vc_local_size') : 'md'),
       localPipPos: (['br','bl','tr','tl'].includes(localStorage.getItem('panel_vc_local_pos')) ? localStorage.getItem('panel_vc_local_pos') : 'br'),
       localMirror: localStorage.getItem('panel_vc_local_mirror') !== '0',
       remoteFit: (['cover','contain'].includes(localStorage.getItem('panel_vc_remote_fit')) ? localStorage.getItem('panel_vc_remote_fit') : 'cover'),
-      // Spotlight: '' (off), 'me' (spotlight on me), peerId (spotlight on that peer)
       spotlight: '',
-      // Cloud recording opt-in
       recordToCloud: localStorage.getItem('panel_vc_cloud_rec') === '1',
-      // Recordings list + summary modal
       recordings: [],
       summaryModal: { open: false, recId: '', busy: false, summary: '' },
-      // WhatsApp server-side invite picker
       waInviteOpen: false,
       waInviteSearch: '',
-      callingContact: false,    // true while whatsappCallContact runs — disables the button
-      sidePanel: '',          // '' | 'chat' | 'participants'
-      settingsPopOpen: false, // dropdown at the top of the Settings button
-      // Accordion of the ⚙ popover: which groups are open.
-      // By default only quality+owner are open (smaller menu, easier to scan). Persisted.
+      callingContact: false,
+      sidePanel: '',
+      settingsPopOpen: false,
       settingsGroups: (function () {
         const def = { quality: true, share: false, recording: false, tools: false, layout: false, owner: true, view: false };
         try {
@@ -989,52 +664,33 @@ function app() {
         } catch (e) {}
         return def;
       })(),
-      audioPopOpen: false,    // microphone split
-      videoPopOpen: false,    // camera split
-      controlsVisible: true,  // auto-hide timer
+      audioPopOpen: false,
+      videoPopOpen: false,
+      controlsVisible: true,
       _idleTimer: null,
       handRaised: false,
-      peerHandsRaised: {},    // peerId -> true
-      participants: [],       // [{id, user, hand}]
-      stageFullscreen: false, // browser fullscreen API
-      // Live stats (1Hz)
+      peerHandsRaised: {},
+      participants: [],
+      stageFullscreen: false,
       stats: { bytesSentPerSec:0, bytesRecvPerSec:0, codec:'', resolution:'', framerate:0, rtt:0, packetsLost:0, connectionType:'direct' },
-      // Error feed (latest first)
       errors: [],
       busy: false,
       loaded: false,
     },
-    // 6 top-level groups + inner tabs.
-    // `page` is the ACTIVE GROUP (dashboard, system, docker, dev, security, apps, config).
-    // `tabs[group]` is the tab inside the group. Each group defaults to its most used tab.
-    // `currentView` (getter) translates that into a "legacy view" string (containers, audit, etc)
-    // so every existing x-show and query keeps working without a deep refactor.
     page: localStorage.getItem('panel_page') || 'dashboard',
     tabs: safeJSON('panel_tabs', {}),
-    // Mobile-only drawer state. The sidebar is off-canvas at ≤768px (CSS).
-    // setPage() closes it automatically; the backdrop has an @click to close.
     mobileSidebarOpen: false,
-    // Browser tab: null = not checked yet; true = service up; false = down.
     browserHealth: null,
-    // Browser state: persisted in localStorage, survives F5/logout.
-    // Each tab has 1 or 2 panes; each pane keeps its current URL (/browser/...).
     browserTabs: [],
     browserActive: null,
     browserUrlInput: '',
-    // Eager mount: after the first entry with a healthy check, keep the iframes
-    // always mounted (only hidden via x-show) so navigation state survives
-    // switching to Dashboard/Docker/etc.
     browserMounted: false,
     browserSnapTimer: null,
-    browserTitles: {},   // map "tabId:paneIdx" -> document title
-    browserClosedStack: [],            // last 10 closed tabs
-    browserLoading: {},                // "tabId:paneIdx" -> true while loading
-    browserUrlEditing: false,          // address bar being edited?
-    browserCtxMenu: { open:false, x:0, y:0, tabId:null }, // context menu
-    // Default search engine for the URL bar (when the user types something that is
-    // not a URL). DDG by default because Google jams on a datacenter IP (endless
-    // captcha, and reCAPTCHA breaks under proxies like Ultraviolet by
-    // fingerprinting). Persisted.
+    browserTitles: {},
+    browserClosedStack: [],
+    browserLoading: {},
+    browserUrlEditing: false,
+    browserCtxMenu: { open:false, x:0, y:0, tabId:null },
     browserSearchEngine: localStorage.getItem('panel_browser_search_engine') || 'ddg',
     browserSearchOpen: false,
     browserSearchEngines: {
@@ -1044,22 +700,17 @@ function app() {
       google:    { name:'Google',       url:'https://www.google.com/search?q=%s',       color:'#4285f4', letter:'G' },
     },
     stats: null,
-    procs: null,                 // {procs:[], total} — latest Process Manager snapshot
+    procs: null,
     procsQ: { name:'', user:'', cmd:'', sort:'cpu', limit:200, offset:0 },
-    procsLive: false,            // true when the /ws/procs WS is open
+    procsLive: false,
     procsWS: null,
     procsBusy: false,
-    // Zoom of the Process Manager table. Persisted locally + (optionally) on the
-    // server. It reads from localStorage first; loadUserPrefs() overwrites it with
-    // the server pref, if any, at app boot.
     procsZoom: parseFloat(localStorage.getItem('panel_procs_zoom') || '1') || 1,
-    procsLayoutDirty: false,     // true when the user changed it but has not saved it to the profile yet
-    procsLayoutSavedLocal: '',   // hash of the last saved state (to detect dirty)
-    // --- Maintenance TODOs ---
+    procsLayoutDirty: false,
+    procsLayoutSavedLocal: '',
     todos: [],
     todosSummary: { overdue:0, week:0, month:0, future:0, done:0 },
     todoForm: { open:false, t:{ title:'', notes:'', category:'custom', interval_days:0, notify_wa:false }, dueDate:'', editingId:null },
-    // --- Jira Cloud ---
     jiraConfig: { site:'', email:'', project_key:'', board_jql:'', has_token:false },
     jiraHealth: { ok:false, error:'', me:null, site:'' },
     jiraSetup:  { site:'', email:'', token:'', project_key:'' },
@@ -1071,20 +722,12 @@ function app() {
     jiraIssues: [],
     jiraJQL: '',
     jiraDragKey: null,
-    // jiraAssignableUsers: paginated list (up to 20) per project. Cached by
-    // jiraAssignableProject so we do not hammer /api/jira/users on every keystroke.
-    // jiraAssignableQuery is the live search filter in the dropdown (250ms debounce).
     jiraAssignableUsers: [],
     jiraAssignableProject: '',
     jiraAssignableQuery: '',
     jiraAssignableLoading: false,
-    // parent_key (epic child OR sub-task, the `parent` system field) and files
-    // (attachments in memory only — File objects; NEVER serialised into the draft,
-    // see saveJiraDraft/openJiraCreate). assignee_name/parent_name are transient displays.
     jiraCreate: { open:false, project_key:'', issue_type:'Task', summary:'', description:'', priority:'', due_date:'', labels_str:'', assignee_id:'', assignee_name:'', parent_key:'', files:[] },
-    // Epics of the project BEING CREATED IN (not the drawer/board — see loadJiraCreateEpics).
     jiraCreateEpics: [],
-    // Autocomplete of the parent issue for a Sub-task (picker + filter by project prefix).
     jiraCreateParent: { query:'', results:[], loading:false, name:'' },
     jiraDetail: {
       open:false, key:'', issue:null, transitions:[], comments:[], newComment:'',
@@ -1093,14 +736,8 @@ function app() {
       newLinkType:'', newLinkKey:'',
       newWorklog:{ time_spent:'', comment:'' },
     },
-    // view/filter state
     jiraView: 'board',
     jiraProjectKey: '',
-    // The quick-filter, the custom JQL and the issue search survive an F5.
-    // The whitelist is mandatory: jiraFilter feeds the switch in applyJiraFilter
-    // and a tampered localStorage would turn into an empty JQL (a blank board with
-    // explanation). 'custom' is only restored together with the jiraCustomJQL that
-    // goes with it.
     jiraFilter: (() => {
       const ok = ['all','mine','todo','inprogress','review','last7','reported','custom'];
       const v = localStorage.getItem('panel_jira_filter') || 'all';
@@ -1127,23 +764,15 @@ function app() {
     jiraPages: [],
     jiraPagesCursor: '',
     jiraPageDrawer: { open:false, id:'', title:'', body:'', web_url:'' },
-    // Column Manager + advanced ops
     jiraColumnMgr: { open:false, cols:[], editIdx:-1, draft:{ label:'', status_names_str:'', color:'border-gray-500/40' } },
     jiraColorPalette: ['border-gray-500/40','border-cyan-500/40','border-yellow-500/40','border-green-500/40','border-purple-500/40','border-orange-500/40','border-pink-500/40','border-red-500/40'],
     jiraHideDoneDays: parseInt(localStorage.getItem('jira_hide_done_days')||'0', 10),
-    // Sorting by column. Map of col.label -> { key, dir }.
-    // key: 'none'|'name'|'key'|'type'|'updated'  dir: 'asc'|'desc'.
-    // 'none' (or absent) = keeps the global JQL order (ORDER BY updated DESC).
     jiraColSort: (() => {
       try {
         const o = JSON.parse(localStorage.getItem('jira_col_sort') || '{}');
         return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
       } catch (_) { return {}; }
     })(),
-    // Display preferences for the Jira panel. fontScale scales board+list via
-    // `zoom` (0.8–1.4; 1.0 = identical to today). localStorage gives an instant
-    // response; jiraPrefsLoad() (at boot) overwrites it with the profile pref.
-    // Mirrors the jobsPrefs / jiraColSort pattern.
     jiraPrefs: (() => {
       const def = { fontScale: 1.0 };
       try {
@@ -1158,56 +787,34 @@ function app() {
     jiraAdvFields: { story_points:'', components:[], fix_versions:[], epic_link:'' },
     jiraAIBusy: false,
     jiraWorkBusy: false,
-    // --- AI prompts ---
     aiPrompts: [],
     aiPromptsLoading: false,
     aiPromptsErr: '',
-    aiPromptEdits: {},   // id → text being edited in the textarea
-    aiPromptErrors: {},  // id → [failures reported by the 422 guard]
-    aiPromptSaving: {},  // id → bool
+    aiPromptEdits: {},
+    aiPromptErrors: {},
+    aiPromptSaving: {},
 
-    // --- Jobs Queue ---
     jobs: [],
     jobsCounts: { running:0, queued:0, failed:0 },
-    // Preferences for the Jobs tab. localStorage gives an instant response;
-    // jobsPrefsLoad() (at boot) overwrites it with the pref saved in the server profile.
-    //   groupBy:  'task' (kind+args) | 'kind' | 'status' | 'none'
-    //   fontSize: 'xs' | 'sm' | 'md'  (card density)
-    //   filter*:  combinable client-side filters (status / kind / text)
     jobsPrefs: (() => {
       const def = { groupBy:'task', fontSize:'sm', filterStatus:'', filterKind:'', filterText:'' };
       try { return Object.assign(def, JSON.parse(localStorage.getItem('panel_jobs_prefs')||'{}')); } catch { return def; }
     })(),
-    jobsPrefsDirty: false, // changes when it differs from the pref saved in the profile
+    jobsPrefsDirty: false,
     jobLauncher: { open:false, kind:'docker_pull', args:{}, argsText:'' },
-    // +minimized (a pill that survives navigation/F5), +kind (correlation with the
-    // app_deploy queue), +reconnect (backoff for /ws/queue) and +_replay (the first
-    // log frame after a reconnect REPLACES the text instead of appending to it).
     jobLog: { open:false, minimized:false, id:'', status:'', progress:0, step:'', text:'', ws:null, kind:'', reconnect:{ attempts:0, timer:null, cancelled:false }, _replay:false },
-    // id of the job to re-hydrate at boot (restoreState writes it; loadJobs resolves it).
     _jobLogRestoreId: '',
-    // Live refresh only on the jobs tab and only while there is active work (5s,
-    // server data: progress/step) + a 1s clock (which only re-renders elapsed time
-    // /ETA without hitting the API). Both are guarded by page and cleared in logout().
     jobsLiveTimer: null,
     jobsClockTimer: null,
     jobsNow: Math.floor(Date.now()/1000),
-    // Open/closed state of the collapsible groups, persisted.
     jobGroupsCollapsed: (() => { try { return JSON.parse(localStorage.getItem('panel_job_groups')||'{}') || {}; } catch { return {}; } })(),
-    // --- Scheduler ---
     schedJobs: [],
-    // Server-driven catalogue of the schedulable kinds, already filtered by the
-    // authorisation of the user (GET /api/scheduler/catalog). The UI never offers a
-    // type the server would refuse. Each item: {kind,label,description,requires_primary,
-    // schedulable,args:[{name,label,type,options,required,placeholder}]}.
     schedCatalog: [],
     schedCatalogPrimary: false,
     schedCatalogLoaded: false,
-    // Search + ordering/icons for the catalogue categories.
     schedCatSearch: '',
     schedCatOrder: ['Operations','Backup & Data','Security & Audit','Monitoring','Network','Housekeeping','Notifications','Other'],
     schedCatIcons: { 'Operations':'⚙️','Backup & Data':'💾','Security & Audit':'🛡️','Monitoring':'📈','Network':'🌐','Housekeeping':'🧹','Notifications':'🔔','Other':'📦' },
-    // Quick templates (ready-made recipes that pre-fill the builder).
     schedTemplates: [
       { icon:'💾', kind:'backup_now', name:'Daily vault backup', schedule:'0 3 * * *', args:{ target:'all', retention:'7' }, desc:'Every day at 03:00, keeps 7' },
       { icon:'🔒', kind:'cert_renew', name:'Renew certificates', schedule:'30 3 * * *', args:{ cert_name:'' }, desc:'Daily at 03:30' },
@@ -1223,39 +830,23 @@ function app() {
     schedForm: {
       open:false,
       j:{ id:'', name:'', schedule:'0 3 * * *', kind:'', enabled:true, run_as_root:false, alert_on:'fail', then_kind:'', then_on:'success', notify_channels:[], notify_on:'success' },
-      args:{}, // keyed by arg.name; type=string_list is kept as raw text (1 per line) and split on save
-      thenArgs:{}, // args of the chained task (same schema)
-      sched:{ mode:'daily', everyN:15, everyUnit:'minutes', time:'03:00', weekdays:[1], dom:1 }, // builder "when"
-      dest:{ type:'local', localPath:'', remote:'', remotePath:'' }, // backup destination (custom)
+      args:{},
+      thenArgs:{},
+      sched:{ mode:'daily', everyN:15, everyUnit:'minutes', time:'03:00', weekdays:[1], dom:1 },
+      dest:{ type:'local', localPath:'', remote:'', remotePath:'' },
       preview:[], previewError:'',
     },
-    // "type it manually" mode for the chained args (name → bool).
     schedThenCustom:{},
-    // Notification channels (from the notify spine) for "tell me when it is done".
     schedNotifyChannels:[],
-    // rclone remotes (cloud) as a backup destination.
     schedRemotes:{ installed:false, list:[], loaded:false },
-    // Cache of options for the smart dropdowns (source → {groups,allowCustom}).
     schedOptions:{},
-    // args in "type it manually" mode (name → bool).
     schedCustom:{},
-    // Reusable folder browser (local VPS OR rclone remote).
     fsBrowser:{ open:false, mode:'local', remote:'', path:'/', parent:'', dirs:[], loading:false, error:'', newFolder:'', _onPick:null },
-    // Connect a cloud (creates an rclone remote straight from the UI).
     rcloneConnect:{ open:false, name:'', type:'drive', token:'', accessKey:'', secret:'', region:'', endpoint:'', provider:'', host:'', user:'', pass:'', port:'', url:'', keyFile:'', busy:false, error:'', authId:'', authUrl:'', authBusy:false },
-    // "What does this task do" info popup (the i button).
     schedInfo:{ open:false, kind:'', label:'', icon:'', description:'', details:'', useCases:[], examples:[], output:'', nextSteps:[], requiresPrimary:false },
-    // Mini history of the last runs of a schedule.
     schedHist:{ open:false, name:'', runs:[], loading:false, error:'' },
     containers: [],
-    // Distinguishes "I do not know yet" from "I know and it is empty": `containers`
-    // starts out as [] and the empty state of the dashboard has no way of telling
-    // the two apart on its own. Using `stats` as a proxy for loaded does not work
-    // loadStats() is awaited BEFORE loadContainers() in init — during that window the
-    // UI would claim "no containers" and be lying.
     containersLoaded: false,
-    // Same reasoning as containersLoaded: separate "I have not fetched yet" from
-    // "I fetched and there are none" in the empty states for volumes/networks.
     volumesLoaded: false,
     networksLoaded: false,
     images: [],
@@ -1267,71 +858,43 @@ function app() {
     pullRef: '',
     pullOut: '',
     units: [], selectedUnit:'', unitOutput:'',
-    // unitsLoaded: true only after the first read. Without it, a genuinely empty
-    // list rendered "loading…" forever (the same bug as on the dashboard).
     unitsLoaded: false,
-    // Track which content is visible (status vs journal). Lets us show a badge in
-    // the header and keeps the "Refresh status" button from calling Journal.
-    unitMode: 'status', // 'status' | 'journal'
-    // Configurable number of journal lines (it used to be hardcoded at 300).
+    unitMode: 'status',
     journalLines: parseInt(localStorage.getItem('panel_journal_lines') || '300', 10) || 300,
-    // Auto-refresh of the units list. 0=off, 5/15/30s.
     unitsAutoRefresh: parseInt(localStorage.getItem('panel_units_auto') || '0', 10) || 0,
     _unitsTimer: null,
-    // confirm() replaced by a single reusable modal.
-    // requireText/typed: "confirm by typing" mode (replaces the prompt() calls in
-    // Prune All and Reboot). requireText='' turns the text field off.
     confirmModal: { open:false, title:'', message:'', action:null, danger:false, requireText:'', typed:'' },
-    // Text input modal (askInput). Symmetric to confirmModal; replaces the native
-    // window.prompt(). submit()/validate() are set by askInput().
     askInputModal: { open:false, title:'', label:'', value:'', placeholder:'', error:'', validate:null, submit:null },
-    // Reentrancy flags (guards against double clicks). Exposed so the HTML can use
-    // :disabled — the real guard lives inside the function itself.
     schedSaveBusy: false,
     ufwBusy: false,
     pruneBusy: false,
     listening: [], connections: [],
-    // Port/connection filters. No auto-apply; reactive through the computed
-    // filteredListening()/filteredConnections() without a costly reflow.
-    // The filters survive an F5. Same pattern as the `filter` below
-    // (containers/images/units): safeJSON at boot + $watch → localStorage in
-    // init(). Object.assign preserves the shape even with old/partial localStorage.
     portsFilter: Object.assign({ proto: '', text: '' },        safeJSON('panel_ports_filter', {})),
     connsFilter: Object.assign({ proto: '', state: '', text: '' }, safeJSON('panel_conns_filter', {})),
-    connsLimit: 200, // configurable + shows "+N hidden" when the total exceeds the limit
-    portsAutoRefresh: parseInt(localStorage.getItem('panel_ports_auto') || '0', 10) || 0, // 0=off, 5/15/30s
+    connsLimit: 200,
+    portsAutoRefresh: parseInt(localStorage.getItem('panel_ports_auto') || '0', 10) || 0,
     _portsTimer: null,
-    fileLimit: 200, // cap on the entries rendered in the file explorer; "show more" raises it; reset in browseFiles
-    _scrollObservers: {}, // id -> IntersectionObserver (incremental scroll in the capped lists)
+    fileLimit: 200,
+    _scrollObservers: {},
     fileList: null, filePath:'/root', fileEdit:{path:'',content:''},
     fileSel: [],
     fileSearch: { open:false, root:'/root', name:'', content:'', max:200, hits:[] },
     fileProps: null,
     fileTrash: { open:false, entries:[] },
-    filePreview: null, // { url, name, kind }
+    filePreview: null,
     fileBusy: false,
     fileModal: { kind:'', path:'', dest:'', mode:'0644', uid:0, gid:0, rec:false, url:'', filename:'' },
     claudeData: null, cfg: null,
-    claudeBusy: false, claudeForkModel: '', // model chosen for a new session/restart
+    claudeBusy: false, claudeForkModel: '',
     claudeTermSessions: [], swapAllAccountId: 'jordan',
-    // Claude account selector per consumer + usage metrics.
     claudeAccounts: { accounts: [], consumers: [] }, claudeAcctBusy: false,
     claudeUsage: { accounts: [] }, claudeUsageBusy: false,
     claudeRates: { accounts: [] }, claudeRatesBusy: false,
-    // Model tiering by complexity (admin editor).
     aiModels: { config:{}, effective:{}, allowed:[''], defaults:{} }, aiModelsBusy:false, aiModelsSavedAt:0,
-    _nowTick: Date.now(), _nowTimer: null,  // clock for the rate-limit reset countdown
-    // AI page sub-tabs + private-ai-api admin proxy state
+    _nowTick: Date.now(), _nowTimer: null,
     aiTab: 'routing',
-    // private-ai-tokens: state of the "Tokens" sub-tab (manages private-ai-api API
-    // keys through a server-side proxy). privCreated holds the freshly created
-    // plaintext (shown exactly once); privError signals that the admin token is not
-    // configured or that the service is down.
     privTokens: [], privStatus: null, privBusy: false, privCreated: null, privError: '',
     newPrivToken: { name:'', rpm:null, tpm:null, budget:null, expiresDays:null },
-    // privConn: generator of "How to connect" examples (the private-ai-api public
-    // endpoint). baseUrl defaults to IP:9443 (matching the CN of the nginx
-    // self-signed cert). The token stays in the UI only — never embedded in the source.
     privConn: { fmt:'anthropic', lang:'curl', tls:'trust',
       baseUrl:'https://203.0.113.10:9443', token:'', model:'claude-sonnet-4-6' },
     privCertFp: 'CF:8D:31:41:B6:6E:B8:8B:60:85:C9:41:4A:7D:B8:82:E1:67:4D:2C:4D:A9:A0:40:98:7B:88:28:A2:6C:D0:47',
@@ -1340,27 +903,14 @@ function app() {
     newSecret:{key:'',value:'',group:'',type:'password',notes:''}, secretFormOpen:false, revealedSecret:{key:'',value:''},
     revealedSecretRemaining: 0, _revealTimer: null, _revealTick: null,
     audit: [],
-    // clockNowSec used to be declared as a SECOND `clockNow` in this same object
-    // literal: the repeated key made the lower `clockNow: ''` win, and the two
-    // timers (one writing an epoch in seconds, the other writing
-    // toLocaleTimeString()) fought over the same property.
-    // The result: _nowSec() received the clock string and the pending_since
-    // arithmetic turned into NaN whenever the alerts view was open. They are now
-    // distinct properties.
     history: [], alertRules: [], alertFormOpen:false, clockNowSec: 0,
     metricCatalog: [], metricSnapshot: {}, metricSnapTs: 0, metricSearch: '', ruleSeries: {},
     newRule:{name:'',metric:'sys.cpu',op:'>',threshold:80,duration:60,severity:'warning'},
-    // Unified alert builder (Trigger → Action → Destination)
     alertBuilder:{ open:false, step:1, kind:'metric', metric:'sys.cpu', op:'>', threshold:80, duration:60, rearm_margin:0, renotify_sec:0, event_type:'metric.threshold', _origin:'', _kind:'', severity:'warning', enabled:true, channels:[], name:'', description:'', editingLimit:'', editingRule:'', aiBusy:false, nameTouched:false },
-    // Alerting → WhatsApp (Prometheus/Alertmanager → POST /_internal/alert)
     alertingCfg: {enabled:false, from_user:'', chat_jid:'', min_severity:''},
     alertingUsers: [],
     alertingBusy: false,
     alertingDirty: false,
-// Event-driven notification spine (channels + rules + unified history). The
-    // *Form values are ALWAYS an object (never null) and visibility comes from
-    // *FormOpen via x-show — that avoids (a) a TypeError in x-model when "closed"
-    // and (b) the crash from mutating an x-if from inside it.
     notify: {
       channels: [], rules: [], events: [], dropped: 0,
       catalog: {event_types:[], severities:[], origins:[], kinds:[]},
@@ -1370,8 +920,6 @@ function app() {
       ruleFormOpen: false,
       dryrun: null, busy: false,
     },
-    // Presentation metadata per type_prefix (icon/tone/label/description) —
-    // enriches the raw catalogue from the backend so the UI is friendly.
     notifyMeta: {
       'job.':            {icon:'🧩', tone:'info',    short:'Any job ending', desc:'Error, completion, cancellation or interruption.'},
       'job.failed':      {icon:'❌', tone:'danger',  short:'Job failed',              desc:'When a job ends with an error.'},
@@ -1385,22 +933,6 @@ function app() {
     pwdForm:{old:'',new:''},
     filter: safeJSON('panel_filters', {containers:'',images:'',units:'',volumes:'',networks:'',compose:''}),
     detail: {open:false, id:'', name:'', tab:'overview', logs:'', inspect:'', inspectObj:null, stats:'', top:'', term:null, ws:null, logWS:null, statsWS:null},
-    // Professional tab model:
-    //   - Each tab has 1+ panes (xterm + WS + dtach session per pane)
-    //   - tab.layout is a tree: {type:'pane', paneId} OR {type:'split', dir, size, a, b}
-    //     dir = 'row' (side by side) | 'column' (stacked)
-    //   - tab.panes[] is the flat list of panes (referenced by ID inside the tree)
-    //   - tab.activePaneId is the focused pane inside the tab (the cursor blinks there, shortcuts go there)
-    //   - terms.broadcast: types into every pane of the active tab at once
-    // Terminal state — namespace-segregated.
-    //
-    // There are TWO complete instances with the same shape, one per Terminal.
-    // `this.terms` is a POINTER that points at one of them depending on
-    // `this.page`. Swapping the reference in setPage() automatically routes ALL
-    // ~127 reads/writes of `this.terms.X` in the code without having to change each
-    // one. Alpine 3 re-tracks reactive dependencies after the swap.
-    //
-    // Snapshot of the panes of the Terminal in localStorage `panel_tabs_snapshot`.
     _termsClaude: {
       panes: [], layout: null, activePane: null, _paneSeq: 0,
       broadcast: false,
@@ -1408,102 +940,42 @@ function app() {
       trackpadMode: false, _swipeStart: null, _longPressTimer: null,
       _trackpadLastEmit: 0, _trackpadAnchor: null,
     },
-    // Safe stub: Alpine evaluates reactive bindings (terms.panes, terms.activePane,
-    // the :class of activePane()) BEFORE init() runs, and init() returns early if
-    // !this.token (the login screen). Without the stub, any reactive eval blew up
-    // with "Cannot read properties of null (reading 'panes')". init() overwrites it
-    // to point at the real _termsClaude; it manages the pane namespace of the Terminal.
     terms: { panes: [], layout: null, activePane: null, _paneSeq: 0, broadcast: false },
-    // Session manager (the 🪟 Sessions button). A popup over the terminal.
     sessionMgrOpen: false,
     sessionMgr: { tab: 'sessions', sessions: [], backups: [], busy: false, expanded: {}, preview: {}, previewOpen: {}, menuOpen: null, loadError: '' },
-    // Structured "New session" form: cwd/command/account in a dropdown.
     createSess: { open: false, name: '', cwd: '', cmd: 'bash', account: '', busy: false, err: '' },
-    // Reflects whether the viewport is in mobile mode (≤768px). Made reactive by a
-    // matchMedia listener in init() that fires mobileChangeTick.
     mobileChangeTick: 0,
     _mobileMQ: null,
     paneContextMenu: { open: false, x: 0, y: 0, paneId: null },
-    // Rich right-click menu on the xterm body.
-    // - state: ref to the pane (host) or a generic state (container detail)
-    // - selection: the text selected when the menu opened
-    // - url/ip/path: detected by regex over the selection
-    // - clipboard/clipPreview: read asynchronously via navigator.clipboard.readText
-    // - hasMarks: the pane has OSC 133 marks to navigate
-    // - isPane: true for a host pane (shows the session/pane section)
     termCtxMenu: { open:false, x:0, y:0, state:null, selection:'', url:'', ip:'', path:'', clipboard:false, clipPreview:'', hasMarks:false, isPane:false, paneName:'', _markIdx:-1 },
-    // Saved workspaces (snapshot of tabs+layout+sessions). Restorable in one click.
     termWorkspaces: safeJSON('panel_term_workspaces', []),
     termWorkspacesOpen: false,
     hostTermFontSize: parseInt(localStorage.getItem('panel_term_fontsize')||'13',10),
-    // Terminal font size on mobile ONLY (independent of the desktop one) — A−/A+
-    // on mobile change this; it can go lower (min 6). _termFontSize() picks which one to use.
     hostTermFontSizeMobile: parseInt(localStorage.getItem('panel_term_fontsize_mobile')||'11',10),
     hostTermSearchOpen: false,
     hostTermSnippetsOpen: false,
     hostTermSettingsOpen: false,
     hostTermTheme: localStorage.getItem('panel_term_theme') || 'dark',
     hostTermBell: localStorage.getItem('panel_term_bell') || 'none',
-    // Cursor style/blink, persisted. block is the default, but bar/underline are
-    // popular among power users (vim style).
     hostTermCursorStyle: localStorage.getItem('panel_term_cursor_style') || 'block',
     hostTermCursorBlink: localStorage.getItem('panel_term_cursor_blink') !== '0',
-    // GPU rendering (WebGL). Default OFF: on some GPUs/drivers the WebGL glyph
-    // atlas corrupts (it renders the WRONG glyph for some characters — "faZer",
-    // "chanqes"). The DOM renderer (the default) draws real HTML text, with no
-    // atlas → immune to that failure mode. GPU becomes opt-in (performance on a
-    // huge scrollback) for people who do not hit the problem. Ligatures OFF (glyph
-    // artefacts plus low value in a terminal). See buildTerminal/loadGpuAddons.
     hostTermGpu: localStorage.getItem('panel_term_gpu') === '1',
-    // Ctrl+V pastes. It is a toggle because it conflicts with the visual-block of
-    // vim and the quoted-insert of readline; turned off, the literal ^V reaches the
-    // app again. Default ON (that was the request); Shift+Insert and Ctrl+Shift+V
-    // paste in both cases. Ctrl+C has NO toggle — it only copies when there is a
-    // selection, so it never costs the SIGINT (see the key handler).
     hostTermCtrlV: localStorage.getItem('panel_term_ctrl_v') !== '0',
     newVersionAvailable: false,
-    // Reload the tab on its own when it is hidden and the work is idle. It can be
-    // turned off — it is the only way for the tab to leave the old JS behind
-    // without the user having to notice a banner.
-    // It starts OFF. Enabled by default it reloaded the tab dozens of times a day —
-    // deploy.log records ~40-90 deploys/day, and each one marks a "new build"; a
-    // 20s alt-tab was enough to make the tab reload. Reloading is expensive (the
-    // whole document + the Alpine boot + reattaching every pane) and, on a bad
-    // link, it is the difference between working and waiting. Anyone who wants the
-    // old behaviour turns it on in the terminal preferences.
     hostTermAutoReload: localStorage.getItem('panel_term_auto_reload') === '1',
     hostTermLigatures: localStorage.getItem('panel_term_ligatures') === '1',
-    // Configurable scrollback (default 10k, cap 50k). A phone with 32GB RAM copes.
     hostTermScrollback: parseInt(localStorage.getItem('panel_term_scrollback')||'10000',10),
-    // How much of the session log the primer reloads on open — see primeAndOpen.
-    // In MiB in the settings panel; in bytes in localStorage.
     hostTermPrimerMiB: Math.round((parseInt(localStorage.getItem('panel_term_primer_bytes')||'2097152',10)||0)/1048576),
-    // Search with case sensitivity persisted
     hostTermSearchCase: localStorage.getItem('panel_term_search_case') === '1',
     hostTermSearchMatchCount: '',
-    // Pattern alerts: a regex that fires a visual notification when it shows up in the output
     hostTermAlertPattern: localStorage.getItem('panel_term_alert_pattern') || '',
-    // Predictive echo. 'auto' shows the guess only when the measured latency
-    // crosses the threshold (a good network gains nothing and would still risk a
-    // flicker); 'always' forces it; 'never' turns it off. The 60ms threshold is the
-    // same order of magnitude as the VS Code default (30ms), a little more
-    // conservative because there is a multiplexer in the path here.
-    // Screens already mounted (see _triggerViewLoaders). Starts empty: at boot only
-    // the landing screen goes in.
     _mounted: {},
-    // Claude Code versions per session. The CLI writes "Update installed · Restart
-    // to update" and the notice sits there forever without saying WHICH sessions
-    // need restarting; without this the operator has no way to act and the notice
-    // becomes permanent noise.
     claudeVer: { installed: '', outdated: 0, processes: [], open: false, loading: false, restarting: 0 },
     hostTermPredictiveEcho: localStorage.getItem('panel_term_predictive_echo') || 'auto',
     hostTermEchoThreshold: parseInt(localStorage.getItem('panel_term_echo_threshold') || '60', 10),
-    // Help overlay (Ctrl+/ or ?)
     termHelpOpen: false,
     hostNotifyEnabled: localStorage.getItem('panel_term_notify') === '1',
     hostTermStartupCmd: localStorage.getItem('panel_term_startup_cmd') || '',
-    // Shell characters that are not easy to reach on the mobile virtual keyboard.
-    // Each button on the second row of the mobile toolbar sends one char via sendKeyToActive.
     mobileSpecialChars: ['|','~','/','\\','$','*','?',':',';','.','-','_','=','"',"'",'`','&','#','@','%','!','^','<','>','(',')','[',']','{','}'],
     builtinSnippets: [
       {name:'ls -la',  cmd:'ls -la'},
@@ -1517,78 +989,27 @@ function app() {
     ],
     userSnippets: safeJSON('panel_term_snippets', []),
     recentCommands: safeJSON('panel_term_recent', []),
-    // Navigation history: legacy views visited, most recent first. Same pattern as
-    // recentCommands/panel_term_recent. It feeds the command palette when the query
-    // is empty (recents come first). Only views with a known title get in — see
-    // pushRecentView().
     recentViews: safeJSON('panel_recent_views', []),
-    // Pins/favourites of the command palette. Stable IDs for stable items only:
-    // 'page:<page>' and 'do:<do>' (paletteItemId). Persisted through panelPrefs
-    // (local cache + write-through) under the key panel_palette_pins.
     palettePins: safeJSON('panel_palette_pins', []),
     focusMode: false,
-    // chromeCollapsed: hides topbar+tabs while keeping the sidebar visible.
-    // Different from focusMode (which hides the sidebar too). Persisted in
-    // localStorage — a user who turned it on in Terminals wants it still on at the
-    // next login.
     chromeCollapsed: (() => { try { return localStorage.getItem('panel_chrome_collapsed') === '1'; } catch(_) { return false; } })(),
     chromePeek: false,
-    // tabBarH: the REAL height (px) of the #grp-tabbar tab bar, measured at runtime
-    // by _observeTabBar() (ResizeObserver + resize). 52 is the correct desktop
-    // default from frame 0 (avoids a flash). sectionTopOffset() uses this instead
-    // of the old literal 38, which overlapped the header by ~14px.
     tabBarH: 52,
-    // STT (Speech-to-Text). session=null when idle; an object with .stop when active.
-    // targetEl/targetPath are set during dictation so the text is committed to the right field.
     sttSupported: !!(window.PanelSTT && window.PanelSTT.isSupported()),
     stt: { session: null, targetElId: '', targetPath: '', baseText: '', interim: '' },
-    // Lazy mount of the Persistent Browser iframe: it only loads when the user
-    // visits the 'persistent' tab for the first time (without this the iframe loads
-    // with display:none and the noVNC client initialises its canvas at 0x0).
     brPersistentMounted: false,
-    // Mount-once/keep-alive latch for the code-server iframe (the VSCode tab).
-    // Once mounted it never unmounts — leaving the tab only hides it via CSS. No
-    // "pause" (unlike the persistent browser): the editor stays connected ALWAYS.
     codeMounted: false,
-    // Bandwidth mode of the Persistent Browser. 'normal' = quality 8/compression 2
-    // (~10–20 KB/s, crisp). 'eco' = quality 2/compression 9 (~2–5 KB/s, slightly
-    // grainy, great for reading text). HARDCODED to 'eco' at boot — every
-    // F5/reopen starts in economy mode, even if the user had clicked the high-
-    // quality option in the previous session. localStorage is NOT read here (an
-    // explicit user decision: guarantee minimum bandwidth use).
-    // The toggle still works for the duration of the current session.
     bpQuality: 'eco',
-    // Automatic pause when the browser tab loses focus (Page Visibility) or when
-    // the user switches to another section of the panel. The WS connection closes →
-    // 0 bandwidth. It reconnects in ~2s on the way back. brPersistentActive controls this.
     bpActive: false,
     bpPauseTimer: null,
-    // Multi-instance: list of available instances (discovered via /api/browser-instances)
-    // plus which one is active. Each instance has its own container/volume (isolated cookies/sessions).
     bpInstances: [],
     bpInstance: localStorage.getItem('panel_bp_instance') || 'pro',
-    // Collapsible header, to win ~60px of vertical space for the noVNC iframe. It
-    // persists across an F5 (the only reason the user hides it is productivity on a
-    // small monitor, and they do not want to hide it again every session). Same
-    // pattern as chromeCollapsed but scoped to this section only — other pages keep
-    // their normal header.
     bpHeaderHidden: false,
-    // Session bandwidth (server-authoritative — it counts everything that went
-    // through the panel proxy: API, the Persistent Browser iframe, WebSocket). It
-    // updates periodically. It can be zeroed by clicking the indicator in the status bar.
     bw: { in: 0, out: 0, since: 0 },
     bwPollTimer: null,
 
-    // ---------------- Command palette ----------------
     palette: {
       open: false, query: '', selected: 0,
-      // pages + actions; dynamic data (containers, sessions) is merged in getPaletteItems()
-      // IMPORTANT: every `hint:'g+X'` here is a CONTRACT with the key map in
-      // installGlobalHotkeys(). Announcing a g+X that is not there (or that leads to
-      // a different screen) makes the palette lie, so never edit one without the other.
-      // kw: aliases concatenated to the label at match time (getPaletteItems).
-      // They resolve synonyms/terms the label does not have: 'cleanup'->Prune,
-      // 'dev/shell'->Terminal, 'passwords'->Secrets. Accents are already handled by _norm.
       pages: [
         {label:'Dashboard',           kind:'page', page:'dashboard',  hint:'g+d', kw:'home overview panel'},
         {label:'History',           kind:'page', page:'history',    hint:'g+h', kw:'history charts series'},
@@ -1616,10 +1037,6 @@ function app() {
         {label:'Operations · Jobs (queue)',  kind:'page', page:'jobs',        hint:'g+j', kw:'queue jobs'},
         {label:'Operations · Schedules', kind:'page', page:'schedules',hint:'g+e', kw:'schedule cron recurring'},
         {label:'Operations · Git',          kind:'page', page:'git',                    kw:'versioning repo repository commit branch'},
-        // The "Nodes" entry still exists and leads to the merged screen: whoever types
-        // "nodes" in the palette is looking for the inventory, and it did not change
-        // subject, it changed address. Removing the entry would make the search fail
-        // for the word the operator has in mind.
         {label:'Operations · Nodes (on the Proxmox screen)', kind:'page', page:'proxmox', kw:'nodes inventory guest lxc qemu credential revoke turnOn turnOff console'},
         {label:'Operations · Proxmox',      kind:'page', page:'proxmox',     kw:'proxmox pve hypervisor tasks upid disks smart snapshot ram load cpu memory disk network filter health'},
         {label:'Operations · Deploy',       kind:'page', page:'deploy',      hint:'g+p', kw:'deploy paas publish release rollback apps'},
@@ -1634,8 +1051,6 @@ function app() {
         {label:'Hide / show the top bar (Ctrl+Shift+H)', kind:'action', do:'toggleChromeCollapsed'},
         {label:'Sign out',                       kind:'action', do:'logout'},
         {label:'Reload page',          kind:'action', do:'reloadPage'},
-        // Terminal actions — available from any page through the palette.
-        // They go to the ACTIVE pane of the terminal; they open the page if the user is elsewhere.
         {label:'Terminal: new pane',                     kind:'action', do:'paletteTermNewPane'},
         {label:'Terminal: clear screen',                     kind:'action', do:'paletteTermClear'},
         {label:'Terminal: reset (fixes a stuck terminal)',kind:'action', do:'paletteTermReset'},
@@ -1652,33 +1067,25 @@ function app() {
         {label:'Terminal: jump to the next prompt',        kind:'action', do:'paletteTermJumpNext'},
         {label:'Terminal: jump to the previous prompt',       kind:'action', do:'paletteTermJumpPrev'},
         {label:'Terminal: reconnect the active pane',           kind:'action', do:'paletteTermReconnect'},
-        // Jumps straight to the MFA/TOTP card in Config. There is no password change of
-        // our own (it is federated through Supabase/northwind); the only security
-        // control on the account is MFA. kw covers password/2fa/totp.
         {label:'Settings · Account security (MFA / 2FA)', kind:'action', do:'paletteOpenSecurityMFA', kw:'password password mfa 2fa totp autenticador security backup codes'},
       ],
     },
     shortcutsOpen: false,
     panelHealth: null,
-    notifications: [],       // app event history (alerts, sessions, etc.)
+    notifications: [],
     bellOpen: false,
     lastSeenNotification: parseInt(localStorage.getItem('panel_last_seen_notif') || '0', 10),
     clockNow: '',
-    sortState: safeJSON('panel_sort_state', {}),  // sort state for the tables
+    sortState: safeJSON('panel_sort_state', {}),
     sessions: [],
-// The active-sessions screen is where you check for an intrusion. A `catch →
-    // sessions=[]` rendered "no other active sessions", the SAME screen as a
-    // clean system. These three flags separate loading / error / genuinely empty.
     sessionsLoading: false,
-    sessionsLoaded: false,   // true only when the list came from the server
-    sessionsError: '',       // message shown when the read failed
-    // AdGuard (DNS filtering · Security tab)
+    sessionsLoaded: false,
+    sessionsError: '',
     adguard: {},
     adguardLoading: false,
     adguardLoaded: false,
     adguardError: '',
     _adguardTimer: null,
-    // Tunnel devices (Security tab)
     tunnelDevices: [],
     tunnelLoading: false,
     tunnelLoaded: false,
@@ -1694,14 +1101,8 @@ function app() {
     tunnelLinkVariant: 'ws',
     tunnelLinkUuid: '',
     _tunnelTimer: null,
-    deviceUsage: {},          // device name → {rate_bps, total_bytes, active_conns}
+    deviceUsage: {},
     _usageTimer: null,
-    // Data saver (Security tab)
-    // The shape has to be COMPLETE, not a {} pretending to exist. `saved:{}` was
-    // truthy and empty: every `dsStatus.saved ? dsStatus.saved.X : 0` in the index
-    // passed the guard and returned undefined — calling `.toLocaleString()` on that
-    // took the whole SPA down. The zeros mirror datasaver.Saved (Go), which always
-    // serialises all five fields.
     dsStatus: { settings:{}, saved:{ orig:0, out:0, imgs:0, reqs_cut:0, pct:0 }, bypass:[], has_ca:false },
     dsForm: { enabled:true, quality:40, maxdim:1280, strip_trackers:true, greyscale:false, video_low:true },
     callEconomy: (localStorage.getItem('panel_vc_quality') || 'economy'),
@@ -1717,11 +1118,6 @@ function app() {
     systemLogs: [],
     logTail: { path: '', ws: null, buffer: '', connected: false },
     ufw: { installed:false, enabled:false, output:'', newAction:'allow', newSpec:'' },
-    // cron.loaded/error/loading: a textarea left empty by a READ FAILURE was
-    // indistinguishable from "root has no cron at all", and Save shipped that
-    // emptiness verbatim — wiping the crontab of root. cron.serverContent keeps what
-    // the server returned, so we can detect the "I am about to write empty over
-    // something that was not empty" case.
     cron: { content: '', serverContent: null, loaded: false, loading: false, error: '', saving: false },
     composeWizardOpen: false,
     composeForm: { project_name:'', dir:'', content:'' },
@@ -1744,8 +1140,6 @@ function app() {
       github:      { label:'GitHub Light',     background:'#ffffff', foreground:'#24292e', cursor:'#0969da', selectionBackground:'#c8e1ff' },
       light:       { label:'Light (simple)',  background:'#ffffff', foreground:'#1f2937', cursor:'#2563eb', selectionBackground:'#bfdbfe' },
     },
-    // Monospaced fonts preloaded through Google Fonts (in <head>). Each entry:
-    // label + the family string used in the Terminal.fontFamily option.
     termFonts: {
       jetbrains: { label:'JetBrains Mono',  family:'"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace' },
       fira:      { label:'Fira Code',       family:'"Fira Code", ui-monospace, Menlo, Consolas, monospace' },
@@ -1755,36 +1149,16 @@ function app() {
       system:    { label:'System (fallback)',       family:'ui-monospace, "SF Mono", Menlo, Consolas, monospace' },
     },
     hostTermFont: localStorage.getItem('panel_term_font') || 'jetbrains',
-    // Key toolbar (Esc/Tab/^C/arrows) — opt-in. Default: ON on touch devices
-    // (phone/tablet) where the virtual keyboard has no such keys, OFF on desktop.
-    // The user can toggle it in the settings.
     hostMobileToolbar: (localStorage.getItem('panel_term_mobile_toolbar') ?? (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches ? '1' : '0')) === '1',
-    // ── Virtual keyboard (mobile) ─────────────────────────────────────────
-    // kbInset: height of the on-screen keyboard in px (measured via visualViewport).
-    // kbOpen: derived (kbInset>0). _wantKeyboard: the user deliberately summoned
-    // the keyboard in this focus session (tap on the pane / the ⌨ button). Without
-    // it, scroll/pane-switch taps do NOT raise the keyboard. _vvRaf: handle for the
-    // rAF debounce. See installViewportKeyboard().
     kbInset: 0,
     kbOpen: false,
     _wantKeyboard: false,
     _vvRaf: 0,
-    // ── "Big" terminal (mobile) ───────────────────────────────────────────
-    // termChromeHidden: hides the top frame (the tab bar of the group + toolbar +
-    // pills) so the terminal takes up almost the whole screen. MANUAL: hidden by the
-    // chevron button, brought back by the "peek handle" at the top. No auto-hide.
-    // Mobile + the dev page only. See hideTermChrome()/showTermChrome()/toggleTermChrome().
     termChromeHidden: false,
-    // Radial (pie) menu opened by long-press on the terminal (mobile).
     paneRadial: { open: false, x: 0, y: 0, paneId: null },
-    // Overflow bottom sheet (⋯) of the terminal toolbar (mobile).
     termMenuOpen: false,
-    // Bottom sheet of the tab/pane manager (mobile) — switch/close/rename + sessions.
     tabMgrOpen: false,
-    // "Copy" bubble for touch selection (long-press) in the mobile terminal.
     termSel: { open: false, x: 0, y: 0 },
-    // Configurable bottom bar (mobile): catalogue of buttons + the enabled list.
-    // The ⋯ (more actions) is FIXED in the markup and is not part of this. Persisted in localStorage.
     termBarCatalog: [
       { key:'aa',        icon:'Aa',     label:'Appearance & font' },
       { key:'clear',     icon:'Clear', label:'Clear the screen' },
@@ -1798,44 +1172,30 @@ function app() {
       { key:'snippets',  icon:'⌘',      label:'Snippets' },
       { key:'hide',      icon:'▾',      label:'Hide the top bar' },
     ],
-    // The key of the sessions button used to be called 'tmux'. Anyone with a bar
-    // saved from back then carries that name in localStorage; without migrating it
-    // ON READ, the button disappears from their bar (the saved list beats the
-    // default). Map it and move on.
     termBarButtons: (function(){ const DEFAULTS = ['aa','clear','reconnect','sessions','hide'];
       try { const v = JSON.parse(localStorage.getItem('panel_term_bar')||'null');
         return Array.isArray(v) ? v.map(k => k === 'tmux' ? 'sessions' : k) : DEFAULTS.slice();
       } catch(_) { return DEFAULTS.slice(); } })(),
-    // PWA: captures beforeinstallprompt so we can show a custom "Install app" button.
-    // On iOS the native prompt does not exist — we show manual instructions instead.
     pwaPrompt: null,
     pwaInstallable: false,
     pwaInstalled: window.matchMedia && window.matchMedia('(display-mode: standalone)').matches,
-    // User management
     usersList: [],
-    // usersLoaded separates "I have not fetched yet" from "I fetched and the list
-    // came back empty": without it the empty state showed "Loading…" forever (a lie).
     usersLoaded: false,
     usersModal: { open: false, mode: 'create', form: { username: '', password: '' }, loading: false, error: '' },
     abandonedOpen: false,
     abandonedSessions: [],
     pollTimer: null,
     jobsPollTimer: null,
-    deployPollTimer: null, // 5s poll of the Deploy tab while a build is active
+    deployPollTimer: null,
     statsError: null,
-    statsAt: 0, // epoch of the last successful /api/system/stats (staleness on the dashboard)
-    dockerError: null, // last fetch failure of the Docker lists (banner in the UI)
+    statsAt: 0,
+    dockerError: null,
 
-    // ---- Three states (loading / error / empty) for the silent loaders ----
-    // ROOT CAUSE: dozens of loadX() swallowed the error in an empty catch. The
-    // screen then showed an empty list or "0 running / 0 failed" — identical to a
-    // healthy system. Same pattern as loadContainers(): <ns>Loaded set in the
-    // finally + <ns>Error with the message. Handled by _loadOk/_loadErr.
     jobsLoading: false,        jobsLoaded: false,        jobsError: '',
     todosLoading: false,       todosLoaded: false,       todosError: '',
     schedJobsLoading: false,   schedJobsLoaded: false,   schedJobsError: '',
     schedNotifyChannelsLoaded: false, schedNotifyChannelsError: '',
-    schedRemotesError: '',     // schedRemotes.loaded already existed
+    schedRemotesError: '',
     panelHealthLoading: false,  panelHealthLoaded: false,  panelHealthError: '',
     systemLogsLoading: false,  systemLogsLoaded: false,  systemLogsError: '',
     ufwLoading: false,         ufwLoaded: false,         ufwError: '',
@@ -1844,22 +1204,9 @@ function app() {
     statsLoading: false,
     toasts: [],
     _toastSeq: 0,
-// Per-container transition state: id -> label ("stopping…"). It feeds aria-busy
-    // and the badge on the row while docker applies the SIGTERM grace period.
     pendingActions: {},
-    // Progress of the batch actions: a done/total bar and the honest list of items
-    // that failed, with their error message.
     bulkProgress: { done:0, total:0, label:'', running:false, fails:[] },
-    // Charts live in __panelCharts (a module-scoped Map). Removed from here to keep
-    // Alpine from wrapping Chart instances reactively — the circular refs
-    // ($context → chart) crash JSON.stringify.
 
-    // ensureAuthCookie reconciles the authentication channel: the SPA uses a Bearer
-    // token from localStorage, but same-origin iframes (the Browser tab) only
-    // authenticate by HttpOnly cookie. If the companion non-httponly flag has not
-    // been set yet (post-deploy, or a tab that migrated across versions), it fires a
-    // refresh — the backend emits the HttpOnly Set-Cookie along with the new JWT.
-    // Best-effort; a silent failure keeps the user logged in via Bearer.
     async ensureAuthCookie() {
       if (!this.token) return;
       if (/(?:^|;\s*)panel_cookie_set=1\b/.test(document.cookie)) return;
@@ -1875,31 +1222,13 @@ function app() {
     },
 
     async init() {
-      // Telemetry: third-level watchers + the stamp for the landing screen.
-      // origin='default' because the landing was not clicked — which is what keeps
-      // the Dashboard from being inflated by every login.
       try { this._telWire(); this._telHit('default'); } catch (_) {}
-      // Re-login calls init() again (handleLogin -> this.init()) and Alpine also
-      // calls it at boot. Without a guard, window/document.addEventListener
-      // (storage/beforeunload/pagehide/hashchange/visibilitychange) would be attached
-      // N times — key handlers firing N times, session refresh looping, memory leak.
-      // Idempotent: if it already initialised, it only releases the
-      // session-dependent part (token refresh + sync).
       if (this._initDone) {
         this.scheduleTokenRefresh();
         this.loadUserEmail();
         try { await this._termInitialSync(); } catch(e){ console.warn('[term-sync] re-sync failed:', e); }
         return;
       }
-      // Do NOT set _initDone here: the pre-login init (no token) fell into the
-      // !token early return further down WITH _initDone already true, so the
-      // post-login init (login() -> init()) hit the guard above and SKIPPED the
-      // poller setup (loadStats/bandwidth/jobs) → metrics frozen until you navigated.
-      // _initDone is only set once there is a token and the setup actually runs.
-      // The guest-mode landing MUST run BEFORE the !token early return — a guest
-      // without an account (entering by PIN) has an empty token in the localStorage
-      // of the main panel; their token lives in sessionStorage. Without this early
-      // detection the guest landed on the login screen.
       if (/vc_guest=1/.test(location.search || '')) {
         const t = sessionStorage.getItem('panel_vc_guest_token');
         const rid = sessionStorage.getItem('panel_vc_guest_room_id');
@@ -1920,47 +1249,28 @@ function app() {
           this.setPage('videocall', { silent: true });
           this.$nextTick(() => this.vcJoinCall(rid));
         });
-        this._initDone = true; // the guest init is complete → idempotent
+        this._initDone = true;
         return;
       }
       if (!this.token) return;
-      // Token present: from here on the full setup (listeners + pollers) runs. Mark
-      // _initDone only now, so the post-login init executes everything.
       this._initDone = true;
       await this.ensureAuthCookie();
       this.scheduleTokenRefresh();
       this._wireOpportunisticRefresh();
-      // Booting with a token restored from localStorage that may already be near or
-      // past exp (reopening the browser after hours): renew NOW, before the pollers,
-      // so we do not trigger the first 401 (api() still self-heals, but this avoids
-      // even the "session expired" toast in the common case).
       this._maybeRefreshSoon(60 * 60 * 1000);
-      // Loads the mapped email from /me in the background.
       this.loadUserEmail();
-      // User prefs (saved layout): overrides the defaults if the server has a pref.
       this.procsLayoutLoad();
-      // Measures the real height of the tab bar: sectionTopOffset() now uses
-      // this.tabBarH instead of the old literal 38, which overlapped the header.
       this._observeTabBar();
 
 
-      // Point this.terms at the Claude namespace by default (the ordinary Terminal page).
       this.terms = this._termsClaude;
 
-      // Initial sync with the server: backfill savedAt → pull → additive reconcile
-      // → push diffs. The reconcile NEVER destroys local data — if the server is
-      // empty and local has data, local is migrated to the server (initial migration).
-      // Tombstones (local + remote) keep deleted workspaces from resurrecting.
       try {
         await this._termInitialSync();
       } catch(e){ console.warn('[term-sync] initial sync failed:', e); }
 
-      // Storage event: another tab of the SAME browser changed workspaces → reflect
-      // it in the UI without needing an F5. Snapshots are not reloaded because panes
-      // already mounted must not be unmounted without user action.
       window.addEventListener('storage', (ev) => {
         if (!ev.key) return;
-        // Per-user namespacing: the real key is "panel_u_<user>_term_workspaces"
         if (ev.key.endsWith('_term_workspaces') || ev.key === this._termWorkspacesKey) {
           try {
             const list = JSON.parse(ev.newValue || '[]') || [];
@@ -1969,22 +1279,11 @@ function app() {
         }
       });
 
-      // Restore the terminal panes BEFORE setting the page. restoreState reads the
-      // snapshot of the Terminal.
-      // This matters because setPage('terminal') schedules openHostTerminal through
-      // $nextTick; without it, openHostTerminal would see 0 panes and create a
-      // "main" one, overwriting the snapshot. Correct order: restoreState → setPage.
       this.restoreState();
 
-      // Makes sure the latest state is saved before the browser closes/reloads —
-      // beforeunload for desktop, pagehide for mobile (iOS Safari does not fire
-      // beforeunload reliably). Both call saveState() synchronously into localStorage
-      // (which does not block the unload). _termFlushAllOnUnload uses fetch keepalive
-      // to push to the server — it survives the tab closing without needing sendBeacon.
       window.addEventListener('beforeunload', (e) => {
         try { this.saveState(); } catch(_){}
         try { this._termFlushAllOnUnload(); } catch(_){}
-        // Warns before discarding an edited, unsaved deploy env.
         if (this.deploy.env.dirty) { e.preventDefault(); e.returnValue=''; }
       });
       window.addEventListener('pagehide', () => {
@@ -1992,23 +1291,15 @@ function app() {
         try { this._termFlushAllOnUnload(); } catch(_){}
       });
 
-      // Magic-link invite landing: URL hash like #videocall=join&token=XXX.
       if (/^#videocall=join/.test(location.hash || '')) {
         setTimeout(() => this.vcConsumeInviteFromHash(), 50);
       }
 
-      // (The guest-mode landing is already handled at the top of init — before the token check.)
-
-      // Migration: 'docs' moved out of Operations into Dev, and 'prompts' became a
-      // sub-tab of AI. Resets stale localStorage so we do not land on an orphaned
-      // Operations tab.
       if (this.tabs.operations === 'docs' || this.tabs.operations === 'prompts') {
         this.tabs.operations = 'tasks';
         try { localStorage.setItem('panel_tabs', JSON.stringify(this.tabs)); } catch(_){}
       }
 
-      // Migration: the 'terminals' group was renamed to 'dev'. Rewrites the saved
-      // state (panel_page / panel_tabs) so we do not land on an orphaned page.
       if (this.page === 'terminals') { this.page = 'dev'; try { localStorage.setItem('panel_page', 'dev'); } catch(_){} }
       if (this.tabs && this.tabs.terminals !== undefined) {
         if (this.tabs.dev === undefined) this.tabs.dev = this.tabs.terminals;
@@ -2016,41 +1307,19 @@ function app() {
         try { localStorage.setItem('panel_tabs', JSON.stringify(this.tabs)); } catch(_){}
       }
 
-      // URL hash → page (deep link). Supports '#group:tab' (e.g. '#docker:images')
-      // and legacy views ('#containers'). When a hash exists, IT wins — localStorage
-      // only decides the initial state when the URL arrives without a hash.
-      // (See _applyHashFromURL: a hash without ':tab' falls back to GROUP_DEFAULTS,
-      //  not to the tab localStorage remembered.)
       const rawHash = location.hash || '';
-      // A video-call magic link is not navigation and the token lives in the hash —
-      // normalising the URL here would erase the token before vcConsumeInviteFromHash.
       const isMagicHash = rawHash.indexOf('=') >= 0 || rawHash.indexOf('&') >= 0;
       this._bootHadHashNav = this._applyHashFromURL(rawHash) || isMagicHash;
-      // Normalises the current URL and guarantees a base entry with a hash in the history.
-      // replaceState (not push): normalising is not user navigation.
       if (!isMagicHash) this._navSyncHistory('replace');
       this._updateTitle();
 
-      // The Back/Forward of the browser. popstate restores page/tab from the hash
-      // WITHOUT reloading the application — dtach panes and WebSockets survive.
-      // _applyHashFromURL runs with _navApplying=true, so setPage/setTab do not
-      // rewrite the history: popstate must NOT trigger pushState (no loop).
       window.addEventListener('popstate', () => { this._applyHashFromURL(location.hash); });
-      // hashchange covers hand-editing the URL in the address bar. On a hash
-      // navigation the browser fires both popstate AND hashchange; applying it twice
-      // is harmless (idempotent and it does not write to the history).
       window.addEventListener('hashchange', () => { this._applyHashFromURL(location.hash); });
-      // Reconciles local<->server prefs (server-wins) now that Alpine is up.
       try { this._prefsReconcile(); } catch(_){}
 
-      // Page Visibility: pauses the Persistent Browser when the tab of the panel loses
-      // focus. Drops bandwidth to 0 when you minimise or switch windows.
-      // A 10s grace period so quick switches do not disconnect.
       document.addEventListener('visibilitychange', () => {
         if (this.currentView !== 'persistent' || !this.brPersistentMounted) return;
         if (document.hidden) {
-          // Always cancel before rescheduling. Without this, rapid visibility changes
-          // piled up timers in parallel.
           if (this.bpPauseTimer) { clearTimeout(this.bpPauseTimer); this.bpPauseTimer = null; }
           this.bpPauseTimer = setTimeout(() => { this.bpActive = false; this.bpPauseTimer = null; }, 10000);
         } else {
@@ -2059,32 +1328,18 @@ function app() {
         }
       });
 
-      // Lightweight loads always: stats (sidebar metrics), config (theme/pref),
-      // health (sidebar dot), containers (Docker badge count). Everything
-      // else is lazy — _triggerViewLoaders kicks in when user navigates to
-      // the relevant page. Before this, boot fired 7 parallel requests
-      // even if landing page was Jira → 6 wasted round-trips per login.
       await this.loadStats();
       this.loadConfig();
       this.loadPanelHealth();
-      this.loadContainers(); // cheap; needed for sidebar badge
-      // Trigger page-specific loaders for whichever page we land on.
+      this.loadContainers();
       this._triggerViewLoaders(this.currentView);
-      // Loads the Jira config at startup so we know whether to show setup or the kanban + badge.
       this.loadJiraConfig().then(() => { if (this.jiraConfig.has_token) this.loadJiraHealth(); });
-// Loads jobs at startup to feed the "running" badge. 15s poll because new jobs can appear (scheduler).
       this.loadJobs();
-      this.jobsPrefsLoad(); // restores the Jobs tab prefs from the profile
-      this.loadClaudeVersions(); // which sessions are on an old version of Claude
-      this.jiraColSortLoad(); // restores the per-column sorting of the kanban
-      this.jiraPrefsLoad(); // restores the fontScale of the Jira panel from the profile
-      // Store interval id so logout()/cleanup can clear it — leaking
-      // setIntervals after token expiry pile up 401s in the console.
+      this.jobsPrefsLoad();
+      this.loadClaudeVersions();
+      this.jiraColSortLoad();
+      this.jiraPrefsLoad();
       this.jobsPollTimer = setInterval(() => { if (document.hidden || this._skipPoll('jobs')) return; if (this.currentView !== 'jobs') this.loadJobs(); }, 15*1000);
-      // On the jobs tab itself the 15s poll above is skipped (it would reset
-      // jobsCounts on every tick). This 5s timer only reloads while there is visible
-      // active work — bars/steps advance under the eyes of the user. The 1s clock only
-      // updates elapsed time/ETA locally (zero requests).
       this.jobsLiveTimer = setInterval(() => {
         if (document.hidden || this._skipPoll('jobsLive')) return;
         if (this.currentView === 'jobs' && (this.jobsCounts.running > 0 || this.jobsCounts.queued > 0)) this.loadJobs();
@@ -2093,51 +1348,34 @@ function app() {
         if (document.hidden) return;
         if (this.currentView === 'jobs') this.jobsNow = Math.floor(Date.now()/1000);
       }, 1000);
-      // WhatsApp: load initial status + chats, then start WS for live events.
       this.whatsappInit();
-      // Bandwidth poll: every 10s (it used to be 3s = 20 req/min just for a counter)
-      // and paused while the tab is in the background. Increments accumulate on the server.
       this.loadBandwidth();
       this.bwPollTimer = setInterval(() => { if (!document.hidden && !this._skipPoll('bandwidth')) this.loadBandwidth(); }, 10000);
       this.pollTimer = setInterval(()=>{ if(document.hidden || this._skipPoll('stats')) return; this.loadStats(); if(['containers','dashboard'].includes(this.page)) this.loadContainers(); if(this.currentView==='alerts') { this.loadMetricSnapshot(); if(!this.alertFormOpen) this.loadAlertRules(); } if(this.currentView==='history') { this.loadAlertRules(); this.loadHistory().then(()=>this.drawCharts()); } }, 5000);
-      // A 1s clock only for the live countdown on the state pills (Alerts tab).
-      // It touches a single reactive integer; it does not refetch or re-render lists.
       this.clockAlertsTimer = setInterval(()=>{ if(document.hidden) return; if(this.currentView==='alerts') this.clockNowSec = Math.floor(Date.now()/1000); }, 1000);
 
-      // Backoff is the right strategy for a network that went down, but it is the
-      // wrong one for the instant it COMES BACK — you could sit idle for seconds
-      // waiting on a timer while the connection was already up. The browser knows the
-      // exact moment that happens; we just have to listen. The same applies to a tab
-      // coming back to the foreground, where the timers were choked by background throttling.
       window.addEventListener('online', () => this._reconnectPanesNow());
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) { this._reconnectPanesNow(); this._reconcileSizes(); }
       });
-      // `focus` covers the reported case: switching the WINDOW (not the tab). In an
-      // installed app/PWA visibilitychange does not always fire, but focus does.
       window.addEventListener('focus', () => this._reconcileSizes());
 
-      // Mobile listener: invalidates the isMobile() cache and re-renders the terminal
-      // if the viewport crosses the breakpoint (rotation, devtools, resize).
       try {
         this._mobileMQ = window.matchMedia('(max-width: 767.98px)');
         const onChange = () => {
           this.mobileChangeTick++;
-          // Mobile font ≠ desktop font: re-apply the right size when crossing the breakpoint.
           const fs = this._termFontSize();
           (this.terms.panes||[]).forEach(p => { if (p.term) { p.term.options.fontSize = fs; this._fitSoon(p.fit); } });
           if (this.page === 'dev') this.$nextTick(()=>this.renderPaneLayout());
         };
         if (this._mobileMQ.addEventListener) this._mobileMQ.addEventListener('change', onChange);
-        else if (this._mobileMQ.addListener) this._mobileMQ.addListener(onChange); // old Safari
+        else if (this._mobileMQ.addListener) this._mobileMQ.addListener(onChange);
       } catch(e){}
 
-      // Global listeners (palette, g+letter shortcuts)
       this.installGlobalHotkeys();
       this.installTerminalHotkeys();
       this.installPWA();
       this.installViewportKeyboard();
-      // Clears bar buttons that no longer exist in the catalogue (e.g. 'tabs', removed).
       try {
         const valid = new Set((this.termBarCatalog||[]).map(b => b.key));
         const cleaned = (this.termBarButtons||[]).filter(k => valid.has(k));
@@ -2147,10 +1385,6 @@ function app() {
         }
       } catch(_){}
 
-      // Filter persistence — re-saved whenever the object is mutated.
-      // `filter` (containers/images/units) already persisted; ports, connections and
-      // the Jira filters were lost on F5. Same pattern for all of them — $watch here
-      // + a read in the initial state.
       if (this.$watch) {
         const persist = (key) => (v) => {
           try { localStorage.setItem(key, JSON.stringify(v||{})); } catch(e){}
@@ -2166,16 +1400,7 @@ function app() {
         this.$watch('jiraSearch',    persistStr('panel_jira_search'));
       }
 
-      // Probe the STT backend early (at boot) — it used to run only in vcInit, so
-      // the Whisper toggle showed up disabled in the settings until you joined a call.
-      // Migration: if localStorage holds the old default (web-speech), we prefer
-      // whisper-local when that backend is available. A user who explicitly chose
-      // whisper-local is left alone. To force web-speech, click it manually.
       try {
-        // Re-derive the caption gating from the real capability (synchronous,
-        // idempotent). At data-init PanelSTT may not have loaded yet; by here it has.
-        // subtitlesNoEngine=true only when no STT driver exists at all — that drives
-        // the honest message in the UI.
         if (window.PanelSTT && window.PanelSTT.availableBackends) {
           const n = window.PanelSTT.availableBackends().length;
           this.videocall.subtitlesSupported = n > 0;
@@ -2193,58 +1418,39 @@ function app() {
         }
       } catch(_) {}
 
-      // Clock for the status bar — the timer ID is kept so logout can clean it up.
       this.clockNow = new Date().toLocaleTimeString();
       this.clockTimer = setInterval(()=>{ if(document.hidden) return; this.clockNow = new Date().toLocaleTimeString(); }, 1000);
 
-      // Listens for server alerts and turns them into notifications
       this.pollNotifications();
       this.notificationTimer = setInterval(()=>{ if(!document.hidden && !this._skipPoll('notif')) this.pollNotifications(); }, 15000);
 
-      // Polls the in-app inbox and pushes new events to the bell in the bar.
       this.loadNotifyInbox();
       this.notifyInboxTimer = setInterval(()=>{ if(!document.hidden && !this._skipPoll('inbox')) this.loadNotifyInbox(); }, 20000);
 
-      // Presence: listens for "incoming-call" when someone joins a room you are a
-      // member of. Does not block if the module did not load — the feature is optional.
       if (window.PanelPresence) {
         window.PanelPresence.connect({
           token: this.token,
           onIncoming: (msg) => this.vcOnIncoming(msg),
-          // Ring CONTROL events: "I answered on another device" and "the call is over".
-          // They are what close the modal by themselves — before, it stayed on screen forever.
           onEvent: (msg) => this.vcOnPresenceEvent(msg),
           onState: (ev) => { this.videocall.presenceConnected = (ev.type === 'connected'); },
         });
       }
-      // Safety net: dropping a file OUTSIDE a known drop zone navigated the tab to
-      // that file and killed the SPA (every pane, all the state). Installed once, on
-      // the bubble phase, and it only acts if nobody else handled the event.
       this._installGlobalDropGuard();
-      // Install QoL handlers (shortcuts + drag/drop/paste). Idempotent.
       this.vcInstallShortcuts();
       this.vcInstallDropHandlers();
       this.vcInstallSpotlightClicks();
-      // A reactive tick every 30s — updates videocall._nowTick so the UI reacts to
-      // expirations (PIN, invite). It does not poll the server, only the local clock.
       this.vcTickTimer = setInterval(() => { this.videocall._nowTick = Math.floor(Date.now() / 1000); }, 30000);
 
-      // Push: refreshes the state so the UI shows the correct toggle. It does not
-      // force a subscribe — the user opts in through the toggle (which only calls
-      // requestPermission when they click, avoiding an unwanted prompt).
       if (window.PanelPush && window.PanelPush.isSupported()) {
         window.PanelPush.getState(this.token).then(st => {
           this.videocall.pushSubscribed = !!st.subscribed;
           this.videocall.pushPermission = st.permission || 'default';
         }).catch(()=>{});
-        // SW message → the user answered through a push notification, so open the call.
         window.PanelPush.onAcceptMessage((roomId) => {
           this.setPage('videocall');
           this.$nextTick(() => this.vcJoinCall(roomId));
         });
       }
-      // The "#videocall=accept&room=X" deep link comes from the SW that opened a new
-      // tab. Detected in the initial hash.
       const accMatch = (location.hash || '').match(/[#&]videocall=accept[^&]*[&]room=([^&]+)/);
       if (accMatch) {
         setTimeout(() => {
@@ -2255,147 +1461,115 @@ function app() {
       }
     },
 
-    // Valid pages — used by the hash router to validate deep links.
     validPages: ['dashboard','history','alerts','containers','compose','images','volumes','networks','prune','processes','ports','systemd','files','terminal','browser','persistent','ai','users','secrets','audit','maintenance','jobs','schedules','prompts','config','whatsapp','videocall'],
 
-    // Set of inline SVG icons in DUOTONE style (Phosphor-like): each icon has a
-    // translucent filled shape (`.icon-fill`) under a crisp stroke
-    // (`.icon-stroke`). Colours are inherited through `currentColor`, with the glow
-    // on the .active state applied by CSS — a modern, Linear/Vercel-like look.
     icons: (function(){
-      // Helper: generates a duotone SVG with named layers for the CSS to style.
       const D = (fill, stroke) =>
         '<svg viewBox="0 0 24 24" overflow="visible">' +
           '<g class="icon-fill">' + fill + '</g>' +
           '<g class="icon-stroke">' + stroke + '</g>' +
         '</svg>';
       return {
-        // Dashboard — 4 squares; the bottom-right one is the "highlight"
         dashboard: D(
           '<rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/>',
           '<rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/>'
         ),
-        // History — a line chart with a fill under the curve
         history: D(
           '<path d="M3 21V3h.5v18zM3.5 17l5-5 3 3 4-5 4 4v6h-16z"/>',
           '<path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/><circle cx="11" cy="13" r="1.2"/><circle cx="14" cy="16" r="1.2"/><circle cx="19" cy="7" r="1.2"/>'
         ),
-        // Alerts — a bell with the fill in the hollow part
         alerts: D(
           '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9z"/>',
           '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9z"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>'
         ),
-        // Containers — an isometric cube with a filled front face
         containers: D(
           '<path d="M12 12L4 7.5v8.5l8 4.5z"/>',
           '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7L12 12l8.7-5"/><path d="M12 22V12"/>'
         ),
-        // Compose — 3 stacked layers, the middle one filled
         compose: D(
           '<path d="M2 12l10 5 10-5-10-5z"/>',
           '<path d="M12 2l10 5-10 5L2 7z"/><path d="M2 12l10 5 10-5"/><path d="M2 17l10 5 10-5"/>'
         ),
-        // Images — a frame with a sun/mountain
         images: D(
           '<rect x="3" y="3" width="18" height="18" rx="2.5"/>',
           '<rect x="3" y="3" width="18" height="18" rx="2.5"/><circle cx="8.5" cy="9" r="1.7"/><path d="M21 16l-5-5-7 7"/>'
         ),
-        // Volumes — a cylinder/disk
         volumes: D(
           '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v6c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
           '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>'
         ),
-        // Networks — 3 connected nodes
         networks: D(
           '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>',
           '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>'
         ),
-        // Prune — a bin with a lid
         prune: D(
           '<path d="M5 8h14l-1.5 12a2 2 0 0 1-2 1.9H8.5a2 2 0 0 1-2-1.9z"/>',
           '<path d="M3 6h18"/><path d="M19 6l-1.4 14.1a2 2 0 0 1-2 1.9H8.4a2 2 0 0 1-2-1.9L5 6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/>'
         ),
-        // Processes — a CPU chip
         processes: D(
           '<rect x="4" y="4" width="16" height="16" rx="2.5"/>',
           '<rect x="4" y="4" width="16" height="16" rx="2.5"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/>'
         ),
-        // Ports — a lightning bolt
         ports: D(
           '<path d="M13 2L4 13.5h7.5L11 22l9-12h-7.5z"/>',
           '<path d="M13 2L4 13.5h7.5L11 22l9-12h-7.5z"/>'
         ),
-        // Systemd — a cog with a central circle
         systemd: D(
           '<circle cx="12" cy="12" r="9"/>',
           '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'
         ),
-        // Files — a folder with a tab
         files: D(
           '<path d="M3 7a2 2 0 0 1 2-2h4.5l2 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
           '<path d="M3 7a2 2 0 0 1 2-2h4.5l2 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'
         ),
-        // Terminal — a chevron + a prompt line
         terminal: D(
           '<rect x="2" y="4" width="20" height="16" rx="2.5"/>',
           '<rect x="2" y="4" width="20" height="16" rx="2.5"/><path d="M6 9l3 3-3 3"/><path d="M13 15h5"/>'
         ),
-        // Secrets — a modern padlock
         secrets: D(
           '<rect x="4" y="11" width="16" height="11" rx="2.5"/>',
           '<rect x="4" y="11" width="16" height="11" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/><circle cx="12" cy="16.5" r="1.4"/>'
         ),
-        // Users — two figures
         users: D(
           '<circle cx="9" cy="8" r="3.2"/><path d="M3 21v-1a6 6 0 0 1 12 0v1"/>',
           '<circle cx="9" cy="8" r="3.2"/><path d="M3 21v-1a6 6 0 0 1 12 0v1"/><circle cx="17" cy="10" r="2.5"/><path d="M14 21v-.5a4 4 0 0 1 7-2.5"/>'
         ),
-        // Audit — a document with lines
         audit: D(
           '<path d="M5 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-5-5z"/>',
           '<path d="M5 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-5-5z"/><path d="M14 3v5h5"/><path d="M7 13h8M7 17h6"/>'
         ),
-        // Claude — a 4-point sparkle
         claude: D(
           '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
           '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z"/>'
         ),
-        // Private AI — a server rack with a light
         ai: D(
           '<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/>',
           '<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><circle cx="7" cy="7.5" r=".7"/><circle cx="7" cy="16.5" r=".7"/><path d="M11 7.5h7M11 16.5h7"/>'
         ),
-        // Operations — a wrench crossed with a screwdriver (maintenance/ops)
         operations: D(
           '<path d="M14.7 6.3a4.5 4.5 0 0 1 0 6.4l-7 7a2 2 0 0 1-2.8-2.8l7-7a4.5 4.5 0 0 1 6.4 0z"/>',
           '<path d="M14.7 6.3a4.5 4.5 0 0 1 0 6.4l-7 7a2 2 0 0 1-2.8-2.8l7-7a4.5 4.5 0 0 1 6.4 0z"/><path d="M18 2l-3 3 2 2 3-3-2-2z"/><circle cx="6" cy="18" r=".8"/>'
         ),
-        // Agents — a cpu/chip
         agents: D(
           '<rect x="7" y="7" width="10" height="10" rx="1.5"/>',
           '<rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 4v3M14 4v3M10 17v3M14 17v3M4 10h3M4 14h3M17 10h3M17 14h3"/>'
         ),
-        // Deploy — a rocket (publish)
         deploy: D(
           '<path d="M12 3c3 0 6 3.4 6 8.2L15 14H9L6 11.2C6 6.4 9 3 12 3z"/>',
           '<path d="M12 3c3 0 6 3.4 6 8.2L15 14H9L6 11.2C6 6.4 9 3 12 3z"/><circle cx="12" cy="9" r="1.6"/><path d="M9 16l-1.5 4M15 16l1.5 4"/>'
         ),
-        // Config — horizontal sliders
         config: D(
           '<circle cx="9" cy="7" r="2.4"/><circle cx="16" cy="17" r="2.4"/>',
           '<path d="M3 7h4M11 7h10"/><circle cx="9" cy="7" r="2.4"/><path d="M3 17h11M18 17h3"/><circle cx="16" cy="17" r="2.4"/>'
         ),
-        // Browser — a globe with an orbit (egress tunnelled through the VPS)
         browser: D(
           '<circle cx="12" cy="12" r="9"/>',
           '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.5 3.8 5.6 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.6-3.8-9S9.5 5.5 12 3z"/>'
         ),
-        // Persistent Browser — a pin (persistent sessions / pinned tabs)
         persistent: D(
           '<path d="M12 2v6"/><path d="M12 22v-7"/><circle cx="12" cy="11" r="3"/><path d="M9 8h6"/>',
           '<path d="M12 2v6"/><path d="M12 22v-7"/><circle cx="12" cy="11" r="3"/><path d="M9 8h6"/>'
         ),
-        // Video call — a video camera with a recording tag beside it
         videocall: D(
           '<rect x="2" y="7" width="13" height="10" rx="2"/>',
           '<rect x="2" y="7" width="13" height="10" rx="2"/><path d="M15 10l6-3v10l-6-3z"/><circle cx="6" cy="12" r="1.2"/>'
@@ -2407,11 +1581,6 @@ function app() {
       };
     })(),
 
-    // Tab system + 6-group navigation.
-    // Mapping LEGACY view → [group, tab].
-    // ═══════════ GAMES (game-server page) ═══════════════════════
-    // Single state object for the group. `sel` is the server in focus — Overview,
-    // Worlds, Settings, Console and Backups all operate on ONE server at a time.
     games: {
       servers: [], loaded: false,
       selId: '',
@@ -2426,23 +1595,17 @@ function app() {
       rawText: '', rawPath: '', rawOpen: false,
       inv: [], invOpen: false, upName: '', upFile: null,
       sched: {}, durUnit: {}, enumCustom: {},
-      // Trainer (tl-agent). trToggles/trValues = the editable DESIRED state;
-      // trApplied = what the agent confirmed in the memory of the server.
       trAvailable: false, trLoaded: false, trLoading: false, trSaving: false,
       trDirty: false, trCatalog: [], trApplied: [], trToggles: [], trValues: {},
       trEnabled: false, trPolicyOK: false, trPolicyReason: '',
       logs: '', logFilter: '', logTail: '200', logsAuto: false,
       backups: [], backupsLoaded: false,
-      // Short in-memory series for the sparklines — avoids keeping state on the server.
       hist: { t: [], cpu: [], mem: [] },
       busy: '',
     },
     _gamesLogsTimer: null,
     _gamesPollTimer: null,
 
-    // api() returns the raw Response and does NOT throw on 4xx/5xx; this wrapper
-    // centralises .ok + .json() and turns {"error": msg} into an exception, so the
-    // try/catch blocks below are actually worth something.
     async _gsFetch(path, opts) {
       const r = await this.api(path, opts);
       if (!r.ok) {
@@ -2453,16 +1616,9 @@ function app() {
       return await r.json();
     },
 
-    // The server in focus is DERIVED from selId, never stored.
-    // Storing the object (games.sel = servers.find(...)) puts a reference to a
-    // proxy of the state itself inside the reactive state; Alpine re-wraps proxy
-    // over proxy and blows up with "Maximum call stack size exceeded" as soon as
-    // the list stops being empty.
     gsSel() {
       return (this.games.servers || []).find(s => s.id === this.games.selId) || null;
     },
-
-    // ---------- loading ----------
 
     async loadGames() {
       try {
@@ -2483,7 +1639,6 @@ function app() {
       catch (_) { this.games.conn = {}; }
     },
 
-    // A 60-sample ring (5 min at 5s). It only grows while the page is open.
     _gsPushHist() {
       const s = this.gsSel();
       if (!s || s.state !== 'running') return;
@@ -2492,7 +1647,6 @@ function app() {
       while (h.t.length > 60) { h.t.shift(); h.cpu.shift(); h.mem.shift(); }
     },
 
-    // Management shortcuts shown on the card of each server.
     gsManageTabs: [
       { tab: 'gs-worlds', label: 'Worlds', help: 'Switch the active world, duplicate, rename, download and upload.' },
       { tab: 'gs-settings', label: 'Settings', help: 'Game rules, name, slots, password, schedules and the raw file.' },
@@ -2501,20 +1655,14 @@ function app() {
       { tab: 'gs-backups', label: 'Backups', help: 'Create, download and restore save backups.' },
     ],
 
-    // Puts the server in focus and goes STRAIGHT to the requested tab. This used to
-    // land on the dashboard, which manages nothing — the button promised one thing
-    // and delivered another.
     manageGame(s, tab) {
       this.selectGameById(s.id);
       this.setTab(tab);
     },
 
     selectGameById(id) {
-      // Same server: invalidate nothing. Without this guard, clicking the same card
-      // again threw away everything that was already loaded.
       if (this.games.selId === id) return;
       this.games.selId = id;
-      // Invalidate what belonged to the previous server so we do not show data from another one.
       this.games.conn = {}; this.games.showPass = false;
       this.games.worlds = []; this.games.worldsLoaded = false;
       this.games.settings = null; this.games.settingsLoaded = false;
@@ -2527,8 +1675,6 @@ function app() {
       this.games.logs = ''; this.games.backups = []; this.games.backupsLoaded = false;
       this.games.hist = { t: [], cpu: [], mem: [] };
     },
-
-    // ---------- presentation helpers ----------
 
     gsStateLabel(s) {
       if (!s) return '—';
@@ -2571,7 +1717,6 @@ function app() {
       return '';
     },
 
-    // An honest signal: what is wrong shows up as text, not as green.
     gsIssues() {
       const out = [];
       const s = this.gsSel();
@@ -2608,8 +1753,6 @@ function app() {
       if (w.modified) bits.push('modified ' + this.timeAgo(Date.parse(w.modified) / 1000));
       return bits.join(' · ');
     },
-
-    // ---------- actions ----------
 
     async gameAction(s, action) {
       const labels = { start: 'start', stop: 'stop', restart: 'restart' };
@@ -2729,8 +1872,6 @@ function app() {
       } finally { this.games.busy = ''; }
     },
 
-    // ---------- settings ----------
-
     async loadGameSettings() {
       if (!this.games.selId) return;
       try {
@@ -2763,8 +1904,6 @@ function app() {
     },
     resetGameSettings() { this.games.gsDraft = JSON.parse(JSON.stringify(this.games.gsOrig || {})); },
 
-    // Groups the ~35 fields by subject. An unknown key falls into "Other", so a
-    // new game never loses a field.
     GS_SETTING_GROUPS: [
       { title: 'Player',      match: /^player|^shroudTime|^foodBuff|^enableStarving|^fromHunger|^tombstone/ },
       { title: 'Progression',  match: /^experience|^perk/ },
@@ -2787,7 +1926,6 @@ function app() {
       return out;
     },
 
-    // ── Server-side history, build and raw editor ──────────────────────────
     async loadGameHistory() {
       if (!this.games.selId) return;
       try {
@@ -2856,7 +1994,6 @@ function app() {
       }
     },
     async saveGameRaw() {
-      // Validated on the client too: a typo becomes a warning right away, with no round trip to the server.
       try { JSON.parse(this.games.rawText); }
       catch (e) { this.showToast('Invalid JSON: ' + e.message, 'err'); return; }
       if (!(await this.confirmAsync('Write the file and restart the server?\n\n'
@@ -2893,7 +2030,6 @@ function app() {
       }
     },
 
-    // ── Access: privilege groups and bans ──────────────────────────────────
     gsGroupPerms: [
       { k: 'canKickBan', label: 'Kick and ban', help: 'Allows kicking and banning other players from inside the game.' },
       { k: 'canAccessInventories', label: 'Open other players chests', help: 'Allows access to the chests and inventories of other players.' },
@@ -2903,7 +2039,6 @@ function app() {
     ],
 
     gsGenPass() {
-      // No visual ambiguity (0/O, 1/l) — the password will be typed by hand in the game.
       const A = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
       const n = new Uint32Array(14);
       (window.crypto || window.msCrypto).getRandomValues(n);
@@ -2981,15 +2116,12 @@ function app() {
       }
     },
 
-    // ── Schedules / retention (compose) ────────────────────────────────────
     async loadGameRuntime() {
       if (!this.games.selId) return;
       try {
         const d = await this._gsFetch('/api/gameservers/' + this.games.selId + '/runtime');
         this.games.rt = d.options || [];
         this.games.rtOrig = JSON.parse(JSON.stringify(this.games.rt));
-        // Cron -> dropdowns. An expression the screen cannot represent falls back to
-        // 'custom' and the original text is preserved.
         this.games.sched = {};
         this.games.rt.forEach(o => { if (o.kind === 'cron') this.games.sched[o.key] = this.gsCronParse(o.value); });
       } catch (e) {
@@ -3023,7 +2155,6 @@ function app() {
       } finally { this.games.busy = ''; }
     },
 
-    // ── SERVER options (outside gameSettings) ──────────────────────────────
     srvBoolsDef: [
       { k: 'enableVoiceChat', label: 'Voice chat', help: 'Enables voice chat on the server.' },
       { k: 'enableTextChat', label: 'Text chat', help: 'Enables text chat on the server.' },
@@ -3118,11 +2249,6 @@ function app() {
       } finally { this.games.busy = ''; }
     },
 
-    // ── Friendly scheduling ────────────────────────────────────────────────
-    // Cron is machine language. The screen works with frequency + time of day; the
-    // expression still exists underneath (and shows up in advanced mode, for anyone
-    // who wants something the dropdowns do not cover).
-
     GS_DOW: [
       { v: 0, label: 'Sunday' }, { v: 1, label: 'Monday' }, { v: 2, label: 'Tuesday' },
       { v: 3, label: 'Wednesday' }, { v: 4, label: 'Thursday' }, { v: 5, label: 'Friday' },
@@ -3130,9 +2256,6 @@ function app() {
     ],
     GS_EVERY: [1, 2, 3, 4, 6, 8, 12],
 
-    // Reads a cron expression and returns the state of the dropdowns. If the
-    // expression is something the screen cannot represent, it falls back to 'custom'
-    // and preserves the text — it never overwrites what the user had.
     gsCronParse(expr) {
       const o = { mode: 'off', every: 6, hour: 6, minute: 0, dow: 1, raw: expr || '' };
       const e = (expr || '').trim();
@@ -3164,7 +2287,6 @@ function app() {
       }
     },
 
-    // A plain-language sentence describing what was assembled — the user can check it without knowing cron.
     gsCronLabel(o) {
       if (!o) return '';
       const hh = String(o.hour).padStart(2, '0'), mm = String(o.minute).padStart(2, '0');
@@ -3184,16 +2306,12 @@ function app() {
       if (!this.games.sched[key]) this.games.sched[key] = this.gsCronParse('');
       return this.games.sched[key];
     },
-    // Reflects the dropdowns back into the list that goes to the server.
     gsSyncCron(key) {
       const o = this.games.sched[key];
       const rt = (this.games.rt || []).find(x => x.key === key);
       if (rt && o) rt.value = this.gsCronBuild(o);
     },
 
-    // ── Durations ──────────────────────────────────────────────────────────
-    // The game stores them in nanoseconds. Nobody thinks in nanoseconds: the screen
-    // shows a number + a unit and converts at write time.
     GS_UNITS: [
       { u: 'min', label: 'minutes', ns: 60000000000 },
       { u: 'hour', label: 'hours', ns: 3600000000000 },
@@ -3202,7 +2320,6 @@ function app() {
 
     gsDurUnit(k) {
       if (!this.games.durUnit[k]) {
-        // Picks the unit that makes the number most readable.
         const v = Number(this.games.gsDraft[k] || 0);
         this.games.durUnit[k] = v >= 3600000000000 ? 'hour' : 'min';
       }
@@ -3219,7 +2336,6 @@ function app() {
       this.games.gsDraft[k] = Math.round(n * this.gsUnitNs(this.gsDurUnit(k)));
     },
     gsDurRange(k) {
-      // The range the game accepts, where known.
       if (k === 'fromHungerToStarving') return { min: 5, max: 20, unit: 'min',
         hint: 'The game accepts 5 to 20 minutes.' };
       return null;
@@ -3232,7 +2348,6 @@ function app() {
       return '';
     },
 
-    // ── Field type ─────────────────────────────────────────────────────────
     gsFieldKind(k) {
       const m = this.gsMeta(k);
       const v = this.games.gsDraft[k];
@@ -3242,14 +2357,9 @@ function app() {
       if (typeof v === 'number') return m.def === 1 || m.def === 0.5 ? 'multiplier' : 'number';
       return 'text';
     },
-    // Multiplier shortcuts: the real case is "I want double", not "I want 2.0".
     GS_MULT: [0.5, 1, 2, 5, 10],
     gsSetMult(k, v) { this.games.gsDraft[k] = v; },
 
-    // Complete sets, with the tokens confirmed by strings in enshrouded_server.exe
-    // (VeryEasy/VeryHard/Few/None/Disabled all exist in the binary). Where the
-    // field->set assignment is not likely, the list still offers what makes sense
-    // and the "other..." mode covers the rest.
     GS_ENUM_OPTS: {
       fishingDifficulty:        ['VeryEasy', 'Easy', 'Normal', 'Hard', 'VeryHard'],
       weatherFrequency:         ['Disabled', 'Rare', 'Normal', 'Often', 'Always'],
@@ -3261,28 +2371,16 @@ function app() {
       voiceChatMode:            ['Proximity', 'Global', 'Local'],
     },
 
-    // An enum select always includes the CURRENT value, even when it is not in the
-    // list — so a valid value I never discovered is never lost on save.
     gsEnumOpts(k) {
       const opts = (this.GS_ENUM_OPTS[k] || this.gsMeta(k).opts || []).slice();
       const cur = this.games.gsDraft[k];
       if (cur && !opts.includes(cur)) opts.unshift(cur);
       return opts;
     },
-    // Escape hatch: if none of the options fit, the field becomes free text.
     gsEnumCustom(k) { return !!this.games.enumCustom[k]; },
     gsToggleEnumCustom(k) { this.games.enumCustom[k] = !this.games.enumCustom[k]; },
 
-    // ── Game settings metadata ─────────────────────────────────────────────
-    // `def` = the default of the game, taken from the enshrouded_server.json that the
-    // server ITSELF generated on its first boot (not from third-party docs).
-    // `opts` = values extracted with strings from enshrouded_server.exe. Some
-    // tokens appear contiguously in the binary (high confidence), others are
-    // scattered around the engine and there is no way to prove which field they
-    // belong to — which is why the UI uses a datalist (it suggests, it does not
-    // forbid): a valid value I did not discover can still be typed in.
     GS_META: {
-      // — Player —
       playerHealthFactor:      { def: 1, help: 'Multiplies the player maximum health. 2 = double health.' },
       playerManaFactor:        { def: 1, help: 'Multiplies the player maximum mana.' },
       playerStaminaFactor:     { def: 1, help: 'Multiplies maximum stamina (running, gliding, attacking).' },
@@ -3295,14 +2393,12 @@ function app() {
       tombstoneMode:           { def: 'AddBackpackMaterials', opts: ['Everything', 'AddBackpackMaterials', 'NoTombstone'],
                                  help: 'What is left on the tombstone when you die. Everything = everything drops; AddBackpackMaterials = backpack materials only; NoTombstone = nothing is lost.' },
 
-      // — Progression —
       experienceCombatFactor:  { def: 1, help: 'Multiplies XP gained in combat. No known cap — 5 was accepted without clamping.' },
       experienceMiningFactor:  { def: 1, help: 'Multiplies XP gained from mining and gathering.' },
       experienceExplorationQuestsFactor: { def: 1, help: 'Multiplies XP from exploration and quests.' },
       perkCostFactor:          { def: 1, help: 'Multiplies the cost of upgrading perks. Lower = cheaper.' },
       perkUpgradeRecyclingFactor: { def: 0.5, help: 'Fraction refunded when recycling a perk. 0.5 = half comes back.' },
 
-      // — Items & World —
       enableDurability:        { def: true, help: 'If disabled, weapons and gear never break.' },
       miningDamageFactor:      { def: 1, help: 'Speed of breaking blocks and ores.' },
       plantGrowthSpeedFactor:  { def: 1, help: 'Growth speed of crops.' },
@@ -3318,7 +2414,6 @@ function app() {
       curseModifier:           { def: 'Normal', opts: ['Disabled', 'Easy', 'Normal', 'Hard'],
                                  help: 'Intensity of the curse effect.' },
 
-      // — Enemies —
       enemyDamageFactor:       { def: 1, help: 'Multiplies the damage enemies deal.' },
       enemyHealthFactor:       { def: 1, help: 'Multiplies enemy health.' },
       enemyStaminaFactor:      { def: 1, help: 'Multiplies enemy stamina (attack frequency).' },
@@ -3344,7 +2439,6 @@ function app() {
     },
     gsOpts(k) { return this.gsMeta(k).opts || []; },
 
-    // Nanoseconds are unreadable: show the equivalent in minutes alongside.
     gsFmtVal(k, v) {
       const m = this.gsMeta(k);
       if (m.unit === 'ns' && typeof v === 'number' && v > 0) {
@@ -3376,11 +2470,6 @@ function app() {
       if (m.def === undefined) return;
       this.games.gsDraft[k] = m.def;
     },
-    // Resets ALL fields to the default of the game (in the draft only — it still has to be saved).
-    // ── Trainer (tl-agent) ─────────────────────────────────────────────────
-    // The screen separates DESIRED from APPLIED on purpose: a toggle saying "on"
-    // while the memory of the server is clean would be a lie. When the two diverge, it
-    // shows why instead of leaving the user to guess.
 
     async loadGameTrainer() {
       const s = this.gsSel();
@@ -3395,8 +2484,6 @@ function app() {
         this.games.trApplied = d.applied || [];
         this.games.trPolicyOK = !!d.policyOK;
         this.games.trPolicyReason = d.policyReason || '';
-        // Does not overwrite an edit in progress: reloading underneath the user and
-        // erasing what they just ticked was a real bug in the Access tab.
         if (this.games.trDirty) return;
         const des = d.desired || {};
         this.games.trEnabled = !!des.enabled;
@@ -3407,7 +2494,6 @@ function app() {
       }
     },
 
-    // Categories in the order that makes sense to a player, not alphabetically.
     gameTrainerCategories() {
       const order = ['Player', 'Damage & Defense', 'Inventory', 'Statistics'];
       const cats = [];
@@ -3433,8 +2519,6 @@ function app() {
       return v === undefined ? 0 : v;
     },
 
-    // "Active" = the agent confirmed it in memory. For the numeric ones the value is
-    // hosted by the umbrella, so it is the umbrella that has to be installed.
     gameTrainerApplied(c) {
       if (c.valueType === 'numeric' && c.linkTo && c.linkTo !== c.id) {
         return this.games.trApplied.indexOf(c.linkTo) >= 0
@@ -3443,7 +2527,6 @@ function app() {
       return this.games.trApplied.indexOf(c.id) >= 0;
     },
 
-    // Requested but not applied yet — worth calling out visually.
     gameTrainerPending(c) {
       const request = c.valueType === 'toggle'
         ? this.gameTrainerIsOn(c.id)
@@ -3519,8 +2602,6 @@ function app() {
         if (!this.gsIsDefault(k)) changed++;
         this.gsResetDefault(k);
       }
-      // Honest feedback: saying how many fields have NO known default avoids the
-      // impression that the button ignored part of the screen for no reason.
       const extra = noDefault ? (' · ' + noDefault + ' with no known default, kept') : '';
       this.showToast(changed + ' field(s) returned to the default' + extra + ' — review and save', '');
     },
@@ -3589,8 +2670,6 @@ function app() {
       } finally { this.games.busy = ''; }
     },
 
-    // ---------- console ----------
-
     async loadGameLogs() {
       if (!this.games.selId) return;
       try {
@@ -3622,7 +2701,6 @@ function app() {
       clearInterval(this._gamesLogsTimer);
       if (this.games.logsAuto) {
         this._gamesLogsTimer = setInterval(() => {
-          // Visibility guard: do not pollute a backgrounded tab.
           if (!document.hidden && this.currentView === 'gameconsole') this.loadGameLogs();
         }, 5000);
       }
@@ -3648,16 +2726,10 @@ function app() {
       }
     },
 
-    // ---------- charts ----------
-    // Chart.js loads on demand (_ensureChart works around the AMD define in the
-    // monaco loader). Updated in place with update('none'), like the rest of the app
-    // does — recreating the chart on every tick is the house anti-pattern.
     async gsDrawCharts() {
       if (!(await this._ensureChart())) return;
       this.$nextTick(() => {
         const sm = this.games.samples || [];
-        // Read the colour from the computed TOKEN rather than a raw hex: that way the
-        // chart follows the light/dark theme like the rest of the UI.
         const tok = (n, fb) => {
           const v = getComputedStyle(document.documentElement).getPropertyValue(n).trim();
           return v || fb;
@@ -3694,17 +2766,12 @@ function app() {
             },
           }));
         };
-        // Plain copies: handing the reactive array of Alpine to a third-party lib that
-        // keeps and mutates it is the same class of bug as the duplicated state that
-        // caused the stack overflow.
         mk('gs-chart-cpu', sm.map(p => p.cpu), cSuccess, '%');
         mk('gs-chart-mem', sm.map(p => p.mem), cAccent, ' MB');
         mk('gs-chart-players', sm.map(p => p.players), cWarn, ' player(s)');
       });
     },
 
-    // ---------- per-tab orchestration ----------
-    // Called by _triggerViewLoaders (page/tab switch, deep link and hash restore).
     async refreshGamesTab() {
       if (this.page !== 'games') return;
       if (!this.games.loaded) await this.loadGames();
@@ -3712,7 +2779,6 @@ function app() {
 
       clearInterval(this._gamesPollTimer);
       if (v === 'gamedash' || v === 'gameservers') {
-        // A 5s poll only on the tabs that show live state.
         this._gamesPollTimer = setInterval(() => {
           if (!document.hidden && this.page === 'games') {
             this.loadGames().then(() => { if (this.currentView === 'gamedash') this.gsDrawCharts(); });
@@ -3732,8 +2798,6 @@ function app() {
       if (v === 'gameservers') this.loadGames();
       if (v === 'gameworlds') this.loadGameWorlds();
       if (v === 'gamesettings') {
-        // Re-read from disk on every visit — unless there is a pending change, which
-        // would be discarded without warning.
         if (this.gameSettingsDirtyCount() === 0) this.loadGameSettings();
         if (this.gsSrvDirtyCount() === 0) this.loadGameServerCfg();
         if (this.gsRtDirty() === 0) this.loadGameRuntime();
@@ -3768,9 +2832,6 @@ function app() {
       secrets:           ['security', 'secrets'],
       sessions:          ['security', 'sessions'],
       network:              ['security', 'network'],
-      // AdGuard + Devices + Data saver were merged into a single tab. The old keys
-      // become ALIASES → old links/favourites/palette entries land on the unified tab
-      // (same pattern as nodes→proxmox). Deleting them would send the old ones nowhere.
       adguard:           ['security', 'network'],
       devices:      ['security', 'network'],
       savings:          ['security', 'network'],
@@ -3781,11 +2842,6 @@ function app() {
       graphs:            ['dev', 'graphs'],
       code:              ['dev', 'code'],
       git:               ['operations', 'git'],
-      // 🔴 `nodes` was NOT deleted, and that is the point.
-      // The Nodes tab was MERGED into the Proxmox tab, but old links, favourites,
-      // memorised shortcuts and the palette entry all still ask for `nodes`.
-      // Deleting the key would send every one of them nowhere; here they land on the
-      // screen that inherited the content.
       nodes:             ['operations', 'proxmox'],
       proxmox:           ['operations', 'proxmox'],
       deploy:            ['operations', 'deploy'],
@@ -3802,7 +2858,6 @@ function app() {
       gamebackups:       ['games', 'gs-backups'],
       gametrainer:       ['games', 'gs-trainer'],
     },
-    // Default tab per group (used when entering group without specific tab).
     GROUP_DEFAULTS: {
       system: 'history',
       docker: 'containers',
@@ -3812,32 +2867,14 @@ function app() {
       operations: 'tasks',
       games: 'gs-dash',
     },
-    // sectionTopOffset: the height of the "chrome" (peek bar OR tab bar) that
-    // stays sticky at the top of <main>. Fullbleed sections
-    // (terminal/whatsapp/videocall/persistent) use position:absolute and set
-    // `top: <offset>px` to occupy EXACTLY the usable space below that chrome. The
-    // values have to match the real CSS:
-    //   .peek-bar height = 14px (when chromeCollapsed=true)
-    //   tab bar = MEASURED at runtime (this.tabBarH, via _observeTabBar) — no
-    //     longer the literal 38: the real height is ~52px on desktop / ~57px when
-    //     narrow (py-1.5 + tab-btn + border) and varies with font density/width.
-    //     The fixed 38 left ~14px of the header behind the bar (overlap).
-    //   neither = 0
     sectionTopOffset() {
-      // "Big" mobile terminal: top chrome hidden → the section sticks to the top.
       if (this.isMobile() && this.page === 'dev' && this.termChromeHidden) return 0;
       if (this.chromeCollapsed && !this.focusMode && !this.guestMode) return 14;
-      // Persistent Browser in hidden mode: zero the offset so the iframe pulls up to
-      // the top; the internal peek bar of the section takes the place of the tabs row.
       if (this.page === 'apps' && this.tabs.apps === 'persistent' && this.bpHeaderHidden) return 0;
       const groupsWithTabs = ['system', 'docker', 'dev', 'security', 'apps', 'operations', 'games'];
-      if (groupsWithTabs.includes(this.page)) return this.tabBarH || 52; // measured; 52 = desktop fallback
+      if (groupsWithTabs.includes(this.page)) return this.tabBarH || 52;
       return 0;
     },
-    // _observeTabBar: measures the real height of #grp-tabbar and keeps
-    // this.tabBarH in sync when font density/width change. The offsetHeight>0 guard
-    // makes sure it does NOT overwrite the default when x-show hides the bar
-    // (chromeCollapsed) — on that branch sectionTopOffset already returns 14 first.
     _observeTabBar() {
       const measure = () => {
         const bar = document.getElementById('grp-tabbar');
@@ -3851,21 +2888,6 @@ function app() {
       }
       window.addEventListener('resize', measure);
     },
-    // Tab → legacy view (the inverse of PAGE_REMAP, indexed by group+tab).
-    //
-    // 🔴 The inverse of PAGE_REMAP is NOT a function: more than one key can point
-    // at the same (group, tab). Today `nodes` and `proxmox` both point at
-    // ['operations','proxmox'], because the Nodes tab was MERGED into Proxmox and the
-    // legacy alias has to survive so that old links, favourites, memorised
-    // shortcuts and the command-palette entry keep landing somewhere.
-    //
-    // Scanning and returning the first match made the answer depend on the WRITE
-    // ORDER of the keys of the object — which is an accident, not a contract. Because
-    // `nodes` was written before `proxmox`, the Proxmox tab resolved to
-    // currentView='nodes', no <section x-show> matched, and the screen came up BLACK.
-    //
-    // Rule: the CANONICAL key of a tab is the one with the SAME NAME as the tab.
-    // Aliases are the fallback. Deterministic and immune to reordering the map.
     tabToView(group, tab) {
       const canonical = this.PAGE_REMAP[tab];
       if (canonical && canonical[0] === group && canonical[1] === tab) return tab;
@@ -3874,8 +2896,6 @@ function app() {
       }
       return group;
     },
-    // currentView is the legacy string ('containers', 'audit', etc) derived from the
-    // current page + tab. Every `x-show="currentView==='X'"` in the HTML uses it.
     get currentView() {
       const tab = this.tabs[this.page];
       if (this.GROUP_DEFAULTS[this.page]) {
@@ -3883,37 +2903,16 @@ function app() {
       }
       return this.page;
     },
-    // ---------------- Browser history ----------------
-    // Before, EVERY navigation used replaceState: the history never grew, so a
-    // single Alt+← left the whole application and took down the dtach panes +
-    // WebSockets. Now user-initiated navigation pushes (pushState) and popstate
-    // restores page/tab without reloading.
-    //
-    // _navApplying = true while we are restoring state coming from popstate /
-    // hashchange / boot. While it is on, setPage/setTab do NOT write to the history
-    // — that is what prevents the popstate → pushState → popstate loop.
     _navApplying: false,
-    // Pending third-level deep link (a container to open after boot).
     _pendingContainerDeepLink: null,
-    // Canonical hash for the current state: '#group:tab' when the group has tabs,
-    // '#page' when it stands alone (dashboard/config).
     _navHash() {
       const tab = this.tabs[this.page];
       let h = '#' + this.page + (tab && this.GROUP_DEFAULTS[this.page] ? ':' + tab : '');
-      // Third level: a container opened under docker/containers becomes
-      // '#docker:containers/<cid>:<subtab>'. It only uses ':' and '/' (never '=' or
-      // '&', so it cannot collide with the video-call magic-link guard).
       if (this.detail && this.detail.open && this.detail.id && this.page === 'docker' && tab === 'containers') {
         h += '/' + String(this.detail.id).slice(0, 12) + ':' + (this.detail.tab || 'overview');
       }
       return h;
     },
-    // mode 'push'    = user-initiated navigation → push an entry.
-    // mode 'replace' = normalise the current URL (boot, '#docker' → '#docker:containers').
-    // In both: if the hash did not change, nothing is written. That guarantees that
-    // a render, repeated clicks on the same tab and a redundant setPage('terminal')
-    // (used by several palette actions) do not pile up entries — otherwise Back
-    // would need N clicks to leave a single screen.
     _navSyncHistory(mode) {
       if (this._navApplying) return;
       try {
@@ -3923,26 +2922,13 @@ function app() {
         else                    history.pushState({ panelNav: h }, '', h);
       } catch(_){}
     },
-    // Hash → state. The hash is AUTHORITATIVE: when it exists, it beats
-    // localStorage. Before, '#docker' fell into the setPage of the group and the tab
-    // came from localStorage — a shared deep link opened the wrong screen. Now a hash
-    // without ':tab' uses the GROUP_DEFAULTS of the group (deterministic).
-    // It NEVER writes to the history (it runs with _navApplying on) → no loop.
-    // Returns false for hashes that are not page navigation (magic links).
     _applyHashFromURL(raw) {
       const h = (raw || '').replace(/^#/, '');
       if (!h) return false;
-      // '#videocall=join&token=…' and '#videocall=accept&room=…' are magic links, not
-      // navigation. vcConsumeInviteFromHash consumes them — do not touch.
       if (h.indexOf('=') >= 0 || h.indexOf('&') >= 0) return false;
-      // Grammar: '#group:tab' (2 levels) or '#docker:containers/<cid>:<subtab>'
-      // (3 levels). The third-level selection is attached to the tab with a '/'.
       let [grp, tabRaw, sub] = h.split(':');
       if (!grp) return false;
-      // COMPAT: the 'terminals' group was renamed to 'dev'. Saved links
-      // (#terminals:code) still resolve — a READ-side alias.
       if (grp === 'terminals') grp = 'dev';
-      // Third level: separates the real tab from the container selection ('containers/<cid>').
       let tab = tabRaw, sel = null;
       if (tabRaw && tabRaw.indexOf('/') >= 0) {
         const i = tabRaw.indexOf('/');
@@ -3952,22 +2938,13 @@ function app() {
       this._navApplying = true;
       try {
         if (!this.PAGE_REMAP[grp] && this.GROUP_DEFAULTS[grp]) {
-          // A GROUP hash ('#docker' or '#docker:images'). The tab has to be pinned BEFORE
-          // setPage: setPage fires _triggerViewLoaders which reads currentView, and with
-          // the old tab still in place that would load the wrong screen before loading
-          // the right one (a wasted round trip).
           this.tabs[grp] = tab || this.GROUP_DEFAULTS[grp];
           this._prefPersist('panel_tabs', JSON.stringify(this.tabs));
         }
-        // For PAGE_REMAP ('#containers') and standalone pages ('#dashboard') setPage
-        // already sorts it out on its own.
         this.setPage(grp, { silent: true });
       } finally {
         this._navApplying = false;
       }
-      // Reapply the third segment — open the container and the sub-tab. It runs
-      // OUTSIDE _navApplying so openContainer can (re)normalise the hash afterwards;
-      // since the hash already matches, _navSyncHistory becomes a no-op (idempotent).
       if (sel && grp === 'docker' && tab === 'containers') {
         this._pendingContainerDeepLink = { sel: sel, sub: sub || 'overview' };
         this._applyPendingContainerDeepLink(0);
@@ -3977,9 +2954,6 @@ function app() {
       this._updateTitle();
       return true;
     },
-    // _applyPendingContainerDeepLink: opens the container from a third-level deep
-    // link. The containers may not be loaded yet at boot, so it fires
-    // loadContainers() and polls briefly until the container shows up.
     _applyPendingContainerDeepLink(attempt) {
       attempt = attempt || 0;
       const p = this._pendingContainerDeepLink;
@@ -4005,10 +2979,6 @@ function app() {
         this._pendingContainerDeepLink = null;
       }
     },
-    // ---------------- document.title ----------------
-    // Label per legacy view (the same key as currentView). No entry → falls back to
-    // the group/page name. With several browser tabs open you can tell which is
-    // which, and the browser history becomes navigable.
     VIEW_TITLES: {
       dashboard:    'Dashboard',
       config:       'Settings',
@@ -4127,9 +3097,6 @@ function app() {
       proxmox:      'operations.proxmox',
       config:       'config',
     },
-    // The 29 sub-actions — a screen inside a screen, which is where the hidden
-    // maintenance cost lives (blame, reflog, the Jira worklog). A literal list on
-    // purpose: the front end NEVER emits an id outside it.
     TEL_SUB: [
       'dev.ai.agents','dev.ai.prompts','dev.ai.routing','dev.ai.tokens','dev.ai.usage',
       'operations.tasks.jira.board','operations.tasks.jira.backlog',
@@ -4147,10 +3114,6 @@ function app() {
     _telScreen() {
       try { return this.TEL_IDS[this.currentView] || ''; } catch (_) { return ''; }
     },
-    // origin: 'default' when the screen appeared without a click (a hash/popstate/
-    // boot restore — which is the case of the Dashboard, the landing of every login),
-    // 'nav' when it was operator navigation. It preserves the raw data: whether to
-    // count the Dashboard or not is a decision for the report, not the collection.
     _telHit(origin) {
       try {
         const id = this._telScreen();
@@ -4158,20 +3121,6 @@ function app() {
         this._telSub(this._telSubCurrent());
       } catch (_) {}
     },
-    // The measurement bias this method exists to correct: the third-level $watch
-    // handlers only fire when the state CHANGES. Entering Dev -> AI with aiTab
-    // already on 'routing' (the default) would NEVER emit `dev.ai.routing` — and
-    // triage would conclude that the default sub-tab of every screen is dead, which is
-    // exactly the inverse reading of what happened. On entering the view we also
-    // emit the third level that is VISIBLE at that instant.
-    //
-    // Only the cases where the third level IS in fact what is on screen on entry:
-    //   ai         -> the AI page always shows a sub-tab
-    //   maintenance -> Jira always shows either the board or the backlog
-    //   containers -> only when a container is OPEN (otherwise the list has no tab)
-    // `git` is deliberately left out: its default view is 'changes', which is not a
-    // canonical sub-action, and prView='list' only means something with the PR panel
-    // open. There, only the $watch handlers count.
     _telSubCurrent() {
       try {
         const v = this.currentView;
@@ -4190,9 +3139,6 @@ function app() {
         window.tel.hit(id, 'nav');
       } catch (_) {}
     },
-    // The third-level states of this fork. This is where the 29 sub-actions really
-    // exist: the VPS panel is the one with Jira, complete Git, per-container Docker
-    // and Dev -> AI.
     _telWire() {
       if (this._telWired) return;
       this._telWired = true;
@@ -4213,24 +3159,15 @@ function app() {
         document.title = (label ? label + ' — ' : '') + 'Server Control Panel';
       } catch(_){}
     },
-    // Single write point for the navigation prefs (page/tab). Programmatic
-    // navigation (hash/popstate/reconcile, which runs with _navApplying=true) only
-    // updates the CACHE - it does not write through, so a deep link or a Back press
-    // does not rewrite the "initial view" saved on the server. A user click
-    // (_navApplying=false) does write through.
     _prefPersist(key, val) {
       if (this._navApplying) window.panelPrefs.setLocal(key, val);
       else window.panelPrefs.set(key, val);
     },
-    // Local<->server reconciliation at boot (server-wins). Runs asynchronously once
-    // Alpine is up - the synchronous theme read at boot has already painted the
-    // screen, so reapplying the theme here only happens if ANOTHER device changed it.
     async _prefsReconcile() {
       if (!this.token) return;
       let server = {};
       try { server = await window.panelPrefs.pull(); } catch(_) { server = {}; }
       server = server || {};
-      // Theme: server-wins. Reapplied only if it differs (avoids a pointless repaint / flash).
       const st = server['panel_theme'];
       if (st === 'light' || st === 'dark') {
         if (st !== window.panelPrefs.get('panel_theme')) {
@@ -4238,9 +3175,6 @@ function app() {
           try { window.panelTheme.apply(st); } catch(_){}
         }
       }
-      // Active tabs per group: server-wins in the cache; merged into the groups that
-      // are NOT the current page (do not switch the visible tab out from under the
-      // user). Runs BEFORE boot navigation so the tab of the destination page is included too.
       const stabs = server['panel_tabs'];
       if (typeof stabs === 'string' && stabs) {
         window.panelPrefs.setLocal('panel_tabs', stabs);
@@ -4249,8 +3183,6 @@ function app() {
           for (const g in obj) { if (g !== this.page && this.GROUP_DEFAULTS[g]) this.tabs[g] = obj[g]; }
         } catch(_){}
       }
-      // Initial view (page): server-wins in the cache. It navigates live only if boot
-      // did NOT come from a deep link/magic hash - the hash outranks the saved pref.
       const sp = server['panel_page'];
       if (typeof sp === 'string' && sp) {
         window.panelPrefs.setLocal('panel_page', sp);
@@ -4260,7 +3192,6 @@ function app() {
           try { this.setPage(sp, { silent: true }); } finally { this._navApplying = false; }
         }
       }
-      // One-shot migration: a key only in localStorage -> pushed to the server once.
       try {
         if (!localStorage.getItem('panel_prefs_migrated')) {
           window.panelPrefs.SYNCED.forEach(function(k){
@@ -4272,8 +3203,6 @@ function app() {
         }
       } catch(_){}
     },
-    // setTab changes only the tab inside the current group (without changing page).
-    // opts.replace = true → normalises the URL without pushing (internal use).
     setTab(tab, opts) {
       opts = opts || {};
       if (!this.GROUP_DEFAULTS[this.page]) return;
@@ -4282,13 +3211,11 @@ function app() {
       this._navSyncHistory(opts.replace ? 'replace' : 'push');
       this._updateTitle();
       if (!opts.replace) this.pushRecentView(this.currentView);
-      // Reapplies the loader logic of the legacy view when the tab changes.
       this._triggerViewLoaders(this.currentView);
       this._telHit('nav');
     },
     setPage(p, opts) {
       opts = opts || {};
-      // Remap legacy view → group+tab. setPage('containers') → page='docker', tabs.docker='containers'
       if (this.PAGE_REMAP[p]) {
         const [group, tab] = this.PAGE_REMAP[p];
         this.tabs[group] = tab;
@@ -4299,24 +3226,13 @@ function app() {
       if (!allowed.includes(p)) p = 'dashboard';
       this.page = p;
       this._prefPersist('panel_page', p);
-      // Close the mobile drawer when navigating.
       if (this.mobileSidebarOpen) this.mobileSidebarOpen = false;
-      // Close any overlay drawers/modals left open from previous page —
-      // without this, navigating away from Jira with the detail modal
-      // open left the modal stuck rendered over the new page (z-50).
       if (this.jiraDetail && this.jiraDetail.open) this.closeJiraDetail();
       if (this.jiraCreate && this.jiraCreate.open) this.jiraCreate.open = false;
       if (this.jiraPageDrawer && this.jiraPageDrawer.open) this.jiraPageDrawer.open = false;
       if (this.jiraColumnMgr && this.jiraColumnMgr.open) this.jiraColumnMgr.open = false;
-      // Navigating MINIMISES the log (it becomes a pill) instead of discarding it;
-      // actually closing it is still the × button on the modal/pill (closeJobLog).
       if (this.jobLog && this.jobLog.open) this.minimizeJobLog();
-      // Stop live WS streams that don't belong to the new page.
       if (this.procsLive && p !== 'operations') this.procsStop();
-      // URL hash: #group:tab for a group, #page when standalone.
-      // opts.silent  → do not touch the history (a restore coming from hash/popstate).
-      // opts.replace → normalise the current URL without pushing.
-      // default      → user navigation: push an entry.
       if (!opts.silent) this._navSyncHistory(opts.replace ? 'replace' : 'push');
       this._updateTitle();
       if (!opts.silent) this.pushRecentView(this.currentView);
@@ -4325,13 +3241,6 @@ function app() {
     },
     _triggerViewLoaders(p, opts) {
       opts = opts || {};
-      // Mount latch. The heaviest screens live inside a <template
-      // x-if="_mounted.X">, so the browser does not build their DOM and Alpine does
-      // not scan their directives until the first visit: boot stops paying for
-      // screens nobody opened (that is ~195 KB of markup and thousands of nodes).
-      // The latch NEVER goes back to false — it is the same pattern as codeMounted:
-      // once mounted, the screen stays alive, so switching tabs does not lose scroll,
-      // focus or state, as it would if the x-if followed visibility.
       if (p) this._mounted[p] = true;
       if (p==='dashboard')  { this.loadStats(); this.loadContainers(); this.loadPanelHealth(); }
       if (p==='containers') this.loadContainers();
@@ -4343,11 +3252,6 @@ function app() {
       else if (this.procsLive)              { this.procsStop(); }
       if (p==='maintenance') this.jiraInit();
       if (p==='jobs')       { this.jobsNow = Math.floor(Date.now()/1000); this.loadJobs(); }
-      // 🔴 There is no `nodes` branch here any more. The screen was merged into the
-      // Proxmox tab, and `pvxInit` already loads the nodes; the own timer of 40-nodes.js
-      // was REMOVED, so calling `nodesStartPoll()` at this point would be calling a
-      // function that no longer exists. Anyone arriving through an old link with
-      // `nodes` is diverted by PAGE_REMAP before reaching here.
       if (p==='proxmox')    { this.pvxInit(); this.pvxStartPoll(); }
       else                  { this.pvxStopPoll(); }
       if (p==='deploy')     { this.loadDeployApps(); this.loadDevPorts(); }
@@ -4360,8 +3264,7 @@ function app() {
         this.loadClaudeAccounts();
         this.loadClaudeAccountsUsage();
         this.loadClaudeRateLimits();
-        this.loadAIModels(); // model tiering editor
-        // Trigger initial load of the current sub-tab.
+        this.loadAIModels();
         this.refreshAITab(this.aiTab);
       }
       if (p==='secrets')    this.loadSecrets();
@@ -4375,17 +3278,12 @@ function app() {
       if (p==='persistent' && !this.brPersistentMounted) {
         this.$nextTick(() => { this.brPersistentMounted = true; this.bpActive = true; });
       } else if (p==='persistent') {
-        // Back on the tab — cancel the pause + reactivate the iframe if it was paused
         if (this.bpPauseTimer) { clearTimeout(this.bpPauseTimer); this.bpPauseTimer = null; }
         if (!this.bpActive) this.bpActive = true;
       } else if (this.brPersistentMounted) {
-        // Left the tab — schedule a pause in 30s. Coming back before that cancels it.
         if (this.bpPauseTimer) clearTimeout(this.bpPauseTimer);
         this.bpPauseTimer = setTimeout(() => { this.bpActive = false; }, 30000);
       }
-      // code-server keep-alive. Latches codeMounted on the first visit to the VSCode
-      // tab and never resets — the iframe stays mounted forever (leaving the tab only
-      // hides it via CSS, without unloading). No pause: the editor is always connected.
       if (p==='code' && !this.codeMounted) {
         this.$nextTick(() => { this.codeMounted = true; });
       }
@@ -4395,20 +3293,11 @@ function app() {
       if (p==='sessions')   this.loadSessions();
       if (p==='network')       { this.loadTunnelDevices(); this.loadAdguard(); this.loadDatasaver(); this.loadUsage(); }
       if (p==='terminal') {
-        // Persist the state before swapping the pointer.
         try { this.saveState(); } catch(_){}
-        // Dispose the xterm/WS of the outgoing panes. Without this, renderPaneLayout
-        // throws the DOM away and the xterm instances are orphaned, pointing at divs
-        // that are gone — on the way back, `if(!p.term)` is false, mountPane does not
-        // run, and the result is a blank pane. The server-side session survives, so
-        // mountPane creates a fresh xterm and reattaches.
         const outgoing = this.terms;
         const target = this._termsClaude;
         if (outgoing && outgoing !== target && outgoing.panes) {
           outgoing.panes.forEach(pane => {
-            // Cancel the reconnect BEFORE closing the WS — otherwise a pane in backoff
-            // (with a pending timer) fires open() after the swap and reattaches a ZOMBIE WS
-            // in the background (parity with closePane/loadSessionIntoPane).
             try { if (pane.reconnect) pane.reconnect.cancelled = true; } catch(_){}
             try { if (pane.reconnect && pane.reconnect.timer) clearTimeout(pane.reconnect.timer); } catch(_){}
             try { if (pane.notify && pane.notify.timer) clearTimeout(pane.notify.timer); } catch(_){}
@@ -4428,8 +3317,6 @@ function app() {
       }
       if (p==='browser')  this.checkBrowserHealth();
       if (p==='videocall')  {
-        // Guest mode: a kind=videocall_guest token does not pass these protected routes
-        // → noisy 401s in the console. Skip everything.
         if (!this.guestMode) {
           this.vcLoadRooms();
           this.vcLoadHistory();
@@ -4439,8 +3326,6 @@ function app() {
       }
     },
 
-    // Quick probe of the Browser service (Ultraviolet+Wisp). Runs when the user
-    // enters the tab — avoids loading the iframe against a backend that is down.
     async checkBrowserHealth() {
       this.browserHealth = null;
       try {
@@ -4450,16 +3335,12 @@ function app() {
           this.browserMounted = true;
           this.ensureBrowserState();
           if (!this.browserSnapTimer) {
-            // Snapshot the real URL of each iframe (updating pane.url as the user navigates), so
-            // it can be persisted. Also updates the titles for the tab bar.
             this.browserSnapTimer = setInterval(()=>this.snapBrowserState(), 2000);
           }
         }
       } catch(e) { this.browserHealth = false; }
     },
 
-    // ---------- Browser: state, tabs, split ----------
-    // Restores the tabs from localStorage; if there are none, creates an empty tab.
     ensureBrowserState() {
       if (this.browserTabs.length) return;
       try {
@@ -4491,12 +3372,10 @@ function app() {
       const idx = this.browserTabs.findIndex(t => t.id === id);
       if (idx < 0) return;
       const tab = this.browserTabs[idx];
-      if (tab.pinned) return;   // pinned tabs only close through the menu / by unpinning
+      if (tab.pinned) return;
       const removed = this.browserTabs.splice(idx, 1)[0];
-      // "Reopen closed" stack (limit 10)
       this.browserClosedStack.push(JSON.parse(JSON.stringify(removed)));
       if (this.browserClosedStack.length > 10) this.browserClosedStack.shift();
-      // Clear the caches indexed by tab id
       Object.keys(this.browserTitles).forEach(k => { if (k.startsWith(id+':')) delete this.browserTitles[k]; });
       Object.keys(this.browserLoading).forEach(k => { if (k.startsWith(id+':')) delete this.browserLoading[k]; });
       if (!this.browserTabs.length) this.newBrowserTab(true);
@@ -4505,7 +3384,6 @@ function app() {
       }
       this.persistBrowserTabs();
     },
-    // Force-close (ignores pinned) — used by "Close the others / Close to the right".
     forceCloseTab(id) {
       const t = this.browserTabs.find(x=>x.id===id);
       if (t && t.pinned) t.pinned = false;
@@ -4532,12 +3410,10 @@ function app() {
     togglePinTab(id) {
       const tab = this.browserTabs.find(t=>t.id===id); if (!tab) return;
       tab.pinned = !tab.pinned;
-      // Sort: pinned first (a stable sort in modern JS)
       this.browserTabs.sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0));
       this.persistBrowserTabs();
     },
     closeOtherTabs(id) {
-      // Keep only the id (and the pinned ones). Iterate over a copy to avoid mutation.
       const keep = new Set([id]);
       this.browserTabs.filter(t=>!t.pinned && !keep.has(t.id))
         .forEach(t => this.closeBrowserTab(t.id));
@@ -4550,7 +3426,6 @@ function app() {
     activateBrowserTab(id) {
       this.browserActive = id;
       this.browserUrlEditing = false;
-      // the address bar now reflects the real URL of the chosen tab.
       this.browserUrlInput = this.currentBrowserUrl();
       this.persistBrowserTabs();
     },
@@ -4579,16 +3454,9 @@ function app() {
       this.browserLoading[tab.id + ':0'] = true;
       this.persistBrowserTabs();
       this.dispatchPaneNav(tab.id, 0, encoded);
-      // Leaves address-bar edit mode; it will go back to reflecting the current URL.
       this.browserUrlEditing = false;
       this.browserUrlInput = url;
     },
-    // dispatchPaneNav: changes the page of the iframe without causing the 404 that
-    // happened when the iframe was still on the landing page (SW not registered). Strategies:
-    //  - if it is on the landing page, send a postMessage (the landing waits for the SW to be ready);
-    //  - if it is already on a proxied page, change location.href directly (the SW is active);
-    //  - if the state is unknown (rare), go back to the landing page and plant
-    //    pendingEncoded so it navigates on the next @load.
     dispatchPaneNav(tabId, paneIdx, encoded) {
       const f = document.querySelector(`iframe[data-tab="${tabId}"][data-pane="${paneIdx}"]`);
       if (!f) return;
@@ -4601,14 +3469,10 @@ function app() {
         try { f.contentWindow.location.href = target; }
         catch (_) { f.src = target; }
       } else {
-        // unknown state — force a return to the landing page and plant the intent
         f.dataset.pendingEncoded = encoded;
         f.src = '/browser/';
       }
     },
-    // UV codec.xor.encode: for each char at an odd position, XOR with 2.
-    // Reproduces the uv.bundle logic (Ultraviolet.codec.xor.encode) so we can
-    // generate /browser/uv/service/<enc> from the panel.
     uvEncode(s) {
       const enc = s.toString().split('').map((c,i) =>
         i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c
@@ -4635,7 +3499,7 @@ function app() {
       const f = this.activeIframe(paneIdx); if (!f) return;
       this.browserLoading[this.browserActive + ':' + (paneIdx||0)] = true;
       try { f.contentWindow.location.reload(); }
-      catch (_) { f.src = f.src; }   // fallback (should not happen, it is same-origin)
+      catch (_) { f.src = f.src; }
     },
     toggleSplit() {
       const tab = this.getActiveBrowserTab();
@@ -4650,12 +3514,9 @@ function app() {
       tab.panes.splice(paneIdx, 1);
       this.persistBrowserTabs();
     },
-    // Reads the current URL/title of each iframe and persists it into the tab state.
-    // The iframes are same-origin (served through /browser/), so we have access to
-    // contentDocument/contentWindow. The try/catch defends against transient cases.
     snapBrowserState() {
       if (!this.browserMounted) return;
-      if (this.currentView !== 'browser') return;  // saves CPU while off the tab
+      if (this.currentView !== 'browser') return;
       let changed = false;
       for (const tab of this.browserTabs) {
         tab.panes.forEach((pane, idx) => {
@@ -4673,13 +3534,11 @@ function app() {
         });
       }
       if (changed) this.persistBrowserTabs();
-      // The address bar reflects the current URL of the active tab while not being edited.
       if (!this.browserUrlEditing) {
         const cur = this.currentBrowserUrl();
         if (cur !== this.browserUrlInput) this.browserUrlInput = cur;
       }
     },
-    // The decoded URL of pane 0 of the active tab, for display in the address bar.
     currentBrowserUrl() {
       const tab = this.getActiveBrowserTab(); if (!tab) return '';
       const u = (tab.panes[0] && tab.panes[0].url) || '';
@@ -4688,33 +3547,26 @@ function app() {
       return m ? this.uvDecode(m[1]) : '';
     },
 
-    // ----- Address bar handlers (Chrome style) -----
     onAddressBarFocus(e) {
       this.browserUrlEditing = true;
       this.$nextTick(() => { try { e.target.select(); } catch(_){} });
     },
     onAddressBarBlur() {
       this.browserUrlEditing = false;
-      // Goes back to reflecting the current URL; drops the "draft" if the user gave up.
       this.browserUrlInput = this.currentBrowserUrl();
     },
     onAddressBarEscape(e) { try { e.target.blur(); } catch(_){} },
 
-    // ----- Loading state -----
     onIframeLoad(tabId, paneIdx) {
       this.browserLoading[tabId + ':' + paneIdx] = false;
       const f = document.querySelector(`iframe[data-tab="${tabId}"][data-pane="${paneIdx}"]`);
       if (!f) return;
-      // 1) An intent planted by dispatchPaneNav when it had to fall back to the landing page.
       const pending = f.dataset.pendingEncoded;
       if (pending) {
         delete f.dataset.pendingEncoded;
         try { f.contentWindow.postMessage({ type:'panel-browser-navigate', encoded: pending }, location.origin); } catch (_) {}
         return;
       }
-      // 2) Restore: the iframe was created at /browser/ (the landing page). If the tab
-      //    has a persisted URL, tell it to navigate now via postMessage, since the
-      //    landing page has loaded (and is auto-registering the SW).
       const tab = this.browserTabs.find(t=>t.id===tabId); if (!tab) return;
       const pane = tab.panes[paneIdx]; if (!pane || !pane.url) return;
       const m = pane.url.match(/^\/browser\/uv\/service\/(.+)$/);
@@ -4726,45 +3578,24 @@ function app() {
         }
       } catch (_) {}
     },
-    // Pasting an image DIRECTLY into the code-server terminal. The /_code/ iframe
-    // is same-origin, so we inject the listeners into its document. Pasting an
-    // IMAGE while the terminal (xterm) has focus uploads the image to the backend
-    // (/api/terminal/paste-image), which writes the paste-inbox; the panel-sessions
-    // extension watches the inbox and injects "@<path>" into the active terminal.
-    //
-    // TWO paths, because in VSCode-web the Ctrl+V of the terminal is a COMMAND
-    // (workbench.action.terminal.paste -> navigator.clipboard.readText) that does
-    // NOT fire the DOM 'paste' event:
-    //   A) the 'paste' event (pasting through the menu/right click, or when VSCode
-    //      lets it through): reads the image from clipboardData synchronously.
-    //   B) keydown Ctrl/Cmd+V: reads it via navigator.clipboard.read() (async, gets
-    //      the image blob). Additive — we do NOT block VSCode (it pastes the text; if
-    //      the clipboard only has an image, it pastes nothing, which is harmless).
-    // Deduped by a time window (A and B both fire on the same Ctrl+V).
     onVscodeFrameLoad(frame) {
       if (!frame) return;
-      // Persistence (login/refresh): pings the backend to write the restore trigger.
-      // The panel-sessions extension watches for it and reopens the sessions that
-      // disappear when code-server reloads (the native restore fails and the
-      // activate() of the extension does not re-fire on a browser reload). Fire-and-forget, debounced.
       this._codeRestorePing();
-      // self-heal: the workbench loads asynchronously and @load can win the race —
-      // keep reinforcing the wiring for a few seconds until it sticks (idempotent per document).
       if (this._wireCodePaste(frame)) return;
       let tries = 0;
       const iv = setInterval(() => { if (++tries > 20 || this._wireCodePaste(frame)) clearInterval(iv); }, 500);
     },
     _codeRestorePing(){
       const now = Date.now();
-      if (this._lastCodeRestorePing && now - this._lastCodeRestorePing < 4000) return; // debounce
+      if (this._lastCodeRestorePing && now - this._lastCodeRestorePing < 4000) return;
       this._lastCodeRestorePing = now;
       try { this.api('/api/terminal/code-restore-ping', { method:'POST' }).catch(()=>{}); } catch(_){}
     },
     _wireCodePaste(frame) {
       let win, doc;
-      try { win = frame.contentWindow; doc = win.document; } catch (_) { return false; }  // cross-origin
+      try { win = frame.contentWindow; doc = win.document; } catch (_) { return false; }
       if (!doc) return false;
-      if (doc.__panelPasteWired) return true;                              // idempotent per document
+      if (doc.__panelPasteWired) return true;
       doc.__panelPasteWired = true;
 
       const inTerm = (el) => el && ((el.classList && el.classList.contains('xterm-helper-textarea')) ||
@@ -4772,7 +3603,7 @@ function app() {
       const upload = (file) => {
         if (!file) return;
         const now = Date.now();
-        if (now - (doc.__panelLastPaste || 0) < 1000) return;             // dedupes paths A+B
+        if (now - (doc.__panelLastPaste || 0) < 1000) return;
         doc.__panelLastPaste = now;
         const fd = new FormData();
         fd.append('image', file, file.name || 'paste.png');
@@ -4781,7 +3612,6 @@ function app() {
           .catch((err) => console.warn('[panel] paste-image error:', err));
       };
 
-      // A) DOM paste event
       doc.addEventListener('paste', (e) => {
         if (!inTerm(e.target)) return;
         const cd = e.clipboardData; if (!cd) return;
@@ -4790,18 +3620,17 @@ function app() {
           if (it.kind === 'file' && (it.type || '').startsWith('image/')) { file = it.getAsFile(); break; }
         }
         if (!file) for (const f of (cd.files || [])) { if ((f.type || '').startsWith('image/')) { file = f; break; } }
-        if (!file) return;                    // no image → ordinary text, leave it alone
+        if (!file) return;
         e.stopImmediatePropagation(); e.preventDefault();
         upload(file);
       }, true);
 
-      // B) keydown Ctrl/Cmd+V → read the image through the async Clipboard API
       doc.addEventListener('keydown', (e) => {
         if (e.key !== 'v' && e.key !== 'V') return;
         if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
         if (!inTerm(e.target)) return;
         const nav = (win.navigator && win.navigator.clipboard && win.navigator.clipboard.read) ? win.navigator : navigator;
-        if (!nav.clipboard || !nav.clipboard.read) return;                // no async clipboard (http/ff)
+        if (!nav.clipboard || !nav.clipboard.read) return;
         nav.clipboard.read().then((items) => {
           for (const it of items) {
             const type = (it.types || []).find((t) => t.startsWith('image/'));
@@ -4821,7 +3650,6 @@ function app() {
       this.browserLoading[this.browserActive + ':' + paneIdx] = false;
     },
 
-    // ----- Favicon fallback: a coloured letter derived from the hostname -----
     faviconHost(tab) {
       const u = (tab.panes[0] && tab.panes[0].url) || '';
       const m = u.match(/^\/browser\/uv\/service\/(.+)$/);
@@ -4839,7 +3667,6 @@ function app() {
       return `hsl(${hue} 65% 45%)`;
     },
 
-    // ----- Context menu (right-click on a tab) -----
     openTabContextMenu(e, id) {
       e.preventDefault();
       this.browserCtxMenu = { open:true, x: e.clientX, y: e.clientY, tabId: id };
@@ -4861,12 +3688,7 @@ function app() {
       }
     },
 
-    // ----- Persistent Browser (the 'persistent' tab) -----
-    // The iframe loads /browser-persistent/<instance>/vnc.html proxied by
-    // server-control-panel to the container of the instance (the port is discovered from the
-    // instance registry). The auth of the panel covers it through the Middleware.
     bpReload() {
-      // Force re-mount: if inactive, activate it; if active, reload the iframe.
       if (!this.bpActive) {
         this.bpActive = true;
         return;
@@ -4879,20 +3701,15 @@ function app() {
     bpToggleQuality() {
       this.bpQuality = this.bpQuality === 'eco' ? 'normal' : 'eco';
       try { localStorage.setItem('panel_bp_quality', this.bpQuality); } catch(_){}
-      // Force a re-render of the iframe to apply the new quality.
       if (this.bpActive) {
         this.bpActive = false;
         this.$nextTick(() => { this.bpActive = true; });
       }
     },
-    // Toggle for the Persistent Browser page header. When hidden, the iframe takes
-    // the place of the h2+subtitle+actions (~60px extra). It comes back through the
-    // peek bar at the top of the section or by clicking the "Show bar" button.
     bpToggleHeader() {
       this.bpHeaderHidden = !this.bpHeaderHidden;
       try { localStorage.setItem('panel_bp_header_hidden', this.bpHeaderHidden ? '1' : '0'); } catch(_){}
     },
-    // ---------------- User management ----------------
     async loadUsers() {
       try {
         const r = await this.api('/api/users');
@@ -5031,8 +3848,6 @@ function app() {
         if (!r.ok) return;
         const d = await r.json();
         this.bpInstances = d.instances || [];
-        // If the instance saved in localStorage no longer exists (e.g. 'default' was
-        // deleted), switch to the first available one to avoid a 404 in the iframe.
         if (this.bpInstances.length && !this.bpInstances.find(i => i.name === this.bpInstance)) {
           this.bpInstance = this.bpInstances[0].name;
           try { localStorage.setItem('panel_bp_instance', this.bpInstance); } catch(_){}
@@ -5043,7 +3858,6 @@ function app() {
       if (name === this.bpInstance) return;
       this.bpInstance = name;
       try { localStorage.setItem('panel_bp_instance', name); } catch(_){}
-      // Reconnect the iframe to the new instance
       if (this.bpActive) {
         this.bpActive = false;
         this.$nextTick(() => { this.bpActive = true; });
@@ -5056,7 +3870,6 @@ function app() {
       this.browserSearchOpen = false;
     },
 
-    // ----- Drag-and-drop to reorder tabs -----
     onTabDragStart(e, id) {
       try {
         e.dataTransfer.setData('text/x-panel-tab', id);
@@ -5071,15 +3884,11 @@ function app() {
       const from = this.browserTabs.findIndex(t=>t.id===draggedId);
       const to   = this.browserTabs.findIndex(t=>t.id===targetId);
       if (from<0 || to<0) return;
-      // Does not allow "sinking" a pinned tab in among the unpinned ones (or vice versa).
       if (this.browserTabs[from].pinned !== this.browserTabs[to].pinned) return;
       const [moved] = this.browserTabs.splice(from, 1);
       this.browserTabs.splice(to, 0, moved);
       this.persistBrowserTabs();
     },
-    // Title shown on the tab: uses the title of the document when available, otherwise
-    // derives it from the encoded URL; falls back to "New tab" while still on the
-    // /browser/ landing page.
     browserTabTitle(tab) {
       const t = this.browserTitles[tab.id + ':0'];
       if (t) return t;
@@ -5094,56 +3903,30 @@ function app() {
     },
 
     async api(path, opts={}, _retried) {
-      // FormData needs the "multipart/form-data; boundary=…" Content-Type generated
-      // by the browser — so do not force JSON in that case. Every other call stays JSON.
       const isForm = (typeof FormData !== 'undefined') && opts.body instanceof FormData;
-      // Build the headers WITHOUT mutating opts (the post-refresh retry reuses the
-      // original opts) and force the Authorization with the CURRENT token — otherwise
-      // the retry would send the old token already baked into opts.headers and fail again.
       const headers = {};
       if (!isForm) headers['Content-Type'] = 'application/json';
       Object.assign(headers, opts.headers || {});
       headers['Authorization'] = 'Bearer ' + this.token;
-      // The helper itself measures how long the API is taking. It is the most honest
-      // probe available here — same network path, same server, zero cost — and it is
-      // what drives the decision to loosen the polling when the link is bad (see _slowNetwork).
       const _t0 = Date.now();
       const r = await fetch(path, Object.assign({}, opts, { headers }));
       this._markApiLatency(Date.now() - _t0);
       if (r.status===401) {
-        // Do NOT drop the session right away. A 401 is almost always just the access
-        // token expiring (an idle/background tab) — the session on the server (and the
-        // terminal) is still alive. Try ONE silent refresh (through the HttpOnly cookie,
-        // which survives the expiry) and REPEAT the request. Only if the refresh fails
-        // outright do we escalate to logout. That is what stops a background poller from
-        // taking down the app/terminal "on its own".
         const isAuthPath = /\/api\/auth\/(refresh|refresh-cookie|login|logout)$/.test(path);
         if (!_retried && !isAuthPath) {
           let ok = false;
           try { ok = await this.refreshToken(); } catch(_) {}
           if (ok) return this.api(path, opts, true);
         }
-        // A visible warning before redirecting — it used to be silent, and the user
-        // vanished from the middle of a form without understanding why.
         try { this.showToast('Session expired — please log in again', 'err'); } catch(_) {}
         this.logout(true);
         throw new Error('unauthorized');
       }
-      // Escape hatch: call sites that NEED to inspect the raw status (a 403 that
-      // should be silent, a 409 with its own message, a 422 that reads d.reasons, a
-      // 503 from an external dependency) pass { raw:true } and keep receiving the
-      // intact Response. Everything else now throws — see below.
       if (opts.raw) return r;
       if (r.status >= 400) throw await this._apiError(r);
       return r;
     },
 
-    // Builds a readable Error from a non-2xx response.
-    // ROOT CAUSE this fixes: api() returned the Response even on 4xx/5xx, so the
-    // call site called r.json() on a text/plain body and the user saw
-    // `Unexpected token 'u', "unauthorized" is not valid JSON` instead of the real
-    // error. Here the body is read ONCE, honouring the content-type, and becomes a
-    // short message. The Error carries .status/.data for anyone who needs to decide.
     async _apiError(r) {
       const ct = (r.headers.get('content-type') || '').toLowerCase();
       let msg = '', data = null;
@@ -5152,7 +3935,6 @@ function app() {
           data = await r.json();
           if (data && typeof data === 'object') {
             msg = data.error || data.message || data.detail || data.reason || '';
-            // Some endpoints return a nested { error: { message } }.
             if (msg && typeof msg === 'object') msg = msg.message || msg.error || '';
             if (!msg) { try { msg = JSON.stringify(data); } catch(_) { msg = ''; } }
           } else if (data != null) {
@@ -5163,7 +3945,6 @@ function app() {
         }
       } catch(_) { /* unreadable/empty body — falls through to the fallback below */ }
       msg = String(msg == null ? '' : msg).replace(/\s+/g, ' ').trim();
-      // HTML from a proxy/gateway (nginx 502 and friends) is not a message for the user.
       if (/^<(!doctype|html)/i.test(msg)) msg = '';
       if (msg.length > 300) msg = msg.slice(0, 300) + '…';
       if (!msg) msg = 'HTTP ' + r.status + (r.statusText ? ' ' + r.statusText : '');
@@ -5181,14 +3962,11 @@ function app() {
         const r = await fetch('/api/auth/login', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(this.loginForm)});
         const d = await r.json();
         if (r.status === 423) {
-          // account locked after failures — show the counter
           const retry = r.headers.get('Retry-After') || '60';
           this.loginError = (d.error || 'account locked') + ' ('+retry+'s)';
           return;
         }
-        // the enroll_required branch was removed — the backend no longer emits it.
         if (r.ok && d.totp_required) {
-          // first step OK; now ask for the 2FA code
           this.loginNeedTOTP = true;
           this.loginError = '';
           return;
@@ -5197,12 +3975,9 @@ function app() {
         this.token = d.token; this.username = d.user;
         localStorage.setItem('panel_token', this.token); localStorage.setItem('panel_user', this.username);
         localStorage.setItem('panel_last_user', d.user);
-        // active_user enables the localStorage namespacing (panel_u_<u>_*).
-        // It MUST be set BEFORE any subsequent set/getItem.
         localStorage.setItem('panel_active_user', d.user);
         this.loginNeedTOTP = false;
         this.loginForm.password = ''; this.loginForm.totp = '';
-        // Loads the mapped email to show it in the topbar.
         this.loadUserEmail();
         this.scheduleTokenRefresh();
         this.init();
@@ -5216,27 +3991,13 @@ function app() {
       this.loginError = '';
     },
 
-    // First-login TOTP enrollment wizard (mandatory 2FA).
-    // Called when /api/auth/login returned {enroll_required:true, setup_token}.
-    // loginSetupBegin + loginSetupConfirm were removed.
-    // The first-login wizard is gone — MFA is opt-in through Settings.
-
-    // ---------- Silent refresh (an unbreakable session) ----------
-    // Strategy: instead of ONE giant setTimeout (~11h) — which the browser delays or
-    // pauses in a background tab and across laptop sleep, letting the token expire
-    // without renewing → 401 → logout → the terminal drops — a short periodic
-    // RE-CHECK renews as soon as exp is close. Combined with an opportunistic
-    // refresh when the tab wakes (visibilitychange/online/focus) and with the cookie
-    // fallback (_maybeRefreshSoon → refreshToken), the session restores itself
-    // before any poller can hit a 401.
     scheduleTokenRefresh() {
       if (this.refreshTimer) clearTimeout(this.refreshTimer);
-      const REFRESH_BEFORE = 45 * 60 * 1000; // renew when less than 45min remain before exp
-      const TICK = 4 * 60 * 1000;            // re-check every 4min (robust against throttling/sleep)
+      const REFRESH_BEFORE = 45 * 60 * 1000;
+      const TICK = 4 * 60 * 1000;
       const tick = () => {
         this.refreshTimer = null;
         this._maybeRefreshSoon(REFRESH_BEFORE);
-        // A chained setTimeout (not setInterval): logout clears it with clearTimeout.
         this.refreshTimer = setTimeout(tick, TICK);
       };
       this.refreshTimer = setTimeout(tick, TICK);
@@ -5252,35 +4013,20 @@ function app() {
         return (p && p.exp) ? p.exp * 1000 : 0;
       } catch(_) { return 0; }
     },
-    // Renews IF the token is close to exp (or already past it). An unknown exp does
-    // not force it (avoids a loop). Deduping lives in refreshToken (_refreshInFlight).
     _maybeRefreshSoon(bufferMs) {
       if (!this.token) return;
       const exp = this._tokenExpMs();
       if (exp && (exp - Date.now()) < bufferMs) this.refreshToken();
     },
-    // Opportunistic refresh when the tab "wakes". The frequent pollers have
-    // `if (document.hidden) return`, so they do NOT run in the background: the 401
-    // that took everything down happened the instant the tab became visible again
-    // (the first poll with an expired token). Renewing HERE, before the pollers,
-    // closes exactly that window. Installed once.
     _wireOpportunisticRefresh() {
       if (this._refreshWired) return;
       this._refreshWired = true;
-      // On returning to the tab: a wider window (60min) — if little time is left, renew now.
       const onWake = () => { if (!document.hidden) this._maybeRefreshSoon(60 * 60 * 1000); };
       document.addEventListener('visibilitychange', onWake);
       window.addEventListener('focus', onWake);
-      // The network came back: try to renew (covers suspend/resume + a Wi-Fi drop).
       window.addEventListener('online', () => this._maybeRefreshSoon(60 * 60 * 1000));
     },
-    // Renews the JWT with a RAW fetch — it NEVER goes through api() (which logs out
-    // on a 401) and it NEVER drops the session. Returns true if it got a new token.
-    // Path 1: /api/auth/refresh (requires an access token that is still valid).
-    // Path 2: /api/auth/refresh-cookie (the HttpOnly panel_refresh cookie — this one
-    // works EVEN with the access token already expired; it is what armours the session).
     async refreshToken() {
-      // Dedupe: the tick, visibilitychange and the 401 from api() can all call at once.
       if (this._refreshInFlight) return this._refreshInFlight;
       this._refreshInFlight = (async () => {
         if (this.token) {
@@ -5294,12 +4040,9 @@ function app() {
               const d = await r.json().catch(() => null);
               if (d && d.token) { this._applyToken(d.token); return true; }
             } else if (r.status !== 401) {
-              // 5xx/transient error — not an expiry. The next tick retries.
               return false;
             }
-            // 401 → the access token expired: fall through to the cookie path below.
           } catch(_) {
-            // the network is down — the cookie path would fail too; leave it to the next tick.
             return false;
           }
         }
@@ -5319,55 +4062,33 @@ function app() {
 
     async logout(skipConfirm) {
       if (!skipConfirm && this.token && !(await this.confirmAsync('Log out? The token for this session will be discarded.'))) return;
-      // Sync with the server: revoke the session and clear the HttpOnly cookie.
-      // Best-effort — it does not block the UI if the network fails.
       if (this.token) {
         try { fetch('/api/auth/logout', {method:'POST', headers:{'Authorization':'Bearer '+this.token}}).catch(()=>{}); } catch(e){}
       }
       localStorage.removeItem('panel_token'); localStorage.removeItem('panel_user');
-      // Do NOT erase panel_tabs_snapshot — the user wants the terminal panes to
-      // survive a logout/token expiry. Common scenario: close the browser → the token
-      // expires → the first API call on reopening returns 401 → logout(true) is called
-      // automatically. Erasing the snapshot here killed the terminal layout in that
-      // flow. The snapshot only holds session names, which are global on the host (no
-      // security implication between admins).
-      // The non-httponly flag is cleared locally too (the backend already zeroes the cookie).
       document.cookie = 'panel_cookie_set=;Max-Age=-1;Path=/';
       this.token=''; this.username='';
-      // Reset so that a re-login (without a reload) runs the full init again
-      // (pollers/listeners). Without this, the post-relogin init() would hit the guard
-      // and the metrics would stay frozen.
       this._initDone = false;
       if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer=null; }
       if (this.bwPollTimer) { clearInterval(this.bwPollTimer); this.bwPollTimer=null; }
       if (this.jobsPollTimer) { clearInterval(this.jobsPollTimer); this.jobsPollTimer=null; }
       if (this.jobsLiveTimer) { clearInterval(this.jobsLiveTimer); this.jobsLiveTimer=null; }
       if (this.jobsClockTimer) { clearInterval(this.jobsClockTimer); this.jobsClockTimer=null; }
-      // Stops the Deploy tab poll and tears down the jobLog WS/reconnect.
       if (this.deployPollTimer) { clearInterval(this.deployPollTimer); this.deployPollTimer=null; }
       try { if (this.jobLog){ this.jobLog.reconnect.cancelled = true; if (this.jobLog.reconnect.timer) clearTimeout(this.jobLog.reconnect.timer); if (this.jobLog.ws) this.jobLog.ws.close(); } } catch(_){}
-      // Close live WS streams so they don't pile up 401s after logout
       if (this.procsLive) this.procsStop();
       if (this.bpPauseTimer) { clearTimeout(this.bpPauseTimer); this.bpPauseTimer=null; }
       if (this.refreshTimer) { clearTimeout(this.refreshTimer); this.refreshTimer=null; }
-      // Memory-leak fix: 4 global setInterval timers were never being cleared.
       if (this.clockTimer) { clearInterval(this.clockTimer); this.clockTimer=null; }
       if (this.notificationTimer) { clearInterval(this.notificationTimer); this.notificationTimer=null; }
       if (this.vcTickTimer) { clearInterval(this.vcTickTimer); this.vcTickTimer=null; }
       if (this.browserSnapTimer) { clearInterval(this.browserSnapTimer); this.browserSnapTimer=null; }
-      // PanelPresence: disconnects the WS to free resources on server and client.
       if (window.PanelPresence && typeof window.PanelPresence.disconnect === 'function') {
         try { window.PanelPresence.disconnect(); } catch(_) {}
       }
-      // A pending ring dies with the session: without this the 45s timer and the OS
-      // notification survived the logout.
       try { this.vcClearIncoming(); } catch(_) {}
-      // WhatsApp: cancel the reconnect timer and close the WS. Without this the
-      // setTimeout stayed in the event loop and tried to reconnect 30s later with no token.
       try { this.whatsappDisconnect && this.whatsappDisconnect(); } catch(_) {}
-      // Video call: removes the global keyboard shortcuts.
       try { this.vcUninstallShortcuts && this.vcUninstallShortcuts(); } catch(_) {}
-      // Destroy every Chart.js instance (the module-scoped Map).
       try {
         if (typeof __panelCharts !== 'undefined') {
           for (const [id, chart] of __panelCharts) {
@@ -5378,29 +4099,18 @@ function app() {
       } catch(_) {}
       try { const bpFrame = document.getElementById('bpFrame'); if (bpFrame) bpFrame.src = 'about:blank'; } catch(_) {}
       try { document.querySelectorAll('iframe[id^="browserFrame"]').forEach(f => { try { f.src='about:blank'; } catch(_) {} }); } catch(_) {}
-      // Close ALL the WebSockets — terminal panes, container logs, stats, etc.
       (this.terms.panes||[]).forEach(p => { if (p.ws) try{ p.ws.close(); }catch(e){} });
       [this.detail.ws, this.detail.logWS, this.detail.statsWS].forEach(w=>{ if(w) try{w.close();}catch(e){} });
-      // Critical WhatsApp fix: the WhatsApp WS was not closed on logout — the backend
-      // kept broadcasting events to the open socket until a write error. Worse in
-      // multi-tenant: if the token is revoked and the same tab logs back in as another
-      // user, events leak across sessions.
       if (this.whatsapp && this.whatsapp.ws) {
         try { this.whatsapp.ws.close(1000, 'logout'); } catch(_) {}
         this.whatsapp.ws = null;
       }
-      // Video-call cleanup (a global singleton). If a call is active, hang up gracefully.
       if (window.PANEL && window.PANEL.videocall && window.PANEL.videocall.active) {
         try { window.PANEL.videocall.active.stop(); } catch(_) {}
       }
     },
 
-    // The local TOTP methods were removed. MFA is Supabase-only, through mfa*().
-
-    // ---------- MFA via Supabase ----------
     async loadUserEmail() {
-      // Fetches the mapped email from /api/auth/me. Cached in localStorage so the
-      // next load renders it immediately (even before the fetch returns).
       try {
         const r = await this.api('/api/auth/me');
         const d = await r.json();
@@ -5414,10 +4124,6 @@ function app() {
       } catch(e) { /* silent — the topbar keeps showing just the username */ }
     },
 
-    // Paired devices (passkeys). Lists the pending/approved devices of the
-    // logged-in user; approve/deny/revoke ALWAYS reload the list from the backend (they
-    // never mutate `items` on the client) — the UI shows what the server confirmed,
-    // not what we hope happened.
     async mobileDevicesLoad() {
       this.mobileDevicesUI.busy = true; this.mobileDevicesUI.err = '';
       try {
@@ -5459,10 +4165,6 @@ function app() {
       await this.mobileDevicesLoad();
     },
 
-    // Generates (or regenerates) the pairing QR — every call mints a NEW
-    // ticket (one-shot, 5min) and silently invalidates any earlier ticket
-    // not scanned yet, so "Generate a new code" is always safe: the old QR
-    // on screen simply stops working.
     async mobilePairGenerate() {
       this.mobilePairUI.busy = true; this.mobilePairUI.err = '';
       try {
@@ -5475,15 +4177,11 @@ function app() {
           this.mobilePairUI.qrPngB64 = d.qr_png || '';
           this.mobilePairUI.serverUrl = d.server_url || '';
           this.mobilePairUI.expiresAt = Date.now() + (d.expires_in || 0) * 1000;
-          // Shared 1s clock (same idiom as loadClaudeRateLimits) — it is what
-          // drives the live countdown in mobilePairSecondsLeft().
           if (!this._nowTimer) { this._nowTimer = setInterval(() => { this._nowTick = Date.now(); }, 1000); }
         }
       } catch(e) { this.mobilePairUI.err = String(e.message || e); }
       this.mobilePairUI.busy = false;
     },
-    // Seconds left until the ticket expires, or 0 if it already expired / no QR
-    // has been generated yet — display only (the server is the real authority).
     mobilePairSecondsLeft() {
       if (!this.mobilePairUI.expiresAt) return 0;
       return Math.max(0, Math.round((this.mobilePairUI.expiresAt - this._nowTick) / 1000));
@@ -5507,10 +4205,6 @@ function app() {
         const d = await r.json();
         if (d.error) { this.showToast(d.error,'err'); this.mfaUI.busy = false; return; }
         this.mfaUI.factorId = d.factor_id;
-        // Normalizes the GoTrue SVG: it arrives with absolute width/height but no
-        // viewBox, which makes CSS width:100% crop the content. Extracts
-        // width/height, turns them into a viewBox and drops the absolute
-        // attributes so it scales proportionally inside the 200x200 container.
         this.mfaUI.qr = this.mfaNormalizeSVG(d.qr_code);
         this.mfaUI.secret = d.secret;
         this.mfaUI.step = 'confirm';
@@ -5527,7 +4221,6 @@ function app() {
         const w = svg.getAttribute('width');
         const h = svg.getAttribute('height');
         if (w && h && !svg.hasAttribute('viewBox')) {
-          // Strip 'px' / units if present, keep only the number.
           const wn = parseFloat(w);
           const hn = parseFloat(h);
           if (wn > 0 && hn > 0) {
@@ -5593,12 +4286,9 @@ function app() {
 
     async loadStats() { try{const r=await this.api('/api/system/stats'); this.stats=await r.json(); this.hostname=this.stats?.host?.hostname||''; this.statsError=null; this.statsAt=Math.floor(Date.now()/1000);}catch(e){ console.warn('[stats] error:', e); this.statsError = e?.message||'failed to load stats'; } },
 
-    // --- Process Manager ---
     procsQueryString() {
       const q = this.procsQ;
       const p = new URLSearchParams();
-      // Text filters go trimmed (pasting a cmdline sometimes brings a
-      // newline/space along). Empty is omitted to keep the backend logs simple.
       const name = (q.name||'').trim();
       const user = (q.user||'').trim();
       const cmd  = (q.cmd||'').trim();
@@ -5611,42 +4301,28 @@ function app() {
       return p.toString();
     },
     async procsRefreshOnce() {
-      // Monotonic token: discard out-of-order responses (the user types
-      // fast, an earlier request lands later and overwrites the current one
-      // with data from the old filter).
       this._procsReqId = (this._procsReqId || 0) + 1;
       const myId = this._procsReqId;
       try {
         const r = await this.api('/api/procs?' + this.procsQueryString());
-        if (myId !== this._procsReqId) return; // a newer request has already gone out
+        if (myId !== this._procsReqId) return;
         this.procs = await r.json();
       } catch(e){ console.warn('[procs] refresh error:', e); }
     },
-    // Re-applies the filters: immediate refresh (snappy UX) + reconnects the WS
-    // with the new queryString. It used to only stop+start, leaving ~2s of lag
-    // with stale data visible while the WS reconnected.
     procsRefresh() {
       this.procsRefreshOnce();
       if (this.procsLive) { this.procsStop(); this.procsStart(); }
     },
     procsSetSort(col) { this.procsQ.sort = col; this.procsRefresh(); },
-    // number of cores on the machine (fallback if stats has not loaded yet)
     _ncpu() { return (this.stats && this.stats.cpu && this.stats.cpu.cores) || navigator.hardwareConcurrency || 1; },
-    // Process %CPU NORMALIZED over the whole machine (across every core):
-    // the backend sends %CPU "of 1 core" (htop-style); here we divide by the
-    // number of cores so it adds up to ~100% and matches the dashboard CPU
-    // card. E.g. 108% of 1 core ÷ 8 cores = 13.5% of the machine.
     procCpuPct(p) { return (p && p.cpu || 0) / this._ncpu(); },
     procCpuCls(p) { const v = this.procCpuPct(p); return v > 25 ? 'text-red-400' : v > 10 ? 'text-yellow-400' : ''; },
-    // Zoom: adjusts the CSS variable --procs-zoom (clamped 0.6 to 1.6). Persists
-    // locally right away; the dirty flag marks an unsaved change on the server.
     procsZoomSet(v) {
       v = Math.max(0.6, Math.min(1.6, Math.round(v * 10) / 10));
       this.procsZoom = v;
       try { localStorage.setItem('panel_procs_zoom', String(v)); } catch(_){}
       this.procsLayoutDirty = true;
     },
-    // Saves the layout (zoom + sticky filters) to the user profile via the API.
     async procsLayoutSave() {
       try {
         const layout = { zoom: this.procsZoom, sort: this.procsQ.sort, limit: this.procsQ.limit };
@@ -5656,8 +4332,6 @@ function app() {
         this.showToast('Layout saved to the profile', 'ok');
       } catch(e) { this.showToast(e.message || 'error', 'err'); }
     },
-    // Restores the layout from the server (called at boot). Overrides localStorage
-    // only when there is a preference saved on the server.
     async procsLayoutLoad() {
       try {
         const r = await this.api('/api/user/prefs?key=processes');
@@ -5676,23 +4350,19 @@ function app() {
     },
     procsStart() {
       if (this.procsLive) return;
-      this.procsRefreshOnce(); // shows something immediately while the WS connects
+      this.procsRefreshOnce();
       try {
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const url = `${proto}//${location.host}/ws/procs?${this.procsQueryString()}`;
-// Incremental token: ws.close() is asynchronous. If the user switches the
-        // filter fast (stop+start back to back), the old WS still sends 1-2 frames
-        // after the close, overwriting this.procs with the old query. The token
-        // guarantees that only the "current" WS updates state.
         this._procsWSId = (this._procsWSId || 0) + 1;
         const myId = this._procsWSId;
         const ws = new WebSocket(url);
         ws.onmessage = (ev) => {
-          if (myId !== this._procsWSId) return; // frame from an old WS, discard it
+          if (myId !== this._procsWSId) return;
           try { this.procs = JSON.parse(ev.data); } catch {}
         };
         ws.onclose = () => {
-          if (myId !== this._procsWSId) return; // another WS has already taken over
+          if (myId !== this._procsWSId) return;
           this.procsLive = false;
           this.procsWS = null;
         };
@@ -5705,14 +4375,11 @@ function app() {
       } catch(e){ console.warn('[procs] WS error:', e); this.procsLive = false; }
     },
     procsStop() {
-      // Bumps the token BEFORE closing: in-flight frames from the old WS already
-      // fall into the discard (myId !== this._procsWSId) without waiting for onclose.
       this._procsWSId = (this._procsWSId || 0) + 1;
       if (this.procsWS) { try { this.procsWS.close(); } catch {} }
       this.procsWS = null;
       this.procsLive = false;
     },
-    // --- Maintenance TODOs ---
     async loadTodos() {
       this.todosLoading = true;
       try {
@@ -5721,7 +4388,6 @@ function app() {
         this.todos = d.todos || [];
         this.todosSummary = d.summary || { overdue:0, week:0, month:0, future:0, done:0 };
         this._loadOk('todos');
-      // Same as the jobs: "0 overdue" because of a failure looks like a clean inbox.
       } catch(e){ this._loadErr('todos', e, 'failed to load the todos'); }
       finally { this.todosLoading = false; }
     },
@@ -5752,10 +4418,8 @@ function app() {
     async saveTodo() {
       const body = { ...this.todoForm.t };
       if (this.todoForm.dueDate) {
-        // convert dueDate (YYYY-MM-DD local) to unix sec
         body.due = Math.floor(new Date(this.todoForm.dueDate + 'T00:00:00').getTime() / 1000);
       } else if (body.interval_days > 0) {
-        // recurring without an explicit due date: the backend computes it
         body.due = 0;
       } else {
         body.due = 0;
@@ -5801,13 +4465,9 @@ function app() {
         await this.loadTodos();
       } catch(e){ this.showToast('error: '+e.message,'err'); }
     },
-    // --- Jobs Queue ---
     async loadJobs() {
       this.jobsLoading = true;
       try {
-        // loads ALL the jobs (no ?status). Filters are now client-side
-        // and combinable (status+kind+text) via filteredJobs(); the counters
-        // stay correct because they count the complete set.
         const r = await this.api('/api/queue');
         const d = await r.json();
         this.jobs = d.jobs || [];
@@ -5817,25 +4477,17 @@ function app() {
           queued:  this.jobs.filter(j=>j.status==='queued').length,
           failed:  this.jobs.filter(j=>j.status==='failed' && (j.finished||0) >= cutoff).length,
         };
-        // with the queue fresh — resolves the pill restored at boot,
-        // keeps the minimized pill honest and turns the Deploy tab poll on and off.
         try { this._jobLogResolveRestore(); } catch(_){}
         try { this._jobLogReconcileMinimized(); } catch(_){}
         try { this._deployPollReconcile(); } catch(_){}
         this._loadOk('jobs');
-      // Without this, a failure here left "0 running / 0 failed" on screen — which
-      // is EXACTLY what a healthy system shows. jobsError lets the UI swap the
-      // counters for a failure notice.
       } catch(e){ this._loadErr('jobs', e, 'failed to load the job queue'); }
       finally { this.jobsLoading = false; }
     },
-    // persists the preference to localStorage (instant) and marks dirty for
-    // the profile-save button. Called by @change on the controls.
     jobsPrefsTouch() {
       try { localStorage.setItem('panel_jobs_prefs', JSON.stringify(this.jobsPrefs)); } catch(_){}
       this.jobsPrefsDirty = true;
     },
-    // Saves to the server profile (data/users/<user>/prefs.json key 'jobs').
     async jobsPrefsSave() {
       try {
         const r = await this.api('/api/user/prefs', { method:'POST', body: JSON.stringify({ key:'jobs', value: this.jobsPrefs }) });
@@ -5844,7 +4496,6 @@ function app() {
         this.showToast('Preferences saved to the profile','ok');
       } catch(e){ this.showToast(e.message||'error','err'); }
     },
-    // Restores from the server at boot; overrides localStorage when a preference exists.
     async jobsPrefsLoad() {
       try {
         const r = await this.api('/api/user/prefs?key=jobs');
@@ -5871,8 +4522,6 @@ function app() {
         this.jobLauncher.open = false;
         this.showToast('job queued: '+d.id, 'ok');
         await this.loadJobs();
-        // do NOT open the log automatically — the toast already warns and the
-        // card shows status/step inline. The log stays opt-in behind the "log" button.
       } catch(e){ this.showToast('error: '+e.message, 'err'); }
     },
     cancelJob(j) {
@@ -5891,7 +4540,6 @@ function app() {
         if (!r.ok) throw new Error(d.error || ('HTTP '+r.status));
         this.showToast('job '+d.id+' restarted', 'ok');
         await this.loadJobs();
-        // no auto-popup — the card shows progress inline.
       } catch(e){ this.showToast('error: '+e.message, 'err'); }
     },
     deleteJob(j) {
@@ -5907,8 +4555,6 @@ function app() {
         } catch(e){ this.showToast('error: '+e.message, 'err'); }
       }, { danger:true });
     },
-    // canonical empty shape of jobLog. Used by the reset (closeJobLog) and
-    // to keep minimized/reconnect/_replay always present.
     _emptyJobLog() {
       return { open:false, minimized:false, id:'', status:'', progress:0, step:'', text:'', ws:null, kind:'', reconnect:{ attempts:0, timer:null, cancelled:false }, _replay:false };
     },
@@ -5920,27 +4566,22 @@ function app() {
       this._jobLogPersist();
       this._jobLogConnect();
     },
-    // (re)opens the /ws/queue WS of the current job with replay + backoff. The backend
-    // replays the log (64KiB) + status right at connect (handlers_queue.go); that is why
-    // the 1st log frame REPLACES the text (avoids duplicating on every reconnect).
     _jobLogConnect() {
       const id = this.jobLog.id;
       if (!id) return;
       if (this.jobLog.ws) { try { this.jobLog.ws.close(); } catch {} this.jobLog.ws = null; }
-      this.jobLog._replay = true; // the next log frame swaps the whole text
+      this.jobLog._replay = true;
       try {
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(`${proto}//${location.host}/ws/queue/${id}`);
         ws.onopen = () => { this.jobLog.reconnect.attempts = 0; };
         ws.onmessage = (ev) => {
-          if (this.jobLog.id !== id) return; // frame from a job that has already been switched away
+          if (this.jobLog.id !== id) return;
           try {
             const d = JSON.parse(ev.data);
             if (d.type === 'log') {
               if (this.jobLog._replay) { this.jobLog.text = d.log || ''; this.jobLog._replay = false; }
               else                     { this.jobLog.text += d.log || ''; }
-              // buffer cap — long logs (jira_ai produces MBs) choke the
-              // <pre>. Keeps only the most recent tail.
               const CAP = 256*1024;
               if (this.jobLog.text.length > CAP) {
                 this.jobLog.text = '…[log truncated]…\n' + this.jobLog.text.slice(-CAP);
@@ -5953,9 +4594,8 @@ function app() {
               if (d.progress) this.jobLog.progress = d.progress;
               if (d.step) this.jobLog.step = d.step;
               this._jobLogPersist();
-              this.loadJobs(); // status changed → refresh the list
+              this.loadJobs();
             }
-            // auto-scroll log (only while the modal is open)
             if (this.jobLog.open) this.$nextTick(() => {
               const el = this.$refs.jobLogPre;
               if (el) el.scrollTop = el.scrollHeight;
@@ -5963,16 +4603,13 @@ function app() {
           } catch {}
         };
         ws.onclose = () => {
-          // stale ws: openJobLog/_jobLogConnect already opened another one for the current job.
           if (this.jobLog.ws && this.jobLog.ws !== ws) return;
           if (this.jobLog.ws === ws) this.jobLog.ws = null;
-          // Does not reconnect when: really closed (X), job switched, or already terminal
-          // (the backend closes cleanly when it finishes — reconnecting would be pointless).
           if (this.jobLog.id !== id || this.jobLog.reconnect.cancelled) return;
           if (['done','failed','cancelled','interrupted'].indexOf(this.jobLog.status) >= 0) return;
           this.jobLog.reconnect.attempts += 1;
           const base = Math.min(30000, 1000 * Math.pow(2, this.jobLog.reconnect.attempts-1));
-          const delay = Math.floor(base * (0.8 + Math.random()*0.4)); // backoff 1s→30s + jitter ±20%
+          const delay = Math.floor(base * (0.8 + Math.random()*0.4));
           if (this.jobLog.reconnect.timer) clearTimeout(this.jobLog.reconnect.timer);
           this.jobLog.reconnect.timer = setTimeout(() => {
             if (this.jobLog.id === id && !this.jobLog.reconnect.cancelled) this._jobLogConnect();
@@ -5981,13 +4618,11 @@ function app() {
         this.jobLog.ws = ws;
       } catch(e){ console.warn('[jobs] WS:', e); }
     },
-    // minimizes (navigation) — becomes a pill, KEEPS the WS streaming and the id.
     minimizeJobLog() {
       if (!this.jobLog.id) return;
       this.jobLog.open = false;
       this.jobLog.minimized = true;
     },
-    // reopens the modal from the pill; reconnects the WS if it dropped (after F5).
     reopenJobLog() {
       if (!this.jobLog.id) return;
       this.jobLog.open = true;
@@ -6006,8 +4641,6 @@ function app() {
       this._jobLogClearPersist();
       this.jobLog = this._emptyJobLog();
     },
-    // minimal persistence of jobLog (only id/status/kind) so it survives an
-    // F5. Follows the saveState/restoreState pattern — localStorage as a fast cache.
     _jobLogPersist() {
       try {
         if (!this.jobLog.id) { localStorage.removeItem('panel_joblog'); return; }
@@ -6015,17 +4648,12 @@ function app() {
       } catch(_){}
     },
     _jobLogClearPersist() { try { localStorage.removeItem('panel_joblog'); } catch(_){} },
-    // at boot it reads the saved id and flags it for loadJobs() to resolve (the
-    // queue has not loaded yet here). Called by restoreState().
     _jobLogRestoreLoad() {
       try {
         const raw = JSON.parse(localStorage.getItem('panel_joblog') || 'null');
         if (raw && raw.id) this._jobLogRestoreId = raw.id;
       } catch(_){}
     },
-    // with the queue already loaded, decides the fate of the restored id: if the
-    // job is still running/queued, shows the pill (reconnects when reopened); otherwise
-    // it drops the saved state. Idempotent — consumes the flag on the 1st call.
     _jobLogResolveRestore() {
       const id = this._jobLogRestoreId;
       if (!id) return;
@@ -6040,9 +4668,6 @@ function app() {
         this._jobLogClearPersist();
       }
     },
-    // keeps the minimized pill honest against the fresh queue — updates
-    // status/progress and discards it when the job turns terminal or leaves the list.
-    // Acts only on the pill (an open jobLog is driven by the WS).
     _jobLogReconcileMinimized() {
       if (!this.jobLog.minimized || !this.jobLog.id) return;
       const j = (this.jobs || []).find(x => x.id === this.jobLog.id);
@@ -6052,10 +4677,6 @@ function app() {
       if (j.step) this.jobLog.step = j.step;
       if (['done','failed','cancelled','interrupted'].indexOf(j.status) >= 0) this.closeJobLog();
     },
-    // ── Metadata for each job kind ───────────────────────────────────────
-    // friendly label + icon + short summary derived from the args + whether progress
-    // is linear (apt/docker parse a real % → trustworthy ETA) or by milestones
-    // (jira_ai/prune jumps 5→80% → misleading ETA, prefer the textual step).
     JOB_KINDS: {
       apt_upgrade:         { icon:'📦', label:'System update', desc:'updates system packages', linear:true,  summary: () => 'apt update + upgrade' },
       docker_pull:         { icon:'🐳', label:'Docker pull',            desc:'pulls an image from the registry',    linear:true,  summary: a => (a&&a.ref) || 'image' },
@@ -6074,7 +4695,6 @@ function app() {
     jobStatusLabel(s) {
       return ({ running:'running', queued:'queued', done:'done', failed:'failed', cancelled:'cancelled', interrupted:'interrupted' })[s] || s;
     },
-    // ── Stable grouping by kind + args ───────────────────────────────────
     _stableStr(o) {
       if (o == null) return '';
       if (typeof o !== 'object') return JSON.stringify(o);
@@ -6082,7 +4702,6 @@ function app() {
       return '{' + Object.keys(o).sort().map(k => JSON.stringify(k)+':'+this._stableStr(o[k])).join(',') + '}';
     },
     jobGroupKey(j) { return j.kind + '|' + this._stableStr(j.args); },
-    // combinable client-side filters (status + kind + free text).
     filteredJobs() {
       let js = this.jobs || [];
       const p = this.jobsPrefs;
@@ -6094,17 +4713,10 @@ function app() {
       }
       return js;
     },
-    // Kinds present in the current jobs — populates the type filter dynamically.
     jobKindsPresent() {
       const set = new Set((this.jobs||[]).map(j => j.kind));
       return [...set];
     },
-    // Produces render units according to jobsPrefs.groupBy:
-    //   'task'   → groups by kind+args (≥2 become a group; 1 becomes a loose card)
-    //   'kind'   → bucket by type (always groups)
-    //   'status' → bucket by status (always groups)
-    //   'none'   → flat list (everything loose)
-    // Order (newest-first from the server) preserved at the 1st member's position.
     jobUnits() {
       const jobs = this.filteredJobs();
       const mode = this.jobsPrefs.groupBy || 'task';
@@ -6112,7 +4724,7 @@ function app() {
       const keyOf = mode === 'kind'   ? (j => j.kind)
                   : mode === 'status' ? (j => 'st:'+j.status)
                   : (j => this.jobGroupKey(j));
-      const bucketAlways = (mode === 'kind' || mode === 'status'); // categories always group
+      const bucketAlways = (mode === 'kind' || mode === 'status');
       const byKey = {};
       for (const j of jobs) (byKey[keyOf(j)] ||= []).push(j);
       const seen = new Set(), units = [];
@@ -6121,43 +4733,34 @@ function app() {
         if (seen.has(k)) continue;
         seen.add(k);
         const arr = byKey[k];
-        // Keys NAMESPACED by type ('g:'/'s:') — critical: without this, when
-        // filtering, a group that shrinks to 1 job becomes a 'single' keeping the same
-        // :key; Alpine reuses the SAME DOM node and reassigns `u` to the single object
-        // (without .jobs), and the group template bindings (u.jobs.length,
-        // jobGroupCounts(u.jobs)) blow up with "reading 'length' of undefined".
-        // Disjoint namespaces force destruction/recreation instead of reuse.
         if (arr.length >= 2 || bucketAlways) units.push({ type:'group', key:'g:'+k, mode, kind:j.kind, args:j.args, status:j.status, jobs:arr });
         else units.push({ type:'single', key:'s:'+j.id, mode, job:j });
       }
       return units;
     },
-    // Mode-agnostic group header (task/kind use kindMeta; status uses the label).
     groupIcon(u)  { return u.mode === 'status' ? '◆' : this.kindMeta(u.kind).icon; },
     groupLabel(u) { return u.mode === 'status' ? this.jobStatusLabel(u.status) : this.kindMeta(u.kind).label; },
     groupSummary(u) {
-      if (u.mode === 'status') return '';                       // status: no args summary
-      if (u.mode === 'kind')   return this.kindMeta(u.kind).desc || ''; // type: short description
-      return this.jobSummary({ kind:u.kind, args:u.args });      // task: concrete args
+      if (u.mode === 'status') return '';
+      if (u.mode === 'kind')   return this.kindMeta(u.kind).desc || '';
+      return this.jobSummary({ kind:u.kind, args:u.args });
     },
     jobGroupCounts(jobs) {
-      jobs = jobs || [];                                         // defensive: node in transition (single without .jobs)
+      jobs = jobs || [];
       const c = { running:0, queued:0, done:0, failed:0, cancelled:0, total:jobs.length };
       for (const j of jobs) if (c[j.status] !== undefined) c[j.status]++;
       return c;
     },
     isJobGroupCollapsed(key, jobs) {
-      jobs = jobs || [];                                         // defensive: same
+      jobs = jobs || [];
 
       if (Object.prototype.hasOwnProperty.call(this.jobGroupsCollapsed, key)) return this.jobGroupsCollapsed[key];
-      // default: collapsed when nothing is active; expanded when a job is running/queued.
       return !jobs.some(j => j.status === 'running' || j.status === 'queued');
     },
     toggleJobGroup(key, jobs) {
       this.jobGroupsCollapsed[key] = !this.isJobGroupCollapsed(key, jobs);
       try { localStorage.setItem('panel_job_groups', JSON.stringify(this.jobGroupsCollapsed)); } catch {}
     },
-    // ── Elapsed time + ETA ───────────────────────────────────────────────
     jobElapsed(j) {
       if (j.status === 'queued') return j.queued ? Math.max(0, this.jobsNow - j.queued) : null;
       if (!j.started) return null;
@@ -6173,8 +4776,6 @@ function app() {
       const h = Math.floor(m / 60), mm = m % 60;
       return mm ? `${h}h ${mm}m` : `${h}h`;
     },
-    // ETA only for linear jobs running with meaningful progress (>2%).
-    // On milestone jobs (jira_ai/prune) it returns null → the UI shows the textual step.
     jobETA(j) {
       if (j.status !== 'running' || !this.kindMeta(j.kind).linear) return null;
       const p = j.progress || 0;
@@ -6185,7 +4786,6 @@ function app() {
       if (!isFinite(remain) || remain < 0) return null;
       return Math.round(remain);
     },
-    // ── Card presentation classes ────────────────────────────────────────
     jobStatusChip(s) {
       return ({
         running:   'text-cyan-300 bg-cyan-500/10 border border-cyan-500/30',
@@ -6203,7 +4803,6 @@ function app() {
         interrupted:'border-orange-500/50',
       })[s] || 'border-[#1f2a3d]';
     },
-    // Bar: animated (transition) only while running; terminal states = solid colour.
     jobBarClass(j) {
       if (j.status === 'running')   return 'bg-cyan-500 transition-all duration-700 ease-out';
       if (j.status === 'done')      return 'bg-emerald-500';
@@ -6215,9 +4814,8 @@ function app() {
     jobBarPct(j) {
       if (j.status === 'done') return 100;
       if (j.status === 'queued') return j.progress || 0;
-      return j.progress || 0; // running/failed/cancelled: shows where it stopped
+      return j.progress || 0;
     },
-    // --- AI prompts ---
     async loadAIPrompts() {
       this.aiPromptsLoading = true; this.aiPromptsErr = '';
       try {
@@ -6226,7 +4824,6 @@ function app() {
         if (!r.ok) { this.aiPromptsErr = 'Failed to load ('+r.status+')'; return; }
         const d = await r.json();
         this.aiPrompts = d.prompts || [];
-        // initializes the textareas with the current value; preserves unsaved edits
         const edits = {};
         for (const p of this.aiPrompts) {
           edits[p.id] = (p.id in this.aiPromptEdits) ? this.aiPromptEdits[p.id] : p.value;
@@ -6252,7 +4849,6 @@ function app() {
         if (!r.ok) { this.showToast('Failed to save ('+r.status+')', 'err'); return; }
         const d = await r.json();
         this.aiPrompts = d.prompts || this.aiPrompts;
-        // re-syncs this prompt's textarea with the saved value (keeps the others)
         for (const np of this.aiPrompts) {
           if (np.id===p.id) this.aiPromptEdits[np.id] = np.value;
         }
@@ -6262,12 +4858,10 @@ function app() {
       finally { this.aiPromptSaving[p.id] = false; }
     },
     resetAIPrompt(p) {
-      // Saving the default text clears the override on the backend (Set treats "== default" as a reset).
       this.aiPromptEdits[p.id] = p.default;
       return this.saveAIPrompt(p);
     },
 
-    // --- Scheduler ---
     async loadSchedJobs() {
       this.schedJobsLoading = true;
       try {
@@ -6275,13 +4869,9 @@ function app() {
         const d = await r.json();
         this.schedJobs = d.jobs || [];
         this._loadOk('schedJobs');
-      // "No schedules yet" because of a failure hides that the schedule exists.
       } catch(e){ this._loadErr('schedJobs', e, 'failed to load scheduled tasks'); }
       finally { this.schedJobsLoading = false; }
     },
-    // loads the catalogue of schedulable tasks filtered by the user's
-    // authz. Reloaded every time the tab opens (loadSchedJobs) — so a new runner
-    // on the backend shows up by itself, and the server is always the authority.
     async loadSchedCatalog() {
       try {
         const r = await this.api('/api/scheduler/catalog');
@@ -6298,7 +4888,6 @@ function app() {
       const d = this.schedDescriptor(kind);
       return d ? d.label : (kind || '—');
     },
-    // Applies a quick template: opens the builder pre-filled (the user reviews and saves).
     applySchedTemplate(t) {
       if (!this.schedDescriptor(t.kind)) { this.showToast('that type is not available for your account','err'); return; }
       this.openSchedForm(t.kind);
@@ -6309,17 +4898,14 @@ function app() {
       this.schedReconcileCustom();
       this.schedPreview();
     },
-    // Only shows templates whose types the account may schedule.
     schedTemplatesAvailable() {
       return (this.schedTemplates||[]).filter(t => !!this.schedDescriptor(t.kind));
     },
-    // Duplicates an existing schedule (opens the builder as a fresh copy).
     duplicateSchedJob(j) {
       this.editSchedJob(j);
       this.schedForm.j.id = '';
       this.schedForm.j.name = (j.name || '') + ' (copy)';
     },
-    // Groups the catalogue by category (fixed order), optionally filtered by a search.
     schedGroupCatalog(q) {
       q = (q||'').trim().toLowerCase();
       const items = (this.schedCatalog||[]).filter(d => !q || (d.label+' '+(d.description||'')+' '+d.kind).toLowerCase().includes(q));
@@ -6330,8 +4916,6 @@ function app() {
         .sort((a,b) => { const ia=order.indexOf(a), ib=order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); })
         .map(c => ({ category:c, icon:this.schedCatIcons[c]||'📦', items:byCat[c] }));
     },
-    // "What does this task do" popup (the i button on the cards). Accepts the
-    // catalogue descriptor (d) or a kind (string).
     openSchedInfo(d) {
       if (typeof d === 'string') d = this.schedDescriptor(d) || { kind:d, label:d };
       this.schedInfo = {
@@ -6341,7 +4925,6 @@ function app() {
         nextSteps:d.next_steps || [], requiresPrimary:!!d.requires_primary,
       };
     },
-    // Icon per type — cosmetic; a generic fallback keeps future kinds visible.
     schedKindIcon(kind) {
       return ({
         apt_upgrade:'📦', docker_pull:'🐳', docker_compose_pull:'🧩',
@@ -6353,12 +4936,10 @@ function app() {
         audit_report:'📋', cleanup:'🧯', session_backup:'🖥️',
       })[kind] || '⚙️';
     },
-    // Args of a kind's descriptor (array), so the Alpine templates do not need ?.
     schedArgsOf(kind) {
       const d = this.schedDescriptor(kind);
       return (d && d.args) || [];
     },
-    // ── Smart dropdowns: dynamic options per source ──
     async loadSchedOptions(source, force) {
       if (!source) return;
       if (!force && this.schedOptions[source] && this.schedOptions[source].loaded) return;
@@ -6378,12 +4959,9 @@ function app() {
       if (!o) return false;
       return (o.groups||[]).some(g => (g.options||[]).some(opt => opt.value === value));
     },
-    // Loads the options of every 'select' arg of the current kind.
     ensureSchedOptions(kind) {
       this.schedArgsOf(kind).forEach(a => { if (a.type === 'select') this.loadSchedOptions(a.source); });
     },
-    // If a saved value is not in the list (e.g. a removed service, an image not pulled),
-    // it falls back to "type it manually" mode so nothing gets lost on an edit.
     schedReconcileCustom() {
       this.schedArgsOf(this.schedForm.j.kind).forEach(a => {
         if (a.type !== 'select') return;
@@ -6398,10 +4976,6 @@ function app() {
         this.schedForm.args[a.name] = '';
       }
     },
-    // ── Schedule builder: a friendly "when" → cron ──
-    // Cron stays the engine; the builder only assembles the string. Modes: every/daily/
-    // weekly/monthly + 'cron' (advanced). It compiles client-side and shows a human
-    // sentence + the next runs. It reverts cron→builder when edited.
     schedWeekdayNames: ['sun','mon','tue','wed','thu','fri','sat'],
     _schedTimeMH(t) {
       const parts = (t || '03:00').split(':');
@@ -6425,9 +4999,8 @@ function app() {
         const d = Math.min(31, Math.max(1, parseInt(s.dom,10) || 1));
         return `${m} ${h} ${d} * *`;
       }
-      return this.schedForm.j.schedule; // advanced cron: raw string
+      return this.schedForm.j.schedule;
     },
-    // Recompiles the cron from the builder (except in advanced mode) and updates the preview.
     schedSyncCron() {
       if (this.schedForm.sched && this.schedForm.sched.mode !== 'cron') {
         this.schedForm.j.schedule = this.schedCompileCron();
@@ -6440,7 +5013,6 @@ function app() {
       if (i >= 0) wd.splice(i,1); else wd.push(d);
       this.schedSyncCron();
     },
-    // cron → human sentence (best-effort; an unknown one falls back to the raw string).
     schedHumanize(expr) {
       const p = (expr||'').trim().split(/\s+/);
       if (p.length !== 5) return expr || '';
@@ -6462,7 +5034,6 @@ function app() {
       }
       return expr;
     },
-    // cron → builder model (reverse). Unknown → 'cron' mode (keeps it raw).
     schedParseToBuilder(expr) {
       const def = { mode:'cron', everyN:15, everyUnit:'minutes', time:'03:00', weekdays:[1], dom:1 };
       const p = (expr||'').trim().split(/\s+/);
@@ -6481,15 +5052,12 @@ function app() {
       }
       return def;
     },
-    // ── Folder browser: local VPS + rclone cloud ──
     async loadSchedNotifyChannels() {
       try {
         const r = await this.api('/api/notify/channels');
         const d = await r.json();
         this.schedNotifyChannels = (d.channels||[]).filter(c => c.enabled !== false);
         this._loadOk('schedNotifyChannels');
-      // An empty list because of a failure makes it look like no notification
-      // channel is configured — the user would create a duplicate.
       } catch(e){ this.schedNotifyChannels = []; this._loadErr('schedNotifyChannels', e, 'failed to load notification channels'); }
     },
     schedToggleNotifyChannel(id) {
@@ -6506,14 +5074,11 @@ function app() {
         const d = await r.json();
         this.schedRemotes = { installed: !!d.installed, list: d.remotes || [], loaded: true };
         this.schedRemotesError = '';
-      // The catch used to set loaded:true with installed:false — that is, a
-      // network failure was presented as "rclone is not installed".
       } catch(e){
         this.schedRemotes = { installed:false, list:[], loaded:false };
         this.schedRemotesError = (e && e.message === 'unauthorized') ? '' : ((e && e.message) || 'failed to load backup remotes');
       }
     },
-    // Opens the modal. mode: 'local' (VPS) or 'remote' (rclone). onPick(absPathOuRemotePath).
     fsOpen(mode, startPath, onPick, remote) {
       this.fsBrowser = {
         open:true, mode, remote: remote||'', path: startPath || (mode==='remote' ? '' : '/'),
@@ -6554,8 +5119,7 @@ function app() {
       this.fsBrowser.open = false;
     },
     fsClose() { this.fsBrowser.open = false; },
-    // Specific open helpers:
-    fsPickLocalInto(field) { // field: path of the prop to set, e.g. 'schedForm.dest.localPath' or an arg name
+    fsPickLocalInto(field) {
       const cur = (field === '__destLocal') ? this.schedForm.dest.localPath : (this.schedForm.args[field]||'');
       this.fsOpen('local', cur || '/', (p) => {
         if (field === '__destLocal') this.schedForm.dest.localPath = p; else this.schedForm.args[field] = p;
@@ -6565,7 +5129,6 @@ function app() {
       if (!this.schedForm.dest.remote) { this.showToast('choose a remote first','err'); return; }
       this.fsOpen('remote', this.schedForm.dest.remotePath || '', (p)=>{ this.schedForm.dest.remotePath = p; }, this.schedForm.dest.remote);
     },
-    // ── Connect cloud (creates an rclone remote from the UI) ──
     schedRcloneTypes:[
       { v:'sftp', label:'SFTP (another server over SSH) — no browser' },
       { v:'webdav', label:'WebDAV (Nextcloud/ownCloud…) — no browser' },
@@ -6576,7 +5139,6 @@ function app() {
       { v:'dropbox', label:'Dropbox (login)' }, { v:'box', label:'Box (login)' },
       { v:'pcloud', label:'pCloud (login)' }, { v:'yandex', label:'Yandex Disk (login)' },
     ],
-    // Form mode per type (defines the modal's fields).
     rcloneMode(t) {
       if (t === 's3') return 's3';
       if (t === 'sftp') return 'sftp';
@@ -6587,8 +5149,6 @@ function app() {
     openRcloneConnect() {
       this.rcloneConnect = { open:true, name:'', type:'sftp', token:'', accessKey:'', secret:'', region:'', endpoint:'', provider:'', host:'', user:'', pass:'', port:'', url:'', keyFile:'', busy:false, error:'', authId:'', authUrl:'', authBusy:false };
     },
-    // Automatic in-app OAuth: starts rclone authorize and shows the link to open in
-    // the server-control-panel's own browser; when the token is captured, it creates the remote.
     async startRcloneAuthorize() {
       const c = this.rcloneConnect;
       if (!c.name.trim()) { c.error = 'name the remote first'; return; }
@@ -6603,7 +5163,7 @@ function app() {
     },
     async _pollRcloneAuth() {
       const c = this.rcloneConnect;
-      if (!c.open || !c.authId) return; // the modal closed
+      if (!c.open || !c.authId) return;
       try {
         const r = await this.api('/api/backup/remote-authorize/status?id='+encodeURIComponent(c.authId));
         const d = await r.json();
@@ -6611,7 +5171,6 @@ function app() {
         if (d.url) c.authUrl = d.url;
         if (d.error) { c.error = d.error; c.authBusy = false; c.authId=''; return; }
         if (d.ready) {
-          // token captured → creates the remote using the session
           const cr = await this.api('/api/backup/remote-connect', { method:'POST', body: JSON.stringify({ name:c.name.trim(), type:c.type, session_id:c.authId }) });
           const cd = await cr.json();
           if (!cr.ok) throw new Error(cd.error || ('HTTP '+cr.status));
@@ -6640,11 +5199,10 @@ function app() {
         c.open = false;
         await this.loadSchedRemotes();
         this.schedForm.dest.type = 'rclone';
-        this.schedForm.dest.remote = d.name; // already selects the freshly created remote
+        this.schedForm.dest.remote = d.name;
       } catch(e){ c.error = e.message; }
       finally { c.busy = false; }
     },
-    // Defaults for a descriptor's args: enum → 1st option; the rest → empty.
     schedArgDefaults(desc) {
       const out = {};
       ((desc && desc.args) || []).forEach(a => {
@@ -6652,14 +5210,12 @@ function app() {
       });
       return out;
     },
-    // Selects a type in the builder, resetting the args to the schema defaults.
     selectSchedKind(kind) {
       this.schedForm.j.kind = kind;
       this.schedForm.args = this.schedArgDefaults(this.schedDescriptor(kind));
       this.schedCustom = {};
       this.ensureSchedOptions(kind);
     },
-    // Sets the chained task: resets its args and loads the dropdowns.
     selectThenKind(kind) {
       this.schedForm.j.then_kind = kind;
       this.schedForm.thenArgs = kind ? this.schedArgDefaults(this.schedDescriptor(kind)) : {};
@@ -6695,11 +5251,9 @@ function app() {
         const a = j.args ? (typeof j.args === 'string' ? JSON.parse(j.args) : j.args) : {};
         ((desc && desc.args) || []).forEach(arg => {
           if (a[arg.name] === undefined) return;
-          // string_list comes back as an array → becomes text (1 per line) in the textarea.
           args[arg.name] = arg.type === 'string_list' ? (a[arg.name]||[]).join('\n') : a[arg.name];
         });
       } catch {}
-      // Backup destination from the saved args.
       let dest = { type:'local', localPath:'', remote:'', remotePath:'' };
       if (j.kind === 'backup_now') {
         try {
@@ -6708,7 +5262,6 @@ function app() {
           else dest = { type:'local', localPath:a.dest||'', remote:'', remotePath:'' };
         } catch {}
       }
-      // Args of the chained task (if any).
       let thenArgs = {};
       if (j.then_kind) {
         const td = this.schedArgDefaults(this.schedDescriptor(j.then_kind));
@@ -6746,10 +5299,6 @@ function app() {
         this.schedForm.previewError = '';
       } catch(e){ this.schedForm.previewError = e.message; }
     },
-    // Builds the args object from the descriptor's schema (no more if(kind===…)).
-    // The server stays authoritative — the runners revalidate at execution time.
-    // Builds the args object from a kind's schema + an object of values.
-    // Reused by the main args and by the chaining args (then).
     schedBuildArgs(kind, argsObj) {
       const desc = this.schedDescriptor(kind);
       const out = {};
@@ -6767,7 +5316,6 @@ function app() {
     },
     schedFormArgs() {
       const out = this.schedBuildArgs(this.schedForm.j.kind, this.schedForm.args);
-      // The backup destination is a custom block (outside the generic schema): merged here.
       if (this.schedForm.j.kind === 'backup_now') {
         const dst = this.schedForm.dest || {};
         out.dest_type = dst.type || 'local';
@@ -6780,7 +5328,6 @@ function app() {
       }
       return out;
     },
-    // Client-side validation mirroring the backend (the schema's required fields).
     schedFormMissing() {
       const desc = this.schedDescriptor(this.schedForm.j.kind);
       const miss = [];
@@ -6795,7 +5342,6 @@ function app() {
           : !(v && String(v).trim().length>0);
         if (empty) miss.push(a.label || a.name);
       });
-      // A cloud backup requires a selected remote.
       if (this.schedForm.j.kind === 'backup_now' && this.schedForm.dest && this.schedForm.dest.type === 'rclone' && !this.schedForm.dest.remote) {
         miss.push('remote (cloud)');
       }
@@ -6803,17 +5349,11 @@ function app() {
     },
     schedFormValid() { return this.schedFormMissing().length === 0; },
     async saveSchedJob() {
-      // Reentrancy guard: without it, a double click on "Save" fires TWO POST
-      // /api/scheduler/jobs (the id only arrives in the response, so the second click
-      // still sees an empty body.id and creates another job). Two identical recurring
-      // jobs fire forever — the most expensive double click in the panel.
-      // schedSaveBusy is public on purpose: the button's :disabled may use it.
       if (this.schedSaveBusy) return;
       const miss = this.schedFormMissing();
       if (miss.length) { this.showToast('fill in: '+miss.join(', '), 'err'); return; }
       this.schedSaveBusy = true;
       const body = { ...this.schedForm.j, args: this.schedFormArgs() };
-      // Chaining: builds then_args from the then_kind schema (or clears it).
       if (body.then_kind) { body.then_args = this.schedBuildArgs(body.then_kind, this.schedForm.thenArgs); }
       else { body.then_args = null; body.then_on = ''; }
       try {
@@ -6829,7 +5369,6 @@ function app() {
       } catch(e){ this.showToast('error: '+e.message,'err'); }
       finally { this.schedSaveBusy = false; }
     },
-    // Mini-history of a schedule's latest runs.
     async openSchedHistory(j) {
       this.schedHist = { open:true, name:j.name, runs:[], loading:true, error:'' };
       try {
@@ -6852,7 +5391,6 @@ function app() {
       this.schedHist.open = false;
       this.openJobLog({ id: run.id, status: run.status, progress: 0, step: '' });
     },
-    // Opens the queue log of the last run (last_job_id) — a shortcut on the card.
     openSchedLastLog(j) {
       if (!j.last_job_id) { this.showToast('that schedule has not fired yet','err'); return; }
       this.openJobLog({ id: j.last_job_id, status: j.last_status || '', progress: 0, step: '' });
@@ -6875,8 +5413,6 @@ function app() {
       } catch(e){ this.showToast('error: '+e.message,'err'); }
     },
     async toggleSchedJob(j) {
-      // PUT requires the whole Job — scheduler.Save validates Name/Schedule/Kind.
-      // Sending a partial {enabled:false} would come back 400.
       try {
         const r = await this.api('/api/scheduler/jobs/'+j.id, {
           method:'PUT', body: JSON.stringify({ ...j, enabled: !j.enabled }) });
@@ -6885,7 +5421,6 @@ function app() {
         await this.loadSchedJobs();
       } catch(e){ this.showToast('error: '+e.message, 'err'); }
     },
-    // --- Jira Cloud ---
     jiraDefaultJQL() {
       if (this.jiraConfig.board_jql) return this.jiraConfig.board_jql;
       if (this.jiraConfig.project_key) return 'project = '+this.jiraConfig.project_key+' AND assignee = currentUser() ORDER BY status, updated DESC';
@@ -6921,10 +5456,6 @@ function app() {
         }
       } catch(e){ console.warn('[jira] issuetypes:', e); }
     },
-    // loads the OPEN epics of the project BEING CREATED IN for the "Epic (optional)" dropdown.
-    // Critical: it uses the project passed in (jiraCreate.project_key), NOT jiraDetail/jiraProjectKey
-    // like loadJiraProjectMeta — in the create modal jiraDetail.issue is null, so that
-    // loader would pick the wrong project if the user creates in a project != board.
     async loadJiraCreateEpics(projectKey) {
       projectKey = projectKey || '';
       if (!projectKey) { this.jiraCreateEpics = []; return; }
@@ -6934,10 +5465,6 @@ function app() {
         this.jiraCreateEpics = (d && d.epics) || [];
       } catch(e){ console.warn('[jira] create-epics:', e); this.jiraCreateEpics = []; }
     },
-    // parent-issue autocomplete for Sub-task. Uses /api/jira/picker with
-    // currentJQL scoped to the project (a Jira hint, only a boost) + a HARD client-side
-    // filter by the `<PROJ>-` prefix (closes the cross-project gap the hint does not guarantee;
-    // a parent from another project → 400 on the POST). 250ms debounce via _jiraParentTimer.
     searchJiraCreateParent(q) {
       q = (q || '').trim();
       this.jiraCreateParent.query = q;
@@ -6952,35 +5479,25 @@ function app() {
           const r = await this.api(url);
           const d = await r.json();
           let list = (d && d.issues) || [];
-          if (proj) list = list.filter(i => (i.key||'').startsWith(proj+'-')); // hard cross-project guard
+          if (proj) list = list.filter(i => (i.key||'').startsWith(proj+'-'));
           this.jiraCreateParent.results = list;
         } catch(e){ console.warn('[jira] parent-picker:', e); this.jiraCreateParent.results = []; }
         finally { this.jiraCreateParent.loading = false; }
       }, 250);
     },
-    // pins the parent chosen in the autocomplete.
     pickJiraCreateParent(iss) {
       this.jiraCreate.parent_key = iss.key;
       this.jiraCreateParent.name = iss.key + (iss.summary ? ' · ' + iss.summary : '');
       this.jiraCreateParent.query = this.jiraCreateParent.name;
       this.jiraCreateParent.results = [];
     },
-    // metadata of the type selected in the create modal. The UI decides the shape
-    // of the hierarchy field from here: .subtask==true → mandatory parent-issue
-    // autocomplete; .hierarchyLevel===1 → it is an Epic (no parent, goes to the top); otherwise
-    // (Task/Story/Bug) → optional Epic dropdown. {} when the types have not loaded.
     jiraCreateTypeMeta() {
       return (this.jiraIssueTypes||[]).find(t => t.name === this.jiraCreate.issue_type) || {};
     },
-    // loadJiraAssignableUsers: fetches the users assignable to the selected
-    // project (up to 20). q is optional, for server-side filtering. Cached per
-    // project+query — small changes to the filter re-fire the call (the Jira
-    // API filters by name/email in the `query` parameter).
     async loadJiraAssignableUsers(projectKey, q) {
       projectKey = projectKey || '';
       q = (q || '').trim();
       if (!projectKey) { this.jiraAssignableUsers = []; return; }
-      // Cache: if I already loaded for this project+query, do not redo it.
       if (this.jiraAssignableProject === projectKey && this.jiraAssignableQuery === q && this.jiraAssignableUsers.length > 0) return;
       this.jiraAssignableLoading = true;
       try {
@@ -7015,7 +5532,6 @@ function app() {
     jiraIssuesByCat(catKey) {
       return (this.jiraIssues||[]).filter(i => i.status?.statusCategory?.key === catKey);
     },
-    // jiraColumns: if config.board_columns has a JSON array, use it; otherwise fall back to 3 cols by category.
     jiraColumns() {
       const raw = (this.jiraConfig.board_columns||'').trim();
       let cols;
@@ -7041,9 +5557,6 @@ function app() {
           { label:'Done',        statusNames:[], color:'border-green-500/40', kind:'cat', catKey:'done' },
         ];
       }
-// "Other" catch-all: issues whose status matches none of the
-      // custom columns. It only shows up when there is at least one orphan issue,
-      // so a clean board does not gain a useless empty column.
       if (cols[0].kind === 'name') {
         const known = new Set();
         cols.forEach(c => c.statusNames.forEach(s => known.add(s)));
@@ -7059,23 +5572,13 @@ function app() {
       if (col.kind === 'cat') {
         issues = this.jiraIssuesByCat(col.catKey);
       } else if (col.kind === 'orphan') {
-        // catch-all: the status is NOT in any custom column
         const known = col.knownSet;
         issues = (this.jiraIssues||[]).filter(i => !known.has((i.status?.name||'').toLowerCase()));
       } else {
         issues = (this.jiraIssues||[]).filter(i => col.statusNames.includes((i.status?.name||'').toLowerCase()));
       }
-      // filters by visibility (retention) and applies the column's
-      // ordering. .filter creates a new array, so the inner .sort() does not mutate
-      // the source state (this.jiraIssues).
       return this.jiraSortIssues(issues.filter(i => this.jiraIssueVisible(i)), col.label);
     },
-    // ── AI progress band on the board card ───────────────────────────────
-    // jiraIssueJob: the ACTIVE jira_ai job (running|queued) of this ticket, for the
-    // logged-in user. loadJobs() calls /api/queue WITHOUT ?owner → the primary
-    // receives jobs from EVERYONE; the owner guard is MANDATORY so another
-    // person's job does not leak into the card. Read-only; no cached x-data (called
-    // inline in the template, respecting Alpine's x-if self-mutation rule).
     jiraIssueJob(key) {
       let best = null;
       for (const j of (this.jobs || [])) {
@@ -7084,23 +5587,18 @@ function app() {
         if (!j.args || j.args.issue_key !== key) continue;
         if (j.status !== 'running' && j.status !== 'queued') continue;
         if (!best) { best = j; continue; }
-        const rank = s => s === 'running' ? 2 : 1;          // running beats queued
+        const rank = s => s === 'running' ? 2 : 1;
         if (rank(j.status) > rank(best.status) ||
             (j.status === best.status && (j.started || 0) > (best.started || 0))) best = j;
       }
       return best;
     },
-    // Empirical median duration (n=45, state.json): 570s. The ETA/bar use
-    // Date.now() directly because jobsNow FREEZES outside the Jobs tab (the timer only
-    // ticks if page==='jobs') — on the board it would be stopped.
     boardJobMedian() { return 570; },
     boardJobElapsed(j) {
       return j && j.started ? Math.max(0, Math.floor(Date.now()/1000) - j.started) : 0;
     },
     boardJobProgress(j) {
       if (!j || j.status === 'queued') return 0;
-      // estimate by time, capped at 95% (never "100%" before the real done),
-      // never regressing below the real progress the backend reports at the milestones.
       const t = Math.min(95, Math.round(this.boardJobElapsed(j) / this.boardJobMedian() * 100));
       return Math.max(j.progress || 0, t);
     },
@@ -7110,10 +5608,6 @@ function app() {
       return r > 30 ? '~' + Math.ceil(r/60) + 'min' : 'finishing…';
     },
     boardJobStep(j) { return j && j.step ? j.step : ''; },
-    // statusToColLabel: translates Jira's raw status NAME (Backlog, EM
-    // REVIEW…) into the LABEL of the column where the issue renders (To Do,
-    // In Progress, Done). The backend keeps using the real statuses with
-    // the Jira API; the frontend only shows the columns' vocabulary.
     statusToColLabel(statusName, statusCatKey) {
       if (!statusName && !statusCatKey) return '';
       const lc = (statusName||'').toLowerCase();
@@ -7160,7 +5654,6 @@ function app() {
       } catch(e){ this.jiraSetupError = e.message; }
     },
     async openJiraSettings() {
-      // refresh from server so the textarea reflects the real vault state
       await this.loadJiraConfig();
       this.jiraSettings = {
         open:true,
@@ -7205,17 +5698,12 @@ function app() {
         assignee_id:'', assignee_name:'',
         parent_key:'', files:[],
       };
-      // Hydrates from a cached draft (panel_jira_draft, auto-namespaced per
-      // user). Survives closing the modal by accident; only a successful Create
-      // clears it. An empty project_key in the draft falls back to the default.
       let restored = false;
       try {
         const raw = localStorage.getItem('panel_jira_draft');
         if (raw) {
           const d = JSON.parse(raw);
           if (d && typeof d === 'object') {
-            // the draft never contains `files` (saveJiraDraft strips it so it does not
-            // become `[{}]`), but we defend here too — File objects do not round-trip.
             const { files:_dropFiles, ...d2 } = d;
             Object.assign(base, d2, { open:true, files:[] });
             if (!base.project_key) base.project_key = defProject;
@@ -7224,36 +5712,24 @@ function app() {
         }
       } catch(_){}
       this.jiraCreate = base;
-      // resets the parent-issue autocomplete (transient state, outside the draft).
       this.jiraCreateParent = { query:'', results:[], loading:false, name:'' };
       this.loadJiraIssueTypes();
-      // Pre-loads the assignables for the default project — the dropdown opens
-      // already populated without the user having to type.
       this.loadJiraAssignableUsers(base.project_key, '');
-      // epics of the project BEING CREATED IN (base.project_key), not of the board/drawer.
       this.loadJiraCreateEpics(base.project_key);
       if (restored) this.showToast('draft restored','ok');
     },
-    // Serializes the current draft (without the `open` flag) while the user types.
-    // Called via @input on the modal's container (delegation by bubbling).
     saveJiraDraft() {
       try {
-        // strips `files` (File objects → `{}` in JSON.stringify → would corrupt
-        // the draft with phantom attachments). Attachments are memory-only; re-picked on every modal.
         const { open, files, ...draft } = this.jiraCreate;
         localStorage.setItem('panel_jira_draft', JSON.stringify(draft));
       } catch(_){}
     },
-    // Closes without discarding — the draft stays cached and is restored on the
-    // next openJiraCreate(). Used by ✕, Cancel and Escape.
     cancelJiraCreate() {
       this.jiraCreate.open = false;
     },
     async submitJiraCreate() {
       const c = this.jiraCreate;
       if (!c.project_key || !c.summary || !c.issue_type) { this.showToast('project + summary + type are required','err'); return; }
-      // a Sub-task requires a parent issue (parent required=true on the create screen).
-      // Determined from the type metadata (subtask==true coming from createmeta).
       const it = (this.jiraIssueTypes||[]).find(t => t.name === c.issue_type);
       if (it && it.subtask && !c.parent_key) { this.showToast('a subtask requires a parent issue','err'); return; }
       const body = {
@@ -7264,9 +5740,7 @@ function app() {
         priority: c.priority,
         due_date: c.due_date,
         labels: c.labels_str ? c.labels_str.split(',').map(s=>s.trim()).filter(Boolean) : [],
-        // Empty accountId = do not assign (Jira default: unassigned).
         assignee_id: c.assignee_id || '',
-        // parent (epic-child OR sub-task). Empty = loose issue / top (Epic).
         parent_key: c.parent_key || '',
       };
       try {
@@ -7277,10 +5751,6 @@ function app() {
         try { localStorage.removeItem('panel_jira_draft'); } catch(_){}
         this.showToast('created: '+d.key, 'ok');
 
-        // attachments in 2 phases (create → upload). Tolerant of partial failure:
-        // the issue ALREADY exists, so a failed upload does NOT roll anything back — it only reports.
-        // `c` was captured at the top, so c.files survives jiraCreate.open=false.
-        // Reuses handleJiraAttachmentUpload (field `file`, 32MiB cap server-side).
         if (Array.isArray(c.files) && c.files.length) {
           const MAX = 32 * 1024 * 1024, N = c.files.length;
           let okN = 0, lastErr = '';
@@ -7297,12 +5767,6 @@ function app() {
           this.showToast(`${d.key}: ${okN}/${N} attachments`+(okN<N && lastErr ? ' — '+lastErr : ''), okN<N ? 'warn' : 'ok');
         }
 
-        // the board is populated ONLY by JQL (Jira's Lucene index), which lags
-        // ~1–5s behind the POST. An immediate loadJiraBoard() comes back without the
-        // new issue → "I created it and it only shows up after a refresh". Fix: read the
-        // issue with a direct GET (/api/jira/issue/{key} is a read by key, strongly
-        // consistent) and show the optimistic card right away; then reconcile with the
-        // JQL tolerating the lag, without erasing the card.
         let det = null;
         try {
           const rd = await this.api('/api/jira/issue/'+d.key);
@@ -7310,18 +5774,13 @@ function app() {
         } catch(_){ /* does not silence: the error path falls into the retry/toast below */ }
         if (det && det.key) this.jiraIssues = [det, ...(this.jiraIssues||[])];
 
-        // Reconciliation: loadJiraBoard replaces the whole array (it may come back without
-        // the issue while the index has not caught up). The stop criterion uses
-        // this.jiraIssues because loadJiraBoard does not return the response.
         const has = () => (this.jiraIssues||[]).some(i => i.key === d.key);
         for (let i = 0; i < 3; i++) {
           await this.loadJiraBoard();
-          if (has()) break;                                         // the index caught up → the real version is already on the board
-          if (det && det.key) { this.jiraIssues = [det, ...this.jiraIssues]; break; } // re-injects the optimistic card and exits
-          // filters that never match a freshly created issue (unassigned / outside
-          // review / outside in-progress): retrying the JQL is pointless.
+          if (has()) break;
+          if (det && det.key) { this.jiraIssues = [det, ...this.jiraIssues]; break; }
           if (['mine','review','inprogress'].includes(this.jiraFilter)) break;
-          await new Promise(res => setTimeout(res, 1500));          // only gets here if the GET failed (det===null)
+          await new Promise(res => setTimeout(res, 1500));
         }
         if (!has()) this.showToast('Issue '+d.key+' created — the board can take a few seconds to catch up', 'warn');
       } catch(e){ this.showToast('error: '+e.message,'err'); }
@@ -7348,8 +5807,6 @@ function app() {
         this.loadJiraWatchers();
         this.loadJiraVotes();
         this.loadJiraProjectMeta();
-        // pre-populate adv fields from issue (renamed to avoid shadowing the
-        // outer `iss` function parameter — caused TDZ "cannot access before init")
         const det = this.jiraDetail.issue;
         this.jiraAdvFields = {
           story_points: det?.['customfield_10016'] || det?.story_points || '',
@@ -7365,10 +5822,6 @@ function app() {
         watchers:null, subtasks:[], links:[], attachments:[], worklogs:[], changelog:[],
         newLinkType:'', newLinkKey:'', newWorklog:{ time_spent:'', comment:'' } };
     },
-    // Guard close: if there's unsaved work (open editor, draft comment,
-    // typed worklog, partial link key) require explicit confirmation
-    // before closing — clicking backdrop or pressing ESC was silently
-    // discarding edits before this fix.
     async confirmCloseJiraDetail() {
       if (!this.jiraDetail.open) return;
       const d = this.jiraDetail;
@@ -7381,16 +5834,12 @@ function app() {
     },
     async doJiraTransition(transitionId) {
       if (!transitionId) return;
-      // Look up target column label before firing — we want the toast to
-      // speak the column name the user sees ("To Do") even if the Jira
-      // status is "Backlog".
       const tr = (this.jiraDetail.transitions||[]).find(t => String(t.id) === String(transitionId));
       const label = tr ? this.transitionToColLabel(tr) : '';
       try {
         const r = await this.api('/api/jira/issue/'+this.jiraDetail.key+'/transition', { method:'POST', body: JSON.stringify({ transition_id: transitionId }) });
         if (!r.ok) { const d=await r.json(); throw new Error(d.error); }
         this.showToast(this.jiraDetail.key + (label ? ' → ' + label : ' moved'), 'ok');
-        // refresh detail + board
         await this.openJiraIssue({ key: this.jiraDetail.key });
         await this.loadJiraBoard();
       } catch(e){ this.showToast('error: '+e.message,'err'); }
@@ -7412,7 +5861,6 @@ function app() {
       if (!key) return;
       const iss = this.jiraIssues.find(i => i.key === key);
       if (!iss) return;
-      // already on target column?
       if (col.kind === 'cat' && iss.status?.statusCategory?.key === col.catKey) return;
       if (col.kind === 'name' && col.statusNames.includes((iss.status?.name||'').toLowerCase())) return;
       try {
@@ -7423,7 +5871,6 @@ function app() {
         if (col.kind === 'cat') {
           tr = trs.find(t => t.to_cat === col.catKey);
         } else {
-          // match by status name (case insensitive) — try each name in column until one matches
           for (const want of col.statusNames) {
             tr = trs.find(t => (t.to_name||'').toLowerCase() === want);
             if (tr) break;
@@ -7432,20 +5879,15 @@ function app() {
         if (!tr) { this.showToast('no transition to "'+col.label+'"','err'); return; }
         const r2 = await this.api('/api/jira/issue/'+key+'/transition', { method:'POST', body: JSON.stringify({ transition_id: tr.id }) });
         if (!r2.ok) { const d2=await r2.json(); throw new Error(d2.error); }
-        // Uses the column's LABEL (the one the user sees) — not Jira's raw status
-        // name, which they may not even know (Backlog vs To Do).
         this.showToast(key+' → '+col.label,'ok');
         await this.loadJiraBoard();
       } catch(e){ this.showToast('drop error: '+e.message,'err'); }
     },
 
-    // === Project switcher + filters + bulk + spaces + inline edits ===
     avatarOf(u) {
       if (!u || !u.avatarUrls) return '';
       const raw = u.avatarUrls['48x48'] || u.avatarUrls['32x32'] || u.avatarUrls['24x24'] || u.avatarUrls['16x16'] || '';
       if (!raw) return '';
-      // Already same-origin? use it directly. Otherwise proxy it: avoids the browser's
-      // "Tracking Prevention" when loading third-party gravatar/wp.com.
       if (raw.startsWith('/')) return raw;
       return '/api/jira/avatar?u=' + encodeURIComponent(raw);
     },
@@ -7472,14 +5914,12 @@ function app() {
       }
     },
     onJiraProjectChange() {
-      // update vault project_key + refresh board
       this.api('/api/jira/config', { method:'POST', body: JSON.stringify({ project_key: this.jiraProjectKey }) })
         .then(() => { this.jiraConfig.project_key = this.jiraProjectKey; this.applyJiraFilter(); })
         .catch((e) => { this.showToast('could not switch project: '+e.message, 'err'); });
     },
     setJiraQuickFilter(k) { this.jiraFilter = k; this.applyJiraFilter(); },
     applyJiraFilter() {
-      // recompute JQL based on quick filter + project, then reload board
       const proj = this.jiraProjectKey || this.jiraConfig.project_key || '';
       const where = proj ? 'project = '+proj+' AND ' : '';
       let jql = '';
@@ -7493,15 +5933,11 @@ function app() {
         case 'all':        jql = where + 'ORDER BY updated DESC'; jql = jql.replace('AND ORDER','ORDER'); break;
         case 'custom':     jql = this.jiraCustomJQL || ''; break;
       }
-      // strip dangling AND
       jql = jql.replace(/AND\s+ORDER/i, 'ORDER').replace(/^\s*AND\s+/,'');
       this.jiraJQL = jql;
       this.loadJiraBoard();
     },
     jiraFilteredIssues() {
-      // Building the "hay" concatenates 5 fields per issue; without a memo that ran once per
-      // board column. jiraIssues is always REASSIGNED (never mutated in place), so
-      // the array's identity is a reliable invalidation signal here.
       const q = (this.jiraSearch||'').toLowerCase();
       const src = this.jiraIssues || [];
       if (!q) return src;
@@ -7510,7 +5946,6 @@ function app() {
         return hay.includes(q);
       }));
     },
-    // Backlog bulk select
     jiraSelectedAll() {
       const ids = this.jiraFilteredIssues().map(i=>i.key);
       return ids.length > 0 && ids.every(k => this.jiraSelected.includes(k));
@@ -7527,7 +5962,6 @@ function app() {
       const target = this.jiraBulkTransition;
       if (!target || this.jiraSelected.length === 0) return;
       if (!(await this.confirmAsync('Move '+this.jiraSelected.length+' issue(s) to "'+target+'"?'))) return;
-      // Track results so the user sees real outcome instead of blanket "ok".
       const ok = []; const fail = [];
       for (const key of [...this.jiraSelected]) {
         try {
@@ -7563,7 +5997,6 @@ function app() {
       this.jiraSelected = [];
       await this.loadJiraBoard();
     },
-    // Inline edits in the detail
     async updateJiraIssue(patch) {
       try {
         const r = await this.api('/api/jira/issue/'+this.jiraDetail.key, { method:'PATCH', body: JSON.stringify(patch) });
@@ -7572,17 +6005,10 @@ function app() {
         await this.refreshJiraIssue();
         await this.loadJiraBoard();
       } catch(e){
-        // on refusal, resyncs the inline fields with the real value from
-        // Jira. The <select>/<input> use one-way binding (:value), so without
-        // this refresh the control would keep showing the refused value (wrong type,
-        // priority/assignee/due out of sync). refreshJiraIssue() reassigns
-        // jiraDetail.issue → Alpine re-renders the :value to the true value.
         this.showToast('error: '+this.jiraTypeFriendlyError(e.message),'err');
         try { await this.refreshJiraIssue(); } catch(_){}
       }
     },
-    // a teaching message for when Jira refuses the type change (some
-    // projects do not allow changing the type here — only through Jira's "Move").
     jiraTypeFriendlyError(msg){
       const m = (msg||'').toLowerCase();
       if (m.includes('issuetype') || m.includes('issue type') || m.includes('is not valid for this'))
@@ -7611,10 +6037,6 @@ function app() {
       this.jiraDetail.editDescription = this.jiraDetail.issue?.description || '';
     },
     async saveJiraEdit() {
-      // Only collapse the editor if the PATCH succeeded — otherwise the
-      // user thinks they saved (editor closes) but the issue still shows
-      // the old summary/description after refetch. Keep editing open on
-      // failure so they don't lose typed content.
       try {
         const r = await this.api('/api/jira/issue/'+this.jiraDetail.key, { method:'PATCH', body: JSON.stringify({ summary: this.jiraDetail.editSummary, description: this.jiraDetail.editDescription }) });
         if (!r.ok) { const d = await r.json(); throw new Error(d.error || ('HTTP '+r.status)); }
@@ -7624,14 +6046,12 @@ function app() {
         await this.loadJiraBoard();
       } catch(e){
         this.showToast('error saving: '+e.message,'err');
-        // the editor stays open with the typed text intact
       }
     },
     async refreshJiraIssue() {
       const r = await this.api('/api/jira/issue/'+this.jiraDetail.key);
       this.jiraDetail.issue = await r.json();
     },
-    // Watchers
     async toggleWatchIssue() {
       const watching = this.jiraDetail.watchers?.watching;
       const accId = this.jiraHealth.me?.accountId;
@@ -7650,7 +6070,6 @@ function app() {
         this.jiraDetail.watchers = await r.json();
       } catch(e){}
     },
-    // Links
     async loadJiraLinkTypes() {
       if (this.jiraLinkTypes.length) return;
       try { const r = await this.api('/api/jira/linktypes'); const d = await r.json(); this.jiraLinkTypes = d.link_types||[]; } catch(e){}
@@ -7674,11 +6093,8 @@ function app() {
         await this.loadJiraDetailTab('links');
       } catch(e){ this.showToast('error: '+e.message,'err'); }
     },
-    // Attachments
     async uploadJiraAttachment(file) {
       if (!file) return;
-      // Hard cap aligns with the server's multipart limit (32MiB) — fail fast
-      // client-side instead of waiting for a 400.
       const MAX = 32 * 1024 * 1024;
       if (file.size > MAX) {
         this.showToast(`file too large (${this.fmtBytes(file.size)} > ${this.fmtBytes(MAX)})`,'err');
@@ -7687,9 +6103,6 @@ function app() {
       }
       const fd = new FormData();
       fd.append('file', file);
-      // Goes through api() so 401 triggers logout(), CSRF cookie ships,
-      // and the same error/toast pipeline as every other call applies.
-      // (api() will skip Content-Type for FormData — see helper.)
       try {
         const r = await this.api('/api/jira/issue/'+this.jiraDetail.key+'/attachments', { method:'POST', body: fd });
         if (!r.ok) { const d = await r.json().catch(()=>({})); throw new Error(d.error || ('HTTP '+r.status)); }
@@ -7703,7 +6116,6 @@ function app() {
       if (!(await this.confirmAsync('Delete attachment?'))) return;
       try { await this.api('/api/jira/attachment/'+id, { method:'DELETE' }); await this.loadJiraDetailTab('attachments'); } catch(e){ this.showToast('error: '+e.message,'err'); }
     },
-    // Worklog
     async addJiraWorklog() {
       const w = this.jiraDetail.newWorklog;
       if (!w.time_spent) return;
@@ -7715,7 +6127,6 @@ function app() {
         await this.loadJiraDetailTab('worklog');
       } catch(e){ this.showToast('error: '+e.message,'err'); }
     },
-    // Detail tab loader (called when switching tabs)
     async loadJiraDetailTab(tab) {
       const key = this.jiraDetail.key;
       if (!key) return;
@@ -7724,14 +6135,11 @@ function app() {
           await this.loadJiraWatchers();
         }
         if (tab === 'subtasks') {
-          // refresh issue (subtasks come embedded if backend includes them — fallback: fetch links)
           await this.refreshJiraIssue();
         }
         if (tab === 'links') {
           await this.loadJiraLinkTypes();
-          // links come via issue.fields.issuelinks — we re-fetch raw via search would be overkill; refetch issue
           await this.refreshJiraIssue();
-          // flatten any embedded links if present
           this.jiraDetail.links = this.jiraDetail.issue?.issuelinks || [];
         }
         if (tab === 'attachments') {
@@ -7750,7 +6158,6 @@ function app() {
         }
       } catch(e){ console.warn('[jira tab '+tab+']', e); }
     },
-    // Confluence
     async loadJiraSpaces() {
       try { const r = await this.api('/api/jira/confluence/spaces'); const d = await r.json(); this.jiraSpaces = d.spaces || []; } catch(e){ this.showToast('spaces: '+e.message,'err'); }
     },
@@ -7783,11 +6190,7 @@ function app() {
       } catch(e){ this.jiraPageDrawer.body = 'error: '+e.message; }
     },
 
-    // === Column Manager ===
     async openColumnManager() {
-      // ALWAYS reload config first — Alpine state can be stale if user
-      // saved via Settings drawer in between, and we don't want to
-      // re-write whatever stale JSON is in jiraConfig.board_columns.
       await this.loadJiraConfig();
       let cur = [];
       try {
@@ -7854,7 +6257,7 @@ function app() {
         this.jiraConfig.board_columns = payload;
         this.jiraColumnMgr.open = false;
         this.showToast('columns updated','ok');
-        await this.loadJiraConfig(); // guarantees a refresh with no stale cache
+        await this.loadJiraConfig();
         await this.loadJiraBoard();
       } catch(e){ this.showToast('error: '+e.message,'err'); }
     },
@@ -7871,27 +6274,19 @@ function app() {
       } catch(e){ this.showToast('error: '+e.message,'err'); }
     },
 
-    // === Release retention ===
     setJiraHideDoneDays(n) {
       this.jiraHideDoneDays = parseInt(n||0,10) || 0;
       localStorage.setItem('jira_hide_done_days', String(this.jiraHideDoneDays));
     },
-    // Visibility predicate (retention) consumed by jiraIssuesInCol.
     jiraIssueVisible(iss) {
       if (this.jiraHideDoneDays <= 0) return true;
       if (iss.status?.statusCategory?.key !== 'done') return true;
-      // resolved more than N days ago?
       const last = iss.updated || iss.created;
       if (!last) return true;
       const ageDays = (Date.now() - new Date(last).getTime()) / 86400000;
       return ageDays <= this.jiraHideDoneDays;
     },
 
-    // === ordering by column ===
-    // Setters reassign the whole object (spread) to guarantee Alpine reactivity
-    // when a label not yet seen is introduced — mutating a new key on an
-    // existing object does not trigger the tracking. They persist to localStorage.
-    // Combined 'key:dir' value for the header's single <select> ('none' = the default).
     jiraColSortValue(label) {
       const s = this.jiraColSort[label];
       if (!s || s.key === 'none') return 'none';
@@ -7905,24 +6300,17 @@ function app() {
         const [key, dir] = value.split(':');
         next = { key, dir: dir === 'desc' ? 'desc' : 'asc' };
       }
-      // Reassigns the whole object to trigger Alpine reactivity when
-      // the label does not exist in the map yet.
       this.jiraColSort = { ...this.jiraColSort, [label]: next };
       this._persistJiraColSort();
     },
     _persistJiraColSort() {
-      // localStorage = instant response between reloads in the same browser.
       try { localStorage.setItem('jira_col_sort', JSON.stringify(this.jiraColSort)); } catch (_) {}
-      // Profile = persists the per-column ordering on the server (cross-device,
-      // survives clearing the cache). The debounce avoids a POST on every click of the toggle.
       if (this._jiraColSortSaveTimer) clearTimeout(this._jiraColSortSaveTimer);
       this._jiraColSortSaveTimer = setTimeout(() => {
         this.api('/api/user/prefs', { method:'POST', body: JSON.stringify({ key:'jira_col_sort', value: this.jiraColSort }) })
-          .catch(() => {}); // best-effort: localStorage already covers the offline case
+          .catch(() => {});
       }, 400);
     },
-    // Restores the per-column ordering from the profile (boot). Overrides
-    // localStorage when a preference is saved on the server — the profile is the source of truth.
     async jiraColSortLoad() {
       try {
         const r = await this.api('/api/user/prefs?key=jira_col_sort');
@@ -7934,9 +6322,6 @@ function app() {
         try { localStorage.setItem('jira_col_sort', JSON.stringify(v)); } catch (_) {}
       } catch (_) {}
     },
-    // adjusts the Jira panel's font size. delta=+0.1/-0.1; delta=0 resets
-    // to 1.0. Hard clamp 0.8–1.4. Reassigns the whole object (Alpine reactivity) and
-    // persists just like _persistJiraColSort (localStorage + profile with debounce).
     setJiraFontScale(delta) {
       const cur = this.jiraPrefs.fontScale || 1.0;
       let next = (delta === 0) ? 1.0 : cur + delta;
@@ -7949,10 +6334,9 @@ function app() {
       if (this._jiraPrefsSaveTimer) clearTimeout(this._jiraPrefsSaveTimer);
       this._jiraPrefsSaveTimer = setTimeout(() => {
         this.api('/api/user/prefs', { method:'POST', body: JSON.stringify({ key:'jira', value: this.jiraPrefs }) })
-          .catch(() => {}); // best-effort: localStorage already covers the offline case
+          .catch(() => {});
       }, 400);
     },
-    // Restores the Jira panel prefs from the profile (boot). The profile is the source of truth.
     async jiraPrefsLoad() {
       try {
         const r = await this.api('/api/user/prefs?key=jira');
@@ -7965,11 +6349,6 @@ function app() {
         try { localStorage.setItem('panel_jira_prefs', JSON.stringify(this.jiraPrefs)); } catch (_) {}
       } catch (_) {}
     },
-    // Sorts an ALREADY filtered copy. jiraIssuesInCol always passes a new array
-    // (via .filter), so an in-place .sort() does not mutate this.jiraIssues. Array.sort
-    // is stable (ES2019+): ties preserve the JQL order. The comparators tolerate
-    // omitempty fields (updated/issuetype) — the fallbacks avoid Invalid Date/NaN,
-    // which would make the order unpredictable for those items.
     jiraSortIssues(arr, label) {
       const s = this.jiraColSort[label];
       if (!s || s.key === 'none') return arr;
@@ -7997,7 +6376,6 @@ function app() {
       return arr.sort((a, b) => dir * cmp(a, b));
     },
 
-    // === Issue delete + clone + vote + comment edit/delete ===
     async deleteJiraIssue() {
       const key = this.jiraDetail.key;
       const sub = (this.jiraDetail.subtasks||[]).length > 0;
@@ -8025,10 +6403,6 @@ function app() {
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || ('HTTP '+r.status));
         this.showToast('AI running — job '+d.job_id+' (follow it under Operations > Jobs)', 'ok');
-        // do NOT open the log drawer automatically (it covered the board's
-        // screen). The user follows the status/step inline in the Jobs tab.
-        // Reload the jobs right away → the progress band shows up on the card
-        // within ≤1 cycle instead of waiting for the 15s poll.
         await this.loadJobs();
       } catch(e){
         this.showToast('error: '+e.message, 'err');
@@ -8048,7 +6422,6 @@ function app() {
           ? `Reattaching ${key} → session ${d.session}`
           : `Session created: ${d.session}${d.repo?' (cwd '+d.repo+')':''}`;
         this.showToast(msg, 'ok');
-        // Closes the drawer + navigates to the terminal with the session already selected
         this.closeJiraDetail();
         try { localStorage.setItem('panel_terminal_resume_session', d.session); } catch(_){}
         this.setPage('terminal');
@@ -8093,7 +6466,6 @@ function app() {
         const r = await this.api('/api/jira/issue/'+this.jiraDetail.key+'/comment/'+c.id, { method:'PUT', body: JSON.stringify({ body: c.body }) });
         if (!r.ok) { const d=await r.json(); throw new Error(d.error); }
         this.jiraEditComment = { id:'', body:'' };
-        // reload comments
         const r2 = await this.api('/api/jira/issue/'+this.jiraDetail.key+'/comments');
         const d2 = await r2.json();
         this.jiraDetail.comments = d2.comments || [];
@@ -8108,7 +6480,6 @@ function app() {
       } catch(e){ this.showToast('error: '+e.message,'err'); }
     },
 
-    // === Advanced fields (story points, components, versions, epic) ===
     async loadJiraProjectMeta() {
       const k = this.jiraDetail.issue?.project?.key || this.jiraProjectKey;
       if (!k) return;
@@ -8122,19 +6493,13 @@ function app() {
         this.jiraComponents = (await rC.json()).components || [];
         this.jiraEpics      = (await rE.json()).epics      || [];
       } catch(e){ console.warn('[jira meta]', e); }
-      // Pre-loads the assignables for the ticket's project — used by the
-      // Assignee dropdown in the overview tab.
       this.loadJiraAssignableUsers(k, '');
-      // the project's types for the type <select> in the detail (its own, it does
-      // not reuse jiraIssueTypes from the create modal). Filters out sub-task (a change
-      // Jira almost always refuses over PUT).
       try {
         const rT = await this.api('/api/jira/issuetypes?project='+encodeURIComponent(k));
         this.jiraDetailIssueTypes = ((await rT.json()).issue_types || []).filter(t => !t.subtask);
       } catch(e){ this.jiraDetailIssueTypes = []; }
     },
     async updateAdvField(patch) {
-      // patch is the UpdateIssueRequest fragment; e.g. { story_points: 5 }
       await this.updateJiraIssue(patch);
     },
 
@@ -8168,31 +6533,22 @@ function app() {
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || ('HTTP '+r.status));
         this.showToast(`SIG${sig} → ${p.pid}`, 'ok');
-        // immediate refresh to see the effect; the WS picks up the next state
         setTimeout(() => this.procsRefreshOnce(), 300);
       } catch(e){
         this.showToast(`failed: ${e.message||e}`, 'err');
       }
     },
 
-    // containersLoaded turns true on BOTH paths: if the fetch failed we are no longer
-    // loading either, and the dockerError banner is what covers the error case.
     async loadContainers(){ try{const r=await this.api('/api/docker/containers'); this.containers=(await r.json())||[]; this.dockerError=null;}catch(e){ this._dockerFail(e); } finally { this.containersLoaded = true; } },
     async loadImages()    { try{const r=await this.api('/api/docker/images');     this.images=(await r.json())||[]; this.dockerError=null;   }catch(e){ this._dockerFail(e); } },
     async loadVolumes()   { try{const r=await this.api('/api/docker/volumes');    this.volumes=await r.json(); this.dockerError=null;           }catch(e){ this._dockerFail(e); } finally { this.volumesLoaded = true; } },
     async loadNetworks()  { try{const r=await this.api('/api/docker/networks');   this.networks=(await r.json())||[]; this.dockerError=null;  }catch(e){ this._dockerFail(e); } finally { this.networksLoaded = true; } },
     async loadCompose()   { try{const r=await this.api('/api/docker/compose');    this.composeProjects=(await r.json())||[]; this.dockerError=null;}catch(e){ this._dockerFail(e); } },
-    // _dockerFail: records the failure for the banner. 'unauthorized' is handled by
-    // api() (which logs out), so it does not become a banner.
     _dockerFail(e){ if(e && e.message==='unauthorized') return; this.dockerError = (e && e.message) || 'failed to load from Docker'; },
 
-    // Pair of helpers for the three-state pattern. `ns` is the flag prefix:
-    // _loadOk('jobs') → jobsLoaded=true, jobsError=''.
     _loadOk(ns){ this[ns+'Loaded'] = true; this[ns+'Error'] = ''; },
     _loadErr(ns, e, msg){
       this[ns+'Loaded'] = false;
-      // 'unauthorized' already yields a toast + logout inside api(); it does not become a
-      // duplicate banner — the same exemption _dockerFail makes.
       if (e && e.message === 'unauthorized') { this[ns+'Error'] = ''; return; }
       this[ns+'Error'] = (e && e.message) || msg || 'failed to load';
       console.warn('['+ns+'] load:', e);
@@ -8270,8 +6626,6 @@ function app() {
       }catch(e){}
       finally{ this.claudeUsageBusy = false; }
     },
-    // loads the model tiering config + the effective models
-    // (after env>config>default) + the allowlist for the editor's dropdown.
     async loadAIModels(){
       if(this.aiModelsBusy) return;
       this.aiModelsBusy = true;
@@ -8283,7 +6637,6 @@ function app() {
       }catch(e){}
       finally{ this.aiModelsBusy = false; }
     },
-    // Persists the tiering config. The backend validates it against the allowlist.
     async saveAIModels(){
       this.aiModelsBusy = true;
       try{
@@ -8291,13 +6644,11 @@ function app() {
         if(!r.ok){ const e=await r.json().catch(()=>({})); this.showToast(e.error||'failed to save models', 'err'); return; }
         this.aiModelsSavedAt = Date.now();
         this.showToast('Model tiering saved — takes effect on the next job/session', 'ok');
-        await this.loadAIModels(); // re-resolve the effective ones
+        await this.loadAIModels();
       }catch(e){ this.showToast('failed to save models', 'err'); }
       finally{ this.aiModelsBusy = false; }
     },
-    // Friendly label for a model value in the dropdown ("" = Default (Opus)).
     _modelLabel(m){ return (m==='' || m==null) ? 'Default (Opus)' : m; },
-    // Formats a token count: 1234 → 1.2K, 3.4M, 5.6B.
     _fmtTok(n){
       n = Number(n)||0;
       if(n>=1e9) return (n/1e9).toFixed(2)+'B';
@@ -8305,12 +6656,10 @@ function app() {
       if(n>=1e3) return (n/1e3).toFixed(1)+'K';
       return String(n);
     },
-    // Sums the 4 token buckets of a UsageStat.
     _tot(st){
       if(!st) return 0;
       return (st.input_tokens||0)+(st.output_tokens||0)+(st.cache_creation_tokens||0)+(st.cache_read_tokens||0);
     },
-    // Time left until a future timestamp (unix s) → "Nd Nh Nm Ns".
     _untilReset(unixSec){
       if(!unixSec) return '';
       let s = Math.max(0, Math.floor(unixSec - (this._nowTick||Date.now())/1000));
@@ -8327,19 +6676,7 @@ function app() {
     _usageFor(accountId){
       return (this.claudeUsage.accounts||[]).find(a=>a.account_id===accountId) || null;
     },
-    // aggregates the by_model of EVERY account into tiers (haiku/sonnet/opus/
-    // fable), with tokens + estimated equivalent API cost. Mirrors priceFor/
-    // costOf in Go (usage.go): cache write = 1.25x input (5m) / 2x (1h), read
-    // a per-model multiple of input; an unknown model falls into the opus tier.
-    // Feeds the "Distribution by tier" card: the more tokens outside opus,
-    // the bigger the routing saving.
-    //
-    // DISPLAY is per tier, but PRICE is per model inside the tier: Opus 5.5
-    // costs $4/$20 (not $5/$25) and reads cache at 5% of input (not 10%). Now that
-    // this host runs claude-opus-5-5[1m], billing the whole tier at the
-    // Opus 5 rate would overstate the card by ~25%.
     _tierRollup(){
-      // [input, output, cache-read multiplier] per MTok.
       const price = { fable:[10/1e6,50/1e6,0.1], opus:[5/1e6,25/1e6,0.1], opus55:[4/1e6,20/1e6,0.05],
                       sonnet:[3/1e6,15/1e6,0.1], haiku:[1/1e6,5/1e6,0.1] };
       const tierOf = (m)=>{ m=(m||'').toLowerCase();
@@ -8348,7 +6685,6 @@ function app() {
         if(m.includes('sonnet')) return 'sonnet';
         if(m.includes('haiku'))  return 'haiku';
         return 'opus'; };
-      // opus55 is a PRICE LINE, not a tier: the card keeps its usual four bars.
       const priceOf = (m,t)=> (t==='opus' && (m||'').toLowerCase().includes('opus-5-5'))
         ? price.opus55 : (price[t]||price.opus);
       const acc = {};
@@ -8356,10 +6692,6 @@ function app() {
         for(const m of (u.by_model||[])){
           const t = tierOf(m.model), p = priceOf(m.model, t);
           const tok  = (m.input_tokens||0)+(m.output_tokens||0)+(m.cache_creation_tokens||0)+(m.cache_read_tokens||0);
-          // Cache-write charges by TTL: 1h = 2x the input, 5m = 1.25x.
-          // cache_creation_tokens is the TOTAL; cache_creation_1h_tokens is the 1h
-          // slice (absent in an old transcript -> everything 5m, the earlier behaviour).
-          // Clamped to the total so a corrupted record cannot inflate the estimate.
           const ccAll = (m.cache_creation_tokens||0);
           const cc1h  = Math.max(0, Math.min(ccAll, m.cache_creation_1h_tokens||0));
           const cc5m  = ccAll - cc1h;
@@ -8374,11 +6706,9 @@ function app() {
       rows.forEach(r=>{ r.share = r.tokens/totalTok; });
       return rows;
     },
-    // rate limits of the Max subscription per account (5h/weekly/monthly).
     async loadClaudeRateLimits(){
       if(this.claudeRatesBusy) return;
       this.claudeRatesBusy = true;
-      // Turns on the 1s clock (live countdown to the reset). Idempotent.
       if(!this._nowTimer){ this._nowTimer = setInterval(()=>{ this._nowTick = Date.now(); }, 1000); }
       try{
         const r=await this.api('/api/claude/accounts/ratelimits');
@@ -8388,9 +6718,7 @@ function app() {
       }catch(e){}
       finally{ this.claudeRatesBusy = false; }
     },
-    // -------- AI page · private-ai-api admin proxy --------
     refreshAITab(name){
-      // Routing (accounts) + Metrics (rate limits/usage) + Tokens (private-ai-api) + AI Prompts.
       if (!['routing','usage','tokens','prompts','agents'].includes(name)) name = 'routing';
       this.aiTab = name;
       if (name==='usage')  { this.loadClaudeRateLimits(); this.loadClaudeAccountsUsage(); }
@@ -8399,7 +6727,6 @@ function app() {
       if (name==='agents') { this.loadAgents(); this.loadAgentAccounts(); }
     },
 
-    // -------- private-ai-tokens: managing the private-ai-api tokens --------
     async loadPrivateApiTokens(){
       this.privError = '';
       try {
@@ -8433,7 +6760,7 @@ function app() {
         const r = await this.api('/api/private-ai/tokens', {method:'POST', body: JSON.stringify(body)});
         const d = await r.json().catch(()=>({}));
         if (!r.ok) { this.showToast(this._errText(d.error) || ('Failed to create (HTTP '+r.status+')'),'err'); return; }
-        this.privCreated = d; // { plaintext, row }
+        this.privCreated = d;
         this.newPrivToken = { name:'', rpm:null, tpm:null, budget:null, expiresDays:null };
         this.showToast('Token created','ok');
         await this.loadPrivateApiTokens();
@@ -8460,13 +6787,11 @@ function app() {
       catch(e){ this.showToast('Could not copy','err'); }
     },
 
-    // -------- "How to connect": example generator for apps consuming the API --------
     _pcCopy(v, label){
       if (!v) return;
       try { navigator.clipboard.writeText(v); this.showToast(label||'Copied','ok'); }
       catch(e){ this.showToast('Could not copy','err'); }
     },
-    // applies to the example the token that was just created (shown once)
     privUseCreatedToken(){
       if (this.privCreated && this.privCreated.plaintext){
         this.privConn.token = this.privCreated.plaintext;
@@ -8474,21 +6799,16 @@ function app() {
       } else { this.showToast('Create a token above first','err'); }
     },
     _pcBase(){ return (this.privConn.baseUrl||'').trim().replace(/\/+$/,''); },
-    // host:port (no scheme) — used in the cert download command
     _pcHostPort(){ return this._pcBase().replace(/^https?:\/\//,''); },
     privCertCmd(){ return 'echo | openssl s_client -connect '+this._pcHostPort()+' 2>/dev/null | openssl x509 > private-ai-api.crt'; },
     _pcTok(){ return (this.privConn.token||'').trim() || 'sk-priv-••••••••'; },
     _pcModel(){ return (this.privConn.model||'').trim() || (this.privConn.fmt==='openai'?'gpt-4o':'claude-sonnet-4-6'); },
-    // endpoint path according to the chosen format
     privConnPath(){ return this.privConn.fmt==='openai' ? '/v1/chat/completions' : '/v1/messages'; },
-    // full URL the app should call (for the "Endpoint" card)
     privConnFullUrl(){ return this._pcBase() + this.privConnPath(); },
-// auth header value (for the "Authentication" card)
     privConnAuthHeader(){
       const t = this._pcTok();
       return this.privConn.fmt==='openai' ? ('Authorization: Bearer '+t) : ('x-api-key: '+t);
     },
-    // generates the code snippet for the selected (format × language × TLS)
     privSnippet(){
       const base = this._pcBase(), tok = this._pcTok(), model = this._pcModel();
       const anthropic = this.privConn.fmt !== 'openai';
@@ -8712,7 +7032,6 @@ function app() {
         }
       }
     },
-    // visual status of a token (revoked > expired > active)
     privTokenStatus(t){
       if (!t) return { label:'?', cls:'' };
       if (t.revokedAt) return { label:'revoked', cls:'bg-red-500/20 text-red-300 border border-red-500/30' };
@@ -8720,16 +7039,13 @@ function app() {
       if (t.enabled === false) return { label:'disabled', cls:'bg-gray-500/20 text-gray-400 border border-gray-500/30' };
       return { label:'active', cls:'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' };
     },
-    // epoch ms → short local date
     _privDate(ms){ try { return new Date(ms).toLocaleDateString(); } catch(e){ return '—'; } },
-    // seconds → "Xh Ym" / "Xm" / "Xs"
     _privDur(sec){ sec = Number(sec)||0; if (sec<60) return sec+'s'; const m=Math.floor(sec/60); if (m<60) return m+'min'; const h=Math.floor(m/60); if (h<48) return h+'h'; return Math.floor(h/24)+'d'; },
 
     async forkClaudeSession(uuid){
       if (this.claudeBusy) return;
       this.claudeBusy = true;
       try {
-        // model is optional; "" = the configured default of the Interactive tier.
         const r = await this.api('/api/claude/session/fork', {method:'POST', body: JSON.stringify({resume_uuid: uuid||'', model: this.claudeForkModel||''})});
         const d = await r.json();
         if (!r.ok) throw new Error(d.error||('HTTP '+r.status));
@@ -8752,20 +7068,10 @@ function app() {
       finally { this.claudeBusy = false; }
     },
     attachClaudeSession(name){
-      // Reuses the terminal infrastructure: creates/selects a tab pointing at this session
       this.setPage('terminal');
       this.$nextTick(()=>{ try { this.reattachSession ? this.reattachSession(name) : this.openHostTerminal(name); } catch(e){} });
     },
     async loadConfig()    { try{const r=await this.api('/api/config');            this.cfg=await r.json();                  }catch(e){} },
-    // Generic helper for loaders. It standardizes:
-    //   1. error handling: 401 is already handled by api(); other errors become a
-    //      toast instead of a silent catch — half the loaders used to swallow
-    //      failures and leave empty lists with no feedback.
-    //   2. type guard: if the response is an object (a backend error) instead of the
-    //      expected type, it returns the fallback. `(await r.json())||[]` used to let
-    //      an object through and break map() later on.
-    //   3. opts.silent: skips the toast (useful for background polling).
-    //   4. opts.label: prefix of the error toast.
     async _safeLoad(path, opts) {
       opts = opts || {};
       const fallback = opts.fallback === undefined ? null : opts.fallback;
@@ -8790,9 +7096,6 @@ function app() {
     },
     async loadPorts(silent)    { const d = await this._safeLoad('/api/system/listening',  {expect:'array', fallback:[], silent, label:'Ports'}); if (d) this.listening = d; },
     async loadConns(silent)    { const d = await this._safeLoad('/api/system/connections',{expect:'array', fallback:[], silent, label:'Connections'}); if (d) this.connections = d; },
-    // computed filters. Memoizing is not worth it — Alpine only re-runs
-    // when a dependency changes (listening/connections/filter), and the filters
-    // are linear O(n) with n < 1000.
     filteredListening() {
       const f = this.portsFilter, t = (f.text||'').toLowerCase();
       return this.listening.filter(p => {
@@ -8802,8 +7105,6 @@ function app() {
       });
     },
     filteredConnections() {
-      // The connections table reaches thousands of rows and this method is read several times
-      // per render; the filter's three facets enter as an explicit dependency of the memo.
       const f = this.connsFilter, t = (f.text||'').toLowerCase();
       const proto = f.proto || '', state = f.state || '', src = this.connections;
       return __panelMemo('connections', [src, src && src.length, proto, state, t], () => src.filter(c => {
@@ -8813,7 +7114,6 @@ function app() {
         return true;
       }));
     },
-    // chip coloured by the connection's state.
     connStateClass(state) {
       switch(state) {
         case 'ESTAB': return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
@@ -8824,8 +7124,6 @@ function app() {
         default: return 'bg-gray-700/20 text-gray-400 border border-gray-700/30';
       }
     },
-    // auto-refresh on/off. Start/stop paired with $watch in the section's
-    // x-init (start on entering the view; stop on leaving) + the select's change.
     portsAutoStart() {
       this.portsAutoStop();
       if (!this.portsAutoRefresh || this.currentView !== 'ports') return;
@@ -8842,13 +7140,11 @@ function app() {
     async loadMetricSnapshot() { const d = await this._safeLoad('/api/metrics/snapshot',  {label:'Live metrics'}); if (d && d.values) { this.metricSnapshot = d.values; this.metricSnapTs = d.t || 0; } },
     async loadRuleSeries()     { const keys=[...new Set((this.alertRules||[]).map(r=>r.metric_key||r.metric||r.field).filter(Boolean))]; const out={}; await Promise.all(keys.map(async k=>{ const d=await this._safeLoad('/api/metrics/series?key='+encodeURIComponent(k),{silent:true,label:'Series'}); if(d&&d.points) out[k]=d.points; })); this.ruleSeries=out; },
     async loadSecrets() {
-      // usersList feeds amAdmin (the UX gate of the "System" group); loads once.
       if (!(this.usersList || []).length) { try { await this.loadUsers(); } catch(e){} }
       const d = await this._safeLoad('/api/secrets/list', {label:'Secrets'});
-      this.secretKeys = (d && d.keys) || [];                 // back-compat
+      this.secretKeys = (d && d.keys) || [];
       const groups = (d && d.groups) || [];
       this.secretGroups = groups;
-      // Opens every group by default; preserves a collapse the user already chose.
       const open = {};
       for (const g of groups) {
         const name = g.name || '';
@@ -8886,10 +7182,6 @@ function app() {
     },
     secretFmtDate(ts){ if(!ts) return ''; try { return new Date(ts*1000).toLocaleString(); } catch(e){ return ''; } },
 
-    // Normalizes any error/message into a readable string. Upstream APIs (e.g.
-    // private-ai-api) return {error:{message,type}}; PANEL returns
-    // {error:"..."}. Accepts both shapes + loose objects, without ever producing
-    // "[object Object]". Root cause of the "[object Object]" toast when creating a token.
     _errText(x){
       if (x == null) return '';
       if (typeof x === 'string') return x;
@@ -8902,27 +7194,17 @@ function app() {
       return String(x);
     },
     showToast(text, kind='', undoAction=null) {
-      // Shield: never render "[object Object]". Any caller that passes
-      // an error object (e.g. d.error relayed from an upstream) gets a string.
       text = this._errText(text);
-      // Toast queue: up to 3 stacked, one timer per item. The slot used to be
-      // single and bursty pollers erased the toast that mattered — the
-      // undoAction lost its 5s window with no warning. Now each toast has its
-      // own timer and a toast with an undoAction is NEVER evicted by another.
       const id = ++this._toastSeq;
       const t = { id, text, kind, undoText: undoAction ? 'undo' : '', undoAction, timer: null };
       this.toasts.push(t);
       const MAX = 3;
       while (this.toasts.length > MAX) {
-        // Evicts the oldest one WITHOUT undo (preserving the undo window) and never
-        // the one just stacked. If every old one has undo, it keeps more than 3.
         const idx = this.toasts.findIndex(x => x.id !== id && !x.undoAction);
         if (idx === -1) break;
         this._clearToastTimer(this.toasts[idx]);
         this.toasts.splice(idx, 1);
       }
-      // Errors stay 8s (the operator needs to read the root cause before it goes);
-      // warnings/successes stay at 2.8s. Toasts with an undoAction stay 5s.
       const ms = undoAction ? 5000 : (kind === 'err' ? 8000 : 2800);
       t.timer = setTimeout(() => this._dismissToast(id), ms);
     },
@@ -8940,7 +7222,6 @@ function app() {
       this._dismissToast(id);
     },
 
-    // ---------------- Table sorting --------------------------------
     sortBy(tableId, field){
       const cur = this.sortState[tableId] || { field:'', dir:1 };
       const dir = (cur.field === field) ? -cur.dir : 1;
@@ -8970,11 +7251,6 @@ function app() {
     },
 
     async containerAction(c, action) {
-// honest containerAction. It used to report 'stop ok' + a fixed
-      // refresh at 400ms — but docker stop has a SIGTERM grace (~10s), so at
-      // 400ms the container was still running and the row stayed green. Now we
-      // mark the id in pendingActions ('stopping…' row / aria-busy) and do
-      // short repeated refreshes until the State really changes (or 15s elapse).
       const id = c.Id;
       const base = action.split('?')[0];
       try {
@@ -8990,7 +7266,7 @@ function app() {
         const expected = { start:'running', stop:'exited', kill:'exited', pause:'paused', unpause:'running' }[base];
         const before = c.State;
         this.pendingActions[id] = pendingLabel;
-        const delays = [400, 1000, 2000, 4000, 4000, 4000]; // ~15s in total
+        const delays = [400, 1000, 2000, 4000, 4000, 4000];
         const t0 = Date.now();
         let settled = false;
         try {
@@ -8999,7 +7275,7 @@ function app() {
             await this.loadContainers();
             const cur = this.containers.find(x => x.Id === id);
             const state = cur ? cur.State : null;
-            if (state == null) { settled = true; break; } // gone from the list
+            if (state == null) { settled = true; break; }
             if (expected ? state === expected : state !== before) { settled = true; break; }
             if (Date.now() - t0 > 15000) break;
           }
@@ -9015,7 +7291,6 @@ function app() {
       try { await this.api('/api/docker/images?id='+encodeURIComponent(id)+'&force=1', {method:'DELETE'}); this.showToast('removed','ok'); this.loadImages(); } catch(e){ this.showToast(e.message,'err'); }
     },
 
-    // COMPOSE
     async composeAction(p, action) {
       this.composeOutput='Running '+action+' in '+p.Name+'...';
       try {
@@ -9026,13 +7301,6 @@ function app() {
       } catch(e){ this.composeOutput='error: '+e.message; }
     },
 
-    // PRUNE + PULL
-    // Friction per target. Root cause of the bug: prune('volumes') deleted volumes with
-    // NO confirmation at all, while "Prune all" — which does exactly that and more —
-    // required typing DELETE. An orphan volume is the only target with irrecoverable
-    // DATA loss, so it now demands the same typing as prune all.
-    // containers/images: simple confirmation (local state/layers are lost, but they are
-    // rebuildable). networks/build: no confirmation (nothing is lost).
     _pruneConfirm: {
       volumes: {
         requireText: 'DELETE',
@@ -9063,8 +7331,6 @@ function app() {
       finally { this.pruneBusy = false; }
     },
     async pruneAllConfirm() {
-      // The type-to-confirm now lives in prune('all') — this wrapper only
-      // exists because index.html calls pruneAllConfirm().
       return this.prune('all');
     },
     async pullImage() {
@@ -9078,8 +7344,6 @@ function app() {
       } catch(e){ this.pullOut += '\nerror: '+e.message; }
     },
 
-    // SYSTEMD
-    // Same as filteredContainers: memo by list identity + search term.
     filteredUnits(){
       const q=(this.filter.units||'').toLowerCase(); const src=this.units;
       return __panelMemo('units', [src, src && src.length, q], () =>
@@ -9103,33 +7367,21 @@ function app() {
         this.unitOutput = (Array.isArray(arr) ? arr : []).join('\n');
       } catch(e) { this.unitOutput = '[error] ' + (e.message||e); }
     },
-    // a single reusable modal. Replaces the inline window.confirm/prompt.
     askConfirm(title, message, action, opts) {
       opts = opts || {};
       this.confirmModal = { open: true, title, message, action, danger: !!opts.danger, requireText: opts.requireText || '', typed: '' };
     },
-    // Enables the Confirm button in typing mode. Without requireText, always true —
-    // so the HTML's :disabled can be unconditional (:disabled="!confirmTypedOk()").
-    // Case-sensitive comparison; only the spaces at the ends are tolerated.
     confirmTypedOk() {
       const want = (this.confirmModal && this.confirmModal.requireText) || '';
       if (!want) return true;
       return String((this.confirmModal && this.confirmModal.typed) || '').trim() === want;
     },
-    // Promise bridge over confirmModal, created to replace the native confirm() without
-    // rewriting the control flow of every call-site: the synchronous guard of the native
-    // confirm() becomes an awaited guard and the rest of the method's body stays where it
-    // was, instead of being pushed into a callback the way askConfirm would demand.
-    // Cancellation is detected by a setter on `open` because the modal's Cancel/x/Esc
-    // buttons (which live in index.html) only do `confirmModal.open=false`, with no callback.
     confirmAsync(message, opts) {
       opts = opts || {};
       const raw = String(message == null ? '' : message);
       let title = opts.title || 'Confirm', body = raw;
       if (!opts.title) {
         const nl = raw.indexOf('\n');
-        // It only promotes the first line to a title when that line is short and there is a body
-        // after it; one-line messages stay whole in the body.
         if (nl > 0 && nl <= 80) { title = raw.slice(0, nl).trim(); body = raw.slice(nl + 1).replace(/^\n+/, ''); }
       }
       return new Promise((resolve) => {
@@ -9139,10 +7391,6 @@ function app() {
         const state = {
           title, message: body, danger: !!opts.danger,
           requireText, typed: '',
-          // In typing mode, action() becomes a no-op while the text does not match. That is
-          // fail-safe: the Confirm button already did `open=false` before calling action(),
-          // so the `open` setter resolves false (= cancelled) and the action does NOT happen.
-          // The HTML's :disabled is only comfort; the real decision is this line.
           action: () => {
             if (requireText && String(state.typed == null ? '' : state.typed).trim() !== requireText) return;
             finish(true);
@@ -9152,17 +7400,11 @@ function app() {
         Object.defineProperty(state, 'open', {
           enumerable: true, configurable: true,
           get() { return _open; },
-          // The Confirm button does `open=false` BEFORE invoking action(); the setTimeout
-          // lets the synchronous action() win the race, so false is only left over when the
-          // user really did cancel.
           set(v) { _open = v; if (!v) setTimeout(() => finish(false), 0); },
         });
         this.confirmModal = state;
       });
     },
-    // Internal validator of askInput. Returns an error string ('' = ok).
-    // Called both by the :disabled and by the error text in the HTML; kept
-    // pure (no mutation) so it does not trigger a reactivity loop on render.
     _askInputValidate(v) {
       const m = this.askInputModal;
       const fn = m && m.validate;
@@ -9170,21 +7412,16 @@ function app() {
       try { const r = fn(String(v == null ? '' : v)); return (r && r !== true) ? String(r) : ''; }
       catch (e) { return (e && e.message) || 'invalid'; }
     },
-    // Enables askInput's Confirm button. Without validate, always true (the native
-    // prompt let you confirm an empty value; the call-site handles `if(!name) return`).
     askInputOk() {
       const m = this.askInputModal;
       if (!m || !m.open) return false;
       return !this._askInputValidate(m.value);
     },
-    // Reactive error message shown under the askInput field.
     askInputError() {
       const m = this.askInputModal;
       if (!m || !m.open) return '';
       return this._askInputValidate(m.value);
     },
-    // Session name validation (letters/digits/_/-, up to 40). The format of askInput's
-    // validate: it returns an error string ('' = ok).
     _sessionNameError(v) {
       const s = String(v == null ? '' : v);
       if (!s.trim()) return 'Enter a name';
@@ -9192,10 +7429,6 @@ function app() {
       if (s.length > 40) return 'Maximum 40 characters';
       return '';
     },
-    // promise bridge over askInputModal, symmetric to confirmAsync.
-    // It replaces window.prompt(): returns Promise<string|null> (null = cancelled).
-    // Enter confirms if validate passes; Esc/Cancel/x resolve null. Cancellation
-    // is detected by the `open` setter (the same trick as confirmAsync).
     askInput(opts) {
       opts = opts || {};
       const validate = typeof opts.validate === 'function' ? opts.validate : null;
@@ -9209,9 +7442,6 @@ function app() {
           value: opts.value == null ? '' : String(opts.value),
           error: '',
           validate,
-          // submit() only resolves when validate passes. Fail-safe just like confirmAsync:
-          // the button already did open=false, so a forced submit falls into the `open`
-          // setter and resolves null (= cancelled) instead of confirming an invalid value.
           submit: () => {
             const v = String(state.value == null ? '' : state.value);
             if (validate) {
@@ -9230,11 +7460,9 @@ function app() {
           set(v) { _open = v; if (!v) setTimeout(() => finish(null), 0); },
         });
         this.askInputModal = state;
-        // Focuses (and selects) the field as soon as the modal appears.
         this.$nextTick(() => { try { const el = this.$refs.askInputField; if (el) { el.focus(); el.select(); } } catch (e) {} });
       });
     },
-    // auto-refresh of the units list, with a view guard.
     unitsAutoStart() {
       this.unitsAutoStop();
       if (!this.unitsAutoRefresh || this.currentView !== 'systemd') return;
@@ -9243,7 +7471,6 @@ function app() {
     unitsAutoStop() {
       if (this._unitsTimer) { clearInterval(this._unitsTimer); this._unitsTimer = null; }
     },
-    // the coloured-chip-by-state treatment extended to systemd.
     unitStateClass(state) {
       switch(state) {
         case 'active': return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
@@ -9288,10 +7515,6 @@ function app() {
       } catch(e){ this.showToast(e.message,'err'); }
     },
 
-    // incremental scroll. A sentinel at the end of every capped list;
-    // when it enters the scrollable container's viewport it raises the cap while
-    // there are hidden items left. The "show more/all" buttons stay as the
-    // accessible fallback. It does NOT touch the commit graph (SVG by absolute index).
     observeMore(el, id) {
       if (!el || typeof IntersectionObserver === "undefined") return;
       this._scrollDisconnect(id);
@@ -9327,18 +7550,14 @@ function app() {
       const io = this._scrollObservers && this._scrollObservers[id];
       if (io) { try { io.disconnect(); } catch (e) {} delete this._scrollObservers[id]; }
     },
-    // Reattaches the explorer's sentinel after every folder switch (the element is
-    // persistent under x-show, so x-init does not re-run; re-observe via nextTick).
     _reattachFilesScroll() {
       this.$nextTick(() => { const s = document.querySelector('[data-sentinel="files"]'); if (s) this.observeMore(s, "files"); });
     },
 
-    // FILES
     async browseFiles(path){ try{ const r=await this.api('/api/files/list?path='+encodeURIComponent(path)); const d=await r.json(); if(d.error){this.showToast(d.error,'err');return;} this.fileList=d; this.filePath=d.path; this.fileLimit=200; this._reattachFilesScroll();}catch(e){this.showToast(e.message,'err');} },
     async openFile(path){ try{ const r=await this.api('/api/files/read?path='+encodeURIComponent(path)); if(!r.ok){const d=await r.json().catch(()=>({})); this.showToast(d.error||r.statusText,'err');return;} const txt=await r.text(); this.fileEdit={path, content:txt};}catch(e){this.showToast(e.message,'err');} },
     async saveFile(){ try{ const r=await this.api('/api/files/write', {method:'POST', body:JSON.stringify(this.fileEdit)}); const d=await r.json(); if(d.ok){this.showToast('saved','ok');}else{this.showToast(d.error||'error','err');} }catch(e){this.showToast(e.message,'err');} },
 
-    // FILES — extended helpers + handlers (CSS — full manager)
     absPath(name){ const base=this.fileList?.path||'/'; return (base+'/'+name).replace('//','/'); },
     breadcrumb(){ const p=this.fileList?.path||'/'; if(p==='/') return [{label:'/',path:'/'}]; const parts=p.split('/').filter(Boolean); const out=[{label:'/',path:'/'}]; let acc=''; for(const s of parts){ acc+='/'+s; out.push({label:s,path:acc}); } return out; },
     iconFor(name){ const l=name.toLowerCase(); if(l.match(/\.(png|jpe?g|gif|webp|svg|bmp|ico)$/)) return '🖼'; if(l.match(/\.(mp4|webm|mkv|mov|avi)$/)) return '🎬'; if(l.match(/\.(mp3|wav|ogg|flac|m4a)$/)) return '🎵'; if(l.match(/\.(pdf)$/)) return '📕'; if(l.match(/\.(zip|tar|gz|tgz|7z|rar|bz2|xz)$/)) return '🗜'; if(l.match(/\.(json|ya?ml|toml|ini|conf|cfg)$/)) return '⚙'; if(l.match(/\.(sh|bash|zsh)$/)) return '$'; if(l.match(/\.(go|js|ts|tsx|jsx|py|rb|rs|java|c|cpp|h|html|css)$/)) return '⌨'; if(l.match(/\.(log|txt|md)$/)) return '📄'; return '📄'; },
@@ -9358,9 +7577,6 @@ function app() {
     async previewEntry(e){ const p=this.absPath(e.name); const l=e.name.toLowerCase(); let kind='other'; if(l.match(/\.(png|jpe?g|gif|webp|svg|bmp|ico)$/)) kind='image'; else if(l.match(/\.(mp4|webm|mkv|mov)$/)) kind='video'; else if(l.match(/\.(mp3|wav|ogg|flac|m4a)$/)) kind='audio'; else if(l.endsWith('.pdf')) kind='pdf'; try{ const r=await this.api('/api/files/preview?path='+encodeURIComponent(p)); const blob=await r.blob(); this.filePreview={ url: URL.createObjectURL(blob), name: e.name, kind }; }catch(err){ this.showToast('preview unavailable: '+err.message,'err'); } },
     async renamePrompt(name){ const fresh=await this.askInput({ title:'Rename', label:'Rename to:', value:name }); if(!fresh||fresh===name) return; const from=this.absPath(name), to=this.absPath(fresh); try{ const r=await this.api('/api/files/rename',{method:'POST',body:JSON.stringify({from,to})}); const d=await r.json(); if(d.ok){this.showToast('renamed','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
     async trashEntry(name){ if(!(await this.confirmAsync('Move '+name+' to the trash?'))) return; const path=this.absPath(name); try{ const r=await this.api('/api/files/trash',{method:'POST',body:JSON.stringify({path})}); const d=await r.json(); if(d.ok){this.showToast('moved to trash','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
-    // Honest toast for batch operations: green only when EVERYTHING passed,
-    // a warning on partial, an error when nothing passed — always saying how many.
-    // These routines used to swallow the failures and show green regardless.
     _bulkToast(label, ok, fail, lastErr){
       const total = ok + fail;
       if (fail === 0) { this.showToast(`${label}: ${ok}/${total}`, 'ok'); return; }
@@ -9391,7 +7607,6 @@ function app() {
     async openTrash(){ this.fileTrash.open=true; try{ const r=await this.api('/api/files/trash/list'); const d=await r.json(); this.fileTrash.entries=d.entries||[]; }catch(e){this.showToast(e.message,'err');} },
     async restoreTrash(t){ try{ const r=await this.api('/api/files/trash/restore',{method:'POST',body:JSON.stringify({trash_path:t.trash_path})}); const d=await r.json(); if(d.ok){this.showToast('restored: '+d.restored,'ok'); this.openTrash(); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
 
-    // SECRETS
     openSecretForm(group){ this.newSecret={key:'',value:'',group:group||'',type:'password',notes:''}; this.secretFormOpen=true; },
     async addSecret(){
       if(!(this.newSecret.key||'').trim()){ this.showToast('Enter the key','err'); return; }
@@ -9444,27 +7659,20 @@ function app() {
     },
     async deleteSecret(key){ if(!(await this.confirmAsync('Remove '+key+'?')))return; try{ await this.api('/api/secrets/delete', {method:'POST', body:JSON.stringify({key})}); this.loadSecrets();}catch(e){this.showToast(e.message,'err');} },
 
-    // ALERTS
     async addRule(){ try{ const r=await this.api('/api/metrics/rules/add', {method:'POST', body:JSON.stringify(this.newRule)}); const d=await r.json(); if(d.error){this.showToast(d.error,'err');return;} this.alertFormOpen=false; this.loadAlertRules(); }catch(e){this.showToast(e.message,'err');} },
     async removeRule(name){ try{ await this.api('/api/metrics/rules/remove', {method:'POST', body:JSON.stringify({name})}); this.loadAlertRules(); }catch(e){this.showToast(e.message,'err');} },
 
-    // ── Metrics catalogue + live state (vcgrp-alert-state) ──
     _alertSev:{info:'info',warning:'warning',critical:'critical'},
     sevLabel(s){ return this._alertSev[s] || s || 'warning'; },
-    // Catalogue: descriptor per key, label/unit, grouping by category.
     metricDesc(key){ return (this.metricCatalog||[]).find(m=>m.key===key) || null; },
     metricLabel(key){ const d=this.metricDesc(key); return d ? d.label : (key||''); },
     metricUnit(key){ const d=this.metricDesc(key); return d ? d.unit : ''; },
     ruleKey(r){ return r.metric_key || r.metric || r.field || ''; },
     ruleLabel(r){ return r.label || this.metricLabel(this.ruleKey(r)) || this.ruleKey(r); },
     ruleUnit(r){ return r.unit || this.metricUnit(this.ruleKey(r)); },
-    // Groups the catalogue by category. filtered=true applies the search filter
-    // (used by the mini-dashboard); false returns everything (used by the builder's picker).
     _catOrder:['System','Claude','Jobs','Notifications','Docker','WhatsApp','Authentication'],
     _catIcons:{'System':'🖥️','Claude':'✨','Jobs':'⚙️','Notifications':'🔔','Docker':'🐳','WhatsApp':'💬','Authentication':'🔐'},
     catIcon(c){ if(this._catIcons[c]) return this._catIcons[c]; if((c||'').startsWith('Claude')) return '👤'; return '📦'; },
-    // sort rank: base categories in the fixed order (×10); "Claude · <account>"
-    // comes right after "Claude"; unknown ones go to the end.
     _catRank(cat){
       const base = this._catOrder.indexOf(cat);
       if (base >= 0) return base*10;
@@ -9480,7 +7688,6 @@ function app() {
       }
       return Object.entries(g).sort((a,b)=> (this._catRank(a[0])-this._catRank(b[0])) || a[0].localeCompare(b[0]));
     },
-    // Unit-aware formatting of values.
     fmtMetric(v, unit){
       v = Number(v); if (!isFinite(v)) return '—';
       switch(unit){
@@ -9496,11 +7703,9 @@ function app() {
     },
     _fmtNum(n){ n=Number(n)||0; if(n>=1e9)return (n/1e9).toFixed(1)+'B'; if(n>=1e6)return (n/1e6).toFixed(1)+'M'; if(n>=1e3)return (n/1e3).toFixed(1)+'k'; return String(Math.round(n)); },
     _fmtDur(s){ s=Number(s)||0; if(s>=86400)return (s/86400).toFixed(1)+'d'; if(s>=3600)return (s/3600).toFixed(1)+'h'; if(s>=60)return (s/60).toFixed(0)+'m'; return s.toFixed(0)+'s'; },
-    // Colour (hex, for canvas/svg and the dot) by the rule's severity.
     _thrColor(sev){ return sev==='critical' ? '#f87171' : sev==='info' ? '#a78bfa' : '#fbbf24'; },
     alertToneClass(state){ return ({normal:'ntf-tone-success',pending:'ntf-tone-warning',firing:'ntf-tone-danger',nodata:'ntf-tone-muted'})[state] || 'ntf-tone-muted'; },
     alertStateIco(state){ return ({normal:'✓',pending:'⏳',firing:'🔥',nodata:'∅'})[state] || '∅'; },
-    // pending_since comes from the server; we tolerate skew by using the client's clock.
     _nowSec(){ return this.clockNowSec || Math.floor(Date.now()/1000); },
     alertStateLabel(r){
       const st = r.state || 'nodata';
@@ -9511,7 +7716,6 @@ function app() {
       if (st==='firing'){ const held = Math.max(0, (now - since) - dur); return 'Firing for '+held+'s'; }
       return st;
     },
-    // Value-vs-threshold bar (0-100%, saturated).
     alertBarPct(r){
       const t = Number(r.threshold)||0, v = Number(r.current_value)||0;
       if (t<=0) return v>0?100:0;
@@ -9531,24 +7735,20 @@ function app() {
         +'<span class="kw">for</span> <b>'+esc(r.duration||0)+'s</b> <span class="kw">→ event</span> <b>metric.threshold</b> '
         +'<span class="kw">· severity</span> <b>'+esc(this.sevLabel(r.severity))+'</b>';
     },
-    // ── SVG sparkline per rule (trend of ANY metric + threshold line) ──
     sparkPoints(r){ return (this.ruleSeries && this.ruleSeries[this.ruleKey(r)]) || []; },
     _sparkRange(r){ const pts=this.sparkPoints(r); const vals=pts.map(p=>p.v).concat([Number(r.threshold)||0]); let mn=Math.min(...vals), mx=Math.max(...vals); if(!isFinite(mn))mn=0; if(!isFinite(mx))mx=1; if(mx===mn)mx=mn+1; return {mn,mx}; },
     sparkLine(r){ const pts=this.sparkPoints(r); if(pts.length<2) return ''; const {mn,mx}=this._sparkRange(r); const W=240,H=40,n=pts.length; return pts.map((p,i)=>{ const x=(i/(n-1))*W; const y=H-((p.v-mn)/(mx-mn))*H; return x.toFixed(1)+','+Math.max(1,Math.min(H-1,y)).toFixed(1); }).join(' '); },
     sparkThreshY(r){ const pts=this.sparkPoints(r); if(pts.length<2) return 0; const {mn,mx}=this._sparkRange(r); const H=40; return Math.max(1,Math.min(H-1, H-(((Number(r.threshold)||0)-mn)/(mx-mn))*H)).toFixed(1); },
 
-    // ── Unified alert builder (Trigger → Action → Destination) ──
     _abFresh(){ return { open:true, step:1, kind:'metric', metric:'sys.cpu', op:'>', threshold:80, duration:60, rearm_margin:0, renotify_sec:0, event_type:'metric.threshold', _origin:'', _kind:'', severity:'warning', enabled:true, channels:[], name:'', description:'', editingLimit:'', editingRule:'', aiBusy:false, nameTouched:false }; },
     openAlertBuilder(kind, prefillMetric){
       const b=this._abFresh(); b.kind=kind||'metric'; if(prefillMetric) b.metric=prefillMetric;
-      // initial threshold: ~1.5× the metric's current value, when there is one
       const cur=Number(this.metricSnapshot[b.metric]);
       if(isFinite(cur)&&cur>0) b.threshold=Math.max(1, Math.round(cur*1.5));
       this.alertBuilder=b; this.alertSuggestInstant();
     },
     alertTriggerLabel(){ const b=this.alertBuilder; if(b.kind==='event'){ const et=(this.notify.catalog.event_types||[]).find(e=>e.type_prefix===b.event_type); return et?et.label:b.event_type; } return this.metricLabel(b.metric)||b.metric; },
     _opPhrase(op,past){ const m=past?{'>':'goes above','>=':'reaches','<':'falls below','<=':'stays at or below'}:{'>':'above','>=':'≥','<':'below','<=':'≤'}; return m[op]||op; },
-    // Instant suggestion (contextual heuristic). Does not overwrite a manual edit.
     alertSuggestInstant(){
       const b=this.alertBuilder; if(b.nameTouched) return;
       if(b.kind==='event'){
@@ -9562,7 +7762,6 @@ function app() {
         b.description='Warns when '+lbl.toLowerCase()+' '+this._opPhrase(b.op,true)+' '+val+dur+'.';
       }
     },
-    // ✨ refine with AI (best-effort; keeps the instant suggestion if it fails)
     async alertSuggestAI(){
       const b=this.alertBuilder; b.aiBusy=true;
       try{
@@ -9576,8 +7775,6 @@ function app() {
       }catch(e){ this.showToast('AI unavailable right now','err'); }
       finally{ b.aiBusy=false; }
     },
-    // Save: orchestrates the THRESHOLD (metric trigger) + the routing RULE
-    // (bound by the label rule==name) in a single flow. Event → only the rule.
     async saveAlert(){
       const b=this.alertBuilder;
       if(!b.name||!b.name.trim()){ this.showToast('Give the alert a name','err'); return; }
@@ -9594,16 +7791,10 @@ function app() {
         b.open=false; this.loadAlertRules(); this.loadNotify(); this.showToast('Alert saved ✅','ok');
       }catch(e){ this.showToast(e.message||'Error saving','err'); }
     },
-    // trigger↔destination resolution: the notification rule bound to a threshold.
     _linkedRule(limitName){ return (this.notify.rules||[]).find(r=>r.labels&&r.labels.rule===limitName) || null; },
     alertDestinations(limitName){ const rl=this._linkedRule(limitName); if(!rl||!rl.channels) return []; return rl.channels.map(id=>{ const c=(this.notify.channels||[]).find(x=>x.id===id); return c?c.name:id; }); },
-    // Enable/disable an alert. For an event alert it is the rule's own enabled;
-    // for a metric alert it is the enabled of the bound notification rule
-    // (disabling silences the warning without deleting the rule — the live state stays
-    // visible). With no bound rule (a metric with no destination) → considered active.
     alertEnabled(a){ if(a.type==='event'){ return a.rule ? !!a.rule.enabled : true; } const rl=this._linkedRule(a.limit.name); return rl ? !!rl.enabled : true; },
     toggleAlertEnabled(a){ if(a.type==='event'){ if(a.rule) this.toggleNotifyRule(a.rule); return; } const rl=this._linkedRule(a.limit.name); if(rl){ this.toggleNotifyRule(rl); } else { this.showToast('No destination to enable or disable — add a channel to this alert','err'); } },
-    // Unified list: metric thresholds + event rules (non-metric).
     unifiedAlerts(){
       const out=[];
       for(const lim of (this.alertRules||[])) out.push({type:'metric', limit:lim, name:lim.name});
@@ -9633,12 +7824,11 @@ function app() {
     },
     toggleAlertChannel(id){ const ch=this.alertBuilder.channels; const i=ch.indexOf(id); if(i>=0)ch.splice(i,1); else ch.push(id); },
 
-    // ALERTING → WhatsApp (admin)
     async loadAlerting(){
       try {
         const r = await this.api('/api/admin/alerting', { raw:true });
         if (!r.ok) {
-          if (r.status === 403) return; // non-admin: stays quiet
+          if (r.status === 403) return;
           this.showToast('Error loading the alert config', 'err');
           return;
         }
@@ -9674,10 +7864,7 @@ function app() {
       finally { this.alertingBusy = false; }
     },
 
-    // ── Event-driven notifications ───────────────────────────────────────────
     async loadNotify(){
-      // silent: the section is primary-only; for a non-admin the endpoints return 403 and
-      // we do not want a spam of toasts (the same pattern as loadAlerting).
       const [ch, rl, cat] = await Promise.all([
         this._safeLoad('/api/notify/channels', {silent:true, label:'Notification channels'}),
         this._safeLoad('/api/notify/rules',    {silent:true, label:'Notification rules'}),
@@ -9692,7 +7879,6 @@ function app() {
       const d = await this._safeLoad('/api/notify/events?limit=100', {silent:true, label:'Event history'});
       if (d) { this.notify.events = d.events || []; this.notify.dropped = d.dropped || 0; }
     },
-    // Channels
     newNotifyChannel(){ this.notify.channelForm = {id:'', name:'', type:'inapp', enabled:true, config:{}}; this.notify.channelFormOpen = true; },
     editNotifyChannel(c){ const f = JSON.parse(JSON.stringify(c)); f.config = f.config || {from_user:'', chat_jid:''}; this.notify.channelForm = f; this.notify.channelFormOpen = true; },
     async saveNotifyChannel(){
@@ -9720,7 +7906,6 @@ function app() {
         this.showToast('Test sent ✓', 'ok');
       } catch (e) { this.showToast(e.message, 'err'); }
     },
-    // Rules — _kind/_origin are UI sugar mapping onto labels.kind/origin.
     newNotifyRule(){ this.notify.ruleForm = {id:'', name:'', enabled:true, type_prefix:'job.', min_severity:'', source_prefix:'', _kind:'', _origin:'', channels:[]}; this.notify.dryrun = null; this.notify.ruleFormOpen = true; },
     editNotifyRule(r){
       const f = JSON.parse(JSON.stringify(r));
@@ -9769,9 +7954,7 @@ function app() {
     },
     notifyChannelName(id){ const c = (this.notify.channels||[]).find(c=>c.id===id); return c ? c.name : id; },
     notifyEventDot(sev){ return sev==='critical' ? 'text-red-400' : (sev==='warning' ? 'text-amber-400' : 'text-sky-300'); },
-    // Presentation metadata of a type_prefix (with a friendly fallback).
     notifyTypeMeta(p){ return this.notifyMeta[p] || {icon:'🔔', tone:'info', short:(p||'Any event'), desc:''}; },
-    // Summary sentence of the rule being built (HTML escaped).
     notifyRuleSentence(f){
       const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
       const parts = ['<span class="kw">When</span> <b>'+esc(this.notifyTypeMeta(f.type_prefix||'').short)+'</b>'];
@@ -9782,7 +7965,6 @@ function app() {
       const dest = chs.length ? chs.join(', ') : '<span class="ph">choose a channel</span>';
       return parts.join(' ') + ' <span class="kw">→ send to</span> ' + dest;
     },
-    // Enables/disables a rule in place (re-saves via upsert).
     async toggleNotifyRule(r){
       try {
         const resp = await this.api('/api/notify/rules', {method:'POST', body: JSON.stringify({...r, enabled: !r.enabled})});
@@ -9790,13 +7972,11 @@ function app() {
         await this.loadNotify();
       } catch (e) { this.showToast(e.message, 'err'); }
     },
-    // Catalogue of channel types (from the backend) → meta/fields per type.
     notifyChannelTypeMeta(type){
       const ct = (this.notify.catalog.channel_types||[]).find(c=>c.type===type);
       return ct || {type, label:type||'canal', icon:'📣', help:'', fields:[]};
     },
     notifyChannelTypeFields(type){ return this.notifyChannelTypeMeta(type).fields || []; },
-    // Readable destination per type, for the list card.
     notifyChannelDest(c){
       const cfg = c.config||{};
       switch(c.type){
@@ -9809,21 +7989,16 @@ function app() {
         default:         return cfg.chat_jid || cfg.to || cfg.url || '—';
       }
     },
-    // In-site notification channel: feeds the status bar's existing bell.
-    // Instead of a bell of its own, it pushes the in-app inbox events to
-    // addNotification() (the 🔔 bell on the bottom bar). _lastInboxT avoids
-    // duplicates; on the 1st load it only sets the baseline (no spamming what already passed).
     async loadNotifyInbox(){
       const d = await this._safeLoad('/api/notify/inbox?limit=30', {silent:true});
       if (!d || !Array.isArray(d.events)) return;
-      const evs = d.events; // newest-first
+      const evs = d.events;
       if (this._lastInboxT === undefined) {
         this._lastInboxT = evs.reduce((m,e)=>Math.max(m, e.ts||0), 0);
         return;
       }
       const cutoff = this._lastInboxT;
       let maxT = cutoff;
-      // oldest-first so that addNotification (which prepends) preserves the order.
       for (const e of evs.slice().reverse()) {
         const t = e.ts || 0;
         if (t > cutoff) {
@@ -9835,17 +8010,8 @@ function app() {
       this._lastInboxT = maxT;
     },
 
-    // CHARTS
-    // Chart.js on demand (70KB gz): only the History and the call history
-    // use it. We CANNOT inject a <script>: the monaco loader defines `window.define`
-    // (AMD) and Chart's UMD wrapper would register itself as an AMD module instead
-    // of setting window.Chart. By running the text with define/exports/module
-    // shadowed as undefined, the wrapper falls into the global branch.
-    _vendorLoads: {}, // url -> Promise<bool>, so as not to download it twice
+    _vendorLoads: {},
 
-    // UMD on demand. Runs the text with define/exports/module SHADOWED
-    // as undefined: otherwise the UMD wrapper detects the monaco loader's AMD `define`
-    // and registers itself as a module instead of setting the global.
     _ensureUMD(url, prop) {
       if (window[prop]) return Promise.resolve(true);
       if (this._vendorLoads[url]) return this._vendorLoads[url];
@@ -9856,7 +8022,7 @@ function app() {
           new Function('define', 'exports', 'module', await r.text())();
           return !!window[prop];
         } catch (e) {
-          this._vendorLoads[url] = null; // allows a new attempt
+          this._vendorLoads[url] = null;
           console.warn('[panel] did not load ' + url + ':', e);
           return false;
         }
@@ -9864,8 +8030,6 @@ function app() {
       return this._vendorLoads[url];
     },
 
-    // a normal <script>, for files that are NOT UMD: preserves the global scope
-    // (new Function would change the scope of top-level declarations).
     _ensureScript(url, prop) {
       if (window[prop]) return Promise.resolve(true);
       if (this._vendorLoads[url]) return this._vendorLoads[url];
@@ -9890,7 +8054,6 @@ function app() {
       this.$nextTick(()=>{
         const pts = this.history || [];
         const labels = pts.map(p=>new Date(p.T*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
-        // Threshold overlay: one dashed line per active rule of the field.
         const thrSetsFor = (metricKey) => (this.alertRules||[]).filter(r=>(r.metric_key||r.metric||r.field)===metricKey).map(r=>({
           label:r.name, data:labels.map(()=>Number(r.threshold)||0),
           borderColor:this._thrColor(r.severity), borderDash:[6,4], borderWidth:1.25,
@@ -9901,12 +8064,9 @@ function app() {
           const thrSets = thrSetsFor(field);
           const ex = __panelCharts.get(id);
           if (ex) {
-            // The base path is ALWAYS updated first (datasets[0] untouched).
             ex.data.labels = labels;
             ex.data.datasets[0].data = data;
             if (ex.data.datasets.length - 1 === thrSets.length) {
-              // Same number of rules → updates the thresholds in place (the line moves
-              // when the threshold changes) without recreating the chart.
               for (let i=0;i<thrSets.length;i++){
                 ex.data.datasets[i+1].data = thrSets[i].data;
                 ex.data.datasets[i+1].borderColor = thrSets[i].borderColor;
@@ -9915,8 +8075,6 @@ function app() {
               ex.update('none');
               return;
             }
-            // The number of rules for the field changed → recreate (avoids an orphan dataset) and
-            // re-register the reference in the registry.
             ex.destroy(); __panelCharts.delete(id);
           }
           __panelCharts.set(id, new Chart(ctx, {
@@ -9943,35 +8101,22 @@ function app() {
       });
     },
 
-    // PASSWORD
     async changePassword(){ try{ const r=await this.api('/api/auth/change-password', {method:'POST', body:JSON.stringify(this.pwdForm)}); const d=await r.json(); if(d.error){this.showToast(d.error,'err');return;} this.showToast('password changed','ok'); this.pwdForm={old:'',new:''}; }catch(e){this.showToast(e.message,'err');} },
 
-    // CONTAINER DETAIL
     openContainer(c) {
       this.detail.open=true; this.detail.id=c.Id; this.detail.name=this.contName(c);
       this.detail.tab='overview';
       this.detail.logs=''; this.detail.inspect=''; this.detail.inspectObj=null; this.detail.stats=''; this.detail.top='';
       this.api('/api/docker/containers/'+c.Id+'/inspect').then(r=>r.json()).then(j=>{ this.detail.inspect=JSON.stringify(j,null,2); this.detail.inspectObj=j; }).catch(()=>{});
-      // emits the 3rd-level deep link. nextTick to capture the
-      // final detail.tab — callers like the palette do openContainer() and ONLY
-      // THEN set detail.tab='logs' (synchronously); by nextTick it is already reflected.
       this.$nextTick(() => { if (this.detail.open && this.detail.id === c.Id) this._navSyncHistory('push'); });
     },
     closeDetail(){
       this.detail.open=false;
       [this.detail.ws,this.detail.logWS,this.detail.statsWS].forEach(w=>{ if(w)try{w.close();}catch(e){} });
       if (this.detail.term) { try{this.detail.term.dispose();}catch(e){} this.detail.term=null; }
-      // drops the 3rd level from the hash when the modal closes (otherwise a refresh would reopen it).
       try { this._navSyncHistory('push'); } catch(_){}
     },
     async loadDetailTop(){ try{ const r=await this.api('/api/docker/containers/'+this.detail.id+'/top'); this.detail.top=JSON.stringify(await r.json(),null,2);}catch(e){} },
-    // WebSocket with automatic reconnect (exponential backoff with a
-    // 30s ceiling + jitter, cancellable), modelled on buildTerminal/WhatsApp. The
-    // logWS/statsWS/logTail streams TODAY close and null the ref without reconnecting;
-    // this helper returns a "controller" that REPLACES the raw WS ref and exposes
-    // .close(code,reason) — which CANCELS the reconnect loop and closes the socket.
-    // So every point that already calls ref.close() (closeDetail, logout, re-open,
-    // closeLogTail) becomes a deliberate close and does NOT trigger a reconnection.
     _wsWithRetry(url, handlers) {
       handlers = handlers || {};
       const ctl = { ws: null, cancelled: false, attempts: 0, timer: null, backoff: 1000 };
@@ -10010,7 +8155,6 @@ function app() {
         ws.onclose = (ev) => {
           if (ctl.ws === myWs) ctl.ws = null;
           if (ctl.cancelled) return;
-          // Optional call-site guard: detail closed, ref already replaced, etc.
           if (handlers.shouldReconnect && !handlers.shouldReconnect(ev)) { setStatus('closed'); return; }
           scheduleRetry();
         };
@@ -10025,23 +8169,15 @@ function app() {
       return ctl;
     },
     openDetailLogStream(){
-      // close the previous WS BEFORE creating a new one. Before, two quick
-      // clicks on "Logs (live)" stacked streams — the backend kept
-      // pushing from the orphan until a write-fail. It leaked 1 WS per toggle.
       if (this.detail.logWS) { try{this.detail.logWS.close(1000, 'replaced');}catch(e){} this.detail.logWS = null; }
       this.detail.logs='';
       this.detail.logsAutoScroll = true;
       const proto = location.protocol==='https:'?'wss:':'ws:';
-      const url = proto+'//'+location.host+'/ws/logs/'+this.detail.id; // auth via HttpOnly cookie (no JWT in the URL)
-      // reconnect with backoff. On (re)open the backend REPLAYS the log from
-      // the start; that is why we clear this.detail.logs in onopen so the replay
-      // REPLACES the text instead of concatenating (it would duplicate on reconnect).
+      const url = proto+'//'+location.host+'/ws/logs/'+this.detail.id;
       const ctl = this._wsWithRetry(url, {
         onopen: () => { this.detail.logs=''; },
         onmessage: (ev) => {
           this.detail.logs += ev.data;
-          // Cap: container logs in a long session (8h+ running) can become
-          // GBs of accumulated string in JS. Truncates past 500KB keeping the tail.
           const LOG_CAP = 500000;
           if (this.detail.logs.length > LOG_CAP) {
             const head = this.detail.logs.length - LOG_CAP + 200;
@@ -10055,7 +8191,6 @@ function app() {
           }
         },
         onerror: () => { this.detail.logs += '\n[error connecting to the stream]'; },
-        // Only reconnects while the detail is still open and THIS is the current stream.
         shouldReconnect: () => this.detail.open && this.detail.logWS === ctl,
       });
       this.detail.logWS = ctl;
@@ -10064,9 +8199,7 @@ function app() {
       if (this.detail.statsWS) { try{this.detail.statsWS.close(1000, 'replaced');}catch(e){} this.detail.statsWS = null; }
       this.detail.stats='';
       const proto = location.protocol==='https:'?'wss:':'ws:';
-      const url = proto+'//'+location.host+'/ws/stats/'+this.detail.id; // auth via HttpOnly cookie (no JWT in the URL)
-      // reconnect with backoff. Stats is a snapshot (replaced on each msg), it does
-      // not accumulate — no need to clear the buffer on reconnect.
+      const url = proto+'//'+location.host+'/ws/stats/'+this.detail.id;
       const ctl = this._wsWithRetry(url, {
         onmessage: (ev) => { try{ const d=JSON.parse(ev.data); this.detail.stats = JSON.stringify(d,null,2); }catch(e){ this.detail.stats += ev.data; } },
         shouldReconnect: () => this.detail.open && this.detail.statsWS === ctl,
@@ -10074,35 +8207,14 @@ function app() {
       this.detail.statsWS = ctl;
     },
 
-    // ------------------------------------------------------------------
-    // TERMINALS
-    //
-    // A single factory (`buildTerminal`) handles the host shell and the
-    // container shell. Features:
-    //   - Auto-reconnect with exponential backoff (1s, 2s, 4s, 8s, 16s, 30s ceiling)
-    //   - Visual status: idle | connecting | open | reconnecting | closed | error
-    //   - Re-sends the dimensions right after reopening
-    //   - Large scrollback (10k lines)
-    //   - Copy on select + Ctrl+Shift+C / Ctrl+Shift+V
-    //   - Search overlay (Ctrl+F)
-    //   - Clickable web links
-    //   - Adjustable font (Ctrl+= / Ctrl+- / buttons)
-    //   - ResizeObserver to fit on any layout change
-    // ------------------------------------------------------------------
     _termTheme(){ return { background:'#020617', foreground:'#e5e7eb', cursor:'#60a5fa', selectionBackground:'#1d4ed8' }; },
 
     buildTerminal(opts){
-      // opts = { el, wsPath, fontSize, themeOverride, state, onStatus, onOutput }
-      // state must hold: term, fit, search, ws, reconnect{attempts,timer,nextDelay,cancelled}, status
       const self = this;
       const el = opts.el;
       const state = opts.state;
-      // Rebuilds reconnect from scratch. Important: cancelled was true if it came
-      // from loadSessionIntoPane/closePane. Here we clear it to enable the normal
-      // automatic reconnect. attempts=0 avoids a long backoff from the previous session.
       state.reconnect = { attempts:0, timer:null, nextDelay:0, cancelled:false };
 
-      // Build xterm once
       if (!state.term) {
         const term = new Terminal({
           fontSize: opts.fontSize || 13,
@@ -10110,30 +8222,16 @@ function app() {
           theme: opts.themeOverride || this._termTheme(),
           cursorStyle: this.hostTermCursorStyle || 'block',
           cursorBlink: this.hostTermCursorBlink !== false,
-          // convertEol STAYS FALSE (the default): the PTY already does \n→\r\n in the kernel
-          // (ONLCR) and the remote program sends its own control codes. Reconverting here is
-          // redundant and can inject an extra \r (\r\r\n). The ttyd/wetty default.
-          scrollback: this.hostTermScrollback || 10000, // honours the saved preference right at creation
+          scrollback: this.hostTermScrollback || 10000,
           allowProposedApi: true,
-          // rightClickSelectsWord:false because our rich context menu
-          // (openTermCtxMenu) operates on the selection the user made BEFORE
-          // right-clicking. With `true`, xterm.js rewrites the
-          // selection to the word under the cursor — the user tried to copy a
-          // selected phrase and ended up with only the clicked word.
           rightClickSelectsWord: false,
           macOptionIsMeta: true,
           bellStyle: (this.hostTermBell === 'sound') ? 'sound' : 'none',
         });
         const fit = new FitAddon.FitAddon(); term.loadAddon(fit);
-        // Back-reference: _safeFit needs to compare the PROPOSED width with the
-        // width in force in order to apply hysteresis, and FitAddon does not expose the
-        // terminal through a public API (_terminal is private). Tying it here, where the
-        // two exist, is the only honest place.
         fit._panelTerm = term;
         fit._panelState = state;
         const search = new SearchAddon.SearchAddon(); term.loadAddon(search);
-        // Updates the match counter in real time (xterm-addon-search emits
-        // onDidChangeResults with {resultIndex, resultCount}).
         try {
           search.onDidChangeResults((ev) => {
             if (!ev || ev.resultCount === undefined) return;
@@ -10143,86 +8241,40 @@ function app() {
           });
         } catch(_) {}
         try { term.loadAddon(new WebLinksAddon.WebLinksAddon()); } catch(e){}
-        // Unicode 11: it has to be loaded BEFORE term.open to have an effect
-        // on character width measurement (wide emoji, CJK, etc).
         try {
           const u11 = new Unicode11Addon.Unicode11Addon();
           term.loadAddon(u11);
           term.unicode.activeVersion = '11';
         } catch(e){}
-        // Inline image: Sixel + the iTerm2 protocol. See images inside the terminal
-        // (e.g. `cat image.png` in modes that support it, or Claude Code showing
-        // diagrams/charts).
         try { term.loadAddon(new ImageAddon.ImageAddon()); } catch(e){}
         term.open(el);
-        // A second paste listener was once installed HERE, in capture on the
-        // container, which uploaded the image on its own. It was REMOVED: the
-        // helper-textarea listener just below covers the same case and does
-        // more (accepts a file of any type, quotes the path, injects it with a
-        // trailing space). Both received the SAME Event instance — capture on the
-        // ancestor runs before capture on the descendant — so every paste
-        // uploaded the file TWICE and injected two paths into the pane.
-        // Paste capture on xterm's helper-textarea. xterm registers an internal
-        // paste listener on the textarea that sends the text/plain to the PTY — and
-        // the event never even bubbles up to the outer container. We capture HERE
-        // (capture phase) to detect an image (which xterm ignores) and do the
-        // upload + inject the path into the PTY. Covers a plain Ctrl+V, not only Ctrl+Shift+V.
         try {
           const ta = el.querySelector('.xterm-helper-textarea');
           if (ta) {
-            // Mobile: the virtual keyboard is DELIBERATE. It starts inputmode=none so that
-            // tap/scroll/selection on the output does NOT raise the keyboard; summonKeyboard()
-            // flips it to 'text'. Desktop is untouched (a physical keyboard does not depend on this).
             try { if (self.isMobile && self.isMobile()) ta.setAttribute('inputmode','none'); } catch(_){}
             ta.addEventListener('paste', (ev) => {
               const files = self._clipboardFiles(ev);
-              if (!files) return;          // no file: xterm pastes the text
+              if (!files) return;
               ev.preventDefault();
               ev.stopImmediatePropagation();
               if (self._pasteHandled(ev, files)) return;
               self._sendFilesToPane(state, files).catch(()=>{});
-            }, true /* capture */);
+            }, true );
           }
         } catch(_) {}
-        // WebGL renderer: GPU-accelerated. It has to come after open() because
-        // it needs the canvas DOM. Silent fallback to the default renderer if
-        // WebGL is unavailable (headless, GPU blocked).
-        //
-        // Loaded in requestIdleCallback because warming up the WebGL glyph
-        // atlas costs ~60-70ms of main thread (raf/idleCallback violation).
-        // Deferring it to idle lets the terminal appear instantly with the default
-        // canvas2d renderer; within ~1 frame the browser yields idle time and the GPU
-        // takes over with no flicker (atlas regen happens naturally). Ligatures
-        // go along because they also involve token regen.
         const loadGpuAddons = () => {
-          // WebGL with CONTEXT LOSS recovery: without this, when the
-          // WebGL context drops (GPU reset, GPU switch on a laptop, driver,
-          // a tab left long in the background) xterm keeps drawing on the dead
-          // canvas → PERSISTENT ghost/duplicated glyphs until a reload. By
-          // disposing the addon on onContextLoss, xterm falls back to the DOM renderer by itself.
           try {
             const gl = new WebglAddon.WebglAddon();
             gl.onContextLoss(() => { try { gl.dispose(); } catch(_){} state._webgl = null; });
             term.loadAddon(gl);
             state._webgl = gl;
           } catch(e){ state._webgl = null; }
-          // Ligatures: opt-in. They rewrite runs of glyphs (->/=>/==…) and, with
-          // the WebGL atlas, are a known source of glyphs left over "before" the
-          // text. In a code/TUI terminal they are worth little and still distort the
-          // real character — default OFF.
           if (self.hostTermLigatures) {
-            // 56KB gz on demand: since it is opt-in and OFF by default, almost
-            // nobody was paying for it. It does not block the terminal (decoration).
             self._ensureUMD('/vendor/xterm/ligatures.js', 'LigaturesAddon').then(ok => {
               if (ok) { try { term.loadAddon(new LigaturesAddon.LigaturesAddon()); } catch(e){} }
             });
           }
         };
-        // Mobile: does NOT load WebGL → xterm uses the DOM renderer (text in HTML),
-        // so the phone's NATIVE long-press can select/copy the history.
-        // (CSS user-select:text on .xterm in mobile enables the native selection.)
-        // Desktop: honours the hostTermGpu toggle (off = DOM renderer, immune to
-        // WebGL context loss).
         if ((self.isMobile && self.isMobile()) || !self.hostTermGpu) {
           /* no GPU: the default DomRenderer = selectable text / immune to context-loss */
         } else if (typeof requestIdleCallback === 'function') {
@@ -10232,12 +8284,9 @@ function app() {
         }
         setTimeout(()=>{ self._fitSoon(fit); }, 30);
 
-        // Copy on select + intercept Ctrl+Shift+C/V, Ctrl+F, Ctrl+=, Ctrl+-, Ctrl+Shift+K
         term.attachCustomKeyEventHandler((ev) => {
           if (ev.type !== 'keydown') return true;
           const c = ev.ctrlKey || ev.metaKey;
-          // Esc with a marked selection: clears the mark and does NOT forward to the PTY
-          // (vim/nano only lose the real Esc when there was a mark to remove).
           if (ev.key === 'Escape') {
             let hasSel = '';
             try { hasSel = term.getSelection() || ''; } catch(_){}
@@ -10266,35 +8315,11 @@ function app() {
               try { term.clearSelection(); } catch(_){}
               ev.preventDefault(); return false;
             }
-            return true;   // no selection → ^C goes through as SIGINT
+            return true;
           }
-          // Ctrl+V pastes. Behind the hostTermCtrlV toggle because ^V is visual-block
-          // in vim and quoted-insert in readline; turned off, it arrives raw again.
-          //
-          // It RETURNS false — and that is the core of the fix, not a detail.
-          //
-          // Reading xterm's _keyDown (vendor/xterm/xterm.js):
-          //
-          //   if (this._customKeyEventHandler && false === this._customKeyEventHandler(e)) return false;
-          //   ...
-          //   this.coreService.triggerDataEvent(i.key, true)   // sends ^V (0x16)
-          //   ... this.cancel(e, true)                          // preventDefault()
-          //
-          // `evaluateKeyboardEvent` maps Ctrl+V to \x16, so returning TRUE
-          // makes xterm consume the key, send ^V to the PTY and call
-          // preventDefault() — and then the NATIVE 'paste' event never fires. That is
-          // exactly why Ctrl+V stopped pasting text AND images: it was no use my
-          // not calling preventDefault, because the one calling it was
-          // xterm right afterwards.
-          //
-          // By returning FALSE, _keyDown exits on the first line, BEFORE cancel().
-          // Nobody calls preventDefault, the browser performs the default action of
-          // Ctrl+V and fires 'paste' — which xterm listens for on the textarea AND on the
-          // element, pasting with bracketed paste, with no clipboard permission.
-          // The image is handled by the 'paste' listener installed in term.open().
           if (c && !ev.shiftKey && !ev.altKey && (ev.key==='v' || ev.key==='V')) {
-            if (!self.hostTermCtrlV) return true;   // toggle off → ^V literal
-            return false;                           // xterm does not consume → native paste
+            if (!self.hostTermCtrlV) return true;
+            return false;
           }
           // Copy/Paste in the MobaXterm/PuTTY/Xterm style: Ctrl+Insert copies,
           // Shift+Insert pastes. These shortcuts do NOT conflict with anything in the
@@ -10310,9 +8335,6 @@ function app() {
             self._pasteIntoPane(state).catch(()=>{});
             return false;
           }
-          // Keeps Ctrl+Shift+C/V for compatibility with Linux terminals (gnome-terminal,
-          // konsole, etc.) — it works in Firefox, fails silently in Chromium,
-          // which binds it to DevTools. Not advertised in a hint, only a fallback.
           if (c && ev.shiftKey && (ev.key==='C'||ev.key==='c')) {
             const sel = term.getSelection();
             if (sel) { navigator.clipboard.writeText(sel).catch(()=>{}); ev.preventDefault(); return false; }
@@ -10330,81 +8352,45 @@ function app() {
           if (c && !ev.shiftKey && (ev.key==='='||ev.key==='+')) { self.hostTermFontDelta(+1); ev.preventDefault(); return false; }
           if (c && !ev.shiftKey && ev.key==='-')                  { self.hostTermFontDelta(-1); ev.preventDefault(); return false; }
           if (c && ev.shiftKey && (ev.key==='K'||ev.key==='k'))   { term.clear(); ev.preventDefault(); return false; }
-          // Ctrl+W: sends ^W (ETB, 0x17) to the PTY (delete word back in readline/bash).
-          // WITHOUT this handler, the browser closes the whole tab and the user loses the pane.
-          // bash/zsh read it as kill-region/kill-word. vim and other TUIs use it as their
-          // own prefix — even so, it is what the user intended.
           if (c && !ev.shiftKey && (ev.key==='w'||ev.key==='W')) {
             try { if (state.ws && state.ws.readyState===1) state.ws.send(JSON.stringify({type:'input',data:'\x17'})); } catch(_) {}
             ev.preventDefault(); return false;
           }
-          // Ctrl+, opens the Settings popover (the VS Code/iTerm convention)
           if (c && !ev.shiftKey && ev.key===',') {
             self.hostTermSettingsOpen = !self.hostTermSettingsOpen;
             ev.preventDefault(); return false;
           }
-          // Ctrl+Shift+! → terminal help overlay (it used to be Shift+? or Ctrl+/)
           if (ev.ctrlKey && ev.shiftKey && (ev.key === '!' || ev.code === 'Digit1')) {
             self.termHelpOpen = !self.termHelpOpen;
             ev.preventDefault(); return false;
           }
-          // Modern ones:
-          //   Ctrl+Shift+A = select all (like VS Code/iTerm2)
-          //   Ctrl+Shift+R = reset the terminal (clears state + sends `reset` to the shell)
-          //   Ctrl+Shift+S = save the scrollback as a .txt file
-          //   Ctrl+Shift+P = opens the command palette
           if (c && ev.shiftKey && (ev.key==='A'||ev.key==='a'))   { try{ term.selectAll(); }catch(_){} ev.preventDefault(); return false; }
           if (c && ev.shiftKey && (ev.key==='R'||ev.key==='r'))   { self._termResetState(state); ev.preventDefault(); return false; }
           if (c && ev.shiftKey && (ev.key==='S'||ev.key==='s'))   { self._termSaveScrollback(state); ev.preventDefault(); return false; }
           if (c && ev.shiftKey && (ev.key==='P'||ev.key==='p'))   { self.openPalette && self.openPalette(); ev.preventDefault(); return false; }
           return true;
         });
-        // Native paste event (Ctrl+V): takes a FILE from the clipboard without requiring
-        // the clipboard-read permission (clipboardData comes straight in the event).
         el.addEventListener('paste', (ev) => {
           const files = self._clipboardFiles(ev);
-          if (!files) return;              // no file: xterm pastes the text
+          if (!files) return;
           ev.preventDefault();
           ev.stopPropagation();
           if (self._pasteHandled(ev, files)) return;
           self._sendFilesToPane(state, files).catch(()=>{});
         });
 
-        // Right-click: blocks forwarding the mouse to the app (a multiplexer that owns the screen has `mouse on`
-        // and opens its own native popup — easy to detach/kill a pane by accident).
-        // Instead of a blind paste (which was a trap), it opens a rich context menu
-        // in the Windows Terminal / iTerm2 style: Copy/Paste/Search/Save/Reset/
-        // signals/splits/etc. Capture phase so it runs BEFORE xterm's
-        // internal mouse-tracking.
         el.addEventListener('mousedown', (ev) => {
-          // A synthetic event WE redispatch without shift — it goes straight
-          // to xterm without re-entering this logic.
           if (ev._stickySynth) return;
 
           if (ev.button === 2) {
-            // Saves the current selection BEFORE the contextmenu — Chrome/Safari do
-            // "auto-select word under cursor" when opening a context menu, which
-            // would overwrite the user's real selection. We keep it to use
-            // as the source in the menu.
             try { state._selBeforeCtx = (state.term && state.term.getSelection()) || ''; } catch(_) { state._selBeforeCtx = ''; }
             state._ctxBlockUntil = Date.now() + 500;
             ev.preventDefault();
             ev.stopImmediatePropagation();
             return;
           }
-          // MIGRATION to dtach: dtach does NOT own the screen (no `mouse on`), so
-          // left-drag is xterm.js's NATIVE SELECTION — dragging selects, the wheel
-          // scrolls, all native. The workarounds the previous engine demanded (_stickyRedispatch
-          // for shift+drag, _manualDragSelect for plain-drag) were REMOVED: with
-          // dtach they would get in the way of the native selection. We let the left-mousedown
-          // pass straight through to xterm. (Rollback: restore the two button===0 blocks
-          // + the previous engine's backend flag.) The _stickyRedispatch/
-          // _manualDragSelect functions are still defined (inert) to make the rollback easy.
         }, true);
         el.addEventListener('contextmenu', (ev) => {
-          // Mobile: the site's menu (paste/etc) only appears on a long-press of the INPUT
-          // LINE (where the cursor is). In the HISTORY above the cursor, it leaves
-          // the phone's NATIVE behaviour alone (does not prevent the default).
           if (self.isMobile && self.isMobile()) {
             try {
               const rect = el.getBoundingClientRect();
@@ -10412,32 +8398,21 @@ function app() {
               const rowH = rect.height / rows;
               const clickRow = Math.floor((ev.clientY - rect.top) / rowH);
               const cursorRow = (term.buffer && term.buffer.active && term.buffer.active.cursorY) || 0;
-              if (clickRow < cursorRow) return; // history → native
+              if (clickRow < cursorRow) return;
             } catch(_){}
           }
           ev.preventDefault();
           ev.stopPropagation();
-          // Host panes have state.id (pane.id). The container detail term does not —
-          // it shows a reduced menu with no pane/session actions.
           self.openTermCtxMenu(state, ev);
         });
 
-        // OSC 133 prompt marks (semantic shell integration). Supported by
-        // modern bash/zsh/fish when the user enables a precmd/PROMPT_COMMAND
-        // that emits ESC]133;A ST (prompt start), ESC]133;B (cmd start),
-        // ESC]133;C (output start), ESC]133;D[;exit] (cmd done). We capture A
-        // and C to build a navigable prompt index (Alt+↑/↓ in the menu).
-        // OSC 52 clipboard: vim/zsh and TUIs may send `set clipboard`
-        // via `ESC]52;c;<base64>\a`. The browser allows writing without a prompt if
-        // it came from a user gesture (we have no guarantee here, but we try).
-        // Silent failure → the user copies manually with the mouse.
         try {
           term.parser.registerOscHandler(52, (data) => {
             try {
               const parts = (data || '').split(';');
               if (parts.length < 2) return false;
               const b64 = parts[parts.length - 1];
-              if (!b64 || b64 === '?') return true; // '?' asks to READ the clipboard: not answered
+              if (!b64 || b64 === '?') return true;
               const text = base64ToText(b64);
               navigator.clipboard.writeText(text).catch(() => {});
               return true;
@@ -10446,7 +8421,6 @@ function app() {
         } catch (_) {}
         try {
           term.parser.registerOscHandler(133, (data) => {
-            // data e.g.: "A;aid=42", "C", "D;0"
             const kind = (data || '').charAt(0);
             if (kind === 'A' || kind === 'C') {
               try {
@@ -10454,24 +8428,14 @@ function app() {
                 if (marker) {
                   state.marks = state.marks || [];
                   state.marks.push({ kind, marker, ts: Date.now() });
-                  // Capped at 500 marks so it does not bleed memory in long sessions
                   if (state.marks.length > 500) state.marks.shift();
                 }
               } catch(_) {}
             }
-            return false; // false = does not consume, allows other handlers
+            return false;
           });
         } catch(_) {}
 
-        // The selection persists after a drag (xterm default). Esc clears it.
-        // Right-click uses term.getSelection() at that moment.
-
-        // ── SHIFTING THE CROP ─────────────────────────────────────────────
-        // When this window is smaller than the session, the server sends a rendered
-        // crop — and with no way to move horizontally the right half would be
-        // unreachable. Shift+wheel is the long-standing gesture for horizontal
-        // scrolling, and the server ignores the message when the crop is not in
-        // force, so no mode detection is needed here.
         try {
           el.addEventListener('wheel', (ev) => {
             if (!ev.shiftKey) return;
@@ -10483,7 +8447,6 @@ function app() {
           }, { passive: false });
         } catch (_) {}
 
-        // ResizeObserver — fit when card resizes (sidebar collapse, window resize, etc.)
         try {
           const ro = new ResizeObserver(()=>{ self._fitSoon(fit); });
           ro.observe(el);
@@ -10492,9 +8455,6 @@ function app() {
           window.addEventListener('resize', ()=>{ self._fitSoon(fit); });
         }
 
-        // PTY input from local keyboard.
-        // BROADCAST: if terms.broadcast=true, sends the same input to ALL the
-        // panes of the container ("synchronize panes" style).
         term.onData(d => {
           if (self.terms.broadcast) {
             const panes = self.terms.panes || [];
@@ -10507,40 +8467,10 @@ function app() {
           self._paneSendInput(state, d);
           if (d.indexOf('\r') >= 0 && state.notify) state.notify.cmdStart = Date.now();
         });
-        // debounce of onResize. xterm-fit-addon can fire
-        // multiple resizes (rotate, devtools toggle, split). Without the debounce the remote program
-        // receives 50+ updates/sec and the reflow congests the stdout stream. 100ms
-        // is the sweet spot — humans do not notice it, and the PTY can breathe.
         let _resizeTimer = null, _lastResize = null;
-        // the size is RECONCILED STATE, not an event.
-        //
-        // The bug the operator saw when switching windows: each line of the frame
-        // coming out one column further along, with the first character stuck in the last
-        // column of the previous line — an unreadable screen. Cause: the client only sent
-        // the size when xterm CHANGED, and the send was dropped IN SILENCE
-        // when the socket was not open at that instant. A hidden window is
-        // exactly where that happens: the browser throttles the 100ms timer,
-        // and the 70s watchdog may recycle the connection in the middle. Once diverged,
-        // the two sides stayed that way forever — nothing ever reasserted it.
-        //
-        // Now asserting the size is an operation that can be repeated at
-        // will: the server deduplicates (pty.go), so SIGWINCH only reaches
-        // the PTY when the value really changes. It is the cheap resend that closes the
-        // whole class of bug, and no longer one guard for one path.
         state._assertSize = (reason) => {
           const t = state.term;
           if (!t || !state.ws || state.ws.readyState !== 1) return false;
-          // ── WHAT IS ASSERTED IS THE WINDOW, NOT THE GRID DRAWN ──────────
-          // With another client attached, the server puts the PTY at the SMALLEST of the
-          // windows and tells everyone to draw that grid. If we
-          // asserted the GRID, the server would come to believe this window is
-          // small — and when the small client left, the minimum would stay
-          // small, because our true window would have been forgotten.
-          // The session would be stuck at the size of someone already gone, which is
-          // exactly the earlier defect, only coming from the other side.
-          //
-          // So: the session's grid is what gets drawn, but what gets asserted is the
-          // FitAddon's proposal, which measures this client's pixel box.
           let cols = t.cols, rows = t.rows;
           try {
             const d = (state.fit && typeof state.fit.proposeDimensions === 'function')
@@ -10557,100 +8487,47 @@ function app() {
           } catch (_) { return false; }
         };
         term.onResize(({cols,rows}) => {
-          if (cols < 2 || rows < 1) return; // defense-in-depth: never propagate 1x1 to the PTY
+          if (cols < 2 || rows < 1) return;
           _lastResize = {cols, rows};
           if (_resizeTimer) return;
           _resizeTimer = setTimeout(() => {
             _resizeTimer = null;
-            // Sends the CURRENT size of xterm, not the one captured when the timer was
-            // scheduled: in a hidden window the timer can fire minutes later, and
-            // the value from back then is the one that counts.
             state._assertSize('resize');
           }, 100);
         });
-// "↓ new output" pill: re-evaluates visibility when the user scrolls.
         try { term.onScroll(() => { try { self._updateScrollBtn(state); } catch(_){} }); } catch(_){}
 
         state.term = term; state.fit = fit; state.search = search;
       } else {
-        // already exists — just refit
         self._fitSoon(state.fit);
       }
 
-      // Connect / reconnect cycle
       const setStatus = (s) => { if (opts.onStatus) opts.onStatus(s); };
 
       const open = () => {
         if (state.reconnect.cancelled) return;
-        // Idempotent: if there is already a WS connecting(0)/open(1) for this tab, it does not
-        // open another — otherwise 2 clients pile up on the same session per tab. The
-        // reconnect only calls open() after the onclose, when the old ws is already
-        // CLOSED(3), so the backoff keeps working.
         if (state.ws && (state.ws.readyState === 0 || state.ws.readyState === 1)) return;
         setStatus(state.reconnect.attempts>0 ? 'reconnecting' : 'connecting');
         const proto = location.protocol==='https:'?'wss:':'ws:';
-        // Auto-reconnect is attach-ONLY: if the session was ended (e.g.
-        // "Delete" in the manager), the server does NOT recreate it — it returns close
-        // 4404 and we stop reconnecting. Without this, the reconnect raced with
-        // the kill and resurrected the session via `new-session -A` (a deleted session
-        // reappeared "active"). The 1st connect (attempts===0) keeps the
-        // create/attach semantics; only the reconnections are attach-only.
         const attachOnly = state.reconnect.attempts > 0;
-        // SECURITY: we do NOT pass the JWT in the URL (?token=) — the query lands in the
-        // access log of the proxy/server = a replayable shell credential. The
-        // HttpOnly cookie panel_token (Path=/, SameSite=Lax, kept fresh by the
-        // opportunistic refresh) is sent automatically on the same-origin upgrade and
-        // authenticates in auth.Middleware. No token in the URL.
-        // `replay=0` = "I take care of the history": the server skips the
-        // 128 KiB block it would re-emit over what the primer already wrote. The
-        // repaint still applies — the log is a slice of a live stream and may
-        // end in the middle of a frame, and only the program knows how to paint a whole
-        // frame. See the server-side priming in internal/pty/pty.go.
         const url = proto+'//'+location.host+opts.wsPath
           +(attachOnly ? (opts.wsPath.includes('?')?'&':'?')+'attach=1' : '')
           +(state._primedOk ? (opts.wsPath.includes('?')?'&':'?')+'replay=0' : '');
         const ws = new WebSocket(url);
         ws.binaryType = 'arraybuffer';
         state.ws = ws;
-        // myWs is the LOCAL reference of this cycle. The handlers below (onmessage,
-        // onclose, onerror) can fire async AFTER loadSessionIntoPane
-        // or closePane replaced state.ws with another object. Without this guard, the
-        // old ws's onclose would see state.reconnect.cancelled=false (reset
-        // by the new buildTerminal) and would write "[connection lost, reconnecting]"
-        // into the new terminal, even with the new WS working.
         const myWs = ws;
 
-        // Application heartbeat: independent of the JS scheduler (timers can be
-        // throttled in a background tab, but the WebSocket send is immediate at the
-        // point of the call). Goes every 20s, inside the server's 45s window.
         const startHeartbeat = () => {
           if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
           state.heartbeatTimer = setInterval(() => {
             if (state.ws && state.ws.readyState === 1) {
-              // the ping already existed for the watchdog; now it also MEASURES.
-              // The server replies with an empty binary frame (pty.go), so the
-              // interval between this send and that frame is the connection's real RTT
-              // — that is where the quality pill and the decision to turn on
-              // predictive echo come from. Zero extra bytes on the wire.
               if (!state._pingAt) state._pingAt = Date.now();
               try { state.ws.send(JSON.stringify({type:'ping', t: Date.now()})); } catch(e){}
-              // Reasserts the size along with the heartbeat: two numbers every
-              // 20s, deduplicated by the server. It is what guarantees that ANY
-              // divergence (a lost resize, a recycled socket, a deploy in the middle)
-              // fixes itself within at most one cycle, instead of leaving the
-              // screen corrupted until someone resizes the window by hand.
               if (state._assertSize) state._assertSize('heartbeat');
-              // silent-death watchdog: if more than 70s went by with no message at all
-              // (no output, no pong), the middleware has probably dropped it silently.
-              // Forces a close with code 4000 — onclose will show "watchdog" and reconnect.
               if (state.lastMsgAt && Date.now() - state.lastMsgAt > 70000) {
                 try { state.ws.close(4000, 'silent-death'); } catch(_) {}
               }
-              // Flow-control watchdog: if it stayed PAUSED but the bytes in flight have
-              // already gone down (the last write's callback did not fire the resume —
-              // a stuck renderer / lost WebGL / a heavily throttled tab), the server
-              // stops reading the PTY = a terminal FROZEN forever. It forces the resume
-              // — turning the permanent freeze into at most ~one tick of stall.
               if (state._wbPaused && ((state._qBytes||0) + (state._wbPending||0)) <= 32*1024) {
                 state._wbPaused = false; state._wbPending = 0;
                 try { state.ws.send(JSON.stringify({ type: 'resume' })); } catch(_) {}
@@ -10668,31 +8545,13 @@ function app() {
           state.lastMsgAt = Date.now();
           setStatus('open');
           startHeartbeat();
-          // flow control reset on every (re)connection
           state._inQ = []; state._qBytes = 0; state._wbPending = 0; state._wbPaused = false; state._rafId = 0;
-          // IMMEDIATE FIT before the 1st resize: guarantees the session is born with the
-          // REAL size (measured cols/rows), not the 80x24 default that it "locks"
-          // into and then misaligns the redraw. (the nº1 cause of PTY+xterm
-          // corruption in production — a resize round trip with a stale size.)
-          // Anti-degenerate guard: if the pane is hidden at (re)connect time, do NOT
-          // fit or send — otherwise the session would be born 1x1; the ResizeObserver fixes it
-          // as soon as the pane becomes visible.
           self._safeFit(state.fit);
           try {
             if (state.term.cols >= 2 && state.term.rows >= 1) {
               ws.send(JSON.stringify({ type: 'resize', cols: state.term.cols, rows: state.term.rows }));
             }
           } catch (e) {}
-          // flushes what was typed while the socket was away,
-          // IN ORDER, in a single frame. It goes AFTER the resize (the shell needs the
-          // right size before echoing) and BEFORE the reattach wobble, so the
-          // repaint already shows the text in place. It only warns in the terminal if something
-          // had to be dropped for a cap — silence is the normal case.
-          // It clears the local echo BEFORE flushing the queue. In a session with
-          // a multiplexer the reattach repaint would already clear the screen, but a pane without one
-          // (exec in a container) does not repaint — and then the guess would stay on screen
-          // added to the real echo, duplicating the text. Clearing here works for
-          // both cases and costs nothing.
           if (state._echoPainted > 0) {
             try { state.term.write('\b \b'.repeat(state._echoPainted)); } catch(_){}
           }
@@ -10706,30 +8565,16 @@ function app() {
             state._outboxDropped = false;
             try { state.term.write('\r\n\x1b[33m[part of what was typed during the outage exceeded the queue and was not sent]\x1b[0m\r\n'); } catch(_){}
           }
-          // A new build on the server? A deploy does NOT reload the tab: the
-          // `?v=<stamp>` of the <script> is only re-evaluated on a reload, so an open
-          // tab keeps running the OLD JS indefinitely — and every front-end fix
-          // stays invisible to whoever does not reload. We warn, but we do NOT
-          // reload by ourselves: a reload in the middle of the work is worse than the bug.
           self._checkBuildStamp();
-          // the outage is over: clears the deferred-notice state (see onclose)
           state._restarting = false;
           if (state.reconnect) {
             if (state.reconnect.noticeTimer) { clearTimeout(state.reconnect.noticeTimer); state.reconnect.noticeTimer = null; }
             state.reconnect.noticed = false;
             state.reconnect.downSince = 0;
           }
-          // REATTACH (deploy/refresh/reconnect) to a TUI session: forces a size
-          // wobble on xterm ITSELF — it shrinks and goes back to the real size. That
-          // REFLOWS the client's grid (clears the reattach corruption, which the
-          // server merely repainting does NOT fix, since the corrupted grid belongs to the
-          // browser) AND triggers the TUI app's repaint. It is exactly what
-          // minimizing/maximizing the window did — the only thing that unstuck it.
           if (attachOnly && state.term && state.fit) {
             self._reattachRepaint(state);
           }
-          // Injects the initial command ONCE per tab (it does not re-run on reconnect).
-          // Small delay so bash prints the prompt first — purely cosmetic.
           if (state.startupCmd && !state.startupRan) {
             state.startupRan = true;
             const payload = state.startupCmd.endsWith('\n') ? state.startupCmd : state.startupCmd + '\n';
@@ -10740,19 +8585,7 @@ function app() {
             }, 250);
           }
         };
-        // ── Render batching (rAF) + flow control by watermark ──────────────
-        // Instead of 1 term.write per WS message (hundreds/sec on heavy output
-        // from Claude → jank, dropped frames, "rocket scroll"), we queue the
-        // chunks and do ONE write per frame (~60/sec). And we measure the
-        // PENDING bytes in xterm's buffer (via the write callback): once past the
-        // high-water we send {type:pause} (the server stops reading the PTY →
-        // backpressure on the PTY); once it drains below the low-water, {type:resume}.
-        // Without this, xterm's 50MB buffer overflows and DISCARDS bytes = corruption.
         const FC_HIGH = 256 * 1024, FC_LOW = 32 * 1024;
-        // bytes "in flight" = still in the client's queue (_qBytes) + already written to
-        // xterm but not processed (_wbPending). We pause based on the SUM, not
-        // only on the pending — so even if the flush is late (a background tab, where
-        // rAF freezes), the queue stops growing (the server pauses) → bounded memory.
         const fcCheck = () => {
           const inflight = (state._qBytes || 0) + (state._wbPending || 0);
           if (!state._wbPaused && inflight >= FC_HIGH) {
@@ -10766,21 +8599,6 @@ function app() {
         const flushTerm = () => {
           state._rafId = 0;
           if (!state.term) { state._inQ = []; state._qBytes = 0; return; }
-          // ── ATOMIC repaint on reattach ────────────────────────────────────
-          // WHY THIS EXISTS (a cause read in the code, not deduced): the dtach
-          // client attaches with `-r winch` (backend_dtach.go), so EVERY reattach
-          // sends SIGWINCH and the TUI app answers with "clear the screen + repaint".
-          // dtach has no screen buffer — that is its design — and the output produced
-          // while nobody is attached is discarded; so the redraw is the ONLY
-          // way to recover the screen. It is necessary. What it must not be is
-          // visible in pieces: writing the burst in slices, the user sees the
-          // screen go blank and reload bit by bit.
-          //
-          // The first attempt held for a FIXED 260ms — and it failed when the
-          // repaint took longer: the window expired in the middle of the frame. Now
-          // the criterion is the RIGHT one: it holds while the bytes keep arriving and
-          // releases when the burst goes QUIET (end of the frame), with a hard ceiling
-          // so it never stalls the render on continuous output.
           if (state._holdUntil) {
             const now = Date.now();
             const quiet = now - (state._lastDataAt || 0);
@@ -10801,55 +8619,24 @@ function app() {
           // The rule that makes predictive echo safe — the screen goes back to
           // the server's truth BEFORE any byte of it is applied.
           try { self._erasePrediction(state); } catch(_){}
-          // Best practice (xterm.js official guide): a "fast path" with no callback on the
-          // chunks and ONE callback only on the LAST — since the callbacks fire in
-          // write order, the last one means the whole batch has been
-          // processed. Less closure allocation; it accounts for the batch in one go.
           state._wbPending = (state._wbPending || 0) + batchBytes;
           const last = q.length - 1;
           for (let i = 0; i < last; i++) state.term.write(q[i]);
           state.term.write(q[last], () => {
             state._wbPending = Math.max(0, (state._wbPending || 0) - batchBytes);
             fcCheck();
-            // Now the cursor is already the server's: we can tell how much of the guess
-            // it confirmed and repaint only what is left.
             try { self._repredictEcho(state); } catch(_){}
           });
           fcCheck();
         };
         ws.onmessage = (ev) => {
-          // Guard: state.term may have been disposed before the last async
-          // message still in flight (loadSessionIntoPane, closePane).
           if (!state.term) return;
           if (state.ws !== myWs) return;
-          // T3 watchdog: timestamp of the last useful message. The heartbeat checks
-          // gaps >70s to detect "silent death" (TCP up, server mute).
           state.lastMsgAt = Date.now();
-          // Server heartbeat pong: an EMPTY binary frame. It has already
-          // done its whole job on the line above — proving the connection is
-          // alive for the watchdog. It carries no content, so it leaves before the
-          // render queue instead of becoming an empty write per ping cycle.
-          // ANNOUNCEMENT OF THE EFFECTIVE SESSION SIZE (`{"type":"size",...}`).
-          //
-          // A session can have several clients (this pane, the phone app, a
-          // VSCode terminal) and the PTY sits at the SMALLEST of them — the
-          // minimum-size rule. The half that makes it work is this: EVERY client
-          // draws a grid the size of the SESSION, not of its own window. Whoever
-          // has the bigger window sees the session with space around it.
-          //
-          // Without obeying it, the program wraps its lines at N columns while this
-          // xterm draws on a grid of M: every bit of text lands in the wrong place.
-          // That was the bug, measured in the server log.
-          //
-          // It arrives as TEXT and is consumed HERE, before any write
-          // path — if it reached `term.write` it would show up as JSON on screen.
           if (typeof ev.data === 'string' && ev.data.charCodeAt(0) === 123) {
             let _av = null;
             try { _av = JSON.parse(ev.data); } catch (_) {}
             if (_av && _av.type === 'size' && _av.cols >= 2 && _av.rows >= 1) {
-              // It REMEMBERS, does not merely apply: the ResizeObserver wakes up on the
-              // very term.resize below and schedules a fit, and without this memory the
-              // FitAddon undid the announcement ~140ms later. See _safeFit.
               state._gridSession = { cols: _av.cols, rows: _av.rows };
               try {
                 if (state.term.cols !== _av.cols || state.term.rows !== _av.rows) {
@@ -10863,17 +8650,11 @@ function app() {
           if (_n === 0) {
             if (state._pingAt) {
               const rtt = Date.now() - state._pingAt; state._pingAt = 0;
-              // Exponential moving average: one isolated bad sample must not
-              // make the interface flash "terrible connection".
               state.rtt = state.rtt ? Math.round(state.rtt * 0.6 + rtt * 0.4) : rtt;
               try { self._updateQuality(state); } catch(_){}
             }
             return;
           }
-          // A real byte arrived: if a keystroke was waiting for an answer, the
-          // interval is the ECHO latency — the number the user feels while
-          // typing (network + PTY + app). It is what decides predictive echo, and
-          // what proves this prompt ECHOES (the opposite = a password prompt).
           if (state._sentAt) {
             const dt = Date.now() - state._sentAt; state._sentAt = 0;
             state.eco = state.eco ? Math.round(state.eco * 0.6 + dt * 0.4) : dt;
@@ -10881,19 +8662,13 @@ function app() {
             if (state._echoTimer) { clearTimeout(state._echoTimer); state._echoTimer = 0; }
             try { self._updateQuality(state); } catch(_){}
           }
-          state._lastDataAt = Date.now();   // used by the hold to detect the end of the burst
+          state._lastDataAt = Date.now();
           const data = (typeof ev.data === 'string') ? ev.data : new Uint8Array(ev.data);
           (state._inQ || (state._inQ = [])).push(data);
           state._qBytes = (state._qBytes || 0) + (data.length || 0);
           if (!state._rafId) state._rafId = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame(flushTerm) : setTimeout(flushTerm, 16);
-          fcCheck(); // pauses right on arrival if queue+pending overflow (covers a background tab)
+          fcCheck();
           if (opts.onOutput) opts.onOutput(ev.data);
-          // T5 — pattern alert matching. Keeps the last 4KB so multi-line
-          // patterns can be detected. On a match, flashes an outline + a notification.
-          // BUGFIX: this used to be guarded by `typeof ev.data === 'string'`, which is
-          // ALWAYS false with binaryType=arraybuffer → the feature never fired.
-          // Now it decodes (only when a pattern is configured, so no
-          // overhead on the common hot path).
           if (self.hostTermAlertPattern) {
             try {
               if (!state._alertRegex || state._alertSrc !== self.hostTermAlertPattern) {
@@ -10903,7 +8678,6 @@ function app() {
               const chunkText = (typeof ev.data === 'string') ? ev.data : (state._alertDec || (state._alertDec = new TextDecoder())).decode(data, { stream: true });
               state._alertBuf = ((state._alertBuf || '') + chunkText).slice(-4096);
               if (state._alertRegex.test(state._alertBuf)) {
-                // 5s throttle — do not flood
                 const now = Date.now();
                 if (!state._alertLast || now - state._alertLast > 5000) {
                   state._alertLast = now;
@@ -10923,25 +8697,15 @@ function app() {
         ws.onerror = () => { if (state.ws === myWs) setStatus('error'); };
         ws.onclose = (ev) => {
           stopHeartbeat();
-          // clears the pending flush and resets the flow control of this connection (avoids
-          // an orphan rAF holding a reference + stale state across reconnections).
           try { if (state._rafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(state._rafId); } catch(_){}
           state._rafId = 0; state._inQ = []; state._qBytes = 0; state._wbPending = 0; state._wbPaused = false;
           try { if (state._holdTimer) clearTimeout(state._holdTimer); } catch(_){}
           state._holdTimer = 0; state._holdUntil = 0;
-          // The pending guess is not left orphaned on screen: it becomes offline echo,
-          // and what erases it is the same path that erases the rest on reconnect.
-          // Without this, dimmed text would stay forever in a pane that dropped in the
-          // middle of typing.
           if (state._pred && state._pred.txt) {
             if (state._pred.timer) { try { clearTimeout(state._pred.timer); } catch(_){} state._pred.timer = 0; }
             state._echoPainted = (state._echoPainted || 0) + state._pred.txt.length;
             state._pred.txt = '';
           }
-          // Log at the level that fits the kind of close:
-          //   - intentional cleanup (state.ws !== myWs OR reconnect.cancelled): debug, nobody cares
-          //   - clean close (wasClean AND code 1000/1001/1005): debug, normal navigation
-          //   - everything else: warn (may mean an unstable network, an expired token, etc)
           try {
             const isCleanup = state.ws !== myWs || state.reconnect.cancelled;
             const isNormal = ev.wasClean && (ev.code === 1000 || ev.code === 1001 || ev.code === 1005);
@@ -10950,9 +8714,6 @@ function app() {
           } catch(_){}
           if (state.ws !== myWs) return;
           if (state.reconnect.cancelled || !state.term) { setStatus('closed'); return; }
-          // 4404 = the server refused the reattach because the session no
-          // longer exists (it was terminated). Does NOT reconnect — reconnecting would
-          // recreate the session. Marks the tab as ended and stops the backoff loop.
           if (ev.code === 4404) {
             state.reconnect.cancelled = true;
             state.ended = true;
@@ -10961,35 +8722,11 @@ function app() {
             try { state.term.write('\r\n\x1b[33m[session ended — it will not be recreated]\x1b[0m\r\n'); } catch(_){}
             return;
           }
-          // The server now WARNS that it is going to restart (close 1012,
-          // sent on SIGTERM — see internal/pty/restart.go). Before that, every
-          // deploy arrived here as 1006 "closed abruptly", indistinguishable
-          // from a network drop: the pane announced a connection failure for an
-          // expected ~2s event. With the warning we can tell the user the truth and
-          // come back faster. 1001 ("going away") joins it because that is what
-          // a proxy in front sends when the upstream restarts.
           const isRestart = (ev.code === 1012 || ev.code === 1001);
           if (isRestart) state._restarting = true;
           state.reconnect.attempts += 1;
-          // A deploy is off the air for ~2s (measured in deploy.log). The
-          // old backoff started at 1s and DOUBLED, so the 1st attempt landed
-          // while the server was still coming up and the next ones waited 2s, 4s… — a
-          // 2s outage turned into 4–7s of dead screen. The first three attempts
-          // are now fast (they cover a deploy restart and a network blip); only
-          // after that does the exponential kick in, which is the right regime for a
-          // real network drop and still spares the server.
-          // An announced restart has a known duration (~2s, measured in deploy.log),
-          // so it pays to probe sooner and more often; an unannounced drop may be
-          // the network and does not deserve the same insistence.
           const FAST = state._restarting ? [250, 400, 700, 1100, 1600] : [300, 700, 1500];
           const n = state.reconnect.attempts;
-          // The ceiling used to be 30s. On a flapping network, the 6th drop left
-          // the pane dead for half a minute AFTER the network was already back — and it
-          // is in that hole that you type and nothing happens. 5s is short
-          // enough not to feel frozen and is still negligible for the
-          // server (4 panes = 0.8 req/s in the worst case). Anyone who wants it
-          // faster than that has the network coming back (the 'online' event) and the
-          // click on ↻, which reconnect at once.
           const base = n <= FAST.length
             ? FAST[n-1]
             : Math.min(5000, 3000 * Math.pow(2, n - FAST.length - 1));
@@ -10997,7 +8734,6 @@ function app() {
           state.reconnect.nextDelay = delay;
           state.reconnect.reconnectAt = Date.now() + delay;
           setStatus('reconnecting');
-          // Contextual message based on the close code (RFC 6455).
           const codeMsg = ({
             1000: 'connection closed normally',
             1001: 'server exited (restart?)',
@@ -11011,22 +8747,13 @@ function app() {
             4000: 'silence detected (watchdog)',
             4401: 'invalid JWT token (logging in again may be needed)',
           })[ev.code] || ('code '+ev.code);
-          // SILENCE on short drops. The "Reconnecting…" pill in the overlay
-          // already communicates the state without dirtying anything; writing to the
-          // terminal on every drop pollutes the scrollback of the work in progress and is
-          // what made a 2s deploy LOOK like a pane refresh. It only writes if the drop
-          // goes past QUIET_MS — then it is a real problem and deserves a record. One
-          // line per drop, not one per attempt (onopen clears the timer).
-          // On an announced restart, writing "no connection" to the terminal is noise:
-          // the user knows what is happening and the event lasts ~2s. It only warns if
-          // it takes MUCH longer than usual — then it has become a real problem.
           const QUIET_MS = state._restarting ? 20000 : 6000;
           if (!state.reconnect.downSince) state.reconnect.downSince = Date.now();
           if (!state.reconnect.noticed && !state.reconnect.noticeTimer) {
             state.reconnect.noticeTimer = setTimeout(() => {
               state.reconnect.noticeTimer = null;
               if (state.reconnect.cancelled) return;
-              if (state.ws && state.ws.readyState === 1) return;   // already back
+              if (state.ws && state.ws.readyState === 1) return;
               state.reconnect.noticed = true;
               const secs = Math.round((Date.now() - (state.reconnect.downSince || Date.now()))/1000);
               const text = state._restarting
@@ -11038,33 +8765,8 @@ function app() {
           state.reconnect.timer = setTimeout(open, delay);
         };
       };
-      // Exposed so that whoever knows the network is back (the 'online' event, the
-      // tab coming back) can cut the backoff short and reopen at once — see
-      // _reconnectPanesNow.
       state._reopen = open;
 
-      // ── PRIMER: the history goes in BEFORE the socket opens ─────────────
-      //
-      // The panel had no way to recover the history when the session was opened on
-      // another computer. It relied on the block the SERVER re-emits on attach, and
-      // that block is skipped in exactly the sessions that matter: measured across
-      // the 28 logs on this machine, EVERY working session has a repainted stream
-      // and gets zero. Hence the report — "I can only see one page".
-      //
-      // The fix is the one the application already uses: fetch the RAW log and
-      // replay it into the emulator itself. xterm is a real emulator;
-      // giving it the bytes with the escapes intact yields the screen the terminal
-      // would give, whereas the plain text from /scrollback comes out chopped (the
-      // same log yields 511 chopped lines and 5,058 readable ones).
-      //
-      // THE ORDER IS WHAT MAKES IT WORK: fetch, write, and only then connect.
-      // Connecting in parallel overlaps history and live stream. The price is a
-      // window of one RTT between the end of the log and the first live byte; in an
-      // idle session it produces nothing, and in an active session the next
-      // frame covers it.
-      //
-      // A time ceiling, because history is comfort and a live session is the reason
-      // the screen exists: a slow server must not become a terminal that will not open.
       const primeAndOpen = () => {
         if (state._primerDone) { open(); return; }
         state._primerDone = true;
@@ -11077,18 +8779,6 @@ function app() {
           try { self._markPrimer(state, 'cap'); } catch(_){}
           follow();
         }, 6000);
-        // TWO SOURCES, IN THIS ORDER.
-        //
-        //   /history  = what the person SAW, once each. The server keeps
-        //                 an emulator fed live and pours into it the
-        //                 lines that scroll off the screen; it is not replay, so
-        //                 there is no way to duplicate.
-        //   /raw-log  = everything that went over the wire. Replayed on a fresh
-        //                 grid, a program that repaints duplicates — the ESC[nA
-        //                 saturates at the top of the SCREEN and never reaches the scrollback.
-        //
-        // The raw log stays as the FALLBACK: an old session, with no history file
-        // yet, still loads whatever there is to load.
         const search = (route) => fetch(route + '?name=' + encodeURIComponent(name) + '&bytes=' + bytes,
                                       { credentials: 'same-origin' })
           .then(r => r.ok ? r.arrayBuffer() : null)
@@ -11100,15 +8790,10 @@ function app() {
             if (!buf || opened || !state.term) return;
             const u8 = new Uint8Array(buf);
             if (!u8.length) return;
-            // In chunks: up to a few MB come through here, and xterm queues
-            // internally — writing it in one go would cost the whole frame
-            // exactly at the moment the person is watching.
             const CHUNK = 256 * 1024;
             for (let i = 0; i < u8.length; i += CHUNK) {
               state.term.write(u8.subarray(i, Math.min(i + CHUNK, u8.length)));
             }
-            // Only now is it worth telling the server "I take care of the history": if
-            // the fetch fails, its own replay is still the safety net.
             state._primedOk = true;
             try { self._markPrimer(state, (u8.length / 1024 | 0) + ' KiB'); } catch(_){}
           })
@@ -11118,42 +8803,21 @@ function app() {
       primeAndOpen();
     },
 
-    // How many bytes of log the primer fetches. A user preference, with a sane
-    // ceiling: the server cuts at 16 MiB and xterm has its own scrollback.
     _termPrimerBytes(){
       const v = parseInt(localStorage.getItem('panel_term_primer_bytes') || '2097152', 10);
-      if (!isFinite(v) || v <= 0) return 0;          // 0 = primer off
+      if (!isFinite(v) || v <= 0) return 0;
       return Math.min(v, 16 * 1024 * 1024);
     },
-    // A light record of what the primer did — it shows in the diagnostic pill of the
-    // pill and in the problem report, without polluting the screen.
     _markPrimer(state, text){
       state._primerInfo = text;
     },
 
-    // ------------------ Pane container (host terminal) ------------------
-    // Persistence: saves a snapshot with the WHOLE topology (panes + layout
-    // + session names). Restores the full layout on reload.
-    // New schema (single-container): { panes:[{id,sessionName,startupCmd}], layout, activePane, paneSeq }
-    // Old schema (multi-tab, migrated in restoreState):
-    //   { tabs:[{name,activePaneId,layout,panes:[{id,sessionName,startupCmd}]}], active, paneSeq }
-    // Returns the localStorage key for the namespace this.terms is
-    // pointing at right now.
-    // so that snapshots of users who are updating are not invalidated.
     _termsStorageKey(){
       return 'panel_tabs_snapshot';
     },
 
-    // ===== Server-side sync (terminal-state.json in the user profile) ======
-    // localStorage is still the fast cache so restoreState() does not block
-    // at boot; the server is the source of truth for multi-device. Strategy:
-    //   - init() → remote pull with a 1.5s timeout, hydrates localStorage, then
-    //               restoreState() runs on top of the fresh state.
-    //   - local saveState() → schedules a debounced push (~800ms) per namespace.
-    //   - pagehide/beforeunload → a keepalive fetch flushes the 3 namespaces.
-    //   - Named workspaces: immediate PUT/DELETE; the local cache follows after.
     _termSync: {
-      status: 'idle',       // idle | syncing | error
+      status: 'idle',
       lastErr: '',
       _debounce: { claude: null },
     },
@@ -11163,11 +8827,6 @@ function app() {
     _termNamespaceOf(termsRef){
       return 'claude';
     },
-    // Pull of the whole blob {snapshots,workspaces,deletedWorkspaces}.
-    // 2.5s timeout (up from 1.5s — on a bad network the pull failed silently and
-    // the reconcile used only local state, leaving the server out of date).
-    // Guard: requires a token AND active_user set. Without that it can run before
-    // login finishes (login() calls init() un-awaited after setItem('active_user')).
     async _termPullRemote(){
       try {
         const u = (window.__panelStorageInternal && window.__panelStorageInternal.rawGet('panel_active_user')) || '';
@@ -11200,18 +8859,13 @@ function app() {
         clearTimeout(timer);
       }
     },
-    // ----- Constants mapping namespace ↔ localStorage key ------------
     _termSnapshotKeys: {
       claude:  'panel_tabs_snapshot',
     },
     _termWorkspacesKey:  'panel_term_workspaces',
     _termTombstonesKey:  'panel_term_tombstones',
-    _termTombstoneTTLms: 30 * 24 * 60 * 60 * 1000, // 30 days
+    _termTombstoneTTLms: 30 * 24 * 60 * 60 * 1000,
 
-// Defensive backfill: snapshots/workspaces from before the deploy have no
-    // savedAt. Without this, any later merge would lose to a server that does
-    // have savedAt set (even if the server is empty/older). Assigns a timestamp
-    // slightly earlier than "now" so the next save wins.
     _termBackfillSavedAt(){
       const now = Date.now() - 1000;
       Object.values(this._termSnapshotKeys).forEach(key => {
@@ -11238,11 +8892,6 @@ function app() {
       } catch(_){}
     },
 
-    // ----- Local tombstones ------
-    // A local tombstone = "this workspace was deleted by the user on this device".
-    // It suppresses resurrection when the merge still finds the workspace on the
-    // remote (because the DELETE has not propagated yet, or because another
-    // device cached it). Implicit GC on every read: expired entries (>30d) are dropped.
     _termLoadTombstones(){
       let raw = [];
       try { raw = JSON.parse(localStorage.getItem(this._termTombstonesKey) || '[]') || []; } catch(_){}
@@ -11268,21 +8917,6 @@ function app() {
       this._termPersistTombstones(m);
     },
 
-    // ----- Additive 3-way reconcile (CORE) ----
-    // Replaces the old _termHydrateLocalFromRemote, which was destructive
-    // (it wiped local state when the remote came back empty → caused data loss).
-    //
-    // Policy:
-    //   snapshots: per namespace, the larger `savedAt` wins (local OR remote).
-    //              A tie, or both missing → no-op. NEVER removeItem.
-    //   workspaces: union by NAME (local ∪ remote), larger savedAt wins.
-    //              Tombstones (local + remote) suppress deleted items.
-    //
-    // Side-effects:
-    //   - localStorage updated with the merged state
-    //   - this.termWorkspaces updated (reactive)
-    //   - returns { snapshots, workspaces, deletions } with what has to be
-    //     pushed to the server to line it up (initial migration + propagation)
     _termReconcile(remote){
       const safeRemote = (remote && typeof remote === 'object') ? remote : {};
       const remoteSnaps = (safeRemote.snapshots && typeof safeRemote.snapshots === 'object') ? safeRemote.snapshots : {};
@@ -11292,7 +8926,6 @@ function app() {
 
       const pushPlan = { snapshots: {}, workspaces: [], deletions: [] };
 
-      // ---- Snapshots: the larger savedAt wins
       Object.entries(this._termSnapshotKeys).forEach(([ns, key]) => {
         let localSnap = null;
         try { localSnap = JSON.parse(localStorage.getItem(key) || 'null'); } catch(_){}
@@ -11305,14 +8938,11 @@ function app() {
         else if (remoteSnap)         winner = remoteSnap;
         if (winner) {
           try { localStorage.setItem(key, JSON.stringify(winner)); } catch(_){}
-          // If LOCAL won (lt >= rt and local exists), it has to go up to the server
           if (winner === localSnap && lt > rt) pushPlan.snapshots[ns] = winner;
-          // It also goes up when the server had nothing (initial migration)
           else if (winner === localSnap && !remoteSnap) pushPlan.snapshots[ns] = winner;
         }
       });
 
-      // ---- Tombstones: unify local + remote, keep the most recent per name
       const tombByName = new Map(localTomb);
       remoteTomb.forEach(t => {
         if (!t || !t.name) return;
@@ -11320,10 +8950,8 @@ function app() {
         const cur = tombByName.get(t.name) || 0;
         if (at > cur) tombByName.set(t.name, at);
       });
-      // Persists the merged tombstones (the server may hold a delete local never saw)
       this._termPersistTombstones(tombByName);
 
-      // ---- Workspaces: merge by name with tombstone suppression
       const localWs = (() => {
         try { return JSON.parse(localStorage.getItem(this._termWorkspacesKey) || '[]') || []; }
         catch(_) { return []; }
@@ -11334,7 +8962,6 @@ function app() {
         const tombAt = tombByName.get(ws.name) || 0;
         const wsAt   = Number(ws.savedAt) || 0;
         if (tombAt > 0 && tombAt >= wsAt) {
-          // Workspace deleted after this version — discard
           return;
         }
         const cur = byName.get(ws.name);
@@ -11346,7 +8973,6 @@ function app() {
       try { localStorage.setItem(this._termWorkspacesKey, JSON.stringify(merged)); } catch(_){}
       this.termWorkspaces = merged;
 
-      // ---- Computes the push plan: what the server needs to receive
       const remoteByName = new Map(remoteWs.map(w => [w && w.name, w]).filter(([n]) => n));
       byName.forEach((ws, name) => {
         const r = remoteByName.get(name);
@@ -11354,7 +8980,6 @@ function app() {
         const rAt  = r ? (Number(r.savedAt) || 0) : -1;
         if (!r || wsAt > rAt) pushPlan.workspaces.push(ws);
       });
-      // Deletions the server does not know about yet (a local tombstone with no counterpart on the remote)
       tombByName.forEach((deletedAt, name) => {
         const remoteHas = remoteByName.has(name);
         const remoteTombHas = remoteTomb.some(t => t && t.name === name && (Number(t.deletedAt) || 0) >= deletedAt);
@@ -11364,12 +8989,9 @@ function app() {
       return pushPlan;
     },
 
-    // Runs the push plan produced by the reconcile. Snapshots go debounced;
-    // workspaces and deletions go immediately (few items, tolerable latency).
     async _termExecutePushPlan(plan){
       if (!plan) return;
       Object.entries(plan.snapshots || {}).forEach(([ns, snap]) => {
-        // Immediate (not debounced) — this is the initial migration, it has to go up now
         this._termPushSnapshotNow(ns, snap);
       });
       for (const ws of (plan.workspaces || [])) {
@@ -11380,7 +9002,6 @@ function app() {
       }
     },
 
-    // Immediate snapshot push (no debounce). Used by the reconcile/migration.
     _termPushSnapshotNow(namespace, snapshot){
       if (!this.token || !namespace) return;
       const timers = this._termSync._debounce;
@@ -11401,9 +9022,6 @@ function app() {
       });
     },
 
-    // Boot-time sync: backfill → pull → reconcile → push diffs.
-    // Always tries to reconcile, even if the pull fails (degrades to
-    // "keep local, retry later").
     async _termInitialSync(){
       this._termBackfillSavedAt();
       const remote = await this._termPullRemote();
@@ -11411,7 +9029,6 @@ function app() {
       this._termExecutePushPlan(plan);
     },
 
-    // Manual sync triggered by the 🔄 button in the panel.
     async _termManualRefresh(){
       const remote = await this._termPullRemote();
       if (!remote) {
@@ -11422,17 +9039,13 @@ function app() {
       this._termExecutePushPlan(plan);
       this.showToast('Workspaces synced ('+(this.termWorkspaces||[]).length+')', 'ok');
     },
-    // fetch with exponential retry for 5xx and network errors. Does NOT retry on
-    // 4xx (validation/auth — a permanent failure; retrying only makes it worse).
-    // Used on every push to survive network hiccups without losing data.
     async _termFetchRetry(url, opts, label){
-      const delays = [600, 1800, 5000]; // 4 attempts in total
+      const delays = [600, 1800, 5000];
       let lastErr = null;
       for (let attempt = 0; attempt <= delays.length; attempt++) {
         try {
           const r = await fetch(url, opts);
           if (r.ok) return r;
-          // 4xx = permanent failure, no retry
           if (r.status >= 400 && r.status < 500) return r;
           lastErr = new Error('HTTP '+r.status);
         } catch (e) {
@@ -11446,8 +9059,6 @@ function app() {
       throw lastErr || new Error('retry exhausted');
     },
 
-    // Debounced push (800ms): aggregates bursts of saveState during fast
-    // operations (split→focus→split). Idempotent PUT per namespace + retry.
     _termPushSnapshotDebounced(namespace, snapshot){
       if (!this.token || !namespace) return;
       const timers = this._termSync._debounce;
@@ -11471,9 +9082,6 @@ function app() {
         }
       }, 800);
     },
-    // Synchronous flush of every namespace before the tab closes.
-    // fetch + keepalive=true survives the unload and allows Authorization
-    // (sendBeacon does not allow custom headers). 64KB max per request.
     _termFlushAllOnUnload(){
       if (!this.token) return;
       const refs = {
@@ -11502,9 +9110,6 @@ function app() {
         } catch(_){}
       });
     },
-    // Push of a named workspace (the server is the source of truth) with retry.
-    // 409 (tombstone) = the server says "that name was deleted more recently than
-    // your version"; treated as a silent success (the next reconcile lines it up).
     async _termPushWorkspace(ws){
       if (!this.token || !ws || !ws.name) return false;
       try {
@@ -11516,7 +9121,7 @@ function app() {
         }, 'push workspace '+ws.name);
         if (r.status === 409) {
           this._termSync.status = 'idle';
-          return true; // not an error by the user
+          return true;
         }
         if (!r.ok) throw new Error('HTTP '+r.status);
         this._termSync.status = 'idle';
@@ -11550,9 +9155,9 @@ function app() {
     },
     saveState(){
       try {
-        if (!this.terms) return;  // init has not run yet
+        if (!this.terms) return;
         const snap = {
-          v: 2, // schema version — bump it when the pane/layout format changes
+          v: 2,
           panes: (this.terms.panes||[]).map(p => ({
             id: p.id,
             sessionName: p.sessionName,
@@ -11562,14 +9167,10 @@ function app() {
           layout: this._serializeLayout(this.terms.layout),
           activePane: this.terms.activePane || null,
           paneSeq: this.terms._paneSeq,
-          // savedAt in ms since the epoch — breaks the tie of "which snapshot is
-          // newer" between devices. Without it, multi-device is non-deterministic.
           savedAt: Date.now(),
         };
         const key = this._termsStorageKey();
         localStorage.setItem(key, JSON.stringify(snap));
-        // Mirrors to the server (debounced). A network failure does not block the UX;
-        // the next saveState or pagehide replicates it.
         try { this._termPushSnapshotDebounced(this._termNamespaceOf(this.terms), snap); } catch(_){}
       } catch(e){ console.warn('[panes] saveState error:', e); }
     },
@@ -11580,10 +9181,7 @@ function app() {
                a: this._serializeLayout(node.a), b: this._serializeLayout(node.b) };
     },
     restoreState(){
-      // Restores the Terminal namespace from its
-      // localStorage keys. Each call to _restoreStateInner runs on a
-      // specific structure passed in the second arg.
-      const orig = this.terms; // preserves the current pointer
+      const orig = this.terms;
       try {
         this.terms = this._termsClaude;
         this._restoreStateInner('panel_tabs_snapshot');
@@ -11593,33 +9191,22 @@ function app() {
         this._termsClaude.panes = []; this._termsClaude.layout = null; this._termsClaude.activePane = null;
       }
       this.terms = orig || this._termsClaude;
-      // Besides the panes, it re-hydrates the job log id (the pill after F5). The
-      // queue has not loaded here; loadJobs() resolves it via _jobLogResolveRestore.
       try { this._jobLogRestoreLoad(); } catch(_){}
     },
     _restoreStateInner(storageKey){
       storageKey = storageKey || 'panel_tabs_snapshot';
       let snap = null;
       try { snap = JSON.parse(localStorage.getItem(storageKey) || 'null'); } catch(e){}
-      // CRITICAL: reset state before hydrating. Without this, logout+login cycles
-      // (or any re-call of init) accumulated panes in terms.panes through
-      // push — a user with 2 panes after 4 token expirations ended up with 32 panes.
-      // restoreState has to be idempotent.
       this.terms.panes = [];
       this.terms.layout = null;
       this.terms.activePane = null;
       if (!snap) return;
-      // Schema version guard: if the snapshot comes from an earlier incompatible
-      // version, it is discarded cleanly. The bump to v=2 introduced changes that make
-      // stale snapshots dangerous for x-for :key (cause of "Cannot read properties of undefined").
       if (snap.v !== undefined && snap.v !== 2 && !Array.isArray(snap.tabs) && !Array.isArray(snap.names)) {
         try { localStorage.removeItem('panel_tabs_snapshot'); } catch(_) {}
         return;
       }
       this.terms._paneSeq = Math.max(this.terms._paneSeq || 0, snap.paneSeq || 0);
 
-      // Old schema (multi-tab) → consolidated into a single pool + a right-hand chain of row splits.
-      // An even older snapshot (only names[]) lands here too.
       if (Array.isArray(snap.tabs) || Array.isArray(snap.names)) {
         const flatPaneDescriptors = [];
         if (Array.isArray(snap.names)) {
@@ -11630,14 +9217,10 @@ function app() {
             flatPaneDescriptors.push({ sessionName: name, startupCmd: '' });
           });
         } else {
-          // Reading order: iterates tabs in the order they were saved; within
-          // each tab, iterates panes in the _allPanes order of the layout to preserve
-          // visual position (left→right / top→bottom).
           snap.tabs.forEach(savedTab => {
             const layoutPanes = this._allPanesFromSerialized(savedTab.layout);
             const byId = new Map((savedTab.panes||[]).map(p => [p.id, p]));
             const seen = new Set();
-            // First: the ones in the layout (visual order)
             layoutPanes.forEach(pid => {
               const p = byId.get(pid);
               if (p && !seen.has(pid)) {
@@ -11645,7 +9228,6 @@ function app() {
                 flatPaneDescriptors.push({ sessionName: p.sessionName, startupCmd: '' });
               }
             });
-            // Fallback: panes with no layout (should not happen, but it is a safety net)
             (savedTab.panes||[]).forEach(p => {
               if (!seen.has(p.id)) {
                 flatPaneDescriptors.push({ sessionName: p.sessionName, startupCmd: '' });
@@ -11657,28 +9239,13 @@ function app() {
         return;
       }
 
-      // New schema (single-container)
       if (!Array.isArray(snap.panes) || snap.panes.length === 0) {
         return;
       }
-      // Dedup by id: old / multi-tab snapshots can carry duplicate ids
-      // that break the Alpine <template x-for :key="p.id"> with "Cannot read
-      // properties of undefined (reading 'after')". Keeps the first of each id.
-      // Regenerates IDs from scratch (via _makePane) to guarantee uniqueness even if
-      // the snapshot has empty/null/repeated ids — the on-disk ID is not preserved.
-      // Dedup ONLY by id. Do NOT dedup by sessionName: legitimate splits
-      // create several panes pointing at the same session (handy for watching the
-      // same terminal in 2 places at once). Collapsing by sessionName
-      // killed that use-case. The inflation from logout/login was already fixed by
-      // the terms.panes=[] reset at the top of this function.
-      //
-      // Hard cap: if a legacy snapshot has >MAX_PANES entries (a consequence
-      // of the old accumulation bug), it is truncated to avoid ghosts. A user
-      // rarely has more than ~10 panes on purpose.
       const MAX_PANES = 24;
       const inputPanes = (snap.panes || []).slice(0, MAX_PANES);
       const seenIds = new Set();
-      const idMap = {}; // oldId -> newId (to rewrite the layout)
+      const idMap = {};
       inputPanes.forEach(p => {
         if (!p || !p.id || seenIds.has(p.id)) return;
         seenIds.add(p.id);
@@ -11686,9 +9253,6 @@ function app() {
         idMap[p.id] = pane.id;
         this.terms.panes.push(pane);
       });
-      // Rewrites the layout: replaces old IDs with the new ones; drops refs
-      // to panes that vanished in the dedup. If the tree ends up inconsistent, it
-      // falls back to a simple chain.
       const rewriteLayout = (node) => {
         if (!node) return null;
         if (node.type === 'pane') {
@@ -11704,10 +9268,6 @@ function app() {
         return null;
       };
       let rewritten = rewriteLayout(snap.layout);
-      // Counts the pane nodes that survived in the rewritten layout. If that is
-      // SMALLER than terms.panes.length, the layout lost panes during the rewrite
-      // (legacy snapshot / cap / dedup). Builds a horizontal chain with the
-      // panes MISSING from the layout so that all of them stay visible.
       const countPanesInLayout = (node, set) => {
         set = set || new Set();
         if (!node) return set;
@@ -11721,7 +9281,6 @@ function app() {
       const inLayout = countPanesInLayout(rewritten);
       const missing = this.terms.panes.filter(p => !inLayout.has(p.id));
       if (missing.length > 0) {
-        // Appends the missing ones through row splits to the right of the existing layout.
         let layout = rewritten;
         missing.forEach(p => {
           const node = { type:'pane', id: p.id };
@@ -11735,16 +9294,12 @@ function app() {
       if ((snap.panes||[]).length !== this.terms.panes.length) {
         console.warn('[panes] snapshot had', (snap.panes||[]).length, 'but restored only', this.terms.panes.length, '— check for dup IDs');
       }
-      // Saves a clean snapshot back — if there were dupes in localStorage, this
-      // saveState purges them so the next load does not have to dedup again.
       this.saveState();
       this.$nextTick(()=>{
         this.renderPaneLayout();
         this.terms.panes.forEach(p => this.mountPane(p));
       });
     },
-    // Lists pane IDs in the visual order of a SERIALIZED layout (with no refs to
-    // term/ws). Used by the multi-tab → single-container migration.
     _allPanesFromSerialized(node, out){
       out = out || [];
       if (!node) return out;
@@ -11752,15 +9307,10 @@ function app() {
       else { this._allPanesFromSerialized(node.a, out); this._allPanesFromSerialized(node.b, out); }
       return out;
     },
-    // Builds terms.panes + terms.layout from a flat list of
-    // descriptors {sessionName, startupCmd}. Default layout = a right-hand chain
-    // of row splits (panes side by side, left→right).
     _hydrateFromDescriptors(descriptors){
       if (!descriptors || descriptors.length === 0) return;
-      // Creates panes with fresh IDs
       const panes = descriptors.map(d => this._makePane(d.sessionName, d.startupCmd || '', d.aiProvider));
       this.terms.panes = panes;
-      // Assembles the layout: 1 pane = just the pane; N panes = a right-hand row chain.
       const buildChain = (arr) => {
         if (arr.length === 1) return { type:'pane', id: arr[0].id };
         return { type:'split', dir:'row', size: 1.0 / arr.length,
@@ -11775,38 +9325,25 @@ function app() {
       });
       this.saveState();
     },
-    // Global shortcuts — Ctrl+K (palette), Ctrl+/ (global search = same palette),
-    // ? (help), and the prefix g + <letter> for quick navigation (GitHub/Linear style).
     installGlobalHotkeys(){
       let gPrefix = false;
       const isTyping = () => {
         const el = document.activeElement;
         if (!el) return false;
         const tag = el.tagName;
-        // Considers you to be "typing" when focus is in an input, textarea, select or
-        // in the xterm terminal (which does its own key capture).
         return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.closest('.xterm');
       };
       window.addEventListener('keydown', (ev) => {
-        // === the allowlist of combos that count EVEN with focus in an input/xterm comes
-        // BEFORE the isTyping() guard; the palette combos (Ctrl+K/Ctrl+P/Ctrl+/) and the
-        // g+<letter> ones come AFTER it, so as not to steal kill-line/history from the shell. ===
-        // Ctrl+Shift+H: toggles chromeCollapsed (hide topbar + tabs).
-        // Handy on small screens and in terminal mode — it recovers ~80 vertical px.
         if ((ev.ctrlKey||ev.metaKey) && ev.shiftKey && (ev.key==='h'||ev.key==='H')) {
           ev.preventDefault();
           this.toggleChromeCollapsed();
           return;
         }
-        // Ctrl+Shift+M: toggles voice dictation in the focused field.
-        // If already dictating, it stops. If a <textarea>/<input> has focus,
-        // it dictates into it (not committed through the Alpine path — direct DOM .value).
         if ((ev.ctrlKey||ev.metaKey) && ev.shiftKey && (ev.key==='m'||ev.key==='M')) {
           ev.preventDefault();
           if (this.stt.session) { this.sttStop(); return; }
           const active = document.activeElement;
           if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
-            // There is no Alpine path here; we use the DOM directly.
             const id = active.id || ('stt-target-' + Date.now());
             if (!active.id) active.id = id;
             this._sttStartForDOM(active);
@@ -11815,56 +9352,36 @@ function app() {
           this.showToast('Focus a text field before dictating', 'warn');
           return;
         }
-        // Ctrl+Shift+! opens the global shortcut overlay. It is on the allowlist (before
-        // the guard) on purpose: it has to open even with focus in an input/terminal.
-        // It used to be plain `?`, but that clashed with contexts where the user types ? and
-        // focus had left the input for an instant; the combo demands intent.
         if (ev.ctrlKey && ev.shiftKey && (ev.key === '!' || ev.code === 'Digit1')) {
           ev.preventDefault();
           this.shortcutsOpen = true;
           return;
         }
-        // Escape: closes open modals (works even while typing).
         if (ev.key==='Escape') {
           if (this.videocall && this.videocall.dropOverlay) { this.vcDropOverlayHide(); return; }
           if (this.palette.open) { this.closePalette(); return; }
           if (this.shortcutsOpen) { this.shortcutsOpen=false; return; }
           if (this.focusMode) { this.focusMode = false; this.$nextTick(()=>{ const p=this.activePane(); if(p) this._fitSoon(p.fit); }); return; }
         }
-        // === Guard: inside input/textarea/select/xterm, nothing below fires.
-        // Moved to BEFORE the palette: in the shell, Ctrl+K (kill-line) and Ctrl+P (history)
-        // have to reach readline instead of opening the command palette. ===
         if (isTyping()) return;
-        // Ctrl/Cmd + P: quick switcher (palette focused on sessions/commands/snippets).
-        // It clashes with the browser print, but it is the IDE standard for a quick switcher.
         if ((ev.ctrlKey||ev.metaKey) && !ev.shiftKey && (ev.key==='p'||ev.key==='P')) {
           ev.preventDefault(); this.openPalette({ focus: 'terminal' }); return;
         }
-        // Ctrl/Cmd + K: palette
         if ((ev.ctrlKey||ev.metaKey) && !ev.shiftKey && (ev.key==='k'||ev.key==='K')) {
           ev.preventDefault(); this.openPalette(); return;
         }
-        // Ctrl/Cmd + / : palette focused on global search
         if ((ev.ctrlKey||ev.metaKey) && (ev.key==='/' )) {
           ev.preventDefault(); this.openPalette(); return;
         }
-        // g <letter>
         if (ev.key === 'g' && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
           gPrefix = true; setTimeout(()=>{ gPrefix = false; }, 800); ev.preventDefault(); return;
         }
         if (gPrefix) {
           gPrefix = false;
-          // The source of truth for the g+<letter> sequences. The `hint:'g+X'` entries in
-          // the command palette (this.palette.pages) MUST mirror this map —
-          // any divergence makes the palette announce a shortcut that does not exist.
-          // 'g' cannot be a destination: the second 'g' is eaten by the test above
-          // (it only re-arms the prefix), so g+g is unreachable by construction.
           const map = {
             'd':'dashboard', 't':'terminal', 'c':'containers', 'f':'files',
             'h':'history',   'a':'audit',    'l':'alerts',     's':'systemd',
             'i':'images',    'v':'volumes',  'n':'networks',   'r':'config',
-            // Added: g+j and g+m were already announced by the palette without existing;
-            // g+e (agEndamentos, the schedules page) replaces the g+s the palette announced wrongly.
             'j':'jobs',      'm':'maintenance', 'e':'schedules',
             'p':'deploy',    'u':'users',      'w':'whatsapp', 'b':'browser',
           };
@@ -11876,21 +9393,12 @@ function app() {
     },
     openPalette(opts){
       this.palette.open = true; this.palette.selected = 0;
-// Ctrl+P pre-filters with the prefix "session" to focus on sessions/commands.
-      // Ctrl+K/Ctrl+/ open the palette empty (search everything).
       this.palette.query = (opts && opts.focus === 'terminal') ? 'session' : '';
-      // Loads sessions fresh every time it opens (so it reflects the real state)
       try { this.loadAbandonedSessions(); } catch(e){}
       this.$nextTick(()=>{ const i = document.getElementById('palette-input'); if (i) { i.focus(); i.select && i.select(); }});
     },
     closePalette(){ this.palette.open = false; },
-    // _norm: normalizes for accent-insensitive search. Applied to BOTH sides of the
-    // palette filter. 'documentation' now matches 'Documentation', 'cleanup'
-    // matches 'Prune / Pull' (via kw). \u0300-\u036f = combining diacritics.
     _norm(s){ return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim(); },
-    // pushRecentView: records the legacy view visited (called from setPage/setTab).
-    // Persisted in localStorage panel_recent_views (same pattern as recentCommands).
-    // Only views with a known title get in — this avoids recording spurious groups/states.
     pushRecentView(view){
       if (!view || !this.VIEW_TITLES[view]) return;
       this.recentViews = [view, ...this.recentViews.filter(v => v !== view)].slice(0, 8);
@@ -11898,12 +9406,6 @@ function app() {
     },
     getPaletteItems(){
       const q = this._norm(this.palette.query);
-      // Each category becomes a list of {it, m}: `it` is the rendered item, `m`
-      // is the normalized match string (label + aliases/kw + metadata). The
-      // filter compares q against `m` (accent-insensitive). With an empty query the
-      // categories enter by QUOTA (recents → containers → deploy → sessions →
-      // panes → snippets → pages → actions), guaranteeing each one shows up —
-      // before, the slice(0,50) over pages+actions hid everything that came after.
       const pages   = (this.palette.pages||[]).map(p => ({ it:p, m:this._norm(p.label+' '+(p.kw||'')) }));
       const actions = (this.palette.actions||[]).map(a => ({ it:a, m:this._norm(a.label+' '+(a.kw||'')) }));
       const recents = (this.recentViews||[]).map(v => {
@@ -11933,11 +9435,6 @@ function app() {
       const panes    = (this.terms.panes||[]).map(p => ({ it:{label:'pane · '+p.sessionName, kind:'pane', paneId:p.id}, m:this._norm('pane '+p.sessionName) }));
       const sessions = (this.abandonedSessions||[]).map(s => ({ it:{label:'session · '+s.name, kind:'session', sessionName:s.name}, m:this._norm('session '+s.name) }));
 
-      // The "pinned" category. Resolves the stable saved IDs
-      // (page:<page>/do:<do>) back to the catalog item, in the ORDER they
-      // were pinned. Orphan pins (an item that vanished) are ignored. Pinned
-      // items leave their original category (dedupe) and reappear ONLY at the top,
-      // both on the empty query and under a query filter.
       const byId = new Map();
       pages.forEach(x => byId.set('page:'+x.it.page, x));
       actions.forEach(x => { if (x.it.do) byId.set('do:'+x.it.do, x); });
@@ -11952,8 +9449,6 @@ function app() {
         const all = [...pinned, ...recents, ...pagesNP, ...actionsNP, ...conts, ...deploys, ...snippets, ...panes, ...sessions];
         return all.filter(x => x.m.includes(q)).slice(0, 50).map(x => x.it);
       }
-      // Empty query: quotas per category (global ceiling 50). take() stops at the ceiling.
-      // Pinned comes FIRST (before recents).
       const CAP = 50;
       const out = [];
       const take = (arr, n) => { for (const x of arr) { if (out.length >= CAP || n <= 0) break; out.push(x.it); n--; } };
@@ -11981,10 +9476,6 @@ function app() {
       if (it.kind === 'pane')     { this.setPage('terminal'); this.$nextTick(()=>this.focusPane(it.paneId)); return; }
       if (it.kind === 'session')  { this.reattachSession(it.sessionName); this.setPage('terminal'); return; }
     },
-    // The STABLE identity of a palette item so it can be pinned. Only
-    // pages and actions have a stable ID; dynamic items (containers/deploys/
-    // panes/sessions/recents) return null and CANNOT be pinned (an unstable
-    // ID = a phantom pin). Used in getPaletteItems' dedupe and by the star.
     paletteItemId(it){
       if (!it) return null;
       if (it.kind === 'page'   && it.page) return 'page:'+it.page;
@@ -11992,9 +9483,6 @@ function app() {
       return null;
     },
     isPinned(id){ return !!id && (this.palettePins||[]).includes(id); },
-    // Toggles the pin WITHOUT running the item or closing the palette. Persisted via
-    // _prefPersist (local cache + write-through). Resets the selection because the
-    // list is reordered (the item jumped to the top / left the top).
     togglePin(id){
       if (!id) return;
       const cur = this.palettePins || [];
@@ -12002,9 +9490,6 @@ function app() {
       this._prefPersist('panel_palette_pins', JSON.stringify(this.palettePins));
       this.palette.selected = 0;
     },
-    // Jumps to the MFA/TOTP card in Config. setPage + $nextTick
-    // so the section (x-show page==='config') can render, with a short
-    // fallback retry in case the layout has not settled yet.
     paletteOpenSecurityMFA(){
       this.setPage('config');
       const go = () => {
@@ -12016,11 +9501,6 @@ function app() {
     },
     reloadPage(){ location.reload(); },
 
-    // ============================================================
-    // Adapters: command palette → the ACTIVE terminal pane.
-    // Each one navigates to the 'terminal' page if not already there, then
-    // delegates to the active pane. Handy for the "Ctrl+K, type reset, Enter" QoL.
-    // ============================================================
     _paletteTermDo(fn){
       this.setPage('terminal');
       this.$nextTick(() => {
@@ -12041,8 +9521,6 @@ function app() {
     paletteTermSigInt()         { this._paletteTermDo(p => this._paletteSendKey(p, '\x03')); },
     paletteTermSigEOF()         { this._paletteTermDo(p => this._paletteSendKey(p, '\x04')); },
     paletteTermSigSusp()        { this._paletteTermDo(p => this._paletteSendKey(p, '\x1a')); },
-    // dtach: Ctrl-b is dead. Split uses the client-side splitPane; "detach" = closes the
-    // local client of the pane (closePane preserves the session on the server).
     paletteTermDetach()         { this._paletteTermDo(p => { this.closePane(p.id); this.showToast && this.showToast('panel closed — the session stays alive (dtach)', 'ok'); }); },
     paletteTermSplitH()         { this._paletteTermDo(p => this.splitPane(p.id, 'column')); },
     paletteTermSplitV()         { this._paletteTermDo(p => this.splitPane(p.id, 'row')); },
@@ -12051,10 +9529,7 @@ function app() {
     paletteTermJumpPrev()       { this._paletteTermDo(p => this._termJumpMark(p, -1)); },
     paletteTermReconnect()      { this._paletteTermDo(_ => this.hostTermReconnectNow()); },
 
-    // -------------------- Server Control Panel self-health ---------------------
     async loadPanelHealth(){
-      // A health panel that fails silently is the worst case: panelHealth keeps
-      // the old value (or an empty one) and the screen suggests "all fine".
       this.panelHealthLoading = true;
       try { const r = await this.api('/api/panel/health'); this.panelHealth = await r.json(); this._loadOk('panelHealth'); }
       catch(e){ this._loadErr('panelHealth', e, 'failed to read the server-control-panel health'); }
@@ -12078,7 +9553,6 @@ function app() {
     },
     tlsExpiryClass(){
       const h = this.panelHealth;
-      // TLS off is the state of RISK: it has to be the MOST legible, not the least.
       if (!h || !h.tls_enabled) return 'text-rose-400';
       if (h.tls_expires_in_days != null) {
         if (h.tls_expires_in_days <= 0) return 'text-rose-400';
@@ -12087,7 +9561,6 @@ function app() {
       return 'text-emerald-400';
     },
 
-    // ---------------- Notifications / bell ------------------------
     addNotification(kind, text){
       this.notifications = [{kind, text, t: Math.floor(Date.now()/1000)}, ...this.notifications].slice(0, 50);
     },
@@ -12099,7 +9572,6 @@ function app() {
       this.lastSeenNotification = Math.floor(Date.now()/1000);
       localStorage.setItem('panel_last_seen_notif', String(this.lastSeenNotification));
     },
-    // ---------------- logs/ufw/cron/compose wizard ---------------------------
     async loadSystemLogs(){
       this.systemLogsLoading = true;
       try { const r = await this.api('/api/system/logs'); this.systemLogs = (await r.json()) || []; this._loadOk('systemLogs'); }
@@ -12110,14 +9582,11 @@ function app() {
       this.closeLogTail();
       this.logTail = { path, ws: null, buffer: '', connected: false };
       const proto = location.protocol==='https:'?'wss:':'ws:';
-      const url = proto+'//'+location.host+'/ws/system/log-tail?path='+encodeURIComponent(path); // auth via HttpOnly cookie (no JWT in the URL)
-      // Reconnect with backoff. On (re)open the server re-tails the file; that is
-      // why we zero the buffer in onopen so the replay REPLACES instead of duplicating.
+      const url = proto+'//'+location.host+'/ws/system/log-tail?path='+encodeURIComponent(path);
       const ctl = this._wsWithRetry(url, {
         onopen: () => { this.logTail.connected = true; this.logTail.buffer = ''; },
         onmessage: (ev) => {
           this.logTail.buffer += ev.data;
-          // truncate to last ~50KB to avoid runaway memory
           if (this.logTail.buffer.length > 50000) this.logTail.buffer = this.logTail.buffer.slice(-50000);
         },
         onstatus: (s) => { if (s !== 'open') this.logTail.connected = false; },
@@ -12131,17 +9600,11 @@ function app() {
     },
 
     async loadUFW(){
-      // Critical: on failure the ufw object kept installed:false/enabled:false,
-      // which the UI renders as "firewall off". A read error must NOT
-      // be presented as the state of the firewall.
       this.ufwLoading = true;
       try { const r = await this.api('/api/system/ufw'); const d = await r.json(); this.ufw = Object.assign(this.ufw, d); this._loadOk('ufw'); }
       catch(e){ this._loadErr('ufw', e, 'failed to read the ufw status'); }
       finally { this.ufwLoading = false; }
     },
-    // Indexes the rendered `ufw status numbered`: { "1": "22/tcp ALLOW IN Anywhere", ... }
-    // The backend returns the literal ufw output, so the rule lines are
-    // always "[ N] <to> <ACTION> <from>".
     ufwParsedRules(text){
       const out = {};
       String(text == null ? '' : text).split('\n').forEach(line => {
@@ -12156,17 +9619,6 @@ function app() {
       spec = String(spec == null ? '' : spec).trim();
       if (action === 'delete' && !spec) { this.showToast('enter the number (or the text) of the rule to delete','err'); return; }
 
-      // ROOT CAUSE of "it deleted the wrong rule": `ufw delete N` identifies the rule
-      // by its POSITION in the numbered listing, and ufw RENUMBERS the list on every
-      // removal. The number the user read on screen may already point at another
-      // rule by the time the click arrives (another admin touched it, or they
-      // themselves deleted something earlier without reloading). The backend API only
-      // accepts a number or the full text of the rule, so there is no stable id to
-      // use — what can be done, and what we do here, is:
-      //   1. resolve the number against the RENDERED listing and show in the
-      //      confirmation WHICH rule is about to disappear (text, not number);
-      //   2. re-fetch the status right before executing and abort if the rule
-      //      at that position changed since what was confirmed.
       if (action === 'delete' && /^\d+$/.test(spec)) {
         const shown = this.ufwParsedRules(this.ufw.output);
         const before = shown[spec];
@@ -12181,8 +9633,6 @@ function app() {
 
         this.ufwBusy = true;
         try {
-          // Revalidates against the server: between the render and the confirm the list
-          // may have been renumbered.
           const rs = await this.api('/api/system/ufw');
           const ds = await rs.json();
           const now = this.ufwParsedRules(ds && ds.output);
@@ -12194,8 +9644,6 @@ function app() {
         } catch(e){ this.showToast(e.message,'err'); return; }
         finally { this.ufwBusy = false; }
       } else if (action === 'delete') {
-        // a textual spec ("allow 22/tcp") — there is no position to slip, but
-        // it is still a firewall removal with no way back.
         if (!(await this.confirmAsync(
           'Delete the rule "'+spec+'" from the firewall?\n\nDeleted firewall rules do not come back on their own — deleting the wrong one can lock you out of the server.',
           { danger: true }))) return;
@@ -12214,8 +9662,6 @@ function app() {
     },
 
     async loadCron(){
-      // Before: a bare catch(e){}. If the GET failed, the textarea stayed empty and
-      // Save wrote that emptiness over the real crontab of root.
       this.cron.loading = true; this.cron.error = '';
       try {
         const r = await this.api('/api/system/cron');
@@ -12235,18 +9681,13 @@ function app() {
       } finally { this.cron.loading = false; }
     },
     cronInsert(text){
-      // Append a line with the snippet — user fills the command after.
       this.cron.content += (this.cron.content.endsWith('\n') || !this.cron.content ? '' : '\n') + text;
     },
     async saveCron(){
-      // Guard 1: never write on top of a state we could not read.
-      // Without this, a failed GET + Save = the crontab of root wiped.
       if (!this.cron.loaded) {
         this.showToast('could not read the current crontab — reload before saving', 'err');
         return;
       }
-      // Guard 2: writing empty over something that was NOT empty is
-      // destructive and almost always accidental. It asks for explicit confirmation.
       const fresh = String(this.cron.content || '');
       const old = String(this.cron.serverContent || '');
       if (!fresh.trim() && old.trim()) {
@@ -12263,7 +9704,6 @@ function app() {
         const r = await this.api('/api/system/cron', {method:'POST', body: JSON.stringify({content: fresh})});
         const d = await r.json();
         if (d.error) { this.showToast('crontab rejected: '+d.error, 'err'); return; }
-        // Saved: the server now holds this content — it becomes the new baseline.
         this.cron.serverContent = fresh;
         this.showToast('crontab saved','ok');
       } catch(e){ this.showToast('error saving the crontab: '+e.message,'err'); }
@@ -12292,7 +9732,6 @@ function app() {
       } catch(e){ this.showToast(e.message,'err'); }
     },
 
-    // ---------------- Bulk actions --------------------------
     toggleBulkSel(kind, id){
       const arr = this.bulkSel[kind];
       const i = arr.indexOf(id);
@@ -12315,9 +9754,6 @@ function app() {
       if (ids.length === 0) return;
       const label = { start:'Start', stop:'Stop', restart:'Restart', remove:'REMOVE' }[action] || action;
       if (!(await this.confirmAsync(label + ' ' + ids.length + ' container(s)?'))) return;
-      // Reactive progress (a done/total bar) and an honest list of
-      // items that failed, with the message. The allSettled in bulk used to swallow
-      // the errors (it only counted them) and there was no feedback between the confirm and the toast.
       this.bulkProgress = { done:0, total: ids.length, label, running:true, fails:[] };
       let ok = 0, lastErr = '';
       await Promise.all(ids.map(async id => {
@@ -12343,12 +9779,10 @@ function app() {
       await this.loadContainers();
     },
     async bulkImageAction(action){
-      // Only 'remove' makes sense for images. The backend is DELETE /api/docker/images?id=<id>&force=1.
       const ids = [...this.bulkSel.images];
       if (ids.length === 0) return;
       if (action !== 'remove') return;
       if (!(await this.confirmAsync('REMOVE ' + ids.length + ' image(s)? (force=1 for images in use)'))) return;
-      // The same progress + failure list for containers.
       this.bulkProgress = { done:0, total: ids.length, label:'Remove', running:true, fails:[] };
       let ok = 0, lastErr = '';
       await Promise.all(ids.map(async id => {
@@ -12373,17 +9807,12 @@ function app() {
       this.bulkSel.images = [];
       await this.loadImages();
     },
-    // Volumes have no individual removal endpoint (the orphan prune at
-    // /api/docker/volumes is list-only; removal goes through "Cleanup"). So the bulk
-    // action here is NON-destructive: it copies the selected names as a
-    // `docker volume rm …` command ready to paste into the terminal. Reuses _pcCopy (clipboard).
     bulkVolumeCopy(){
       const names = [...this.bulkSel.volumes];
       if (names.length === 0) return;
       this._pcCopy('docker volume rm ' + names.join(' '), names.length + ' name(s) copied as a command');
     },
 
-    // ---------------- Monaco editor --------------------------
     _ensureMonaco(){
       return new Promise((resolve, reject) => {
         if (window.monaco) { resolve(window.monaco); return; }
@@ -12421,7 +9850,6 @@ function app() {
       let monaco;
       try { monaco = await this._ensureMonaco(); }
       catch(e) { this.showToast('Monaco failed: '+e.message,'err'); this.closeEditor(); return; }
-      // GET content
       let content = '';
       try {
         const r = await this.api('/api/files/read?path=' + encodeURIComponent(path));
@@ -12450,7 +9878,6 @@ function app() {
         this.editor._model.onDidChangeContent(() => {
           this.editor.dirty = (this.editor._model.getValue() !== this.editor._initial);
         });
-        // Ctrl+S saves (captured by the Monaco command)
         this.editor._inst.addCommand(
           monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
           () => this.saveEditor()
@@ -12487,7 +9914,6 @@ function app() {
       this.editor.open = false; this.editor.path = ''; this.editor.dirty = false; this.editor.loaded = false;
     },
 
-    // ---------------- Active sessions --------------------
     async loadSessions(){
       this.sessionsLoading = true; this.sessionsError = '';
       try {
@@ -12496,8 +9922,6 @@ function app() {
         this.sessions = Array.isArray(d) ? d : (d && Array.isArray(d.sessions) ? d.sessions : []);
         this.sessionsLoaded = true;
       } catch(e){
-// Does NOT clear this.sessions: a stale but real list is less misleading
-        // than an "[]" the UI reads as "no other active session".
         this.sessionsLoaded = false;
         if (e && e.message === 'unauthorized') { this.sessionsError = ''; }
         else {
@@ -12506,7 +9930,6 @@ function app() {
         }
       } finally { this.sessionsLoading = false; }
     },
-    // A convenience for the HTML: it is only "truly empty" if the read succeeded.
     get sessionsTrulyEmpty(){ return this.sessionsLoaded && !this.sessionsError && this.sessions.length === 0; },
     async revokeSession(jti){
       if (!(await this.confirmAsync('End this session?'))) return;
@@ -12519,8 +9942,6 @@ function app() {
       } catch(e) { this.showToast(e.message,'err'); }
     },
     async revokeAllSessions(){
-      // If the list never loaded, "0 other sessions" is a lie and the button
-      // becomes a silent no-op — on the very screen for checking a break-in.
       if (!this.sessionsLoaded) {
         this.showToast('could not read the active sessions — reload before ending one', 'err');
         return;
@@ -12536,10 +9957,6 @@ function app() {
         await this.loadSessions();
       } catch(e) { this.showToast(e.message,'err'); }
     },
-    // ---------------- AdGuard (DNS filter · Security) --------------------
-    // Panel for the filter running on the VPS: status (on/paused), statistics
-    // and on/off. Proxied server-side through /api/adguard/* — the credentials stay
-    // on the server. It replaces the old external AdGuard subdomain.
     async loadAdguard(){
       this.adguardLoading = true; this.adguardError = '';
       try {
@@ -12556,7 +9973,6 @@ function app() {
         }
       } finally { this.adguardLoading = false; }
     },
-    // Light poll while the tab is open; it disarms itself when you leave.
     _armAdguardPoll(){
       if (this._adguardTimer) return;
       this._adguardTimer = setInterval(async () => {
@@ -12565,7 +9981,6 @@ function app() {
         try { const r = await this.api('/api/adguard/status'); this.adguard = await r.json(); } catch(_){}
       }, 5000);
     },
-    // enabled=false + durationMs>0 => pause for that long and re-enable by itself.
     async toggleAdguard(enabled, durationMs=0){
       try {
         await this.api('/api/adguard/protection', {method:'POST', body: JSON.stringify({enabled, duration_ms: durationMs})});
@@ -12574,14 +9989,12 @@ function app() {
         await this.loadAdguard();
       } catch(e){ this.showToast(e.message, 'err'); }
     },
-    // ---------------- Tunnel devices (Security) ------------------------
     fmtBytes(n){
       n = Number(n)||0;
       const u=['B','KB','MB','GB','TB']; let i=0;
       while(n>=1024 && i<u.length-1){ n/=1024; i++; }
       return (i===0? n : n.toFixed(1)) + ' ' + u[i];
     },
-    // Per-device usage in real time (conntrack on the backend).
     async loadUsage(){
       try {
         const r = await this.api('/api/tunnel/usage');
@@ -12635,7 +10048,6 @@ function app() {
         this.tunnelAddOpen = false;
         this.showToast('device created — restarting the tunnel','ok');
         await this.loadTunnelDevices();
-        // shows the link/QR of the one just created
         if (d.device) this._openLink(d.device.name, d.link, d.device.uuid);
       } catch(e){ this.showToast(e.message,'err'); }
       finally { this.tunnelBusy = false; }
@@ -12672,7 +10084,6 @@ function app() {
       this.tunnelLinkOpen = true;
       await this.loadDeviceLink('ws');
     },
-    // Fetches the link + QR for the chosen variant (ws | reality) of the open device.
     async loadDeviceLink(variant){
       variant = (variant === 'reality') ? 'reality' : 'ws';
       this.tunnelLinkVariant = variant;
@@ -12692,7 +10103,6 @@ function app() {
         if (r.ok) { this.tunnelQrSrc = URL.createObjectURL(await r.blob()); }
       } catch(_){}
     },
-    // used by addDevice (shows the WS just created)
     async _openLink(name, link, uuid){
       this.tunnelLinkUuid = uuid; this.tunnelLinkName = name;
       this.tunnelLinkText = link || ''; this.tunnelLinkVariant = 'ws';
@@ -12704,27 +10114,15 @@ function app() {
         if (r.ok) { this.tunnelQrSrc = URL.createObjectURL(await r.blob()); }
       } catch(_){}
     },
-    // ---------------- Data saver (Security) ----------------------------
     async setDeviceDatasaver(d, on){
-      // Turning it on routes ALL of the HTTPS of the device through a compressing MITM proxy.
-      // Without the CA of the data saver installed ON THIS DEVICE, every site stops opening
-      // (it has taken the tunnel down several times). An explicit human confirmation becomes
-      // the ca_ack the backend demands (fail-closed). Turning it off is always safe.
       if (on && !confirm('Turn data saving on for "'+d.name+'" routes ALL HTTPS from this device through a compression proxy (MITM). If the data-saver CA is NOT installed ON THIS DEVICE, EVERY site stops loading.\n\nDo you confirm the CA is already installed on this device?')) return;
       try {
         await this.api('/api/tunnel/devices/'+encodeURIComponent(d.uuid)+'/datasaver', {method:'POST', body: JSON.stringify({on, ca_ack: on})});
-        d.datasaver = on; // optimistic
+        d.datasaver = on;
         this.showToast('savings of '+d.name+(on?' on':' off')+' (reconnects in ~2s)','ok');
         await this.loadTunnelDevices();
       } catch(e){ this.showToast(e.message,'err'); await this.loadTunnelDevices(); }
     },
-    // _dsShape normalizes the answer from the server into the COMPLETE panel
-    // contract. A raw `this.dsStatus = s` was the underlying defect: the shape declared
-    // in the initial state evaporated on the first load, and any field the
-    // server stopped sending became undefined inside an Alpine
-    // expression — which Alpine turns into a boot error, taking the whole app down.
-    // Normalizing here keeps the panel renderable with a partial, stale
-    // or empty answer; the worst case becomes 'shows zero', never 'error screen'.
     _dsShape(s){
       const o = (s && typeof s === 'object') ? s : {};
       const sv = (o.saved && typeof o.saved === 'object') ? o.saved : {};
@@ -12799,8 +10197,6 @@ function app() {
       } catch(e){ this.showToast(e.message,'err'); }
       finally { this.dsBusy = false; }
     },
-    // Default video-call quality (data saving). Persists and applies live
-    // if there is an active call (reuses vcSetQuality, which already renegotiates safely).
     setCallEconomy(mode){
       this.callEconomy = mode;
       try { localStorage.setItem('panel_vc_quality', mode); } catch(_){}
@@ -12825,7 +10221,6 @@ function app() {
     },
     formatUA(ua){
       if (!ua) return '(no User-Agent)';
-      // Friendly summary: extracts the main browser name + OS
       const m = ua.match(/(Chrome|Firefox|Safari|Edge|Opera)\/[\d.]+/);
       const browser = m ? m[1] : 'browser';
       let os = 'OS?';
@@ -12845,18 +10240,13 @@ function app() {
       return Math.floor(s/86400) + 'd';
     },
 
-    // ---------------- Audit search ---------------------
     async loadAuditActions(){
-      // An empty audit because of a failure = "nothing happened on the server". Misleading
-      // for the same reason as the sessions screen.
       try { const r = await this.api('/api/audit/actions'); this.auditActions = (await r.json()) || []; this._loadOk('auditActions'); }
       catch(e){ this._loadErr('auditActions', e, 'failed to load the audit actions'); }
     },
     async runAuditSearch(){
       this.auditLoading = true;
       try {
-        // Persists the filters in localStorage — an admin does not lose an investigation
-        // by switching tabs or refreshing.
         try { localStorage.setItem('panel_audit_filter', JSON.stringify(this.auditFilter)); } catch(_) {}
         const p = new URLSearchParams();
         if (this.auditFilter.user) p.set('user', this.auditFilter.user);
@@ -12871,9 +10261,6 @@ function app() {
       this.auditLoading = false;
     },
     async auditExportCSV(){
-      // Security FIX: a token in the URL via window.open ended up in browser history,
-      // proxy logs, and so on. Now it is fetch + blob download — the token goes in the
-      // standard header of the api() wrapper.
       const p = new URLSearchParams();
       if (this.auditFilter.user) p.set('user', this.auditFilter.user);
       if (this.auditFilter.action) p.set('action', this.auditFilter.action);
@@ -12899,9 +10286,6 @@ function app() {
         this.showToast('Failed to export: ' + e.message, 'err');
       }
     },
-    // A generic client-side export of any operational list
-    // to CSV. It mirrors the blob download of auditExportCSV
-    // (no token in the URL); columns maps an object key -> a header.
     exportListCSV(rows, columns, filename){
       try {
         rows = rows || [];
@@ -12935,7 +10319,6 @@ function app() {
       this.runAuditSearch();
     },
     _toUnix(dateStr){
-      // Accepts yyyy-mm-dd or yyyy-mm-ddTHH:MM. Empty → 0.
       if (!dateStr) return 0;
       const d = new Date(dateStr);
       if (isNaN(d.getTime())) return 0;
@@ -12947,17 +10330,12 @@ function app() {
       try {
         const r = await this.api('/api/metrics/fires');
         const fires = await r.json() || [];
-        // Capitalized keys: the Go Fire struct has no json tag on Rule/Time/
-        // Value and has no Detail. Reading f.T/f.detail left EVERY alert
-        // notification mute (t=0, 0>0 false) and with no text.
         const first = (this._lastFireT === undefined);
         const cutoff = (this._lastFireT || 0);
         let maxT = cutoff;
         for (const f of fires) {
           const t = f.Time || f.time || 0;
           if (t > maxT) maxT = t;
-          // The first collection only seeds the watermark: without this, reopening the tab
-          // would dump the entire history of firings at once.
           if (first || t <= cutoff) continue;
           const rule = f.Rule || f.rule || 'rule';
           const sev = f.Severity || f.severity || '';
@@ -12972,31 +10350,21 @@ function app() {
       } catch(e){}
     },
 
-    // The active pane of the single container (for shortcuts, status bar, broadcast, etc).
-    // Guard against this.terms being null: Alpine evaluates :class before init() runs
-    // (and in logged-out sessions init() returns early without setting terms).
     activePane(){
       if (!this.terms) return null;
       return (this.terms.panes||[]).find(p => p.id === this.terms.activePane) || this.terms.panes[0] || null;
     },
-    // True when the viewport is ≤ 768px. Reactive through mobileChangeTick (incremented
-    // in init() by the matchMedia listener). Reading mobileChangeTick here is
-    // what makes Alpine recompute the bindings when the screen changes size.
     isMobile(){
       void this.mobileChangeTick;
       return !!(window.matchMedia && window.matchMedia('(max-width: 767.98px)').matches);
     },
-    // Suggests a unique session name for a new pane.
     _suggestPaneName(){
       const used = new Set((this.terms.panes||[]).map(p => p.sessionName));
-      // Prefix per namespace so that:
       const main = 'main';
       if (!used.has(main)) return main;
       for (let i=2;i<200;i++){ const n='pane-'+i; if (!used.has(n)) return n; }
       return 'pane-'+Date.now();
     },
-    // ----- Layout tree helpers -------------
-    // Creates a new pane (a leaf) with session 'sessionName'. Does not mount xterm yet.
     _makePane(sessionName, startupCmd, aiProvider){
       const paneId = 'p-' + (++this.terms._paneSeq);
       return {
@@ -13009,12 +10377,9 @@ function app() {
         notify: { lastOutput: 0, busy: false, alerted: false },
         startupCmd: startupCmd || '',
         startupRan: false,
-        // Per-pane AI provider. The backend reads ?ai= and injects the right
-        // ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY into the shell. Default: 'oauth'.
         aiProvider: aiProvider || 'oauth',
       };
     },
-    // Finds a pane by id inside the tree + parent + side ('a' or 'b').
     _findPaneNode(node, paneId, parent, side){
       if (!node) return null;
       if (node.type === 'pane' && node.id === paneId) return { node, parent, side };
@@ -13024,7 +10389,6 @@ function app() {
       }
       return null;
     },
-    // Replaces a node in the tree of the single container. parent may be null (the root).
     _replaceNode(oldNode, newNode){
       if (this.terms.layout === oldNode) { this.terms.layout = newNode; return; }
       const walk = (n) => {
@@ -13035,7 +10399,6 @@ function app() {
       };
       walk(this.terms.layout);
     },
-    // Flat list of panes in a tree (in reading order).
     _allPanes(node, out){
       out = out || [];
       if (!node) return out;
@@ -13043,13 +10406,8 @@ function app() {
       else { this._allPanes(node.a, out); this._allPanes(node.b, out); }
       return out;
     },
-    // Adds a new pane to the single container. If the container is empty, the
-    // new pane becomes the root; otherwise it is appended through a horizontal split (row) to the
-    // right of the existing layout.
     newPane(name, opts){
       opts = opts || {};
-      // Default command: hostTermStartupCmd (a user pref, empty if never set).
-      // Always overridable through opts.startupCmd. A reattach NEVER runs a cmd.
       let defaultCmd = this.hostTermStartupCmd || '';
       const startupCmd = opts.isReattach
         ? ''
@@ -13060,14 +10418,12 @@ function app() {
       if (!this.terms.layout) {
         this.terms.layout = { type: 'pane', id: pane.id };
       } else {
-        // Appends to the right through a row split
         this.terms.layout = { type: 'split', dir: 'row', size: 0.5,
                               a: this.terms.layout,
                               b: { type: 'pane', id: pane.id } };
       }
       this.terms.activePane = pane.id;
       this.saveState();
-      // Renders the layout + mounts xterm in the freshly created pane.
       this.$nextTick(()=> {
         this.renderPaneLayout();
         this.mountPane(pane);
@@ -13081,39 +10437,20 @@ function app() {
     saveStartupCmd(){
       localStorage.setItem('panel_term_startup_cmd', this.hostTermStartupCmd || '');
     },
-    // Mounts xterm + WS in the pane (creates the div if it does not exist yet).
     mountPane(pane){
-      // Mobile: only the ACTIVE pane is visible; the others sit at display:none. Mounting
-      // a hidden pane would enter an rAF loop (clientWidth 0 forever). Inactive
-      // panes mount lazily when they become active (renderPaneLayout calls
-      // mountPane on the active one). Avoids the loop and the spawning of phantom sessions.
       if (this.isMobile() && this.terms.activePane && this.terms.activePane !== pane.id) return;
       const el = document.getElementById('host-pane-'+pane.id);
       if (!el) return;
-      // Guard: if the container still has width 0 (display:none, page not
-      // active, etc), xterm.js renders a 0×0 canvas and goes black. Defers one frame.
-      // With a CEILING on attempts + a bail if the pane was discarded/removed in between:
-      // without that, a container that stays 0×0 forever (a collapsed parent, an ancestor at
-      // display:none) runs an eternal rAF loop at 60fps, and an already removed pane
-      // would re-enter buildTerminal on a dead node.
       if (el.clientWidth === 0 || el.clientHeight === 0) {
         if (!el.isConnected || !(this.terms.panes||[]).some(p => p.id === pane.id)) return;
         pane._mountTries = (pane._mountTries || 0) + 1;
-        if (pane._mountTries > 180) return; // ~3s at 60fps: gives up (the ResizeObserver remounts it once visible)
+        if (pane._mountTries > 180) return;
         requestAnimationFrame(()=> this.mountPane(pane));
         return;
       }
       pane._mountTries = 0;
       this.buildTerminal({
         el,
-        // `size=1`: this client UNDERSTANDS the announcement of the effective session
-        // size and draws ITS grid, not that of the window. Without asking, the server does not
-        // send it — an old client would write the JSON on screen.
-        // `frame=1`: this client accepts a RENDERED CROP of the session screen
-        // when its own window is smaller than it. That is what
-        // lets the session sit at the LARGEST of the clients instead of the
-        // smallest — that is, the phone stops shrinking the desktop. Whoever does not
-        // ask remains a ceiling on the session size.
         wsPath: '/ws/shell?size=1&frame=1&name=' + encodeURIComponent(pane.sessionName) +
                 (pane.aiProvider && pane.aiProvider !== 'oauth' ? '&ai=' + encodeURIComponent(pane.aiProvider) : ''),
         fontSize: this._termFontSize(),
@@ -13123,41 +10460,26 @@ function app() {
         onOutput: (data) => this._termOutputHook(pane, data),
       });
     },
-    // Renders the layout (the split tree) in the single container. Reuses the divs
-    // of existing panes (does not destroy xterm). On mobile it renders ONLY the
-    // active pane at 100% (ignoring the split tree) — row splits of N panes in a
-    // viewport under 500px left each pane too narrow for xterm.
     renderPaneLayout(){
       const root = document.getElementById('host-pane-root');
       if (!root) return;
-      // Caches the pane elements before clearing (so xterm is not destroyed).
       const paneCache = {};
       root.querySelectorAll('[data-pane-id]').forEach(el => {
         const pid = el.getAttribute('data-pane-id');
         paneCache[pid] = el;
       });
-      // --- MOBILE BRANCH: keeps ALL panes in the DOM (it only hides the inactive
-      //     ones with display:none). Switching pane = toggling visibility, without
-      //     destroying/recreating xterm — which used to orphan the WS/term and "break
-      //     everything". It does NOT do the general wipe (which detached the panes). ---
       if (this.isMobile()) {
         if (!this.terms.layout) { while (root.firstChild) root.removeChild(root.firstChild); return; }
         this._attachSwipeHandlers(root);
         const panes = this.terms.panes || [];
         const activeId = this.terms.activePane || (panes[0] && panes[0].id);
-        // Makes sure activePane is set: the guard in mountPane depends on it so it does not
-        // mount (and loop on) hidden panes.
         if (activeId && this.terms.activePane !== activeId) this.terms.activePane = activeId;
-        // Removes orphan wraps (panes that no longer exist).
         Object.keys(paneCache).forEach(pid => {
           if (!panes.find(p => p.id === pid)) { try { paneCache[pid].remove(); } catch(_){} delete paneCache[pid]; }
         });
         panes.forEach(p => {
           let wrap = paneCache[p.id];
-          // the term was discarded but the wrap exists → recreate the wrap.
           if (wrap && !p.term) { try { wrap.remove(); } catch(_){} delete paneCache[p.id]; wrap = null; }
-          // Legacy state (single-pane): the pane had a term but lost the DOM →
-          // discard the orphan term so it remounts cleanly in the new wrap.
           if (!wrap && p.term) {
             try { p.term.dispose(); } catch(_){}
             try { p.ws && p.ws.close(); } catch(_){}
@@ -13169,17 +10491,14 @@ function app() {
           wrap.style.display = isActive ? 'flex' : 'none';
           wrap.classList.toggle('pane-active', isActive);
         });
-        // Mounts (lazily) only the active pane if it has no term yet.
         const active = panes.find(p => p.id === activeId);
         if (active && !active.term) this.$nextTick(()=> this.mountPane(active));
         this.$nextTick(()=> { this._refitAllPanes(); this._syncPaneAccountSelects(); });
         return;
       }
 
-      // --- DESKTOP BRANCH: clears root and rebuilds the split tree ---
       while (root.firstChild) root.removeChild(root.firstChild);
       if (!this.terms.layout) {
-        // Empty state: with no panel, show a CTA instead of a blank rectangle.
         const es = document.createElement('div');
         es.className = 'term-empty-state';
         es.innerHTML = '<div class="tes-inner"><div class="tes-icon">▚</div>'
@@ -13191,27 +10510,20 @@ function app() {
         return;
       }
       const buildNode = (node) => {
-        if (!node) return document.createElement('div'); // safety
+        if (!node) return document.createElement('div');
         if (node.type === 'pane') {
-          // Takes the "real" pane (with an up-to-date sessionName) by id
           const pane = (this.terms.panes || []).find(p => p.id === node.id) || node;
           let wrap = paneCache[node.id];
-          // If the xterm was disposed (loadSessionIntoPane, or a first mount),
-          // discard the old wrap. That guarantees: (1) the title reflects the new
-          // sessionName, (2) the new term.open() runs on a fresh div with the correct
-          // geometry (no more "xterm shows up below the screen" bug).
           if (wrap && !pane.term) {
             wrap.remove();
             delete paneCache[node.id];
             wrap = null;
           }
           if (!wrap) wrap = this._createPaneWrap(pane);
-          // Marks the active pane with a highlighted border
           if (this.terms.activePane === node.id) wrap.classList.add('pane-active');
           else wrap.classList.remove('pane-active');
           return wrap;
         }
-        // split
         const cont = document.createElement('div');
         cont.className = 'flex w-full h-full' + (node.dir === 'row' ? '' : ' flex-col');
         cont.dataset.splitDir = node.dir;
@@ -13221,15 +10533,11 @@ function app() {
         aWrap.style.minHeight = '0';
         aWrap.style.position = 'relative';
         aWrap.appendChild(buildNode(node.a));
-        // divider
         const divider = document.createElement('div');
         divider.className = 'term-divider';
         divider.dataset.splitDir = node.dir;
-        // Bigger hit area (6px) + color through a token (theme-aware; the CSS :hover uses
-        // var(--focus) and now really applies — the bg is a token, not an inline hex).
         if (node.dir === 'row') divider.style.cssText = 'width:6px;cursor:col-resize;background:var(--border-default);flex-shrink:0;z-index:5;';
         else divider.style.cssText = 'height:6px;cursor:row-resize;background:var(--border-default);flex-shrink:0;z-index:5;';
-        // Drag handler
         divider.addEventListener('mousedown', (ev) => this._beginDividerDrag(ev, node));
         const bWrap = document.createElement('div');
         bWrap.style.flex = (1 - node.size) + ' 1 0%';
@@ -13243,16 +10551,8 @@ function app() {
         return cont;
       };
       root.appendChild(buildNode(this.terms.layout));
-      // Refits every pane after repainting the layout (measurements changed).
       this.$nextTick(()=> { this._refitAllPanes(); this._syncPaneAccountSelects(); });
     },
-    // Terminal gesture state machine (mobile). Capture phase so it wins over
-    // the touch handlers of xterm itself. Map:
-    //   tap (no movement)      → focuses the pane + raises the keyboard (summonKeyboard)
-    //   vertical drag ↕        → scrolls the scrollback (term.scrollLines)
-    //   horizontal drag ↔      → switches pane (_focusAdjacentPane)
-    //   long-press             → NOTHING custom: it lets the NATIVE phone
-    //                            behaviour act (system selection/menu).
     _attachSwipeHandlers(root){
       if (!root || root.dataset.swipeBound === '1') return;
       root.dataset.swipeBound = '1';
@@ -13262,13 +10562,10 @@ function app() {
         if (this.terms.trackpadMode) return;
         if (ev.touches.length > 1) { start = null; clearLP(); return; }
         const t = ev.touches[0]; if (!t) return;
-        ev.stopPropagation(); // mobile: we own the touch (without the xterm touch-scroll/cancel)
+        ev.stopPropagation();
         start = { x: t.clientX, y: t.clientY, time: Date.now() };
         lastY = t.clientY; axis = null; moved = false; selecting = false;
         this._scrollAcc = 0;
-        // Long-press (500ms without moving) → SELECTION through the xterm API (there is no
-        // native touch selection in xterm — see issues #3727/#5377). Selects the word under
-        // the finger; dragging extends it; on release → a "Copy" bubble.
         clearLP();
         lpTimer = setTimeout(() => {
           lpTimer = null;
@@ -13283,12 +10580,10 @@ function app() {
         if (!start || this.terms.trackpadMode) return;
         const t = ev.touches[0]; if (!t) return;
         ev.stopPropagation();
-        // In selection mode: dragging extends the marking (it does not scroll).
         if (selecting) { this._touchSelectExtend(t.clientX, t.clientY); if (ev.cancelable) ev.preventDefault(); return; }
         const dx = t.clientX - start.x, dy = t.clientY - start.y;
         if (!moved && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
           moved = true; clearLP(); axis = Math.abs(dy) > Math.abs(dx) ? 'v' : 'h';
-          // Scrolling/switching with a selection open → closes the selection (the handles go stale).
           if (this.termSel.open) this.clearTouchSelection();
         }
         if (axis === 'v') {
@@ -13328,7 +10623,6 @@ function app() {
           return;
         }
         if (ax === 'v') return;
-        // Tap: clears the previous selection + focuses + raises the keyboard.
         if (!moved && dt < 500) {
           const p = this.activePane && this.activePane();
           if (p && p.term) { try { if (p.term.hasSelection()) p.term.clearSelection(); } catch(_){} }
@@ -13337,8 +10631,6 @@ function app() {
         }
       }, { passive: true, capture: true });
     },
-    // ── Touch selection (mobile) through the xterm API ────────────────────
-    // Converts (clientX,clientY) → a cell (col, absolute buffer row).
     _touchCell(clientX, clientY){
       const p = this.activePane && this.activePane();
       const term = p && p.term; if (!term) return null;
@@ -13354,7 +10646,6 @@ function app() {
       const row = (term.buffer.active.viewportY || 0) + vr;
       return { term, p, col: vc, row };
     },
-    // Pixel (viewport) of the top-left corner of the cell (col, buffer row).
     _cellRect(col, row){
       const p = this.activePane && this.activePane();
       const term = p && p.term; if (!term) return null;
@@ -13366,8 +10657,6 @@ function app() {
       const vr = row - (term.buffer.active.viewportY || 0);
       return { x: r.left + col * cw, y: r.top + vr * ch, w: cw, h: ch };
     },
-    // Applies the selection (sCol/sRow..eCol/eRow), normalizes the order, and repositions
-    // the handles + the bubble. Called on long-press, on drag and when a handle moves.
     _applyTouchSelection(){
       const p = this.activePane && this.activePane(); const term = p && p.term; if (!term) return;
       let sCol = this.termSel.sCol, sRow = this.termSel.sRow, eCol = this.termSel.eCol, eRow = this.termSel.eRow;
@@ -13407,7 +10696,6 @@ function app() {
       this.termSel.eCol = c.col; this.termSel.eRow = c.row;
       this._applyTouchSelection();
     },
-    // Drags the start ('s') or end ('e') handle to adjust the marking.
     moveHandle(which, ev){
       const t = ev && ev.touches && ev.touches[0]; if (!t) return;
       const c = this._touchCell(t.clientX, t.clientY); if (!c) return;
@@ -13440,7 +10728,6 @@ function app() {
       try { p.term.selectAll(); } catch(_){}
       this.copyTouchSelection();
     },
-    // Opens the radial (pie) menu centered on the long-press point, clamped to the screen.
     openPaneRadial(paneId, x, y){
       if (!paneId) { const p = this.activePane && this.activePane(); paneId = p && p.id; }
       if (!paneId) return;
@@ -13450,7 +10737,6 @@ function app() {
       const cy = Math.max(m, Math.min(window.innerHeight - m, y));
       this.paneRadial = { open: true, x: cx, y: cy, paneId };
     },
-    // Radial items with a position (dx,dy) on a circle. 6 actions.
     radialItems(){
       const defs = [
         { kind:'keyboard', label:'Keyboard', icon:'⌨' },
@@ -13462,7 +10748,7 @@ function app() {
       ];
       const R = 78, n = defs.length;
       return defs.map((d, i) => {
-        const a = (-Math.PI/2) + (i * 2 * Math.PI / n); // starts at the top
+        const a = (-Math.PI/2) + (i * 2 * Math.PI / n);
         return Object.assign({}, d, { dx: Math.round(Math.cos(a)*R), dy: Math.round(Math.sin(a)*R) });
       });
     },
@@ -13486,14 +10772,11 @@ function app() {
         case 'kill':      this.killActiveSession(); break;
       }
     },
-    // Creates the wrapper of a pane: title bar + xterm container. Only called
-    // when the pane is new (not in the cache).
     _createPaneWrap(pane){
       const wrap = document.createElement('div');
       wrap.className = 'pane-wrap';
       wrap.dataset.paneId = pane.id;
       wrap.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;border:1px solid transparent;border-radius:6px;overflow:hidden;';
-      // Title bar
       const bar = document.createElement('div');
       bar.className = 'pane-title';
       bar.style.cssText = 'display:flex;align-items:center;gap:6px;padding:2px 8px;font-size:10px;background:#0b1220;color:#9ca3af;cursor:grab;user-select:none;flex-shrink:0;';
@@ -13508,16 +10791,12 @@ function app() {
                       '<button class="pane-split-h" title="Split horizontal (stacks panes)" style="opacity:0.6;padding:0 4px;">⬓</button>' +
                       '<button class="pane-split-v" title="Split vertical (side by side)" style="opacity:0.6;padding:0 4px;">⬔</button>' +
                       '<button class="pane-close" title="Close panel" style="opacity:0.6;padding:0 4px;color:#f43f5e;">✕</button>';
-      // Button listeners. Stop propagation on mousedown so the wrap does not
-      // capture it (a re-render destroyed the button before the click). Buttons carry
-      // draggable=false to stop the draggable of the bar from stealing the gesture.
       const onBtn = (sel, fn) => {
         const b = bar.querySelector(sel);
         b.draggable = false;
         b.setAttribute('draggable', 'false');
         b.addEventListener('mousedown', (ev) => { ev.stopPropagation(); });
         b.addEventListener('click',     (ev) => { ev.stopPropagation(); ev.preventDefault(); fn(ev); });
-        // Blocks a dragstart originating inside the button
         b.addEventListener('dragstart', (ev) => { ev.preventDefault(); ev.stopPropagation(); });
       };
       onBtn('.pane-load',    (ev) => this.openPaneSessionPicker(pane, ev.currentTarget));
@@ -13533,30 +10812,23 @@ function app() {
         ev.stopPropagation();
         this.swapSessionAccount(pane.sessionName, acctSel.value);
       });
-      // Populates immediately if the accounts are already loaded (avoids an empty select
-      // when the pane is created after loadClaudeAccounts has resolved).
       const accts0 = (this.claudeAccounts && this.claudeAccounts.accounts) || [];
       if (accts0.length) {
         acctSel.innerHTML = accts0.map(a =>
           '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.label) + '</option>'
         ).join('');
       }
-      // DnD: drag start on the title bar
       bar.addEventListener('dragstart', (ev) => this._beginPaneDrag(ev, pane));
       bar.addEventListener('dragend',   () => this._endPaneDrag());
-      // A long-press (500ms of touch without movement) opens the context menu.
-      // It uses touchstart/move/end (it does not work on desktop — desktop would use right-click
-      // if that ever comes, but for now desktop has no such menu).
       let lpStart = null;
       bar.addEventListener('touchstart', (ev) => {
-        if (ev.target.closest('button')) return; // buttons have their own handler
+        if (ev.target.closest('button')) return;
         const t = ev.touches[0]; if (!t) return;
         lpStart = { x: t.clientX, y: t.clientY };
         if (this.terms._longPressTimer) clearTimeout(this.terms._longPressTimer);
         this.terms._longPressTimer = setTimeout(() => {
           this.terms._longPressTimer = null;
           if (!lpStart) return;
-          // Vibrates if available (UX feedback)
           try { navigator.vibrate && navigator.vibrate(15); } catch(e){}
           this._openPaneContextMenu(pane.id, lpStart.x, lpStart.y);
         }, 500);
@@ -13573,33 +10845,21 @@ function app() {
         if (this.terms._longPressTimer) { clearTimeout(this.terms._longPressTimer); this.terms._longPressTimer = null; }
         lpStart = null;
       }, { passive: true });
-      // A click on the wrap = focus the pane. Ignored if it landed on a button (which already stops propagation).
-      // And it does NOT re-render the layout — it only updates the classes (a re-render destroyed the
-      // clicked button itself before the click event arrived).
       wrap.addEventListener('mousedown', (ev) => {
         if (ev.target.closest('button')) return;
         this._setActivePaneNoRender(pane.id);
       }, true);
-      // Mobile: tap/scroll/swipe/long-press are handled by _attachSwipeHandlers
-      // (a state machine on the root, capture phase). Do not duplicate them here.
-      // DnD: drop zones on the pane itself
       wrap.addEventListener('dragover',  (ev) => this._panelDragOver(ev, pane));
       wrap.addEventListener('dragleave', (ev) => this._panelDragLeave(pane, ev));
       wrap.addEventListener('drop',      (ev) => this._panelDrop(ev, pane));
-      // Terminal container (xterm goes in here)
       const termEl = document.createElement('div');
       termEl.id = 'host-pane-' + pane.id;
       termEl.style.cssText = 'flex:1;min-height:0;position:relative;';
-      // Per-pane overlay: the reconnection pill (non-blocking) and the "session
-      // ended" card (4404) with its CTA. Filled in by _renderPaneOverlay according to
-      // pane.status/pane.ended. termEl is position:relative → it anchors the overlay.
       const ov = document.createElement('div');
       ov.className = 'term-pane-ov';
       ov.dataset.paneOv = pane.id;
       ov.style.display = 'none';
       termEl.appendChild(ov);
-// "↓ new output" pill: it appears when output arrives while the user is scrolled
-      // up; clicking scrolls to the end. (A pattern already used in WhatsApp/videocall.)
       const sb = document.createElement('button');
       sb.className = 'term-scrollbtn';
       sb.dataset.paneScroll = pane.id;
@@ -13612,50 +10872,18 @@ function app() {
       wrap.appendChild(termEl);
       return wrap;
     },
-    // Updates the pane overlay (reconnection / session ended). Called from
-    // onStatus and from the 4404 handler. Idempotent; a no-op if the overlay does not exist.
-    // ── Reattach repaint: surgical first, wobble only with PROOF ─────────────
-    //
-    // Context (why a wobble existed here). dtach keeps no screen. On a FRESH
-    // attach, the server forces the repaint by giving the PTY a dramatic SIGWINCH
-    // (pty.go) — without that, a TUI app with a diffing renderer (Ink/Claude Code)
-    // emits nothing and the new client stays BLACK. On RECONNECTION the server does
-    // not wobble, and this client used to resize its own xterm (−8 col/−4 lines) to
-    // reflow the grid. It worked, but it was expensive: on every deploy (~2s off the
-    // air) the whole pane gave a visible jolt — the "refresh" that got in the way of
-    // the work.
-    //
-    // Diagnosis. Resizing does not FIX the grid: it makes the app repaint over
-    // it. The real corruption on reconnect has a simpler cause — the socket dies in
-    // the MIDDLE of an escape sequence, and the xterm parser stays stuck
-    // waiting for the rest, reading the following text as a parameter. For that
-    // there is an exact fix: CAN (0x18) aborts the sequence in flight (the xterm
-    // parser handles 24/26), it is ONE byte, invisible and instantaneous.
-    //
-    // Strategy. Do the cheap, invisible thing always; only escalate to the wobble if
-    // there is PROOF that the screen became unusable (a blank viewport — the
-    // exact symptom of the original bug). That way the common case (a deploy) stays smooth and the
-    // safety net remains whole for the case that justified it.
     _reattachRepaint(state){
       const term = state.term;
       if (!term) return;
-      // Holds the render for the duration of the repaint burst of the app: the user sees the
-      // old screen until the new frame arrives whole (see flushTerm).
-      // Hard ceiling: if the app keeps dumping without a pause, it releases anyway — the
-      // hold must never become a frozen terminal.
       state._holdUntil = Date.now() + 1500;
       state._lastDataAt = Date.now();
-      // 1) aborts any escape sequence truncated by the socket dropping
       try { term.write('\x18'); } catch(_){}
-      // 2) repaints the renderer without touching size or content
       try { term.refresh && term.refresh(0, term.rows - 1); } catch(_){}
-      // 3) escalation by evidence: if the screen really did go blank, then yes the
-      //    legacy wobble (the only known path that makes the TUI app redraw)
       if (state._repaintProbe) { clearTimeout(state._repaintProbe); }
       state._repaintProbe = setTimeout(() => {
         state._repaintProbe = null;
         if (!state.term || !state.ws || state.ws.readyState !== 1) return;
-        if (!this._viewportNeedsRepaint(state.term)) return;   // screen OK → nothing to do
+        if (!this._viewportNeedsRepaint(state.term)) return;
         console.debug('[panel:term] blank viewport on reattach — escalating to the wobble');
         const rc = state.term.cols | 0, rr = state.term.rows | 0;
         if (rc <= 12 || rr <= 6) return;
@@ -13667,9 +10895,6 @@ function app() {
         }, 160);
       }, 700);
     },
-    // true = a forced repaint is needed. It ALSO returns true when it cannot
-    // decide (buffer unavailable/API changed): when in doubt it preserves the old
-    // behaviour, because a black screen is worse than a jolt.
     _viewportNeedsRepaint(term){
       try {
         const buf = term.buffer && term.buffer.active;
@@ -13678,31 +10903,13 @@ function app() {
         for (let i = 0; i < term.rows; i++){
           const line = buf.getLine(base + i);
           if (!line || typeof line.translateToString !== 'function') return true;
-          if (line.translateToString(true).trim() !== '') return false;  // has content
+          if (line.translateToString(true).trim() !== '') return false;
         }
-        return true;                                                      // all blank
+        return true;
       } catch(_) { return true; }
     },
-    // Per-pane typing outbox.
-    //
-    // Sending used to be `if (ws.readyState===1) ws.send(...)` — outside that, the
-    // key was silently DISCARDED. During a deploy the server is off the air for ~2s,
-    // so anything the user typed in that window vanished with no warning: they
-    // typed a whole command and nothing happened.
-    //
-    // Now whatever could not go out becomes a queue and is flushed, IN ORDER, on onopen — dtach
-    // preserves the session, so the shell on the other side is the same one and the
-    // typing carries on from where it stopped. A byte ceiling so that a long outage does not
-    // grow the queue without limit; on overflow it flags a warning instead of
-    // discarding in silence (the original sin of this bug).
-    // Compares the server build with the one THIS tab loaded. Silent when
-    // they are the same; when they differ, it shows a discreet notice with a reload action.
-    // Once per build (it does not keep repeating on every reconnection).
     async _checkBuildStamp(){
       try {
-        // Single-flight: every pane calls this in its onopen, and on a deploy they ALL
-        // reconnect together — without the latch, 4 panes become 4 /api/health at the same
-        // instant, right when the server has only just come up.
         const now = Date.now();
         if (this._buildCheckAt && (now - this._buildCheckAt) < 3000) return;
         this._buildCheckAt = now;
@@ -13722,17 +10929,6 @@ function app() {
         this._armSafeReload();
       } catch(_){}
     },
-    // Reloads the tab by itself ONLY when that is invisible to the user.
-    //
-    // The dilemma: a deploy does not reload the tab (the `?v=<stamp>` on the <script> is only
-    // re-evaluated on a reload), so an open tab keeps running the OLD JS —
-    // every front-end fix stays invisible to whoever does not reload, and the
-    // user is left with the impression that "nothing changed". But reloading in the
-    // middle of the work is worse than the bug: the selection, the scroll, the focus all vanish.
-    //
-    // The way out: reload only with the tab HIDDEN and the work stopped. When they
-    // come back, they are already on the new version and saw nothing happen. The sessions live
-    // in dtach, on the server, so the pane contents do not depend on the tab.
     _armSafeReload(){
       if (this._reloadTimer) return;
       if (!this.hostTermAutoReload) return;
@@ -13742,23 +10938,13 @@ function app() {
     },
     _trySafeReload(){
       if (!this.newVersionAvailable || !this.hostTermAutoReload) return false;
-      // Tab visible: never. This is the entire point of the mechanism.
       if (!document.hidden) { this._hiddenSince = 0; return false; }
       const now = Date.now();
       if (!this._hiddenSince) { this._hiddenSince = now; return false; }
-      // Hidden only a moment ago: it could be a 3-second alt-tab to copy something
-      // and come back. Reloading there would be exactly the fright we want to avoid.
-      // 20s turned out to be far too short — any quick lookup in another tab
-      // came back to a reloaded page. Ten minutes hidden is what separates
-      // "I left the tab" from "I stopped working".
       if (now - this._hiddenSince < 10 * 60 * 1000) return false;
-      // Work in progress beats any update (same scale).
       if (this._lastTyping && (now - this._lastTyping) < 10 * 60 * 1000) return false;
-      // Nothing may be sitting in the outgoing queue: reloading would discard what the
-      // user typed during an outage and that has not gone up yet.
       const pending = (this.terms.panes || []).some(p => p._outbox && p._outbox.length);
       if (pending) return false;
-      // Uploads in flight and open dialogs also mean live work.
       if (document.querySelector('[role="dialog"]')) return false;
       clearInterval(this._reloadTimer); this._reloadTimer = null;
       location.reload();
@@ -13766,24 +10952,11 @@ function app() {
     },
     _paneSendInput(pane, d){
       if (!pane || d == null || d === '') return false;
-      // Activity stamp: it is what stops the automatic reload from happening
-      // while the user is actually working (see _trySafeReload).
       this._lastTyping = Date.now();
       if (pane.ws && pane.ws.readyState === 1) {
-        // The key goes RAW, in a binary frame. The JSON envelope
-        // ({"type":"input","data":"a"}) cost ~30 bytes to carry 1 —
-        // and on a lossy link every extra byte is one more chance of a retransmission,
-        // which on a TCP connection stalls the whole queue, not just that byte. The
-        // server already writes every binary frame straight into the PTY (pty.go, case
-        // websocket.BinaryMessage), so this asks nothing new of that
-        // side. As a bonus, the ambiguity of an input starting with '{' disappears.
         (pane._txQ || (pane._txQ = [])).push(d);
         if (!pane._txScheduled) {
           pane._txScheduled = true;
-          // A microtask, NOT a timer: it gathers whatever the browser delivers in the same tick
-          // (key auto-repeat, paste, IME) into a single frame without delaying at all
-          // someone who types slowly. A setTimeout here would add latency
-          // exactly in the case we are trying to fix.
           const flush = () => { pane._txScheduled = false; this._paneTxFlush(pane); };
           if (typeof queueMicrotask === 'function') queueMicrotask(flush);
           else Promise.resolve().then(flush);
@@ -13815,24 +10988,8 @@ function app() {
       try { this._renderPaneOverlay(pane); } catch(_){}
       return false;
     },
-    // Local echo of what was typed WITHOUT a socket.
-    //
-    // This is where "sometimes it types nothing" was born: with the connection down, the
-    // key went silently into the queue and the screen stayed dead — indistinguishable from a
-    // frozen terminal. Now it appears at once, dimmed, telling the truth:
-    // "it is on your screen, not on the server yet". When the connection comes back, the
-    // reattach repaints the whole screen from the server (_reattachRepaint), so
-    // the guess is erased by the real thing — there is no way for the two to drift apart.
-    //
-    // It only echoes what can be echoed without lying: printable characters and backspace. Enter,
-    // arrows and Ctrl-* have an effect that only the shell on the other side knows; they go into
-    // the queue silently. And the echo STOPS at the first control character of the sequence,
-    // because after it we no longer know where the cursor is.
     _paneEchoOffline(pane, d){
       if (!pane.term) return;
-      // The server had stopped echoing before the drop = a password prompt.
-      // Echoing here would write the password in clear text on screen. It is the same rule
-      // mosh applies in its own prediction, and it is worth more than the convenience.
       if (pane._serverEchoes === false) return;
       if (this._looksLikePasswordLine(pane)) return;
       let out = '';
@@ -13844,8 +11001,6 @@ function app() {
       }
       if (!out) return;
       try { pane.term.write('\x1b[2m' + out + '\x1b[22m'); } catch(_){}
-      // How many cells the guess occupies RIGHT NOW on screen. It is what lets us erase it
-      // when the connection returns, before the server echoes the real text.
       let vis = pane._echoPainted || 0;
       for (const ch of d) {
         const c = ch.codePointAt(0);
@@ -13855,49 +11010,16 @@ function app() {
       }
       pane._echoPainted = vis;
     },
-    // Second layer of the password protection: even with _serverEchoes still at
-    // "do not know" (a drop right after the prompt appeared, before any keystroke),
-    // the cursor line itself gives the context away. When in doubt — and on error — it does not
-    // echo: losing the echo is annoying, leaking a password on screen cannot be undone.
     _looksLikePasswordLine(pane){
       try {
         const buf = pane.term.buffer.active;
         const line = buf.getLine(buf.baseY + buf.cursorY);
         if (!line) return true;
         const txt = line.translateToString(true);
-        // Two conditions, because one alone gets it wrong: real prompts almost always END
-        // in ':' or '?' ("[sudo] password for sam:", "Enter passphrase for key
-        // '/root/.ssh/id_rsa':", "Password:"), but the keyword can be far
-        // from the end. Requiring the word glued to the colon — the first guess
-        // here — let through exactly the sudo prompt, which is the most common one.
         if (!/[:?]$/.test(txt)) return false;
         return /(password|passwd|passphrase|\bpin\b|token|secret)/i.test(txt);
       } catch(_) { return true; }
     },
-    // ══ Predictive echo ═════════════════════════════════════════
-    //
-    // The problem is physics, not code: the letter can only appear after
-    // the server echoes, and that costs a network round trip. At 250ms of RTT, typing
-    // becomes a conversation by letter. The way out that mosh and VS Code use is the same —
-    // GUESS the echo, show the guess dimmed and correct it when the truth
-    // arrives. Here the correction is structurally safe because of ONE rule:
-    //
-    //   before writing ANY byte from the server to the screen, the guess is erased.
-    //
-    // That is: the screen always returns to the truth of the server before showing what
-    // it sent. A wrong guess does not survive a single frame of output, and
-    // there are never two owners writing into the same cell. (flushTerm erases; the
-    // callback of the last write repaints whatever is still unconfirmed.)
-    //
-    // Where guessing is NOT honest, it does not happen:
-    //   - alternate screen (vim, htop, TUI): the app repaints whole regions, and the
-    //     guess has no way to keep up. It is the same reason VS Code excludes
-    //     vim/nano by default.
-    //   - password prompt: both layers of the offline echo apply here too.
-    //   - good network: below the threshold the real echo already arrives fast; a guess would
-    //     only add the risk of flicker for no gain at all.
-    //   - edge of the line: '\b' does not move up a line, so near the border the
-    //     erasing could not be exact — better not to predict.
     _predictEcho(pane, d){
       if (!this._canPredict(pane, d)) return;
       const term = pane.term, buf = term.buffer.active;
@@ -13906,9 +11028,6 @@ function app() {
       if (buf.cursorX + d.length >= term.cols - 1) return;
       p.txt += d;
       try { term.write('\x1b[2m' + d + '\x1b[22m'); } catch(_){ p.txt = ''; return; }
-      // A guess with no answer is an orphan guess: if the server says nothing (a
-      // Ctrl-C that does not echo, a prompt that swallowed the key), nobody would erase
-      // the mess. The deadline follows the measured latency, with a floor and a ceiling.
       const deadline = Math.min(3000, Math.max(600, (pane.eco || pane.rtt || 200) * 3));
       if (p.timer) clearTimeout(p.timer);
       p.timer = setTimeout(() => { p.timer = 0; this._erasePrediction(pane); }, deadline);
@@ -13917,8 +11036,6 @@ function app() {
       if (!pane || !pane.term) return false;
       const mode = this.hostTermPredictiveEcho || 'auto';
       if (mode === 'never') return false;
-      // Printable characters only: Enter, arrows and Ctrl-* have an effect that only the
-      // program on the other side knows.
       if (!/^[\x20-\x7e\u00a0-\uffff]+$/.test(d)) return false;
       let buf;
       try { buf = pane.term.buffer.active; } catch(_) { return false; }
@@ -13929,8 +11046,6 @@ function app() {
       const ms = pane.eco || pane.rtt || 0;
       return ms >= (this.hostTermEchoThreshold || 60);
     },
-    // Erases the guess from the screen. Called before every batch of output (that is what
-    // guarantees the server always writes on top of the truth) and by the deadline.
     _erasePrediction(pane){
       const p = pane && pane._pred;
       if (!p || !p.txt) return;
@@ -13939,13 +11054,6 @@ function app() {
       if (p.timer) { clearTimeout(p.timer); p.timer = 0; }
       try { pane.term.write('\b \b'.repeat(n)); } catch(_){}
     },
-    // Repaints what has NOT been confirmed yet, now that the screen belongs to the server.
-    //
-    // Confirmation is measured by the CURSOR, the way mosh does it: the server
-    // advanced the cursor N columns from where the guess started => it
-    // echoed N of our characters, and only the rest is still a guess. Without
-    // this, someone typing faster than the network would see the tail of what they typed
-    // disappear and come back on every frame.
     _repredictEcho(pane){
       const p = pane && pane._pred;
       if (!p || !p.txt) return;
@@ -13954,8 +11062,6 @@ function app() {
       let buf;
       try { buf = term.buffer.active; } catch(_) { p.txt = ''; return; }
       if (!buf || buf.type === 'alternate') { p.txt = ''; return; }
-      // The server changed line (Enter, scroll, repaint): the guess lost its
-      // anchor and dies here — whatever is in flight shows up when it echoes.
       if ((buf.baseY + buf.cursorY) !== p.line) { p.txt = ''; return; }
       const advance = buf.cursorX - p.col;
       if (advance < 0) { p.txt = ''; return; }
@@ -13966,12 +11072,7 @@ function app() {
       if (buf.cursorX + rest.length >= term.cols - 1) { p.txt = ''; return; }
       try { term.write('\x1b[2m' + rest + '\x1b[22m'); } catch(_){ p.txt = ''; }
     },
-    // Marks that a key went out and is waiting for an answer. It serves two owners:
-    // it measures echo latency (the number the user feels) and it discovers prompts
-    // that do NOT echo — if nothing comes back in 1.5s with a live socket, it is a password.
     _markSend(pane, d){
-      // Only printable characters make a good probe: Enter and Ctrl-* produce output for reasons
-      // that are not echo and would skew both measurements.
       if (!/^[\x20-\x7e\u00a0-\uffff]+$/.test(d)) return;
       if (!pane._sentAt) pane._sentAt = Date.now();
       if (pane._echoTimer) return;
@@ -13980,11 +11081,6 @@ function app() {
         if (pane._sentAt) { pane._serverEchoes = false; pane._sentAt = 0; }
       }, 1500);
     },
-    // Publishes connection quality to the interface AT MOST once per
-    // second. The raw measurements (pane.rtt/pane.eco) change on every frame of
-    // output; wiring an Alpine binding straight to them would make the interface
-    // re-render hundreds of times per second during heavy output —
-    // exactly the kind of work that steals keyboard responsiveness.
     _updateQuality(pane){
       const now = Date.now();
       if (pane._qualityAt && (now - pane._qualityAt) < 1000) return;
@@ -13996,13 +11092,8 @@ function app() {
       if (pane.netLevel !== level) pane.netLevel = level;
     },
     _markApiLatency(ms){
-      // Exponential moving average: an isolated spike (an endpoint doing heavy
-      // work on the server) must not be read as "the network went down".
       this._apiEwma = this._apiEwma ? Math.round(this._apiEwma * 0.7 + ms * 0.3) : ms;
     },
-    // "Is the network bad RIGHT NOW?" — two independent probes, the larger wins: the
-    // latency of the API calls and the terminal echo. One covers the other: you can
-    // be on a screen with no terminal open, or with the terminal idle.
     _slowNetwork(){
       let worst = this._apiEwma || 0;
       for (const p of (this.terms && this.terms.panes || [])) {
@@ -14011,19 +11102,12 @@ function app() {
       }
       return worst >= 350;
     },
-    // On a bad link, the background polls (statistics, bandwidth, jobs,
-    // notifications, inbox) compete for the SAME narrow uplink as the terminal —
-    // and the terminal is what the user is looking at. Under a bad network, each one
-    // skips 1 tick in 3: the numbers stay alive, just less eager.
-    // None of this changes on a good network.
     _skipPoll(key){
       if (!this._slowNetwork()) return false;
       this._pollTicks || (this._pollTicks = {});
       const n = (this._pollTicks[key] = (this._pollTicks[key] || 0) + 1);
       return (n % 3) !== 0;
     },
-    // Asks which sessions are running an old version of Claude. Cheap and rare: only at
-    // boot and when the operator opens the detail — it is not a poller.
     async loadClaudeVersions(){
       if (this.claudeVer.loading) return;
       this.claudeVer.loading = true;
@@ -14033,27 +11117,15 @@ function app() {
         const d = await r.json();
         this.claudeVer.installed = d.installed || '';
         this.claudeVer.outdated = d.outdated || 0;
-        // Sorts by what matters: the outdated ones first, with the session name.
         this.claudeVer.processes = (d.processes || []).sort((a, b) =>
           (a.current === b.current) ? String(a.session||'').localeCompare(String(b.session||'')) : (a.current ? 1 : -1));
       } catch(_){} finally { this.claudeVer.loading = false; }
     },
-    // Dispatcher for the "Restart" button of the version panel. There are TWO ways to
-    // restart a Claude, and they are not interchangeable: a panel session
-    // restarts by typing into the pane (in full view of the operator, with --continue); the recovery
-    // Claude runs in a container and has no pane at all — only the container
-    // restarts it. Before, the absence of that second path left the row inert.
     async restartPanelClaude(proc){
       if (!proc) return;
       if (proc.target === 'recovery') return this.restartRecoveryClaude(proc);
       return this.restartSessionClaude(proc);
     },
-    // Restarts the container of the recovery Claude.
-    //
-    // No --continue here, unlike the sessions: the container comes up with
-    // `sleep infinity` and the session is born when someone opens /recovery —
-    // there is no conversation to resume, and whichever one is open is lost. The confirm
-    // text says so, because that is the difference that matters to the operator.
     async restartRecoveryClaude(proc){
       const target = proc.ref || this.claudeVer.installed || '?';
       const ok = await this.confirmAsync(
@@ -14069,8 +11141,6 @@ function app() {
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
         this.showToast('recovery container restarted', 'ok');
-        // The container takes a moment to bring the new process up; without the slack the
-        // list goes back to showing the old PID and it looks like nothing happened.
         setTimeout(() => this.loadClaudeVersions(), 4000);
       } catch(e){
         this.showToast('error restarting the recovery: ' + e.message, 'err');
@@ -14078,16 +11148,8 @@ function app() {
         this.claudeVer.restarting = 0;
       }
     },
-    // Restarts the Claude of ONE session, with the conversation preserved.
-    //
-    // Deliberately NOT automatic and NOT on the server: killing a Claude that is
-    // in the middle of a task is worse than the warning we are trying to silence.
-    // The command is typed into the pane, in full view of the operator, exactly as they
-    // would do by hand — and `claude --continue` resumes the conversation instead of starting
-    // from scratch.
     async restartSessionClaude(proc){
       if (!proc || !proc.session) return;
-      // confirmAsync(message, opts) — the 1st line becomes the title when it is short.
       const ok = await this.confirmAsync(
         'Restart Claude in "' + proc.session + '"?\n'
         + 'Ends Claude in this session and reopens it with --continue, resuming the conversation. '
@@ -14095,15 +11157,11 @@ function app() {
         + 'Session version: ' + proc.version + '  →  installed: ' + (this.claudeVer.installed || '?'),
         { danger: true });
       if (!ok) return;
-      // Opens/focuses the session so the operator can SEE what happens — nothing runs in an
-      // invisible session.
       let pane = (this.terms.panes||[]).find(p => p.sessionName === proc.session);
       if (!pane) { this.newPane(proc.session); await this.$nextTick(); pane = (this.terms.panes||[]).find(p => p.sessionName === proc.session); }
       else { this.focusPane(pane.id); }
       if (!pane) { this.showToast('could not open the session ' + proc.session, 'err'); return; }
       this.setPage('dev'); this.setTab('host');
-      // Ctrl-C aborts whatever is running; /exit closes Claude cleanly; then it
-      // reopens with --continue. The intervals give the CLI time to process each step.
       const steps = [['\x03', 400], ['/exit\r', 1200], ['claude --continue\r', 300]];
       for (const [txt, wait] of steps) {
         this._paneSendInput(pane, txt);
@@ -14112,12 +11170,6 @@ function app() {
       this.showToast('restarting Claude in ' + proc.session, 'ok');
       setTimeout(() => this.loadClaudeVersions(), 8000);
     },
-    // Redoes the fit and reasserts the size of ALL panes. Called when the
-    // window/tab comes back — the moment when divergence usually appears, because
-    // the layout may have changed while nobody was measuring. The fit comes
-    // first (xterm decides how many columns fit), the assertion after (so the
-    // server agrees). Free when nothing changed: the fit changes nothing
-    // and the server deduplicates a repeated size.
     _reconcileSizes(){
       const now = Date.now();
       if (this._reconcSizeAt && (now - this._reconcSizeAt) < 400) return;
@@ -14128,9 +11180,6 @@ function app() {
         try { if (p._assertSize) p._assertSize('window'); } catch(_){}
       });
     },
-    // The network came back (or the tab came to the front): there is no point waiting for the
-    // backoff. Reopens every pane that is off the air right now. Without writing
-    // anything to the terminal — success is silent, and the overlay tells the rest.
     _reconnectPanesNow(){
       const now = Date.now();
       if (this._reconnectNowAt && (now - this._reconnectNowAt) < 1000) return;
@@ -14155,20 +11204,12 @@ function app() {
         const nb = ov.querySelector('[data-a="new"]'); if (nb) nb.onclick = () => this._newSessionInPane(pane);
         const cb = ov.querySelector('[data-a="close"]'); if (cb) cb.onclick = () => this.closePane(pane.id);
       } else if (pane._restarting && pane.status !== 'open'){
-        // A deploy is an update, not a failure. Saying "Reconnecting…" for an
-        // event the user triggered themselves and that lasts ~2s turns routine
-        // into a fright — and teaches them to ignore the warning that one day will be real.
         const qr = (pane._outbox && pane._outbox.length) ? (pane._outboxBytes | 0) : 0;
         ov.innerHTML = '<div class="tpo-pill"><span class="tpo-dot"></span>Updating the server…'
           + (qr ? '<span class="tpo-sub" style="margin-left:6px;opacity:.85">' + qr + ' character' + (qr>1?'s':'') + ' queued — nothing lost</span>' : '')
           + '</div>';
         ov.style.display = 'flex';
       } else if (pane.status === 'reconnecting' || pane.status === 'connecting'){
-        // Shows that the typing was KEPT, not lost. Without this the
-        // user types in the dark and assumes it vanished (which is what actually
-        // used to happen before the outbox).
-        // `| 0` forces an integer: the value is interpolated into innerHTML, so it must not
-        // depend on the field being numeric "by convention".
         const q = (pane._outbox && pane._outbox.length) ? (pane._outboxBytes | 0) : 0;
         ov.innerHTML = '<div class="tpo-pill"><span class="tpo-dot"></span>'
           + (pane.status === 'reconnecting' ? 'Reconnecting…' : 'Connecting…')
@@ -14181,7 +11222,6 @@ function app() {
         ov.innerHTML = '';
       }
     },
-    // "New session in this panel" (the 4404 CTA) — reuses the session picker.
     _newSessionInPane(pane){
       if (!pane) return;
       pane.ended = false;
@@ -14191,8 +11231,6 @@ function app() {
         onPick: (name) => this.loadSessionIntoPane(pane, name),
       });
     },
-    // "Reconnect now" — re-attaches the pane immediately (dispose + a fresh
-    // mountPane; the scrollback is re-primed by the replay from the server / the wobble).
     _reconnectPane(pane){
       if (!pane) return;
       try { if (pane.reconnect){ pane.reconnect.cancelled = true; if (pane.reconnect.timer) clearTimeout(pane.reconnect.timer); } } catch(_){}
@@ -14203,8 +11241,6 @@ function app() {
       pane.term = null; pane.ws = null; pane.fit = null; pane.search = null; pane.resizeObserver = null; pane.ended = false;
       this.mountPane(pane);
     },
-// Shows/hides the "↓ new output" pill depending on whether the user is scrolled
-    // up (viewportY < baseY) or at the end of the buffer.
     _updateScrollBtn(pane){
       const sb = document.querySelector('[data-pane-scroll="'+pane.id+'"]');
       if (!sb) return;
@@ -14214,8 +11250,6 @@ function app() {
         sb.style.display = ((b.viewportY || 0) < (b.baseY || 0)) ? 'block' : 'none';
       } catch(_){ sb.style.display = 'none'; }
     },
-    // Syncs the Claude account selects in every pane title bar.
-    // Called after loadClaudeAccounts and loadClaudeTermSessions.
     _syncPaneAccountSelects(){
       const accounts = (this.claudeAccounts && this.claudeAccounts.accounts) || [];
       if (!accounts.length) return;
@@ -14235,32 +11269,11 @@ function app() {
         if (sel.value !== acctId) sel.value = acctId;
       });
     },
-    // Refits (recomputes cols/rows) every pane after a layout resize.
     _refitAllPanes(){
       (this.terms.panes||[]).forEach(p => { if (p.fit) this._fitSoon(p.fit); });
     },
-    // Coalescing of fit(): several calls in the same frame become just 1. Critical
-    // during a divider drag and ResizeObserver storms — each fit fires
-    // term.onResize → resize WS → PTY reflow. Without coalescing, the Claude CLI
-    // streaming (cursor-up + clear-line) left orphan fragments in the
-    // scrollback ("Re/Qu/pa" before complete lines).
-    //
-    // Scheduled through requestIdleCallback (falling back to rAF) so fit() runs in the browser
-    // idle time, not on the critical paint path. fit() on big terminals measures
-    // the DOM (cols/rows from char size) + triggers a PTY reflow — it easily
-    // blows past 50ms and used to cause a [Violation] in the console. timeout: 100ms guarantees
-    // it still runs inside very short idle windows.
     _fitSoon(fit){
       if (!fit) return;
-      // TRAILING debounce (not leading): a burst of resizes — a divider drag, the
-      // sidebar collapse animation, a scrollbar appearing/disappearing and changing
-      // the width by ±1 — collapses into ONE SINGLE fit at the final stable size.
-      // Why: every fit that changes `cols` triggers the REFLOW (rewrap) of the xterm
-      // buffer, which re-wraps the scrollback and desynchronizes it from the Claude CLI
-      // redraw (cursor-up + clear-line) → orphan fragments at the start of the
-      // lines ("Re/Gi/Qu…"). The earlier per-frame coalescing did not cover fits in
-      // successive frames during the animation (each intermediate size = 1
-      // reflow). A trailing debounce = a single reflow, at the end → no corruption.
       if (fit._deb) clearTimeout(fit._deb);
       fit._deb = setTimeout(() => {
         fit._deb = 0;
@@ -14268,12 +11281,6 @@ function app() {
         if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run); else run();
       }, 140);
     },
-    // GUARD against a DEGENERATE fit (a production best practice; a known FitAddon
-    // bug): if the container is hidden (inactive tab, display:none) or at
-    // 0px in the middle of an animation, proposeDimensions returns undefined/NaN or
-    // 1x1. Applying that would tell the PTY to redraw in ~1 COLUMN = total garbage.
-    // It only fits with sane dimensions. Returns true if it fitted. Used both in the debounce AND in
-    // the immediate fit of onopen (the initial size sent to the PTY).
     _safeFit(fit){
       if (!fit) return false;
       try {
@@ -14281,26 +11288,11 @@ function app() {
         if (!d || !isFinite(d.cols) || !isFinite(d.rows) || d.cols < 2 || d.rows < 1) return false;
         const term = fit._panelTerm;
         if (!term || !(term.cols >= 2)) { fit.fit(); return true; }
-        // ── THE GRID BELONGS TO THE SESSION, NOT THE WINDOW ───────────────
-        // When another client is attached, the server puts the PTY at the SMALLEST of
-        // the windows and tells everyone what the grid of the session is ({"type":"size"}).
-        // Obeying means drawing THAT grid — whoever has the bigger window sees the session
-        // with space around it, as in any multiplexer.
-        //
-        // Without this guard the FitAddon undid the announcement, and the server did not
-        // re-announce because as far as IT was concerned nothing had changed. The pair was recorded in
-        // the server log: "120x40 -> 80x24" followed by "80x24 -> 120x40", and
-        // from then on the program wrapped its lines at one width while the
-        // xterm drew at another — text in the wrong place and repainting that does not
-        // erase the previous copy.
         const gs = fit._panelState && fit._panelState._gridSession;
         if (gs && (gs.cols !== d.cols || gs.rows !== d.rows)) {
           if (term.cols !== gs.cols || term.rows !== gs.rows) {
             try { term.resize(gs.cols, gs.rows); } catch (_) {}
           }
-          // The natural window keeps being asserted (once per new value):
-          // it is how the server knows what the session can go back to
-          // when the small client leaves.
           const mark = d.cols + 'x' + d.rows;
           if (fit._lastNatural !== mark) {
             fit._lastNatural = mark;
@@ -14309,54 +11301,21 @@ function app() {
           return true;
         }
         fit._lastNatural = d.cols + 'x' + d.rows;
-        // ── ONE-COLUMN HYSTERESIS ──────────────────────────────────────────
-        // Changing `cols` re-wraps (reflows) the ENTIRE xterm scrollback. An app
-        // that repaints by cursor addressing (the Claude CLI: go up N lines,
-        // clear, redraw) counts the PHYSICAL lines it wrote; after the
-        // rewrap that N is wrong, so it clears the wrong lines and
-        // redraws over what was left. The result is chopped and repeated
-        // text — the report that opened this, in a 56-column session.
-        //
-        // At 56 columns, ONE column is 1.8% of the width. In that range, ±1 is almost
-        // never what the user intended: it is browser chrome (a scrollbar
-        // appearing, the URL bar, the virtual keyboard) or the rounding of the
-        // width/cell division flipping sides over a fraction of a pixel. The
-        // 140ms debounce in _fitSoon merges a BURST into a single reflow, but it does not
-        // stop ONE spurious event — which is exactly the case here.
-        //
-        // So: ±1 column only counts if a SECOND measurement, 300ms later,
-        // still agrees. A change of >=2 columns is real intent
-        // (rotation, split, sidebar) and passes immediately. Rows never wait —
-        // changing `rows` causes no reflow.
         const dc = d.cols - term.cols;
         if (dc === 1 || dc === -1) {
           if (fit._colPending !== d.cols) {
             fit._colPending = d.cols;
             if (fit._colTimer) clearTimeout(fit._colTimer);
             fit._colTimer = setTimeout(() => { fit._colTimer = 0; this._safeFit(fit); }, 300);
-            // Rows follow immediately: the prompt must not stay hidden behind
-            // the keyboard just because the width is in quarantine.
             if (d.rows !== term.rows) { try { term.resize(term.cols, d.rows); } catch (_) {} }
             return true;
           }
-          fit._colPending = 0;   // the second measurement agreed: the width really did change
-          // ── AND IT MUST NOT UNDO THE PREVIOUS ONE ───────────
-          // The quarantine filters the isolated spurious event, but not the pair that
-          // repeats itself: applying +1 can change the pixel box (a scrollbar
-          // appearing) and make the next measurement propose -1, which
-          // when applied proposes +1 again. Each round trip is a reflow of
-          // the entire xterm scrollback and a SIGWINCH in the remote program —
-          // the oscillator that survived the earlier fix, found and not
-          // repaired.
-          //
-          // So a ±1 correction does not undo the last one inside the
-          // quiet window. A change of >=2 columns still passes immediately:
-          // rotation, split and sidebar are intent, not noise.
+          fit._colPending = 0;
           const now = Date.now();
           if (fit._lastFit1col &&
               (now - fit._lastFit1col.em) < 2000 &&
               fit._lastFit1col.dc === -dc) {
-            return true;   // that would undo the one from a moment ago: leave it as it is
+            return true;
           }
           fit._lastFit1col = { dc, em: now };
         } else {
@@ -14368,25 +11327,17 @@ function app() {
         return true;
       } catch (e) { return false; }
     },
-    // Focuses a pane (activates the border, the cursor blinks in it, shortcuts go to it).
-    // A full re-render of the tree — used on layout changes (split/close).
     focusPane(paneId){
       this.terms.activePane = paneId;
-      // Switching pane turns trackpad mode off (the overlay belongs to the old pane).
       if (this.terms.trackpadMode) { this.terms.trackpadMode = false; this._removeTrackpadOverlay && this._removeTrackpadOverlay(); }
       this.renderPaneLayout();
       const pane = (this.terms.panes||[]).find(p => p.id === paneId);
-      // Mobile: does NOT focus automatically (focus raises the virtual keyboard).
-      // It only focuses on desktop, or if the user already summoned the keyboard deliberately.
       if (pane && pane.term && (!this.isMobile() || this._wantKeyboard))
         this.$nextTick(()=>{ try{ pane.term.focus(); }catch(e){} });
     },
-    // Focuses a pane WITHOUT re-rendering (a light visual change). Used on the wrap
-    // click so the DOM is not destroyed before the click event reaches the inner buttons.
     _setActivePaneNoRender(paneId){
       if (this.terms.activePane === paneId) return;
       this.terms.activePane = paneId;
-      // Updates only the .pane-active classes by hand
       const root = document.getElementById('host-pane-root');
       if (!root) return;
       root.querySelectorAll('[data-pane-id]').forEach(el => {
@@ -14394,12 +11345,8 @@ function app() {
         else el.classList.remove('pane-active');
       });
       const pane = (this.terms.panes||[]).find(p => p.id === paneId);
-      // Mobile: switching the active pane does not raise the keyboard (see focusPane).
       if (pane && pane.term && (!this.isMobile() || this._wantKeyboard)) try{ pane.term.focus(); }catch(e){}
     },
-    // Creates a split: opens the picker so the user chooses which session to load
-    // into the new pane (or creates a new one). No auto-creating a session without asking.
-    // anchorEl is the clicked button (to position the menu); optional.
     splitPane(paneId, dir, anchorEl){
       if (!paneId) return;
       const found = this._findPaneNode(this.terms.layout, paneId, null, null);
@@ -14410,12 +11357,11 @@ function app() {
         onPick: (sessionName) => this._doSplitPane(paneId, dir, sessionName),
       });
     },
-    // Does the split itself. Called by the picker after the user chose a session.
     _doSplitPane(paneId, dir, sessionName){
       const found = this._findPaneNode(this.terms.layout, paneId, null, null);
       if (!found) return;
-      const newPane = this._makePane(sessionName, '');  // reattach: no startupCmd
-      newPane.startupRan = true;  // an existing session — does not fire a cmd
+      const newPane = this._makePane(sessionName, '');
+      newPane.startupRan = true;
       this.terms.panes.push(newPane);
       const splitNode = { type: 'split', dir: dir, size: 0.5, a: found.node, b: { type:'pane', id: newPane.id } };
       if (!found.parent) this.terms.layout = splitNode;
@@ -14433,11 +11379,8 @@ function app() {
       }
       return base + '-' + Date.now();
     },
-    // Closes a pane: disposes xterm/WS, flattens the parent split (the level above becomes the sibling).
     closePane(paneId){
       if (!paneId) return;
-      // Last pane: instead of closing everything, it opens the picker to load another session.
-      // Keeps 1 pane always alive (UX without an "empty screen").
       if ((this.terms.panes||[]).length === 1) {
         const lastPane = this.terms.panes[0];
         this.openSessionPicker({
@@ -14450,35 +11393,27 @@ function app() {
       const found = this._findPaneNode(this.terms.layout, paneId, null, null);
       if (!found) return;
       const pane = found.node;
-      // Pane cleanup (preserves the session — it only closes the local WS)
       try { if (pane.reconnect) pane.reconnect.cancelled = true; } catch(e){}
       try { if (pane.reconnect && pane.reconnect.timer) clearTimeout(pane.reconnect.timer); } catch(e){}
       try { if (pane.notify && pane.notify.timer) clearTimeout(pane.notify.timer); } catch(e){}
       try { if (pane.ws) pane.ws.close(); } catch(e){}
       try { if (pane.term) pane.term.dispose(); } catch(e){}
-      // Disconnects the ResizeObserver (otherwise an observer + FitAddon leaks per
-      // split-close; parity with loadSessionIntoPane/_triggerViewLoaders).
       try { if (pane.resizeObserver) pane.resizeObserver.disconnect(); } catch(e){}
       pane.resizeObserver = null;
       this.terms.panes = (this.terms.panes||[]).filter(p => p.id !== paneId);
-      // Flattens the split: the parent becomes the sibling (the other side)
       if (found.parent) {
         const otherSide = found.side === 'a' ? 'b' : 'a';
         const survivor = found.parent[otherSide];
-        // Special case: the split to be removed is the root of the tree.
         if (this.terms.layout === found.parent) {
           this.terms.layout = survivor;
         } else {
           const gp = this._findSplitParent(this.terms.layout, found.parent, null, null);
-          // gp.parent can be null if found.parent sat directly at the root
           if (!gp || !gp.parent) this.terms.layout = survivor;
           else gp.parent[gp.side] = survivor;
         }
       } else {
-        // The pane was the root and the only one — the layout ends up empty
         this.terms.layout = null;
       }
-      // If the active one was this, switch to the first remaining pane
       if (this.terms.activePane === paneId) {
         const remaining = this._allPanes(this.terms.layout);
         this.terms.activePane = remaining[0]?.id || null;
@@ -14486,12 +11421,8 @@ function app() {
       this.renderPaneLayout();
       this.saveState();
     },
-    // Generic session picker. Shows a dropdown with the available sessions
-    // + a "New session" option. opts: { anchorEl, title, currentName, onPick(name) }.
-    // Reused by: 📋 Load session (existing pane) and Split V/H (new pane).
     async openSessionPicker(opts){
       opts = opts || {};
-      // Closes any old menu
       document.querySelectorAll('.pane-session-menu').forEach(el => el.remove());
       await this.loadAbandonedSessions();
       const sessions = this.abandonedSessions || [];
@@ -14503,7 +11434,6 @@ function app() {
         menu.style.left = Math.max(8, Math.min(window.innerWidth - 270, rect.right - 260)) + 'px';
         menu.style.top  = (rect.bottom + 4) + 'px';
       } else {
-        // Centers it when there is no anchor (called from the global toolbar)
         menu.style.left = '50%';
         menu.style.top  = '120px';
         menu.style.transform = 'translateX(-50%)';
@@ -14524,10 +11454,6 @@ function app() {
           row.style.cssText = 'display:flex;align-items:center;width:100%;border-radius:4px;' + (isCurrent ? 'background:#152033;' : '');
           const item = document.createElement('button');
           item.style.cssText = 'display:flex;align-items:center;gap:6px;flex:1;text-align:left;padding:6px 10px;background:transparent;color:inherit;border:0;cursor:pointer;font-family:monospace;font-size:11px;border-radius:4px;';
-          // DOM construction with textContent for s.name — fully XSS-safe
-          // without depending on an external helper. It used to use innerHTML+escapeHtml,
-          // but escapeHtml lives inside the installErrorBoundary IIFE (not reachable
-          // here) → "escapeHtml is not defined" took the whole picker down.
           const dot = document.createElement('span');
           dot.style.cssText = 'width:6px;height:6px;border-radius:50%;background:' + (s.attached ? '#fbbf24' : '#10b981') + ';flex-shrink:0;';
           const nameEl = document.createElement('span');
@@ -14553,7 +11479,6 @@ function app() {
             if (!isCurrent && typeof opts.onPick === 'function') opts.onPick(s.name);
           });
           row.appendChild(item);
-          // Delete button (not available on the current session of this pane — avoids killing your own connection)
           if (!isCurrent) {
             const del = document.createElement('button');
             del.title = 'Delete session';
@@ -14566,7 +11491,6 @@ function app() {
               if (!(await this.confirmAsync('Delete session "' + s.name + '"?' + (s.attached ? '\n\n⚠ It is IN USE by another panel — this will kill the connection there.' : '')))) return;
               try { await this.api('/api/terminal/kill-session', {method:'POST', body: JSON.stringify({name: s.name})}); } catch(err){}
               menu.remove();
-              // Reopens the picker to show the updated list
               this.openSessionPicker(opts);
             });
             row.appendChild(del);
@@ -14601,7 +11525,6 @@ function app() {
       setTimeout(() => document.addEventListener('mousedown', onDocClick, true), 0);
       document.body.appendChild(menu);
     },
-    // Wrapper: 📋 Load session (in the existing pane)
     openPaneSessionPicker(pane, anchorEl){
       this.openSessionPicker({
         anchorEl,
@@ -14610,12 +11533,8 @@ function app() {
         onPick: (name) => this.loadSessionIntoPane(pane, name),
       });
     },
-    // Reconnects a pane to a new session. It preserves the old session
-    // (the session stays detached and can be reattached again later).
     loadSessionIntoPane(pane, sessionName){
       if (!pane || !sessionName) return;
-      // Cleanup of the current pane. It cancels the reconnect BEFORE closing the WS so that
-      // the async onclose already sees cancelled=true and does not try to reconnect/write.
       try { if (pane.reconnect) pane.reconnect.cancelled = true; } catch(e){}
       try { if (pane.reconnect && pane.reconnect.timer) clearTimeout(pane.reconnect.timer); } catch(e){}
       try { if (pane.notify && pane.notify.timer) clearTimeout(pane.notify.timer); } catch(e){}
@@ -14623,16 +11542,10 @@ function app() {
       try { if (pane.term) pane.term.dispose(); } catch(e){}
       try { if (pane.resizeObserver) pane.resizeObserver.disconnect(); } catch(e){}
       pane.term = null; pane.ws = null; pane.fit = null; pane.search = null; pane.resizeObserver = null;
-      // Keeps reconnect.cancelled=true until buildTerminal recreates the object.
-      // If we replaced it here with cancelled:false, the pending onclose of the old
-      // WS (which is still firing async) would find cancelled=false and
-      // would try to reconnect/write — triggering "Cannot read 'write' of null".
       pane.notify = { lastOutput: 0, cmdStart: 0, busy: false, alerted: false };
       pane.sessionName = sessionName;
       pane.status = 'idle';
-      pane.startupRan = true;  // a reattach does not fire the startup cmd
-      // Updates the title bar and remounts xterm with the new session. buildTerminal
-      // will create a new pane.reconnect with cancelled=false to re-enable reconnect.
+      pane.startupRan = true;
       this.renderPaneLayout();
       this.$nextTick(()=> this.mountPane(pane));
       this.saveState();
@@ -14646,40 +11559,25 @@ function app() {
       }
       return null;
     },
-    // ----- Dragging the pane divider (resize) -------
     _beginDividerDrag(ev, splitNode){
       ev.preventDefault();
       const dir = splitNode.dir;
-      const root = ev.target.parentElement; // the container of the split
+      const root = ev.target.parentElement;
       const rect = root.getBoundingClientRect();
       const total = (dir === 'row') ? rect.width : rect.height;
       const size0 = splitNode.size;
 
-      // Only the TWO leaves flanking THIS divider should move; every
-      // non-adjacent pane keeps its ABSOLUTE size. In a layout of 3+ panes the
-      // tree is nested — changing only `splitNode.size` would scale the whole
-      // subtree on the other side (also shrinking panes that do not touch the
-      // divider). To avoid that, we walk the "spine" of splits of the same
-      // direction on each side and capture the FIXED px of every non-adjacent sibling;
-      // on move we recompose the internal `size` fractions keeping those px
-      // constant, so that only the adjacent leaf absorbs the delta.
-      //   side a → descends following .b (the rightmost leaf); fixed sibling = .a
-      //   side b → descends following .a (the leftmost leaf); fixed sibling = .b
-      // The spine stops at a leaf, or at a split of the CROSSING direction (the whole crossed
-      // block becomes the adjacent unit — the intuitive behaviour).
       const aSpine = []; { let box = size0 * total, cur = splitNode.a;
         while (cur && cur.type === 'split' && cur.dir === dir) {
-          aSpine.push({ node: cur, farPx: box * cur.size });   // sibling .a fixed
+          aSpine.push({ node: cur, farPx: box * cur.size });
           box *= (1 - cur.size); cur = cur.b;
         } }
       const bSpine = []; { let box = (1 - size0) * total, cur = splitNode.b;
         while (cur && cur.type === 'split' && cur.dir === dir) {
-          bSpine.push({ node: cur, farPx: box * (1 - cur.size) }); // sibling .b fixed
+          bSpine.push({ node: cur, farPx: box * (1 - cur.size) });
           box *= cur.size; cur = cur.a;
         } }
 
-      // Repaints the flex of the WHOLE subtree of splitNode from the fractions in the tree
-      // (the DOM mirrors the tree: children[0]=aWrap, [1]=divider, [2]=bWrap).
       const applyFlex = (containerEl, node) => {
         if (!containerEl || !node || node.type !== 'split') return;
         const aWrap = containerEl.children[0], bWrap = containerEl.children[2];
@@ -14695,9 +11593,6 @@ function app() {
         else               ratio = (mv.clientY - rect.top)  / rect.height;
         ratio = Math.max(0.1, Math.min(0.9, ratio));
         splitNode.size = ratio;
-        // Compensates each spine: it keeps the px of the fixed sibling, and the adjacent leaf
-        // (at the end of the spine) absorbs the rest. box*(1-s)/box*s follows how the
-        // flex actually renders, so the clamp never breaks consistency.
         let box = ratio * total;
         for (const seg of aSpine) { const s = Math.max(0.05, Math.min(0.95, seg.farPx / box)); seg.node.size = s; box *= (1 - s); }
         box = (1 - ratio) * total;
@@ -14715,21 +11610,15 @@ function app() {
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     },
-    // ----- Pane DnD (5 zones: top/right/bottom/left/center) ---------
     _beginPaneDrag(ev, pane){
       this.terms._dragPane = { paneId: pane.id };
       try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', pane.id); } catch(e){}
     },
     _endPaneDrag(){
       this.terms._dragPane = null;
-      // Removes any zone overlay from every pane
       document.querySelectorAll('.pane-drop-overlay').forEach(el => el.remove());
     },
     _panelDragOver(ev, targetPane){
-      // A file coming from outside the browser. Without the preventDefault here the pane is NOT
-      // a valid drop target (HTML5 DnD): the drop escapes to the document and the browser
-      // default action is to NAVIGATE to the file — the whole SPA disappears, taking
-      // every pane and the tab state with it. That was the behaviour until this was fixed.
       if (this._dragHasFiles(ev)) {
         ev.preventDefault();
         try { ev.dataTransfer.dropEffect = 'copy'; } catch(_){}
@@ -14739,7 +11628,6 @@ function app() {
       if (!this.terms._dragPane) return;
       ev.preventDefault();
       ev.dataTransfer.dropEffect = 'move';
-      // Detects the zone from the mouse position inside the pane (5 zones)
       const wrap = ev.currentTarget;
       const rect = wrap.getBoundingClientRect();
       const xRel = (ev.clientX - rect.left) / rect.width;
@@ -14753,12 +11641,8 @@ function app() {
       this._showDropOverlay(wrap, zone);
     },
     _panelDragLeave(pane, ev){
-      // Pane rearrangement: it does not remove the overlay on leave (dragover repeats right after)
-      // — only on end or on drop. The FILE overlay, though, has to disappear here,
-      // otherwise it stays stuck on screen when the user gives up and drags away.
       if (ev && this._dragHasFiles(ev)) {
         const wrap = ev.currentTarget;
-        // relatedTarget inside the wrap itself = it only moved between children, it did not leave.
         try { if (wrap && ev.relatedTarget && wrap.contains(ev.relatedTarget)) return; } catch(_){}
         this._hideFileDropOverlay(wrap);
       }
@@ -14768,10 +11652,6 @@ function app() {
       if (this._dragHasFiles(ev)) {
         this._hideFileDropOverlay(ev.currentTarget);
         const files = (ev.dataTransfer && ev.dataTransfer.files) || [];
-        // targetPane IS the pane state (the same object that carries .ws/.term and
-        // that _paneSendInput expects) — the outbox covers the case of
-        // dropping a file with the connection down: the path is queued and goes out on
-        // reconnect instead of vanishing.
         if (files.length) this._sendFilesToPane(targetPane, files).catch(()=>{});
         return;
       }
@@ -14779,7 +11659,6 @@ function app() {
       this._endPaneDrag();
       if (!src) return;
       if (src.paneId === targetPane.id) return;
-      // Determines the zone from the current dropTarget
       const wrap = ev.currentTarget;
       const rect = wrap.getBoundingClientRect();
       const xRel = (ev.clientX - rect.left) / rect.width;
@@ -14792,9 +11671,6 @@ function app() {
       else                  zone = 'center';
       this._performPaneDrop(src.paneId, targetPane.id, zone);
     },
-    // Overlay for the FILE drop (distinct from the pane rearrangement overlay:
-    // that one is blue and shows the split zone; this one is green and covers the whole pane,
-    // so as not to suggest that dropping in a corner makes a split).
     _showFileDropOverlay(wrap){
       if (!wrap || wrap.querySelector('.pane-file-drop-overlay')) return;
       const ov = document.createElement('div');
@@ -14812,7 +11688,6 @@ function app() {
       } catch(_){}
     },
     _showDropOverlay(wrap, zone){
-      // Removes the previous overlay of the wrap
       const existing = wrap.querySelector('.pane-drop-overlay');
       if (existing && existing.dataset.zone === zone) return;
       if (existing) existing.remove();
@@ -14827,12 +11702,10 @@ function app() {
       else if (zone === 'right')  ov.style.cssText = base + 'top:0;bottom:0;right:0;width:50%;';
       wrap.appendChild(ov);
     },
-    // Reorders panes inside the single container. Center = swap; edges = split.
     _performPaneDrop(srcPaneId, dstPaneId, zone){
       const srcFound = this._findPaneNode(this.terms.layout, srcPaneId, null, null);
       const dstFound = this._findPaneNode(this.terms.layout, dstPaneId, null, null);
       if (!srcFound || !dstFound) return;
-      // Center = swap (exchanges positions in the layout by swapping IDs on the nodes)
       if (zone === 'center') {
         const tmp = srcFound.node.id;
         srcFound.node.id = dstFound.node.id;
@@ -14841,14 +11714,11 @@ function app() {
         this.saveState();
         return;
       }
-      // Edge = a split in that direction inside the dst pane (removes src and adds it as a split)
       const dir = (zone === 'left' || zone === 'right') ? 'row' : 'column';
       this._removePaneFromTree(srcPaneId);
-      // Re-read: dst may have changed parent after the remove (flattening)
       const newDstFound = this._findPaneNode(this.terms.layout, dstPaneId, null, null);
       if (!newDstFound) return;
       const newPaneNode = { type:'pane', id: srcPaneId };
-      // top/left = src goes before (a); bottom/right = src goes after (b)
       const srcFirst = (zone === 'top' || zone === 'left');
       const splitNode = { type:'split', dir, size: 0.5,
                           a: srcFirst ? newPaneNode : newDstFound.node,
@@ -14869,7 +11739,6 @@ function app() {
       if (!gp || !gp.parent) this.terms.layout = survivor;
       else gp.parent[gp.side] = survivor;
     },
-    // ----- Workspaces -----
     async saveCurrentWorkspace(){
       const raw = await this.askInput({ title:'Save workspace', label:'Workspace name:', placeholder:'my-workspace', validate:(v)=>{ const s=String(v||'').trim(); if(!s) return 'Enter a name'; return /^[\p{L}\p{N}_\- .]{1,64}$/u.test(s) ? '' : 'Use letters, numbers, space, -, _, . (max 64)'; } });
       const name = (raw || '').trim();
@@ -14882,13 +11751,10 @@ function app() {
         layout: this._serializeLayout(this.terms.layout),
         activePane: this.terms.activePane || null,
       };
-      // If there was a tombstone for this name (the user recreated a deleted one), clear it
-      // locally — the server decides precedence through deletedAt vs savedAt on the PUT.
       try {
         const tomb = this._termLoadTombstones();
         if (tomb.delete(name)) this._termPersistTombstones(tomb);
       } catch(_){}
-      // Immediate local mirror (optimistic UX); it persists server-side afterwards.
       this.termWorkspaces = (this.termWorkspaces || []).filter(w => w.name !== name);
       this.termWorkspaces.push(snap);
       localStorage.setItem(this._termWorkspacesKey, JSON.stringify(this.termWorkspaces));
@@ -14899,7 +11765,6 @@ function app() {
     async loadWorkspace(ws){
       if (!ws) return;
       if ((this.terms.panes||[]).length > 0 && !(await this.confirmAsync('Load workspace "'+ws.name+'"? The current panels will be closed (sessions preserved).'))) return;
-      // Cleanup of the current panes (preserves the sessions — it only closes the local WS)
       (this.terms.panes||[]).forEach(pane => {
         try { if (pane.reconnect) pane.reconnect.cancelled = true; } catch(e){}
         try { if (pane.reconnect && pane.reconnect.timer) clearTimeout(pane.reconnect.timer); } catch(e){}
@@ -14911,7 +11776,6 @@ function app() {
       this.terms.layout = null;
       this.terms.activePane = null;
 
-      // Migration: an old workspace with tabs[] → consolidated into a single pool
       if (Array.isArray(ws.tabs)) {
         const descriptors = [];
         ws.tabs.forEach(savedTab => {
@@ -14934,7 +11798,6 @@ function app() {
         return;
       }
 
-      // New schema: hydrate directly
       (ws.panes || []).forEach(p => {
         const pane = this._makePane(p.sessionName, '');
         pane.id = p.id;
@@ -14953,22 +11816,15 @@ function app() {
       if (!(await this.confirmAsync('Delete workspace "'+ws.name+'"?'))) return;
       this.termWorkspaces = (this.termWorkspaces || []).filter(w => w.name !== ws.name);
       localStorage.setItem(this._termWorkspacesKey, JSON.stringify(this.termWorkspaces));
-      // Immediate local tombstone: it prevents resurrection if the server DELETE
-      // fails and another device has an old cache of this workspace.
       this._termAddTombstone(ws.name);
       this._termDeleteWorkspace(ws.name).then(ok => {
         if (!ok) this.showToast('Delete applied locally only (server unavailable, it retries on the next F5)', 'warn');
       });
     },
-    // ----- Terminal keyboard shortcuts ---------
     installTerminalHotkeys(){
       window.addEventListener('keydown', (ev) => {
         if (this.page !== 'dev') return;
         if (!this.terms.layout) return;
-        // Do not bind Ctrl+Shift+V/H/W: they clash with the paste of the terminal and with
-        // native browser shortcuts. Splits go through the toolbar/title bar.
-        // Alt+arrow moves focus between panes (the next one in the linear order of the tree).
-        // No preventDefault on xterm — it does its own capture.
         const inXterm = ev.target && ev.target.closest && ev.target.closest('.xterm');
         if (inXterm) return;
         if (ev.altKey && !ev.ctrlKey && !ev.shiftKey && (ev.key==='ArrowRight'||ev.key==='ArrowDown')) {
@@ -14986,18 +11842,13 @@ function app() {
       const next = panes[(idx + dir + panes.length) % panes.length];
       if (next) this.focusPane(next.id);
     },
-    // Opens the context menu of a pane at a position (clamped to the viewport so it does not
-    // leave the screen on mobile). Triggered by a long-press on the title bar.
     _openPaneContextMenu(paneId, x, y){
-      // Focus the pane first (the menu operations act on it)
       this.terms.activePane = paneId;
-      // Clamp position
       const menuW = 220, menuH = 280;
       const vx = Math.max(8, Math.min(window.innerWidth - menuW - 8, x));
       const vy = Math.max(8, Math.min(window.innerHeight - menuH - 8, y));
       this.paneContextMenu = { open: true, x: vx, y: vy, paneId };
     },
-    // Runs the action selected in the context menu and closes it.
     paneCtxAction(kind){
       const paneId = this.paneContextMenu.paneId;
       const pane = (this.terms.panes||[]).find(p => p.id === paneId);
@@ -15026,15 +11877,12 @@ function app() {
           break;
       }
     },
-    // Focuses the pane attached to session `name`. If there is none, returns false.
     focusPaneByName(name){
       const pane = (this.terms.panes||[]).find(p => p.sessionName === name);
       if (!pane) return false;
       this.focusPane(pane.id);
       return true;
     },
-    // Aggregate status, to show a colored dot on the tab. open if ALL panes
-    // are open; otherwise it takes the "worst" state.
     tabStatus(t){
       const panes = t.panes || [];
       if (panes.length === 0) return 'idle';
@@ -15048,7 +11896,6 @@ function app() {
       const p = this.activePane(); if (!p) return;
       if (!(await this.confirmAsync('Kill the session "'+p.sessionName+'"? Everything running inside will be terminated.'))) return;
       try { await this.api('/api/terminal/kill-session', {method:'POST', body: JSON.stringify({name: p.sessionName})}); } catch(e){}
-      // The server killed the session; close the local pane
       this.closePane(p.id);
     },
     async killSessionByName(name){
@@ -15057,13 +11904,10 @@ function app() {
       await this.loadAbandonedSessions();
     },
 
-    // ---------- Session manager (the 🪟 Sessions button) -----------
-    // Formats a unix-seconds value as a short date/time. 0/undefined → "—".
     sessionMgrFmtTime(unixSec){
       if (!unixSec) return '—';
       try { return new Date(unixSec * 1000).toLocaleString('en-US'); } catch(e){ return '—'; }
     },
-    // Cockpit: label for the state of the agent (state coming from session-status.json).
     sessionMgrStateLabel(s){
       const st = s && s.state;
       switch (st) {
@@ -15075,26 +11919,20 @@ function app() {
         default:              return s && s.attached ? 'in use' : 'free';
       }
     },
-    // Short basename of a cwd (for the badge). Keeps the last segment.
     sessionMgrBasename(p){
       if (!p) return '';
       const parts = String(p).replace(/\/+$/,'').split('/');
       return parts[parts.length-1] || p;
     },
-    // Am I an admin? Derived from /api/users (is_admin). Used
-    // to enable the "all sessions" view + the "Appears to" dropdown.
     get amAdmin(){
       const u = (this.usersList || []).find(x => x.username === this.username);
       return !!(u && u.is_admin);
     },
-    // Targets of the audience dropdown: every user + "*" (All).
     get sessionAssignTargets(){
       return [ ...(this.usersList || []).map(u => u.username), '*' ];
     },
     sessionAssignLabel(v){ return v === '*' ? 'All' : (v || '—'); },
     async sessionMgrLoad(){
-      // Makes sure the user list is loaded (once) — it feeds amAdmin and the dropdown. The session
-      // manager is called from ≥5 places; loading it in here covers all of them.
       if (!(this.usersList || []).length) { try { await this.loadUsers(); } catch(e){} }
       const url = this.amAdmin ? '/api/terminal/sessions?all=1' : '/api/terminal/sessions';
       try {
@@ -15103,14 +11941,9 @@ function app() {
         this.sessionMgr.sessions = (await r.json()) || [];
         this.sessionMgr.loadError = '';
       } catch(e){
-// Does NOT clear a good list because of a transient stumble (a 401 during
-        // cookie rotation, a network blip): it flags the error so the template can tell
-        // "truly empty" from "failed to load". Without this the modal showed
-        // "No sessions" and it looked as if the sessions had VANISHED (they had not).
         this.sessionMgr.loadError = (e && e.message) || 'failed to load';
       }
     },
-    // Reassigns the audience of a session (admin-only on the backend).
     async sessionMgrAssign(name, target){
       try {
         const r = await this.api('/api/terminal/assign-session', {method:'POST', body: JSON.stringify({name, target})});
@@ -15126,26 +11959,18 @@ function app() {
         this.sessionMgr.backups = (await r.json()) || [];
       } catch(e){ this.sessionMgr.backups = []; }
     },
-    // Pivots the backup list (each one = N sessions) into GROUPS by session:
-    // [{name, versions:[{id,created}]}]. Versions ordered by date (newest
-    // first); groups by name. That way the tab stays uncluttered — 1 row per session,
-    // expandable to see the history of dates.
     sessionMgrBackupGroups(){
       const groups = {};
       for (const b of (this.sessionMgr.backups || [])) {
         for (const s of (b.sessions || [])) {
-          // back-compat: sessions may come as a string (old format) or {name,summary}
           const name = (typeof s === 'string') ? s : (s.name || '');
           if (!name) continue;
           const summary = (typeof s === 'string') ? '' : (s.summary || '');
-          // count = number of sessions in this snapshot; used to show "Restore
-          // all" only when the backup holds more than one session.
           (groups[name] = groups[name] || []).push({ id: b.id, created: b.created || 0, summary, count: (b.sessions || []).length });
         }
       }
       return Object.keys(groups).sort((a,c)=>a.localeCompare(c)).map(name => {
         const versions = groups[name].sort((a,c)=> (c.created||0) - (a.created||0));
-        // the description of the group = the summary of the most recent version that has one
         const summary = (versions.find(v=>v.summary) || {}).summary || '';
         return { name, summary, versions };
       });
@@ -15155,8 +11980,6 @@ function app() {
       if (open) for (const g of this.sessionMgrBackupGroups()) ex[g.name] = true;
       this.sessionMgr.expanded = ex;
     },
-    // Deletes only THIS version (session+date). The backend removes the session from the file;
-    // if the backup ends up empty, it deletes the whole file.
     async sessionMgrDeleteVersion(id, name){
       if (!(await this.confirmAsync('Delete the backup of "'+name+'" from this date?'))) return;
       try {
@@ -15166,12 +11989,9 @@ function app() {
       } catch(e){ this.showToast(e.message,'err'); }
       await this.sessionMgrLoadBackups();
     },
-    // Shows/hides a preview of what the session is doing (the screen content
-    // right now — for claude, usually the recap/last answer). Loads once.
     async sessionMgrTogglePreview(name){
       this.sessionMgr.previewOpen[name] = !this.sessionMgr.previewOpen[name];
       if (!this.sessionMgr.previewOpen[name]) return;
-      // reloads every time it opens (the session may have moved on)
       this.sessionMgr.preview[name] = '__loading__';
       try {
         const r = await this.api('/api/terminal/preview?name=' + encodeURIComponent(name));
@@ -15180,7 +12000,6 @@ function app() {
         this.sessionMgr.preview[name] = { headline: d.headline || '', body: d.body || '' };
       } catch(e){ this.sessionMgr.preview[name] = { headline:'', body:'(error reading: '+e.message+')' }; }
     },
-    // Make it active: opens the session as a tab in the terminal (reuses reattachSession).
     sessionMgrOpenSession(name){
       this.sessionMgrOpen = false;
       try { this.setPage('terminal'); } catch(e){}
@@ -15266,12 +12085,7 @@ function app() {
       } catch(e){ this.showToast(e.message,'err'); }
       await this.sessionMgrLoadBackups();
     },
-    // Switches the AI of the pane. The session env is inherited on the FIRST attach, so for new
-    // env vars to take effect the session has to be killed and recreated. The scrollback is lost
-    // (server-side the session is a new one); it confirms first.
     async loadAbandonedSessions(){
-      // Does not clear the list on failure: "no session to reattach" would make the user
-      // believe they had lost terminals that are in fact still alive.
       this.abandonedSessionsLoading = true;
       try { const r = await this.api('/api/terminal/sessions'); this.abandonedSessions = (await r.json()) || []; this._loadOk('abandonedSessions'); }
       catch(e){ this._loadErr('abandonedSessions', e, 'failed to list terminal sessions'); }
@@ -15280,11 +12094,9 @@ function app() {
     async showAbandonedSessions(){ await this.loadAbandonedSessions(); this.abandonedOpen = true; },
     reattachSession(name){
       this.abandonedOpen = false;
-      // If a pane is already attached to that session, focus it; otherwise create a new pane.
       if (this.focusPaneByName(name)) return;
       this.newPane(name, { isReattach: true });
     },
-    // Entry point for when setPage('terminal') is called.
     async openHostTerminal(){
       if ((this.terms.panes||[]).length > 0) {
         this.$nextTick(()=>{
@@ -15298,19 +12110,14 @@ function app() {
         });
         return;
       }
-      // No pane open: reattaches the most recent abandoned session, or creates 'main'.
       try { await this.loadAbandonedSessions(); } catch(e){}
       const existing = (this.abandonedSessions || [])[0];
       const targetName = existing ? existing.name : 'main';
       this.newPane(targetName, { isReattach: !!existing });
     },
-    // Opens the structured "New session" form — cwd/command/account in dropdowns
-    // (instead of just typing a name). It replaces the old text prompt.
     newSessionPrompted(){
       this.createSess = { open: true, name: '', cwd: '', cmd: 'bash', account: '', busy: false, err: '' };
     },
-    // cwd options for the dropdown: cwds already known from live +
-    // abandoned sessions (deduped). "Prefer listing/selecting over typing."
     get createSessCwdOptions(){
       const set = new Set();
       (this.sessionMgr.sessions || []).forEach(s => { if (s.cwd) set.add(s.cwd); });
@@ -15322,14 +12129,14 @@ function app() {
         case 'claude':          return 'claude';
         case 'claude-continue': return 'claude --continue';
         case 'claude-resume':   return 'claude --resume';
-        default:                return ''; // bash: no startup command
+        default:                return '';
       }
     },
     async createSessSubmit(){
       const c = this.createSess;
       const name = (c.name || '').replace(/[^A-Za-z0-9_-]/g,'').slice(0,40);
       if (!name) { c.err = 'invalid name (letters, numbers, _ , -)'; return; }
-      if (this.focusPaneByName(name)) { c.open = false; return; } // already open → focus it
+      if (this.focusPaneByName(name)) { c.open = false; return; }
       c.busy = true; c.err = '';
       try {
         await this.api('/api/terminal/create', { method:'POST', body: JSON.stringify({ name, cwd: c.cwd || '', account: c.account || '' }) });
@@ -15337,31 +12144,22 @@ function app() {
         c.busy = false; c.err = (e && e.message) ? e.message : 'failed to create a session'; return;
       }
       c.busy = false; c.open = false;
-      // Opens the pane attaching to the already created session (in the chosen cwd/account) and
-      // injects the preset command through startupCmd (it runs once on attach).
       this.abandonedOpen = false;
       const startup = this._createSessStartupCmd(c.cmd);
       this.newPane(name, startup ? { startupCmd: startup } : undefined);
       try { this.sessionMgrOpen = false; } catch(_){}
     },
 
-    // ---------------- Toolbar and UX --------------
     hostTermReconnectNow(){
       const p = this.activePane(); if (!p) return;
-      // Cancels the backoff timer (if it is running) and forces the WS closed.
-      // onclose will trigger an immediate reconnect (with attempts++ and a new backoff).
-      // Resetting attempts to 0 beforehand would put the delay back at 1s — accepted.
       if (p.reconnect && p.reconnect.timer) { clearTimeout(p.reconnect.timer); p.reconnect.timer=null; }
       if (p.reconnect) p.reconnect.attempts = 0;
       if (p.ws) try{ p.ws.close(1000, 'user-reconnect'); }catch(e){}
-      // If it was already in backoff with no WS open, it triggers open() directly through the term refit.
       try { if (p.term) p.term.write('\r\n\x1b[36m[reconnecting now…]\x1b[0m\r\n'); } catch(_){}
     },
-    // Effective size: mobile uses its own (independent of the desktop).
     _termFontSize(){ return this.isMobile() ? (this.hostTermFontSizeMobile||11) : (this.hostTermFontSize||13); },
     hostTermFontDelta(d){
       if (this.isMobile()) {
-        // Mobile can go lower (min 6) and does NOT affect the desktop.
         this.hostTermFontSizeMobile = Math.max(6, Math.min(28, (this.hostTermFontSizeMobile||11) + d));
         localStorage.setItem('panel_term_fontsize_mobile', String(this.hostTermFontSizeMobile));
       } else {
@@ -15373,7 +12171,6 @@ function app() {
         if (p.term) { p.term.options.fontSize = fs; this._fitSoon(p.fit); }
       });
     },
-    // ── Configurable bottom bar ───────────────────────────────────────────
     termBarDef(key){ return (this.termBarCatalog||[]).find(b => b.key === key) || { key, icon:'?', label:key }; },
     toggleTermBarButton(key){
       const i = this.termBarButtons.indexOf(key);
@@ -15396,7 +12193,6 @@ function app() {
         case 'hide':      this.hideTermChrome(); break;
       }
     },
-    // Renames (cosmetically) the name of the panel. Used by the tab manager and the radial menu.
     async renamePane(pane){
       if (!pane) return;
       const fresh = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic — the session keeps its name):', value: pane.sessionName || '' })) || '').trim();
@@ -15405,23 +12201,17 @@ function app() {
     hostTermClear(){ const p = this.activePane(); if (p && p.term) p.term.clear(); },
     toggleFocusMode(){
       this.focusMode = !this.focusMode;
-      // Once the layout settles, refit the panes (the width changed).
       this.$nextTick(()=>{ this._refitAllPanes(); });
     },
     toggleChromeCollapsed(){
       this.chromeCollapsed = !this.chromeCollapsed;
       try { localStorage.setItem('panel_chrome_collapsed', this.chromeCollapsed ? '1' : '0'); } catch(_) {}
-      // The height of the main area changes — refit the terminal panes to fill the extra space.
       this.$nextTick(() => {
         if (typeof this._refitAllPanes === 'function') this._refitAllPanes();
         if (this.page === 'dev' && typeof this.renderPaneLayout === 'function') this.renderPaneLayout();
       });
     },
 
-    // ---------- STT (Speech-to-Text) ----------
-    // Turns voice dictation on/off in a specific field. `path` is the Alpine key
-    // (e.g. 'whatsapp.composer') — used to commit the final text through $store.
-    // `elId` is the id of the <input>/<textarea> so the interim text can be shown inline.
     sttToggleForElement(elId, path) {
       if (this.stt.session) { this.sttStop(); return; }
       this.sttStart(elId, path);
@@ -15447,7 +12237,6 @@ function app() {
           this._sttRenderInline();
         },
         onFinal: (p) => {
-          // Commit into the Alpine field: concatenates the buffer onto baseText.
           const sep = this.stt.baseText && !/\s$/.test(this.stt.baseText) ? ' ' : '';
           const next = (this.stt.baseText + sep + p.buffer).trim();
           if (this.stt.targetPath) this._sttSetPath(this.stt.targetPath, next);
@@ -15498,8 +12287,6 @@ function app() {
       // In the real field, only the final text goes in. The interim shows in the floating badge.
     },
     _sttStartForDOM(targetEl) {
-      // A DOM-direct variant (no Alpine path) for the global Ctrl+Shift+M shortcut
-      // in any textarea/input focused outside Alpine-bound fields.
       if (!window.PanelSTT || !window.PanelSTT.isSupported()) {
         this.showToast('Your browser does not support voice dictation', 'err');
         return;
@@ -15533,24 +12320,18 @@ function app() {
         this.showToast('Dictating — Ctrl+Shift+M to stop', 'ok');
       }
     },
-    // Opens the Terminal in a new pane "files-<short>" and injects `cd <path>` at boot.
     openTerminalAtPath(path){ this.openTerminalIn(path, 'files'); },
-    // A generic "Open a terminal here" bridge: opens/focuses a pane in the given cwd,
-    // with a name prefix by origin (files/git/jira/job/deploy). Reused by
-    // every surface so the flow stays INSIDE server-control-panel.
     openTerminalIn(path, prefix){
       const p = (path || '/').toString();
       const short = (p.split('/').filter(Boolean).slice(-2).join('-') || 'root').slice(0, 26);
       const paneName = ((prefix || 'term') + '-' + short).slice(0, 40);
       this.setPage('terminal');
       this.$nextTick(()=>{
-        // If a pane with that name already exists, just focus it; otherwise create a new one in the cwd.
         if (this.focusPaneByName(paneName)) return;
         this.newPane(paneName, { startupCmd: 'cd ' + this._shellQuote(p) });
       });
     },
     _shellQuote(s){
-      // Single quotes + apostrophe escaping: '\''
       return "'" + String(s).replace(/'/g, "'\\''") + "'";
     },
     hostTermSearch(){
@@ -15573,17 +12354,12 @@ function app() {
       };
       let found;
       if (reverse) found = p.search.findPrevious(q, opts); else found = p.search.findNext(q, opts);
-      // Updates the counter. xterm-addon-search exposes resultIndex/resultCount through an event
-      // (onDidChangeResults). If it is not available, it only shows hit/miss.
       this.hostTermSearchMatchCount = found ? '✓' : 'none';
     },
     hostStatusLabel(){
       const p = this.activePane();
       if (!p) return '○ idle';
       const s = p.status;
-      // With the latency measured (ping/pong + echo), the state stops being
-      // just "connected" and starts saying HOW connected — that is the difference between
-      // suspecting the terminal and knowing the network is bad.
       if (s==='open') return p.netLabel ? ('● connected · ' + p.netLabel) : '● connected';
       if (s==='connecting') return '◌ connecting…';
       if (s==='reconnecting') return '◌ reconnecting ('+(p.reconnect?.attempts||0)+')';
@@ -15592,26 +12368,7 @@ function app() {
       return '○ idle';
     },
 
-    // ============================================================
-    // RICH TERMINAL CONTEXT MENU (right-click on the xterm body)
-    // ============================================================
-    // openTermCtxMenu(state, ev)
-    //   - state: a pane (host) or a generic state (container detail term).
-    //   - ev:    the contextmenu MouseEvent (clientX/Y already in viewport coords).
-    // Reads the current selection, detects a URL/IP/path, and fires an async read of the
-    // clipboard. The render happens immediately; the clipboard preview arrives
-    // afterwards without holding the menu back.
     openTermCtxMenu(state, ev){
-      // Selection sources, in priority order:
-      //  1. state._customSelection — our own drag-select (overlay).
-      //     It is the AUTHORITATIVE source when the user dragged to select
-      //     in the terminal. It survives until the next click/drag.
-      //  2. state._selBeforeCtx — a snapshot captured on the right mousedown
-      //     (before the browser auto-selects the word under the cursor).
-      //  3. term.getSelection() — the fallback for the keyboard path
-      //     (the ContextMenu key) or Select all through a shortcut.
-      //  4. window.getSelection() — the native selection of the browser, in case the
-      //     user marked text outside the xterm tree.
       let sel = '';
       if (state && typeof state._customSelection === 'string' && state._customSelection) {
         sel = state._customSelection;
@@ -15627,9 +12384,6 @@ function app() {
           if (nsTxt.trim()) sel = nsTxt;
         } catch(_) {}
       }
-      // Simple URL/IP/path detection in the selection. It does not take the "word under
-      // cursor" — that path would take more work through the reverse buffer, and the
-      // selection already covers 95% of the cases (the user selects BEFORE clicking).
       const trimmed = sel.trim();
       let url = '', ip = '', path = '';
       if (trimmed) {
@@ -15638,12 +12392,11 @@ function app() {
         const mIpHost = trimmed.match(/^([a-zA-Z][a-zA-Z0-9_-]*@\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
         if (mUrl) url = mUrl[1];
         if (mIp) ip = mIp[1];
-        if (!ip && mIpHost) ip = trimmed; // user@ip
+        if (!ip && mIpHost) ip = trimmed;
         if (!url && !ip && (trimmed.startsWith('/') || trimmed.startsWith('~/')) && !/\s/.test(trimmed)) path = trimmed;
       }
       const isPane = !!(state && state.id && state.type === 'pane');
       const hasMarks = isPane && !!(state.marks && state.marks.length > 0);
-      // Position: clamped to the viewport so the whole menu fits.
       const menuW = 360, menuH = 480;
       const vx = Math.max(8, Math.min(window.innerWidth  - menuW - 8, ev.clientX));
       const vy = Math.max(8, Math.min(window.innerHeight - menuH - 8, ev.clientY));
@@ -15655,11 +12408,7 @@ function app() {
         paneName: isPane ? (state.sessionName || state.id) : '',
         _markIdx: -1,
       };
-      // Focuses the pane (if it is a host pane) — pane operations act on it.
       if (isPane) this.terms.activePane = state.id;
-      // Reads the clipboard async to show a preview and enable "paste and run".
-      // Permission gate: some browsers only release readText after a user gesture
-      // — a right-click IS a user gesture, so it works in most cases.
       (async () => {
         try {
           if (navigator.clipboard && navigator.clipboard.readText) {
@@ -15674,31 +12423,21 @@ function app() {
       })();
     },
     closeTermCtxMenu(){
-      // Clears the selection snapshot — it is only valid for the current contextmenu.
       if (this.termCtxMenu.state) {
         try { this.termCtxMenu.state._selBeforeCtx = ''; } catch(_) {}
       }
       this.termCtxMenu.open = false;
     },
-    // Runs the selected action and closes the menu.
-    // Each `case` is a one-liner for a dedicated action (or a direct call when trivial).
     termCtxRun(kind){
       const m = this.termCtxMenu;
       const state = m.state;
       const isPane = m.isPane;
       const pane = isPane ? (this.terms.panes||[]).find(p => p.id === state.id) : null;
-      // Closes FIRST so the UI stays responsive — then runs the action. It saves
-      // local values before closing (m becomes "clean" after closeTermCtxMenu).
       const sel = m.selection;
       const url = m.url, ip = m.ip, path = m.path;
       this.closeTermCtxMenu();
       switch (kind) {
-        // ----- Selection / copy ----
         case 'copy': {
-          // Chain of sources: our custom selection > snapshot > xterm > native.
-          // In almost every case, sel (already populated by openTermCtxMenu) is
-          // enough. It re-checks _customSelection directly as well because it
-          // may have been updated between opening the menu and clicking.
           let txt = (state && state._customSelection) ? state._customSelection : sel;
           if (!txt && state && state.term) { try { txt = state.term.getSelection() || ''; } catch(_) {} }
           if (!txt) {
@@ -15718,9 +12457,6 @@ function app() {
           break;
         }
         case 'copy-screen': {
-          // Takes the whole visible buffer through term.buffer.active. Useful when the
-          // user wants to copy everything without having to drag (drag-select has
-          // friction with the mouse tracking of the program).
           if (state && state.term && state.term.buffer && state.term.buffer.active) {
             const buf = state.term.buffer.active;
             const lines = [];
@@ -15740,8 +12476,6 @@ function app() {
           break;
         }
         case 'copy-all': {
-          // The whole buffer including the scrollback. It can be VERY large —
-          // capped at 500k chars (beyond that the browser starts to choke).
           if (state && state.term && state.term.buffer && state.term.buffer.active) {
             const buf = state.term.buffer.active;
             const lines = [];
@@ -15753,7 +12487,7 @@ function app() {
             let txt = lines.join('\n').replace(/\n+$/, '');
             const MAX = 500000;
             const truncated = txt.length > MAX;
-            if (truncated) txt = txt.slice(-MAX); // tail (most recent)
+            if (truncated) txt = txt.slice(-MAX);
             if (txt) {
               const msg = truncated
                 ? '📋 Copied last ' + txt.length + ' chars (buffer truncated)'
@@ -15789,7 +12523,6 @@ function app() {
         case 'open-path-files':
           if (path) { this.setPage && this.setPage('files'); this.$nextTick(()=>{ if (this.openFilesAt) this.openFilesAt(path); else if (this.filePath !== undefined) this.filePath = path; }); }
           break;
-        // ----- Clipboard -----
         case 'paste':
           this._pasteIntoPane(state).catch(()=>{});
           break;
@@ -15807,7 +12540,6 @@ function app() {
             } catch(_){}
           })();
           break;
-        // ----- Terminal -----
         case 'select-all':
           try { state.term.selectAll(); } catch(_){}
           break;
@@ -15830,13 +12562,10 @@ function app() {
         case 'jump-next-prompt':
           this._termJumpMark(state, +1);
           break;
-        // ----- Pane (host only) -----
         case 'pane-new':
           this.newPane();
           break;
         case 'pane-split-h':
-          // dtach has no native panes (Ctrl-b is dead). It uses the client-side split
-          // (the same path as the .pane-split-h/.pane-split-v buttons in the header).
           if (pane) this.splitPane(pane.id, 'column');
           break;
         case 'pane-split-v':
@@ -15861,8 +12590,6 @@ function app() {
           this.hostTermReconnectNow();
           break;
         case 'pane-detach':
-          // dtach: "detach" = closes the local client of the pane (the session stays alive
-          // on the server). closePane only closes the local WS/term, it preserves the session.
           if (pane) {
             this.closePane(pane.id);
             this.showToast && this.showToast('panel closed — the session stays alive (dtach)', 'ok');
@@ -15885,10 +12612,6 @@ function app() {
           break;
       }
     },
-    // A discreet sticky-selection indicator — MobaXterm style: the user
-    // already knows that selecting copies (like any terminal), so the chip only
-    // confirms the copy and reminds them that Esc clears it. Small, low
-    // opacity, in the bottom-right corner of the pane.
     _showStickyIndicator(state){
       if (!state || !state.id) return;
       const paneEl = document.getElementById('host-pane-'+state.id);
@@ -15907,21 +12630,7 @@ function app() {
       const chip = paneEl.querySelector('.sticky-sel-chip');
       if (chip) chip.remove();
     },
-    // Plain left-drag selection that works with mouse tracking on.
-    // Without this, a drag becomes a mouse event forwarded to the program (xterm in
-    // mouse-tracking mode) and no selection appears. We compute col/row
-    // from the cell dimensions and call term.select() by hand.
-    // If it was a click without a drag (mouseup with no move > threshold), we let
-    // the original event through to the program (preserving click-to-focus and so on).
     _manualDragSelect(state, el, downEv){
-      // Drag-select that is 100% our own: mouse tracking would consume the drag
-      // (it becomes a mouse event forwarded to the PTY) and the xterm _selectionService
-      // does not render its model reliably when manipulated directly.
-      // Solution: we paint our own overlay over the terminal and extract
-      // the text from the buffer by index. No dependency on an internal API.
-      //
-      // The mousedown was already prevented in the handler that calls this function.
-      // Here we only register mousemove/mouseup to track the drag.
       const term = state.term;
       if (!term || !term.buffer || !term.buffer.active) return;
       const screen = el.querySelector('.xterm-screen') || el;
@@ -15932,20 +12641,14 @@ function app() {
       const cellH = sRect.height / rows;
       if (!cellW || !cellH) return;
 
-      // toCell: clientX/Y → {col, row absolute in the buffer}
       const toCell = (clientX, clientY) => {
         const col = Math.max(0, Math.min(cols, Math.floor((clientX - sRect.left) / cellW)));
         const rowInView = Math.max(0, Math.min(rows - 1, Math.floor((clientY - sRect.top) / cellH)));
         return { col, row: rowInView + term.buffer.active.viewportY };
       };
 
-      // Clears the previous overlay/selection — a new drag discards the old one.
       this._clearCustomSelection(state);
 
-      // Gives focus to the terminal IMMEDIATELY. The preventDefault of the mousedown
-      // (done before this call) blocks the default focus transfer of the browser
-      // — without this explicit focus(), the user has to press Tab
-      // to type again after clicking/dragging in the terminal.
       try { term.focus(); } catch(_){}
 
       const start = toCell(downEv.clientX, downEv.clientY);
@@ -15954,10 +12657,6 @@ function app() {
       const DRAG_THRESHOLD = 3;
       const ox = downEv.clientX, oy = downEv.clientY;
 
-      // The overlay container lives in DOCUMENT.BODY with position:fixed. Do NOT touch
-      // the layout of `el` (changing it to position:relative triggers a reflow/resize in
-      // xterm and wrecks the renderer — text ends up duplicated/ghosted). Coords are
-      // always in viewport space (clientX/Y based, the same reference as the mouse).
       const overlay = document.createElement('div');
       overlay.className = 'panel-sel-overlay';
       overlay.style.cssText = 'position:fixed;left:0;top:0;pointer-events:none;z-index:1000;';
@@ -15974,7 +12673,6 @@ function app() {
 
       const redrawOverlay = () => {
         overlay.innerHTML = '';
-        // Re-measures the screen RIGHT NOW — the terminal may have scrolled/resized.
         const sR = screen.getBoundingClientRect();
         const { aCol, aRow, bCol, bRow } = normalize();
         const vY = term.buffer.active.viewportY;
@@ -15985,7 +12683,6 @@ function app() {
           const c1 = (r === bRow) ? bCol : cols;
           if (c1 <= c0) continue;
           const div = document.createElement('div');
-          // Viewport coords (position:fixed): left/top relative to the viewport.
           const left = sR.left + c0 * cellW;
           const top  = sR.top  + rowInView * cellH;
           const w    = (c1 - c0) * cellW;
@@ -16009,7 +12706,6 @@ function app() {
         for (let r = aRow; r <= bRow; r++) {
           const line = buf.getLine(r);
           if (!line) { out.push(''); continue; }
-          // translateToString(trimRight, startCol, endCol)
           let s;
           try {
             const c0 = (r === aRow) ? aCol : 0;
@@ -16021,9 +12717,6 @@ function app() {
             const c1 = (r === bRow) ? bCol : full.length;
             s = full.slice(c0, c1);
           }
-          // Trim trailing whitespace ONLY on the last column of each line that
-          // was captured whole (without c1 cutting it) — this preserves indentation on the
-          // right when it is part of a partial selection.
           if ((r === aRow ? aCol : 0) === 0 && (r === bRow ? bCol : cols) === cols) {
             s = s.replace(/\s+$/, '');
           }
@@ -16046,21 +12739,14 @@ function app() {
         if (dragged) {
           const txt = extractText();
           state._customSelection = txt || '';
-          // Keeps the overlay visible until the next action (a click, a new selection,
-          // or an explicit clear). The user sees what is selected and can
-          // open the context menu to copy it.
         } else {
-          // A pure click (no drag) — discards the overlay and the selection.
           this._clearCustomSelection(state);
         }
-        // Reasserts focus — it guarantees the user can type right after
-        // releasing the button, without needing Tab.
         try { term.focus(); } catch(_){}
       };
       document.addEventListener('mousemove', onMove, true);
       document.addEventListener('mouseup', onUp, true);
     },
-    // Clears the overlay and the text of the custom selection.
     _clearCustomSelection(state){
       if (!state) return;
       if (state._selOverlay) {
@@ -16069,9 +12755,6 @@ function app() {
       }
       state._customSelection = '';
     },
-    // Re-dispatches a mousedown WITHOUT shift on the xterm screen element
-    // (.xterm-screen) so that _handleSingleClick runs (instead of
-    // _handleIncrementalClick, a no-op when shift+click has no previous selection).
     _stickyRedispatch(el, ev){
       const screen = el.querySelector('.xterm-screen') || el;
       const fake = new MouseEvent('mousedown', {
@@ -16086,20 +12769,13 @@ function app() {
       fake._stickySynth = true;
       screen.dispatchEvent(fake);
     },
-    // Hard reset: xterm.reset() clears internal state (alt-screen, modes, etc)
-    // AND we also send `reset\n` to the shell to recover from binary/CR output
-    // that left the terminal "in crazy mode" (e.g. cat of a binary file).
     _termResetState(state){
       try { state.term.reset(); } catch(_){}
       if (state.ws && state.ws.readyState===1) {
         try { state.ws.send(JSON.stringify({type:'input', data: ' reset\n'})); } catch(_){}
-        // leading space: bash with `HISTCONTROL=ignorespace` does not pollute the history
       }
       this.showToast && this.showToast('terminal reset', 'ok');
     },
-    // Saves the entire scrollback of the pane (10k lines max — the xterm config)
-    // as a .txt file downloaded by the browser. It strips SGR sequences so it stays
-    // readable in any editor.
     _termSaveScrollback(state){
       try {
         const term = state.term;
@@ -16112,7 +12788,6 @@ function app() {
           if (!line) continue;
           lines.push(line.translateToString(true));
         }
-        // Trims empty lines at the end (xterm pre-allocates a full buffer)
         while (lines.length && !lines[lines.length-1].trim()) lines.pop();
         const text = lines.join('\n') + '\n';
         const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0,19);
@@ -16128,15 +12803,12 @@ function app() {
         this.showToast && this.showToast('failed to save the scrollback: '+e.message, 'err');
       }
     },
-    // Navigates between prompt marks (OSC 133;A/C). dir=+1 next, -1 previous.
-    // It cycles at the end of the array — past the last one, it goes back to the first.
     _termJumpMark(state, dir){
       const marks = (state.marks || []).filter(m => m.marker && !m.marker.isDisposed);
       if (marks.length === 0) {
         this.showToast && this.showToast('no prompt mark — shell without OSC 133 integration', 'err');
         return;
       }
-      // termCtxMenu may be closed at this point — the idx is kept in the state itself
       state._markIdx = (state._markIdx ?? marks.length);
       let idx = state._markIdx + dir;
       if (idx < 0) idx = marks.length - 1;
@@ -16147,11 +12819,10 @@ function app() {
       } catch(_){}
     },
 
-    // ---------------- Theme ---------------
     applyTermPrimer(){
       let mib = parseInt(this.hostTermPrimerMiB, 10);
       if (!isFinite(mib) || mib < 0) mib = 0;
-      if (mib > 16) mib = 16;           // the server cuts at 16 MiB
+      if (mib > 16) mib = 16;
       this.hostTermPrimerMiB = mib;
       localStorage.setItem('panel_term_primer_bytes', String(mib * 1048576));
       this.showToast && this.showToast(mib ? ('history on open: ' + mib + ' MiB (takes effect the next time the session opens)')
@@ -16181,9 +12852,6 @@ function app() {
         }
       });
     },
-    // GPU/ligatures: persisted and applied. Turning the GPU off disposes the WebGL LIVE
-    // (immediate relief if there is glyph corruption) → it falls back to the DOM renderer.
-    // Turning the GPU on or changing ligatures requires recreating the addon → it asks for a reload (F5).
     applyTermRenderer(){
       localStorage.setItem('panel_term_gpu', this.hostTermGpu ? '1' : '0');
       localStorage.setItem('panel_term_ligatures', this.hostTermLigatures ? '1' : '0');
@@ -16197,8 +12865,6 @@ function app() {
         this.showToast && this.showToast('reload the page (F5) to apply', '');
       }
     },
-    // Escape hatch: forces xterm to redraw the viewport (clears a ghost glyph
-    // without a reload). It hits the active pane.
     termRedraw(){
       const p = (this.terms.panes||[]).find(x => x.id === this.terms.activePane) || (this.terms.panes||[])[0];
       try { if (p && p.term) { p.term.clearTextureAtlas && p.term.clearTextureAtlas(); p.term.refresh(0, p.term.rows - 1); } } catch(_){}
@@ -16215,7 +12881,6 @@ function app() {
     },
     applyTermAlertPattern(){
       localStorage.setItem('panel_term_alert_pattern', this.hostTermAlertPattern || '');
-      // The real matching happens in _onPaneOutput on incremental video/output.
     },
     playBellPreview(){
       if (this.hostTermBell === 'sound') {
@@ -16235,7 +12900,6 @@ function app() {
         }
       }
     },
-    // User snippets — persisted in localStorage. Initialized at boot.
     _loadUserSnippets(){
       try {
         const raw = localStorage.getItem('panel_user_snippets');
@@ -16245,20 +12909,13 @@ function app() {
     _saveUserSnippets(){
       try { localStorage.setItem('panel_user_snippets', JSON.stringify(this.userSnippets||[])); } catch(_) {}
     },
-    // Registers the Service Worker + captures the Chrome beforeinstallprompt event.
-    // On iOS (Safari) the event never fires; the user has to pick "Add to Home
-    // Screen" from the share menu. For those cases the install button shows
-    // instructions instead of a prompt.
     installPWA(){
-      // Service worker (silent if the browser has no support, or it is already registered)
       if ('serviceWorker' in navigator) {
         try {
           navigator.serviceWorker.register('/sw.js', { scope: '/' })
             .catch(err => console.warn('SW register fail:', err));
         } catch(_) {}
       }
-      // Chrome/Edge on desktop and Android fire beforeinstallprompt once the
-      // PWA criteria are met. We capture it to fire it from a custom button.
       window.addEventListener('beforeinstallprompt', (ev) => {
         ev.preventDefault();
         this.pwaPrompt = ev;
@@ -16270,60 +12927,38 @@ function app() {
         this.pwaPrompt = null;
       });
     },
-    // ── Virtual keyboard: detection via visualViewport ────────────────────
-    // The on-screen keyboard does NOT shrink window.innerHeight on most mobile
-    // browsers — only the visualViewport shrinks. We measure the occluded strip
-    // at the bottom (innerHeight - (vv.height + vv.offsetTop)) and expose it as
-    // --kb-inset on :root so that UI anchored to the bottom (the terminal key
-    // dock, the WhatsApp composer) rises above the keyboard. Cross-browser
-    // baseline; navigator.virtualKeyboard is an optional enhancement. No-op if
-    // the API does not exist (old desktop). Debounced via rAF (the _fitSoon idiom).
     installViewportKeyboard(){
       const vv = window.visualViewport;
       if (!vv) return;
-      // Do NOT use navigator.virtualKeyboard.overlaysContent=true: that makes Chrome
-      // stop resizing, and the visualViewport then stops reflecting the keyboard
-      // (--kb-inset goes to 0 and the keyboard covers everything). We let the
-      // browser resize (interactive-widget=resizes-content in the meta tag) +
-      // the visualViewport fallback for iOS Safari (which ignores the meta).
       try { if ('virtualKeyboard' in navigator) navigator.virtualKeyboard.overlaysContent = false; } catch(_){}
       const recompute = () => {
         this._vvRaf = 0;
         const raw = Math.round(window.innerHeight - (vv.height + vv.offsetTop));
-        const next = raw > 60 ? raw : 0; // <60px = URL-bar jitter, not the keyboard
+        const next = raw > 60 ? raw : 0;
         if (next === this.kbInset) return;
         const wasOpen = this.kbInset > 0;
         this.kbInset = next;
         this.kbOpen = next > 0;
         this._applyKbInset();
-        // Mobile terminal: re-fit xterm so the prompt is not cut off. Two
-        // passes: now (the layout already changed) and after the .18s transition settles.
         if (this.page === 'dev' && this.isMobile()) {
           this.$nextTick(() => this._refitAllPanes());
           setTimeout(() => { this._refitAllPanes(); this._scrollActiveToCursor(); }, 250);
         }
-        // Keyboard closed → a new deliberate summon is required.
         if (wasOpen && next === 0) this._wantKeyboard = false;
       };
       const onVV = () => { if (this._vvRaf) return; this._vvRaf = requestAnimationFrame(recompute); };
       vv.addEventListener('resize', onVV);
-      vv.addEventListener('scroll', onVV); // iOS fires scroll (not resize) when the caret moves
+      vv.addEventListener('scroll', onVV);
       this._applyKbInset();
     },
-    // Writes --kb-inset on :root (not managed by Alpine) + a body class.
     _applyKbInset(){
       try { document.documentElement.style.setProperty('--kb-inset', (this.kbInset||0) + 'px'); } catch(_){}
       try { document.body.classList.toggle('kb-open', !!this.kbOpen); } catch(_){}
     },
-    // Keeps the prompt visible after the rows shrink.
     _scrollActiveToCursor(){
       const p = this.activePane && this.activePane();
       try { p && p.term && p.term.scrollToBottom(); } catch(_){}
     },
-    // DELIBERATE keyboard summon (tap on the pane / the ⌨ button). Frees the
-    // inputmode of the xterm helper textarea (which stays 'none' on mobile so
-    // that scrolling/selecting does not raise the keyboard) and focuses inside
-    // the gesture from the user — iOS requires that to open the keyboard.
     summonKeyboard(){
       const p = this.activePane && this.activePane();
       if (!p || !p.term) return;
@@ -16343,7 +12978,6 @@ function app() {
         else if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
       } catch(_){}
     },
-    // ── "Big" terminal: show/hide the top chrome (MANUAL) ──────────────────
     showTermChrome(){
       if (this.termChromeHidden) { this.termChromeHidden = false; this.$nextTick(()=>this._refitAllPanes()); }
     },
@@ -16368,17 +13002,10 @@ function app() {
         } catch(_) {}
         return;
       }
-      // iOS Safari has no prompt support — show instructions instead.
-      // A modal (not a toast): these are 3 steps the user needs to read calmly
-      // while performing them; a toast disappears on its own.
       this.askConfirm('Install on iOS',
         '1. Tap the share icon (📤) in the bottom bar of Safari\n2. Scroll and tap "Add to Home Screen"\n3. Confirm — the icon appears on the home screen as an app\n\nOn Chrome for Android the prompt shows up automatically once the criteria are met.',
         () => {});
     },
-    // Sends a special key as input to the active pane. Used by the mobile
-    // toolbar (Esc/Tab/arrows), where the virtual keyboard offers no such keys.
-    // If `key` is not in the special-key map it is sent literally — that is what
-    // allows buttons for special characters (|, ~, /, $, etc.).
     sendKeyToActive(key){
       const p = this.activePane();
       if (!p || !p.ws || p.ws.readyState !== 1) return;
@@ -16412,14 +13039,9 @@ function app() {
       if (data) {
         p.ws.send(JSON.stringify({type:'input', data}));
       } else if (typeof key === 'string' && key.length >= 1 && key.length <= 4) {
-        // Literal char (special-character toolbar)
         p.ws.send(JSON.stringify({type:'input', data: key}));
       }
     },
-    // -------------- Trackpad mode (Termius style) --------------
-    // Creates/destroys a translucent overlay above the active pane. Touch+drag
-    // dispatches escape sequences that move the shell cursor, instead of xterm
-    // reading it as scroll/selection. A plain tap leaves the mode.
     toggleTrackpad(){
       this.terms.trackpadMode = !this.terms.trackpadMode;
       if (this.terms.trackpadMode) this._installTrackpadOverlay();
@@ -16433,26 +13055,22 @@ function app() {
       this._removeTrackpadOverlay();
       const root = document.getElementById('host-pane-root');
       if (!root) { this.terms.trackpadMode = false; return; }
-      // The overlay is a child of the root so it inherits position absolute
       const ov = document.createElement('div');
       ov.id = 'trackpad-overlay';
       ov.className = 'trackpad-overlay';
-      // Visual hint
       const hint = document.createElement('div');
       hint.className = 'trackpad-hint';
       hint.textContent = '🖐 Drag to move the cursor · a single tap exits';
       ov.appendChild(hint);
-      // Visual arrow (SVG)
       const arrow = document.createElement('div');
       arrow.className = 'trackpad-arrow';
       arrow.innerHTML = '<svg viewBox="0 0 24 24" fill="#60a5fa"><path d="M5 3l14 9-7 1.5-3 6.5z" stroke="white" stroke-width="1.2"/></svg>';
       arrow.style.display = 'none';
       ov.appendChild(arrow);
       root.appendChild(ov);
-      // Local drag state
       let anchor = null, lastPos = null, moved = false, tapStart = 0;
-      const STEP_PX = 25;          // 1 arrow key per 25px of delta
-      const RATE_LIMIT_MS = 30;    // minimum gap between two emissions
+      const STEP_PX = 25;
+      const RATE_LIMIT_MS = 30;
       ov.addEventListener('touchstart', (ev) => {
         ev.preventDefault();
         const t = ev.touches[0]; if (!t) return;
@@ -16471,12 +13089,10 @@ function app() {
         const rect = ov.getBoundingClientRect();
         arrow.style.left = (t.clientX - rect.left) + 'px';
         arrow.style.top  = (t.clientY - rect.top)  + 'px';
-        // Emits arrow keys proportionally to the accumulated delta, in "steps"
         const now = Date.now();
         if (now - this.terms._trackpadLastEmit < RATE_LIMIT_MS) return;
         const dx = t.clientX - lastPos.x;
         const dy = t.clientY - lastPos.y;
-        // Dominant axis (not diagonal — a terminal cursor is orthogonal)
         if (Math.abs(dx) > Math.abs(dy)) {
           if (Math.abs(dx) >= STEP_PX) {
             this.sendKeyToActive(dx > 0 ? 'Right' : 'Left');
@@ -16499,7 +13115,6 @@ function app() {
         const wasTap = !moved && (Date.now() - tapStart < 250);
         anchor = null; lastPos = null;
         if (wasTap) {
-          // A plain tap = leave trackpad mode
           this.terms.trackpadMode = false;
           this._removeTrackpadOverlay();
         }
@@ -16513,19 +13128,9 @@ function app() {
       });
     },
 
-    // ---------------- Snippets ----------------
     runSnippet(cmd){
       const p = this.activePane();
       if (!p || !p.ws || p.ws.readyState !== 1) { this.showToast('terminal is not connected','err'); return; }
-      // Variable substitution. Supports:
-      //   {date}      → 2026-06-04
-      //   {time}      → 14:32
-      //   {datetime}  → 2026-06-04 14:32:00
-      //   {user}      → username signed into the panel
-      //   {host}      → server hostname
-      //   {pane}      → current sessionName
-      //   {ts}        → unix timestamp
-      // To get a literal `{date}` in the command, escape it as `{{date}}`.
       const expanded = (cmd || '').replace(/\{\{(\w+)\}\}/g, '__PANEL_LIT_$1__')
         .replace(/\{(\w+)\}/g, (m, k) => {
           const now = new Date();
@@ -16565,7 +13170,6 @@ function app() {
       localStorage.setItem('panel_term_snippets', JSON.stringify(this.userSnippets));
     },
 
-    // ---------------- Notifications ----------------
     notifyStatusLabel(){
       if (!('Notification' in window)) return 'not supported in this browser';
       if (Notification.permission === 'granted' && this.hostNotifyEnabled) return '● enabled';
@@ -16587,12 +13191,6 @@ function app() {
       this.hostNotifyEnabled = true;
       localStorage.setItem('panel_term_notify','1');
     },
-    // Opens the system file picker and attaches whatever is chosen to the
-    // pane. This is the route on a phone (no drag-and-drop, no file clipboard)
-    // and the desktop plan B when the file lives in some arbitrary folder.
-    //
-    // The input lives INSIDE the document and is reused: a detached input (not
-    // attached to the DOM) does not reliably fire 'change' in some browsers.
     _pickFilesForPane(state){
       if (!state) return;
       let inp = document.getElementById('panel-term-file-input');
@@ -16606,19 +13204,12 @@ function app() {
       }
       inp.onchange = () => {
         const fs = inp.files;
-        // Reset BEFORE uploading: picking the same file twice in a row does not
-        // fire 'change' if the value stays filled in.
         const copy = Array.from(fs || []);
         inp.value = '';
         if (copy.length) this._sendFilesToPane(state, copy).catch(()=>{});
       };
       inp.click();
     },
-    // Stops a file dropped anywhere on the page from making the browser
-    // navigate to it (the default drop action), which would destroy the whole SPA.
-    // Runs on the BUBBLE phase and only when nobody called preventDefault before —
-    // that way the legitimate zones (panes, WhatsApp, video call, the Jira board)
-    // stay in control and this guard only catches what is left over.
     _installGlobalDropGuard(){
       if (this._dropGuardInstalled) return;
       this._dropGuardInstalled = true;
@@ -16633,20 +13224,9 @@ function app() {
         const hadFile = this._dragHasFiles(ev) && !ev.defaultPrevented;
         block(ev);
         this._hideFileDropOverlay(null);
-        // A hint only when the gesture got lost: the user clearly meant to attach.
         if (hadFile) this.showToast?.('drop the file ONTO a terminal pane to attach it','info');
       }, false);
     },
-    // Extracts the FILES out of a paste event. Returns null when the paste
-    // should proceed as ordinary text (xterm handles that).
-    //
-    // The text/plain rule is not decoration: copying a cell out of Excel, a
-    // snippet out of Word or an image on a web page puts BOTH the text AND a
-    // kind:'file' item holding a rendered PNG on the clipboard at the same time.
-    // Without this rule, pasting text copied from Excel would turn into a
-    // screenshot upload — a silent regression on top of the single most common
-    // case there is. Copying a file in the system file manager, which is the case
-    // we do want to catch, carries no text/plain.
     _clipboardFiles(ev){
       const cd = ev && ev.clipboardData;
       if (!cd) return null;
@@ -16659,25 +13239,6 @@ function app() {
       if (!out.length) for (const f of (cd.files || [])) out.push(f);
       return out.length ? out : null;
     },
-    // Paste idempotency guard. Two different kinds of duplication, and each
-    // one needs its own mechanism:
-    //
-    //  1) SAME event, two listeners. A capture listener on the container and
-    //     another capture listener on the helper textarea (a descendant of it)
-    //     receive the SAME Event instance: the capture on the ancestor runs
-    //     first, and the stopImmediatePropagation on the descendant arrives too
-    //     late to cancel it. Marking the event object itself solves that with
-    //     total precision — same object, so the mark is visible to the second one.
-    //
-    //  2) DIFFERENT events, same content. The code-server interceptor has a pair
-    //     ('paste' from the DOM + Ctrl+V via clipboard.read()) that produces two
-    //     distinct events for a single paste. There the mark is useless and only
-    //     a short window keyed by signature catches it.
-    //
-    // The signature is name:size:type on purpose, WITHOUT lastModified: a File
-    // coming out of getAsFile() is born with lastModified = now, so two calls for
-    // the same clipboard item produce different values and the signature would
-    // fail to match in exactly the case it exists to catch.
     _pasteHandled(ev, files){
       try {
         if (ev && ev.__panelPasteHandled) return true;
@@ -16693,8 +13254,6 @@ function app() {
       this._lastPasteDedup = { sig, ts: now };
       return false;
     },
-    // true when what is being dragged are system FILES (and not a pane of the
-    // app itself being rearranged).
     _dragHasFiles(ev){
       try {
         const t = ev.dataTransfer && ev.dataTransfer.types;
@@ -16702,19 +13261,9 @@ function app() {
         return Array.from(t).includes('Files');
       } catch(_) { return false; }
     },
-    // Uploads ANY file (Blob/File) to the upload dir of the user and returns
-    // {path,name,size,type} — or null on failure. The path comes back to be
-    // injected into the pane: that is how a document reaches the process running
-    // there (Claude Code reads it by path; a script takes it as an argument).
-    //
-    // This used to be _uploadPasteImage and sent an "image" field to
-    // /api/terminal/paste-image, which rejected non-images with 415. The server
-    // now accepts any type; the field is "file" and the route is /upload.
     async _uploadTermFile(blob, name){
       if (!blob) return null;
       const fd = new FormData();
-      // The name matters: it becomes the name on disk (sanitized server-side) and
-      // guides whoever reads the path later. A synthetic name only when there is none.
       let n = name || blob.name || '';
       if (!n) {
         const ext = (blob.type && blob.type.split('/')[1]) || 'bin';
@@ -16740,23 +13289,15 @@ function app() {
         return null;
       }
     },
-    // Legacy alias — older callers expect just the path.
     async _uploadPasteImage(blob){
       const d = await this._uploadTermFile(blob);
       return d ? d.path : null;
     },
-    // Single quotes only when needed. A path with a space pasted raw becomes two
-    // shell arguments; quoted, it works both in bash and as a file mention to
-    // Claude Code.
     _quoteShellPath(p){
       if (!p) return '';
       if (/^[A-Za-z0-9_@%+=:,.\/-]+$/.test(p)) return p;
       return "'" + p.replace(/'/g, "'\\''") + "'";
     },
-    // Uploads N files and injects the paths into the pane, space separated. A
-    // single injection at the end (not one per file) so the line the user is
-    // typing does not get chopped up. Uploads run in series on purpose: these are
-    // tens of MB over a home connection, and in parallel one starves the other.
     async _sendFilesToPane(state, files){
       const list = Array.from(files || []).filter(Boolean);
       if (!list.length || !state) return;
@@ -16769,22 +13310,10 @@ function app() {
         if (d && d.path) paths.push(this._quoteShellPath(d.path));
       }
       if (!paths.length) return;
-      // Trailing space: the path is ready for the user to keep typing ("read " + path).
       this._paneSendInput(state, paths.join(' ') + ' ');
       this.showToast?.(paths.length === 1 ? '📎 ' + paths[0] : `📎 ${paths.length} files attached`, 'ok');
     },
-    // Paste into the pane: prefers an image (upload + send the path) over text.
-    // Called by the Ctrl+Shift+V handler and (indirectly) by the native paste event.
     async _pasteIntoPane(state){
-      // Path for the shortcuts that INTERCEPT (Shift+Insert, Ctrl+Shift+V, the
-      // context menu) — Ctrl+V does not come through here, it uses the native
-      // xterm paste.
-      //
-      // A trap this code has already fallen into: calling `read()` and then, on
-      // failure or with no image, calling `readText()` AFTERWARDS. The second
-      // await runs without the user activation and Chrome denies it with
-      // NotAllowedError — which the catch swallowed, letting the paste fail in
-      // silence. The text now comes from the SAME items already read; `readText()` only enters when `read()` does not exist.
       try {
         if (navigator.clipboard && navigator.clipboard.read) {
           const items = await navigator.clipboard.read();
@@ -16794,7 +13323,7 @@ function app() {
             if (img) {
               const blob = await item.getType(img);
               const path = await this._uploadPasteImage(blob);
-              if (path) this._paneSendInput(state, path);   // via the outbox
+              if (path) this._paneSendInput(state, path);
               return;
             }
           }
@@ -16807,7 +13336,7 @@ function app() {
               return;
             }
           }
-          return;   // clipboard read and nothing pasteable in it
+          return;
         }
       } catch(_) {
         // no permission or API unavailable → try the simple path below
@@ -16817,21 +13346,13 @@ function app() {
         if (t) this._paneSendInput(state, t);
       } catch(_){}
     },
-    // Hook called for every chunk of xterm output on a pane. Heuristic: if the
-    // output arrived ≥3s after the last Enter and ≥10s pass with nothing more,
-    // assume the command finished and fire a desktop notification (when enabled).
-    // The parameter is called 'tab' for legacy reasons — it is really the pane.
     _termOutputHook(pane, raw){
       if (!pane) return;
-      // Output arrived: if the user is scrolled up, show the "↓ new output" button.
       try { this._updateScrollBtn(pane); } catch(_){}
-      // Guard: a pane may have been recreated/migrated without a notify field
       if (!pane.notify) pane.notify = { lastOutput: 0, cmdStart: 0, busy: false, alerted: false };
       const now = Date.now();
       pane.notify.lastOutput = now;
       const isStr = (typeof raw === 'string');
-      // Visual bell: detects the BEL byte (0x07) WITHOUT decoding the whole
-      // message (a direct scan over the bytes) — and only when the bell is 'visual'.
       if (this.hostTermBell === 'visual') {
         let hasBel = false;
         if (isStr) { hasBel = raw.indexOf('\x07') >= 0; }
@@ -16841,9 +13362,6 @@ function app() {
           if (el) { el.style.transition = 'background .15s'; el.style.background = '#fef3c7'; setTimeout(() => { el.style.background = ''; }, 150); }
         }
       }
-      // The "went quiet for 10s" notification: only schedules/decodes when notify
-      // is on (otherwise it is pure waste on the hot path). And it decodes only
-      // the TAIL (~256 bytes) for the body, never the whole message.
       if (pane.notify.timer) clearTimeout(pane.notify.timer);
       if (!this.hostNotifyEnabled) return;
       let tail = '';
@@ -16853,8 +13371,8 @@ function app() {
       } catch (_) {}
       pane.notify.timer = setTimeout(() => {
         if (!this.hostNotifyEnabled || Notification.permission !== 'granted') return;
-        if (this.terms.activePane === pane.id && document.hasFocus()) return; // already watching
-        if (now - (pane.notify.cmdStart || 0) < 3000) return; // ignore short commands
+        if (this.terms.activePane === pane.id && document.hasFocus()) return;
+        if (now - (pane.notify.cmdStart || 0) < 3000) return;
         try {
           new Notification('Command finished — ' + pane.sessionName, { body: 'Last output: ' + tail.slice(-80).replace(/\s+/g, ' ').trim(), tag: 'panel-' + pane.id });
         } catch (e) {}
@@ -16879,12 +13397,10 @@ function app() {
       this.detail.reconnect = state.reconnect;
     },
 
-    // ==================== WHATSAPP ====================
-    // Boot: loads status + chats and opens the event WebSocket.
     async whatsappInit() {
       try {
         const r = await this.api('/api/whatsapp/status');
-        if (!r.ok) return; // 404 = feature dormant (no creds in the vault)
+        if (!r.ok) return;
         const st = await r.json();
         if (st && !st.error) this._whatsappApplyState(st);
       } catch(e) { return; }
@@ -16893,7 +13409,6 @@ function app() {
       this.whatsappConnectWS();
     },
 
-    // Reconciles local state from the server snapshot.
     _whatsappApplyState(st) {
       const wa = this.whatsapp;
       wa.enabled = !!st.enabled;
@@ -16906,18 +13421,13 @@ function app() {
       wa.lastSync = st.last_sync_ts || 0;
     },
 
-    // Live event WebSocket. Reconnects with exponential backoff up to 30s.
     whatsappConnectWS() {
       if (!this.token) return;
       const wa = this.whatsapp;
-      // Idempotency: if a WS is already open or connecting, do not create another.
-      // Without this, two calls in a row closed the first WS before its onopen,
-      // producing the "WebSocket is closed before the connection is established"
-      // error in the console and a reconnection loop with backoff.
       if (wa.ws && (wa.ws.readyState === 0 || wa.ws.readyState === 1)) return;
       if (wa.ws) { try { wa.ws.close(); } catch(_){} wa.ws = null; }
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url = proto + '//' + location.host + '/ws/whatsapp'; // auth via HttpOnly cookie (no JWT in the URL)
+      const url = proto + '//' + location.host + '/ws/whatsapp';
       let ws;
       try { ws = new WebSocket(url); } catch(e) { return; }
       wa.ws = ws;
@@ -16930,10 +13440,7 @@ function app() {
       };
       ws.onclose = () => {
         wa.ws = null;
-        // Reconnect only if we are still authenticated and the feature is on.
         if (!this.token || !wa.enabled) return;
-        // Track the timer ID so that whatsappDisconnect() can cancel it and not
-        // leave an orphan reconnect firing after logout.
         if (wa._reconnectTimer) clearTimeout(wa._reconnectTimer);
         wa._reconnectTimer = setTimeout(() => {
           wa._reconnectTimer = null;
@@ -16944,9 +13451,6 @@ function app() {
       ws.onerror = () => { /* onclose takes care of the reconnect */ };
     },
 
-    // whatsappDisconnect: called on logout/refresh-stale to shut the WS down
-    // AND cancel the reconnect timer. Without the clearTimeout, signing out left
-    // a pending setTimeout that reconnected 30s later with no valid token.
     whatsappDisconnect() {
       const wa = this.whatsapp;
       if (wa._reconnectTimer) {
@@ -16961,45 +13465,30 @@ function app() {
 
     _whatsappOnEvent(e) {
       const wa = this.whatsapp;
-      // Guardrail: the backend (Broadcaster.validWSEvent) already drops events
-      // without id/jid, but on mixed deploys (new front end + old backend) junk
-      // can still arrive. Without this check, Alpine x-for :key=undefined crashes.
       if (!e || typeof e.kind !== 'string') return;
       if (e.kind === 'status' && e.state) {
         const wasNotWorking = wa.status !== 'WORKING';
         this._whatsappApplyState(e.state);
-        // Just connected: load the chat list.
         if (wasNotWorking && wa.status === 'WORKING') this.whatsappReloadChats();
         return;
       }
       if (e.kind === 'message' && e.message) {
         const m = e.message;
-        // A message with no id or chat is unusable: the front end iterates with
-        // :key="m.id" and indexes by m.chat. Drop instead of synthesizing
-        // — the backend now validates at the source (broadcaster.validWSEvent).
         if (!m || !m.id || !m.chat) return;
         const jid = m.chat;
-        // Push the msg into the conversation buffer (when it is loaded).
         if (wa.messages[jid]) {
-          // Avoid a duplicate (the same msg can arrive via WS and via load history).
           const existing = wa.messages[jid].find(x => x.id === m.id);
           if (!existing) {
-            // Our own (echo of the send/another device) ALWAYS follows along; one
-            // from someone else only scrolls if we were already at the end. Measure BEFORE the push.
             const pinned = m.from_me || this._whatsappIsPinned();
             wa.messages[jid].push(m);
             wa.scrollPinned = pinned;
             if (pinned) this.$nextTick(() => this._whatsappScrollBottom());
           } else if (m.media && m.media.path && (!existing.media || !existing.media.path)) {
-            // Re-broadcast of freshly downloaded media (auto-download/"Download" click):
-            // swaps the button for a live <img>, with no need to reopen the chat.
             existing.media = m.media;
             this._whatsappRerender(jid);
           }
         }
-        // Skip system "chats" that aren't real conversations.
         if (jid === 'status@broadcast') return;
-        // Update the chat preview.
         let c = wa.chatById[jid];
         if (!c) {
           c = { jid, name: jid.split('@')[0], is_group: jid.endsWith('@g.us'), unread_count: 0 };
@@ -17012,7 +13501,6 @@ function app() {
         if (!m.from_me && wa.activeJid !== jid) c.unread_count = (c.unread_count || 0) + 1;
         this._whatsappReorderChats();
         this._whatsappRecountUnread();
-        // Notification: only when we are not on the whatsapp tab + the chat of this msg.
         if (!m.from_me && (this.currentView !== 'whatsapp' || wa.activeJid !== jid || document.hidden)) {
           this._whatsappNotify(c, m);
         }
@@ -17020,7 +13508,6 @@ function app() {
       }
       if (e.kind === 'ack') {
         if (!e.ack_id) return;
-        // Update the ticks on the loaded messages.
         for (const list of Object.values(wa.messages)) {
           for (const m of list) if (m.id === e.ack_id) m.ack = e.ack_n;
         }
@@ -17034,9 +13521,6 @@ function app() {
         return;
       }
       if (e.kind === 'reaction') {
-        // Apply the reaction to the target msg. If we never loaded it, the event is
-        // best-effort (ignored). A re-react from the same `from` overwrites;
-        // an empty emoji removes (WhatsApp rule: 1 reaction per user/msg).
         if (!e.ack_id || !e.reaction_from) return;
         for (const jid of Object.keys(wa.messages)) {
           const list = wa.messages[jid];
@@ -17055,15 +13539,11 @@ function app() {
             }
             touched = true;
           }
-          // Msg objects are RAW — mutating m.reactions does not trigger an Alpine
-          // re-render by itself; re-slicing forces the bubble to show the reaction
-          // (yours OR from someone else) live.
           if (touched) this._whatsappRerender(jid);
         }
         return;
       }
       if (e.kind === 'chat' && e.chat && e.chat.jid) {
-        // Direct upsert from the broadcaster (e.g. the contact name synced).
         const c = e.chat;
         const existing = wa.chatById[c.jid];
         if (existing) Object.assign(existing, c);
@@ -17071,8 +13551,6 @@ function app() {
         this._whatsappReorderChats();
       }
       if (e.kind === 'presence' && e.chat_jid) {
-        // Update local presence without clobbering other fields. Shows
-        // "typing…" / "online" in the header and info panel in real time.
         const c = wa.chatById[e.chat_jid];
         if (c) {
           c.presence = e.presence || '';
@@ -17106,16 +13584,12 @@ function app() {
       const el = document.getElementById('wa-msgs');
       if (el) el.scrollTop = el.scrollHeight;
     },
-    // _whatsappIsPinned: true if the user is near the end RIGHT NOW (<150px).
-    // Call it BEFORE inserting the msg — measuring after the push would count the
-    // height of the new bubble (tall media would fool it) and never report "reading history".
     _whatsappIsPinned() {
       const el = document.getElementById('wa-msgs');
       if (!el) return true;
       return (el.scrollHeight - el.scrollTop - el.clientHeight) < 150;
     },
 
-    // --- User actions ---
     async whatsappStart() {
       this.whatsapp.starting = true;
       this.whatsapp.error = '';
@@ -17132,9 +13606,6 @@ function app() {
       }
     },
     async whatsappStop() {
-      // Cancelling QR/pairing uses session/stop (only the WAHA session, keeping
-      // the container alive). /api/whatsapp/stop used to tear down the whole
-      // systemd unit and required a manual restart before this fix.
       try { await this.api('/api/whatsapp/session/stop', { method: 'POST' }); } catch(_){}
     },
     async whatsappRefreshQR() {
@@ -17161,18 +13632,6 @@ function app() {
       } catch(e) { this.showToast('Failed: ' + (e.message||e), 'err'); }
     },
 
-    // Safe-Keyed-List: a generic helper to wrap ANY array that ends up in a
-    // <template x-for :key="...">. It guarantees:
-    //   1. The result is an array (not null/undefined/an object).
-    //   2. Every item has keyField defined (synthesized when missing — mutating
-    //      the item so that subsequent renders see the same key, avoiding a fresh
-    //      identity on every tick).
-    //   3. Dedup by key.
-    // Cost: O(N) per render. For lists under 1000 items it is imperceptible.
-    // This is the last ring of protection against the crash class "x-for :key
-    // is undefined/duplicated" → "Cannot read properties of undefined (reading
-    // 'after')" in alpine.min.js. Use it whenever the source is an external API,
-    // localStorage, or anything else that escapes central validation.
     _skl(arr, keyField, prefix) {
       if (!Array.isArray(arr)) return [];
       const seen = new Set();
@@ -17184,7 +13643,7 @@ function app() {
         let k = it[keyField];
         if (k === undefined || k === null || k === '' || (typeof k === 'number' && Number.isNaN(k))) {
           k = px + i;
-          try { it[keyField] = k; } catch(_) {} // may be frozen — ignore
+          try { it[keyField] = k; } catch(_) {}
         }
         const sk = String(k);
         if (seen.has(sk)) continue;
@@ -17194,9 +13653,6 @@ function app() {
       return out;
     },
 
-    // Sanitizes a chat array: drops entries without a jid and dedups by jid.
-    // Without this, <template x-for :key="c.jid"> hits undefined keys and Alpine
-    // blows up with "Cannot read properties of undefined (reading 'after')".
     _sanitizeWaChats(arr) {
       if (!Array.isArray(arr)) return [];
       const seen = new Set();
@@ -17204,15 +13660,12 @@ function app() {
       for (const c of arr) {
         if (!c || !c.jid) continue;
         if (seen.has(c.jid)) continue;
-        // Hide system entries that aren't real conversations.
         if (c.jid === 'status@broadcast') continue;
         seen.add(c.jid);
         out.push(c);
       }
       return out;
     },
-    // Sanitizes a message array: synthesizes an id when missing, dedups by id.
-    // Same rationale as _sanitizeWaChats — x-for :key does not tolerate undefined.
     _sanitizeWaMessages(arr) {
       if (!Array.isArray(arr)) return [];
       const seen = new Set();
@@ -17228,10 +13681,6 @@ function app() {
       return out;
     },
 
-    // Marks every conversation as read — zeroes unread_count locally and fires
-    // /api/sendSeen for each chat with unread > 0 (propagating to the
-    // phone). Idempotent, best-effort per chat (an error on one does not stop
-    // the others).
     async whatsappMarkAllRead() {
       const wa = this.whatsapp;
       if ((wa.totalUnread || 0) === 0) return;
@@ -17246,7 +13695,6 @@ function app() {
           throw new Error(d.error || ('HTTP ' + r.status));
         }
         const d = await r.json();
-        // Zero out locally in one batch (avoids an extra request to re-list).
         for (const c of wa.chats) c.unread_count = 0;
         wa.totalUnread = 0;
         if (this.showToast) this.showToast(d.marked + ' conversations marked as read', 'ok');
@@ -17255,9 +13703,6 @@ function app() {
       }
     },
 
-    // Wipes the ENTIRE local record (chats.json + messages) and re-imports from
-    // WAHA: chat overview + contacts + message history. Does NOT touch WhatsApp
-    // on the phone nor the WAHA session — it only clears the side of the panel.
     async whatsappWipeAndReimport() {
       if (!(await this.confirmAsync('Erase the LOCAL record of chats and messages and re-import from WhatsApp?\n\nThis does NOT touch WhatsApp on your phone. It only rebuilds the conversation list and the history here in the panel from the data the WAHA gateway holds.\n\nIt can take a few seconds.'))) return;
       const wa = this.whatsapp;
@@ -17271,7 +13716,6 @@ function app() {
           const d = await r.json().catch(()=>({}));
           throw new Error(d.error || ('HTTP ' + r.status));
         }
-        // Clear in-memory state to reflect the wipe + force a reload.
         wa.chats = [];
         wa.chatById = {};
         wa.messages = {};
@@ -17286,10 +13730,6 @@ function app() {
       }
     },
 
-    // withRetry wrapper. Handles transient failures (502 while WAHA restarts,
-    // 503 network blip) with exponential backoff. Do not use it for 4xx errors —
-    // those are deterministic (auth, bad input).
-    // Takes an async function that returns the Response (from this.api).
     async _waRetry(fn, opts) {
       opts = opts || {};
       const max = opts.max || 3;
@@ -17298,12 +13738,10 @@ function app() {
       for (let attempt = 0; attempt < max; attempt++) {
         try {
           const r = await fn();
-          // 4xx (except 429) → no retry, a deterministic error.
           if (r.status >= 400 && r.status < 500 && r.status !== 429) {
             return r;
           }
           if (r.ok) return r;
-          // 5xx or 429 → retry after a delay.
           lastErr = new Error('HTTP ' + r.status);
         } catch (e) {
           lastErr = e;
@@ -17316,9 +13754,6 @@ function app() {
     },
 
     async whatsappReloadChats() {
-      // Clicking the Refresh button fires an explicit name sync on the server
-      // (`/chats/sync` pulls from the WAHA address book before returning).
-      // Normal boot (whatsappInit) uses plain /chats and leaves it to the poller.
       try {
         const r = await this._waRetry(() => this.api('/api/whatsapp/chats/sync', { method: 'POST' }));
         if (!r.ok) return;
@@ -17331,10 +13766,6 @@ function app() {
       } catch(_){}
     },
 
-    // Full sync: names + flags + recent history for every chat. The
-    // /api/whatsapp/sync endpoint runs synchronously in the backend (~30-60s for
-    // ~100 chats × 50 msgs). The UI disables the button with a spinner during the
-    // pull, and shows a toast with a summary ("N new msgs in M chats") at the end.
     async whatsappFullSync() {
       const wa = this.whatsapp;
       if (wa.syncing) return;
@@ -17346,9 +13777,7 @@ function app() {
           this.showToast && this.showToast('Sync failed: ' + (d.error || r.status), 'err');
           return;
         }
-        // Refresh the local list to reflect names/flags/order after the sync.
         await this.whatsappReloadChats();
-        // Reload the messages of the open chat (if any) to bring in what arrived.
         if (wa.activeJid) {
           delete wa.messages[wa.activeJid];
           this.whatsappOpenChat(wa.activeJid);
@@ -17368,14 +13797,6 @@ function app() {
       }
     },
 
-    // For group msgs, translates the sender JID into the name we know
-    // (if it exists in the chat list as an individual contact) or into a short
-    // number. Returns "" for from_me msgs or for chats that are not groups —
-    // the caller uses x-show to suppress the label in those cases.
-    // Resolves the quoted msg (a local lookup in the loaded list). Returns
-    // {label, body} ready to render OR null when the quoted one has not been
-    // loaded yet (we do not fetch it from the server — the user would click to
-    // scroll, which then calls loadMore if needed). Media: uses "📷 Image"/etc.
     whatsappQuotedPreview(m) {
       if (!m || !m.quoted_id) return null;
       const list = this.whatsapp.messages[m.chat] || [];
@@ -17393,9 +13814,6 @@ function app() {
       return { label, body: body.slice(0, 120) };
     },
 
-    // Groups reactions by emoji: [{emoji, count, from:[...]}] sorted by count
-    // desc. Filters out an empty emoji (a pending removal). Identifies
-    // "You" so the tooltip can show a friendly name.
     whatsappGroupReactions(reactions) {
       if (!Array.isArray(reactions)) return [];
       const myJid = this.whatsapp.phone ? (this.whatsapp.phone + '@c.us') : '';
@@ -17412,15 +13830,8 @@ function app() {
       return Array.from(by.values()).sort((a, b) => b.count - a.count);
     },
 
-    // Smooth scroll to the quoted msg (clicked on the inline preview). A brief
-    // highlight via a CSS class gives the visual feedback of "found it, here".
     whatsappScrollToMsg(msgId) {
       if (!msgId) return;
-      // There may be several bubbles (template), take the first one with data-id
-      // or match by id via querySelectorAll of x-text=fmtMsgTime.
-      // Simpler: scrolling using the x-for template is hard — a window.find
-      // fallback by text does not work. For now, just scroll-into-view if the
-      // msg is in the DOM via a data-attribute reference.
       const el = document.querySelector('[data-msg-id="' + CSS.escape(msgId) + '"]');
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -17435,10 +13846,8 @@ function app() {
       if (!chat || !chat.is_group) return '';
       const senderJid = (m.from || '').trim();
       if (!senderJid) return '';
-      // If we have the sender as an individual contact, use their name.
       const known = this.whatsapp.chatById[senderJid];
       if (known && known.name) return known.name;
-      // Otherwise format the short JID (last 8 digits + suffix).
       const user = senderJid.split('@')[0] || '';
       if (user.length > 4) return '~' + user.slice(-8);
       return user || senderJid;
@@ -17446,17 +13855,11 @@ function app() {
 
     whatsappFilteredChats() {
       const wa = this.whatsapp;
-      // Always sanitize — it is cheap and it stops some new entry point (e.g. a
-      // WS push creating an ad-hoc chat) from letting an undefined c.jid crash x-for.
       let chats = this._sanitizeWaChats(wa.chats);
-      // Category filter (tabs). "All/Unread/Groups" HIDE archived ones
-      // (same as WhatsApp Web). "Archived" shows only those.
       const filter = wa.filter || 'all';
       if (filter === 'archived') {
         chats = chats.filter(c => c.archived);
       } else if (filter === 'status') {
-        // The Status page is handled separately (a different template); the filter
-        // returns an empty list here so the UI shows the placeholder.
         chats = [];
       } else {
         chats = chats.filter(c => !c.archived);
@@ -17464,27 +13867,21 @@ function app() {
         else if (filter === 'groups') chats = chats.filter(c => c.is_group || (c.jid||'').endsWith('@g.us'));
         else if (filter === 'favorites') chats = chats.filter(c => c.pinned);
       }
-      // Free-text search filter.
       const q = (wa.search||'').toLowerCase();
       if (!q) return chats;
       return chats.filter(c => ((c.name||'') + ' ' + (c.jid||'') + ' ' + (c.last_msg_body||'')).toLowerCase().includes(q));
     },
 
-    // Readable chat title: the name when there is one, otherwise a friendly
-    // format of the JID (a phone number instead of "5511..._raw@s.whatsapp.net").
     whatsappChatTitle(c) {
       if (!c) return '';
       if (c.name) return c.name;
       const jid = c.jid || '';
       const user = jid.split('@')[0] || '';
-      // @lid (linked-id, no visible number) — use a short prefix + a tag.
       if (jid.endsWith('@lid')) return 'Contact ' + user.slice(0, 4);
-      // Phone number — formats 55119xxxxxxxx → +55 11 9XXXX-XXXX (BR-ish).
       if (/^\d{12,13}$/.test(user)) return this._fmtPhone(user);
       return user || jid;
     },
     _fmtPhone(d) {
-      // Best-effort BR phone formatter; leaves it raw if it does not match the pattern.
       if (d.length === 13 && d.startsWith('55')) {
         return '+55 ' + d.slice(2,4) + ' ' + d.slice(4,9) + '-' + d.slice(9);
       }
@@ -17493,8 +13890,6 @@ function app() {
       }
       return '+' + d;
     },
-    // Subtitle for the conversation header: the formatted number (1-on-1) or the
-    // participant count (groups — when available).
     whatsappChatSubtitle(c) {
       if (!c) return '';
       const jid = c.jid || '';
@@ -17503,32 +13898,20 @@ function app() {
       if (/^\d+$/.test(user)) return this._fmtPhone(user);
       return jid;
     },
-    // Initials for the avatar — uses the title (name) when there is one, else the short JID.
     whatsappAvatarLabel(c) {
       if (!c) return '?';
       const title = this.whatsappChatTitle(c);
-      // Take the first letters of each word (up to 2).
       const words = title.replace(/[+\d\s\-()]/g,'').trim().split(/\s+/).filter(Boolean);
       if (words.length === 0) return (title || '?').slice(0,2).toUpperCase();
       if (words.length === 1) return words[0].slice(0,2).toUpperCase();
       return (words[0][0] + words[1][0]).toUpperCase();
     },
-    // Inserts "Today", "Yesterday", "Monday", "27/05/2026" separators
-    // between messages from different days, as WhatsApp Web does. Returns a flat
-    // list interleaving {type:'divider', label, id} and {type:'msg', m, id}.
     whatsappMessagesWithDividers(msgs) {
       const out = [];
       let lastDay = '';
       const sanitized = this._sanitizeWaMessages(msgs);
       for (const m of sanitized) {
-        // Filters out "ghost msgs" — no body, no media, no reply, no delete flag.
-        // WAHA sometimes returns empty rows (encrypted reactions, protocolMessages,
-        // edits that GOWS failed to decode) and rendering an empty bubble just
-        // pollutes the UI. Deleted ones are kept (they carry a "deleted" placeholder).
         const hasBody = !!(m.body && m.body.trim());
-        // Any msg of a non-text type IS a media message, even before m.media is
-        // filled in (an optimistic send carries the preview in _optim_media, with
-        // no m.media) — otherwise the just-sent image vanishes from the chat ("ghost").
         const isMediaType = !!m.type && m.type !== 'text';
         const hasMedia = isMediaType || !!m.media || !!m._optim_media;
         if (!hasBody && !hasMedia && !m.quoted_id && !m.deleted) continue;
@@ -17559,7 +13942,6 @@ function app() {
       }
       return d.toLocaleDateString('en-US');
     },
-    // The message time inside the bubble — always HH:MM (not the relative one).
     fmtMsgTime(ts) {
       if (!ts) return '';
       const d = new Date(ts * 1000);
@@ -17569,14 +13951,12 @@ function app() {
     async whatsappOpenChat(jid) {
       const wa = this.whatsapp;
       wa.activeJid = jid;
-      // Load the history if we do not have it yet.
       if (!wa.messages[jid]) {
         wa.loadingMessages = true;
         try {
           const r = await this.api('/api/whatsapp/chats/' + encodeURIComponent(jid) + '/messages?limit=50');
           if (r.ok) {
             const d = await r.json();
-            // the server returns newest-first; the UI wants oldest-first.
             wa.messages[jid] = this._sanitizeWaMessages((d.messages || []).slice().reverse());
             wa.hasMoreMessages[jid] = (d.messages || []).length >= 50;
           } else {
@@ -17585,16 +13965,13 @@ function app() {
         } catch(e) { wa.messages[jid] = []; }
         wa.loadingMessages = false;
       }
-      // Zero the unread count on the server and locally.
       const c = wa.chatById[jid];
       if (c && c.unread_count > 0) {
         c.unread_count = 0;
         this._whatsappRecountUnread();
         this.api('/api/whatsapp/chats/' + encodeURIComponent(jid) + '/read', { method: 'POST' }).catch(()=>{});
       }
-      // Subscribe presence + load avatar (fire-and-forget).
       this._whatsappAfterOpen(jid);
-      // Opening a conversation always starts at the end.
       wa.scrollPinned = true;
       this.$nextTick(() => this._whatsappScrollBottom());
     },
@@ -17614,43 +13991,25 @@ function app() {
       } catch(_){}
     },
 
-    // WhatsApp markdown (*bold*, _italic_, ~strike~, ```code```) + URL
-    // auto-linking. Defensive sanitization: escape HTML first, then apply
-    // markdown only on strict patterns (whitespace boundary).
-    // Anti-XSS: escapeHTML first, then the regexes over ALREADY escaped text —
-    // URLs become <a> with rel="noopener noreferrer" and target="_blank".
     whatsappFormatBody(body) {
       if (!body) return '';
-      // Step 1: escape HTML (security).
       let s = String(body)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
-      // Step 2: code block ```...``` (multiline). Substituted BEFORE the others
-      // so markdown inside the code is not interpreted.
       s = s.replace(/```([\s\S]+?)```/g, '<code class="wa-md-code">$1</code>');
-      // Step 3: inline code `...` (no inner `).
       s = s.replace(/(^|\s)`([^`\n]+)`(?=\s|$|[.,!?;:])/g, '$1<code class="wa-md-inline-code">$2</code>');
-      // Step 4: bold *text* — the whole wrapper between whitespace boundaries.
       s = s.replace(/(^|\s)\*([^\s*][^*\n]*[^\s*]|[^\s*])\*(?=\s|$|[.,!?;:])/g, '$1<strong>$2</strong>');
-      // Step 5: italic _text_.
       s = s.replace(/(^|\s)_([^\s_][^_\n]*[^\s_]|[^\s_])_(?=\s|$|[.,!?;:])/g, '$1<em>$2</em>');
-      // Step 6: strike ~text~.
       s = s.replace(/(^|\s)~([^\s~][^~\n]*[^\s~]|[^\s~])~(?=\s|$|[.,!?;:])/g, '$1<del>$2</del>');
-      // Step 7: auto-link URLs. The regex matches http(s)://... up to a space/end.
-      // Capped at 500 chars to avoid catastrophic backtracking.
       s = s.replace(/(https?:\/\/[^\s<>"]{1,500})/g, (url) => {
         return '<a href="' + url + '" target="_blank" rel="noopener noreferrer" class="wa-md-link">' + url + '</a>';
       });
       return s;
     },
 
-    // Client-side token-bucket rate limit. WhatsApp bans accounts that send
-    // >5 msgs/10s consistently (Meta anti-spam). Implementation: 5 tokens,
-    // +1 token every 2s, cap 5. When it runs dry, reject and show a toast with
-    // a countdown.
     _waSendTokens: 5,
     _waSendTokensTs: 0,
     _waCheckSendToken() {
@@ -17673,14 +14032,9 @@ function app() {
 
     async whatsappSend() {
       const wa = this.whatsapp;
-      // Synchronous lock (not awaited) stops a double-click from getting in on
-      // the same tick. `wa.busy = true` used to happen INSIDE the try, after the
-      // first await — two fast clicks both got through.
       if (wa._sending) return;
       wa._sending = true;
       if (wa.busy) { wa._sending = false; return; }
-      // Rate limit before doing any work (do not waste the optimistic UI nor a
-      // cid if it is going to hit the token bucket).
       if (!this._waCheckSendToken()) { wa._sending = false; return; }
       const jid = wa.activeJid;
       if (!jid) { wa._sending = false; return; }
@@ -17688,14 +14042,10 @@ function app() {
       const file = wa.attachment;
       if (!text && !file) { wa._sending = false; return; }
       wa.busy = true;
-      // Idempotency client_msg_id — UUID v4 (crypto.randomUUID with a fallback).
       const cid = (crypto && crypto.randomUUID) ? crypto.randomUUID()
                 : ('xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
                     const r = Math.random()*16|0; return (c==='x' ? r : (r&0x3)|0x8).toString(16);
                   }));
-      // Optimistic UI: inserts a local bubble with ack=0 (a clock) BEFORE the
-      // server confirms. Updated by the ack webhook when it arrives. The temporary
-      // `_optim:<cid>` ID is replaced by the real one when WA emits message.ack.
       const replyTo = wa.replyTo;
       const optimMsg = {
         id: '_optim:' + cid,
@@ -17712,10 +14062,8 @@ function app() {
       if (replyTo) optimMsg.quoted = { id: replyTo.id, body: replyTo.body, from_me: replyTo.from_me };
       if (!wa.messages[jid]) wa.messages[jid] = [];
       wa.messages[jid] = this._sanitizeWaMessages(wa.messages[jid].concat([optimMsg]));
-      // Sending always pins the history to the end, even if we were reading above.
       wa.scrollPinned = true;
       this.$nextTick(() => this._whatsappScrollBottom());
-      // Clear the composer right away — the UX feels like an instant send.
       wa.composer = '';
       wa.attachment = null;
       wa.replyTo = null;
@@ -17758,23 +14106,16 @@ function app() {
         wa.attachmentPreview = '';
         wa.emojiOpen = false;
       } catch(e) {
-        // Failure — mark the msg as an error (red ✗ in the UI), allowing a later retry.
         optimMsg.ack = -1;
         optimMsg._error = e.message || String(e);
         this.showToast('Failed to send: ' + (e.message || e), 'err');
       } finally {
         wa.busy = false;
         wa._sending = false;
-        // Reactivity: the mutations above (optimMsg.ack/id/_optim) are on the RAW
-        // object — Alpine only re-renders when the mutation goes through the Proxy.
-        // Without reassigning the array, the clock→✓ only appeared on a page reload.
         if (wa.messages[jid]) wa.messages[jid] = wa.messages[jid].slice();
       }
     },
 
-    // --- Emoji picker ---
-    // A compact list of emojis by category (no external dependency).
-    // Covers 90% of everyday WhatsApp use; the rest falls back to a Unicode keyboard.
     whatsappEmojiRows() {
       return [
         { title:'Frequent', emojis: ['😀','😂','🥰','😍','😘','😎','🤣','😊','😢','😭','😡','🥺','😴','🤔','👀','💔','❤️','🔥','✨','🎉','👏','🙏','💯','🚀'] },
@@ -17789,10 +14130,8 @@ function app() {
       this.whatsapp.emojiOpen = false;
     },
 
-    // --- Message context menu (right-click) ---
     whatsappOpenMsgMenu(ev, msg) {
       const wa = this.whatsapp;
-      // Clamp to the viewport so the whole menu fits.
       const menuW = 220, menuH = 350;
       const vx = Math.max(8, Math.min(window.innerWidth  - menuW - 8, ev.clientX));
       const vy = Math.max(8, Math.min(window.innerHeight - menuH - 8, ev.clientY));
@@ -17860,12 +14199,10 @@ function app() {
           method:'POST',
           body: JSON.stringify({ chat_jid: this.whatsapp.activeJid, message_id: m.id, mode }),
         });
-        // Mark as deleted locally (the UI updates on the next render).
         m.deleted = true;
       } catch(e) { this.showToast('Failed to delete: ' + (e.message||e), 'err'); }
     },
 
-    // --- Chat menu (pin, archive) ---
     async whatsappTogglePin() {
       const jid = this.whatsapp.activeJid;
       const c = this.whatsapp.chatById[jid];
@@ -17886,7 +14223,6 @@ function app() {
         c.archived = value;
       } catch(e) { this.showToast('Failed: ' + (e.message||e), 'err'); }
     },
-    // Mute/unmute notifications for the conversation.
     async whatsappToggleMute() {
       const jid = this.whatsapp.activeJid;
       const c = this.whatsapp.chatById[jid];
@@ -17898,7 +14234,6 @@ function app() {
         this.showToast && this.showToast(value ? 'Conversation muted' : 'Notifications re-enabled', 'ok');
       } catch(e) { this.showToast('Failed: ' + (e.message||e), 'err'); }
     },
-    // Block/unblock a contact (destructive → confirm()).
     async whatsappToggleBlock() {
       const jid = this.whatsapp.activeJid;
       const c = this.whatsapp.chatById[jid];
@@ -17911,7 +14246,6 @@ function app() {
         this.showToast && this.showToast(value ? 'Contact blocked' : 'Contact unblocked', 'ok');
       } catch(e) { this.showToast('Failed: ' + (e.message||e), 'err'); }
     },
-    // Edit your own message (only text you sent yourself).
     async whatsappEditMsg() {
       const jid = this.whatsapp.activeJid;
       const m = this.whatsapp.msgMenu.msg;
@@ -17924,14 +14258,12 @@ function app() {
       try {
         const r = await this.api('/api/whatsapp/messages/edit', { method:'POST', body: JSON.stringify({ chat_jid: jid, msg_id: m.id, text: newText }) });
         if (!r.ok) { const d = await r.json().catch(()=>({})); throw new Error(d.error || r.status); }
-        // Update the body locally (the reference in msgMenu.msg is the same one in the array).
         const list = this.whatsapp.messages[jid] || [];
         const local = list.find(x => x.id === m.id);
         if (local) { local.body = newText; local.edited = true; } else { m.body = newText; m.edited = true; }
         this.showToast && this.showToast('Message edited', 'ok');
       } catch(e) { this.showToast('Failed to edit: ' + (e.message||e), 'err'); }
     },
-    // New conversation — checks whether the number is on WhatsApp and opens the chat.
     async whatsappNewChat() {
       const wa = this.whatsapp;
       const digits = (wa.newChatPhone || '').replace(/\D/g, '');
@@ -17951,7 +14283,6 @@ function app() {
       } catch(e) { this.showToast('Failed: ' + (e.message||e), 'err'); }
       wa.newChatBusy = false;
     },
-    // Group info (participants) in the info panel.
     async whatsappGroupInfo() {
       const jid = this.whatsapp.activeJid;
       if (!jid || !jid.endsWith('@g.us')) return;
@@ -17966,7 +14297,6 @@ function app() {
       this.whatsapp.groupInfoLoading = false;
     },
 
-    // --- Voice recording (MediaRecorder API) ---
     async whatsappVoiceStart() {
       const wa = this.whatsapp;
       if (wa.voiceRec.active) return;
@@ -17985,24 +14315,17 @@ function app() {
         wa.voiceRec.elapsed = 0;
         rec.ondataavailable = (ev) => { if (ev.data && ev.data.size) wa.voiceRec.chunks.push(ev.data); };
         rec.onstop = () => {
-          // Stop all tracks to release the mic.
           stream.getTracks().forEach(t => t.stop());
         };
         rec.start();
         wa.voiceRec.timer = setInterval(() => {
           wa.voiceRec.elapsed = Math.floor((Date.now() - wa.voiceRec.startedAt) / 1000);
-          if (wa.voiceRec.elapsed > 300) this.whatsappVoiceStop(); // hard cap 5min
+          if (wa.voiceRec.elapsed > 300) this.whatsappVoiceStop();
         }, 250);
       } catch(e) {
         this.showToast('Failed to access the microphone: ' + (e.message || e), 'err');
       }
     },
-    // ---------- Unified media send (image/voice) ----------
-    // Mirrors whatsappSend (the gold standard): synchronous _sending/busy lock
-    // against double-clicks, anti-spam token bucket, idempotent v4 cid, optimistic
-    // bubble (clock→✓→backfill) and a toast instead of alert(). previewURL feeds
-    // _optim_media so the image appears inline at once, before media.path arrives
-    // over the webhook. The backend converts voice/video (convert:true) to ogg/opus.
     async _whatsappPostMedia({ file, type, caption, replyTo, previewURL }) {
       const wa = this.whatsapp;
       if (wa._sending) return;
@@ -18061,13 +14384,9 @@ function app() {
       } finally {
         wa.busy = false;
         wa._sending = false;
-        // Reactivity: mutations on the RAW object (optim.ack/id/_optim) do not
-        // trigger an Alpine re-render by themselves — reassign the array so the ✓ shows up live.
         if (wa.messages[jid]) wa.messages[jid] = wa.messages[jid].slice();
       }
     },
-    // Pasting an image (Ctrl+V) into the composer → opens the preview modal with
-    // a caption. Pasting text stays native (we only intercept when the clipboard holds an image).
     whatsappOnComposerPaste(ev) {
       const items = ev.clipboardData && ev.clipboardData.items;
       if (!items) return;
@@ -18085,7 +14404,6 @@ function app() {
       wa.voiceRec.timer = null;
       const rec = wa.voiceRec.recorder;
       const chunks = wa.voiceRec.chunks;
-      // Wait for onstop so we have all the chunks.
       await new Promise(resolve => {
         rec.addEventListener('stop', resolve, { once: true });
         rec.stop();
@@ -18096,7 +14414,6 @@ function app() {
       if (chunks.length === 0) return;
       const blob = new Blob(chunks, { type: chunks[0].type || 'audio/webm' });
       const file = new File([blob], 'voice-' + Date.now() + '.webm', { type: blob.type });
-      // Send through the unified path (optimistic + convert:true in the backend).
       await this._whatsappPostMedia({ file, type: 'voice' });
     },
     whatsappVoiceCancel() {
@@ -18116,12 +14433,6 @@ function app() {
       return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
     },
 
-    // ---------- Presence (online/typing/last seen) ----------
-    // Computes the label + color for the header subtitle and the info panel.
-    //   composing → "typing…" green
-    //   recording → "recording audio…" green
-    //   available → "online" green
-    //   no info   → formatted number
     whatsappPresenceLabel(c) {
       if (!c) return { text:'', color:'text-muted' };
       const p = c.presence || '';
@@ -18151,23 +14462,18 @@ function app() {
       return this._fmtRelativeTime(ts);
     },
 
-    // ---------- File drag-and-drop ----------
     whatsappDropFile(ev) {
       this.whatsapp.dragOver = false;
       const f = ev.dataTransfer?.files?.[0];
       if (!f) return;
       this._whatsappQueueFile(f);
     },
-    // ---------- Image preview modal ----------
-    // When the user picks an image (input or drop), show a preview modal with an
-    // editable caption before sending — just like WhatsApp Web.
     _whatsappQueueFile(f) {
       if (!f) return;
       if (f.size > 100 * 1024 * 1024) {
         this.showToast('File larger than 100MB (WhatsApp limit)', 'err');
         return;
       }
-      // Images: preview with a caption
       if (f.type.startsWith('image/')) {
         const reader = new FileReader();
         reader.onload = () => {
@@ -18176,14 +14482,12 @@ function app() {
         reader.readAsDataURL(f);
         return;
       }
-      // Other types: attach straight to the composer (optional caption in the textarea)
       this.whatsapp.attachment = f;
     },
     async whatsappSendImagePreview() {
       const wa = this.whatsapp;
       const p = wa.imagePreview;
       if (!p || !p.file) return;
-      // Close the modal right away (instant UX) and capture the reply before the await.
       const replyTo = wa.replyTo;
       const caption = p.caption;
       wa.imagePreview = null;
@@ -18191,30 +14495,21 @@ function app() {
       await this._whatsappPostMedia({ file: p.file, type: 'image', caption, replyTo, previewURL: p.dataURL });
     },
 
-    // ---------- Search inside the chat ----------
     whatsappFilteredMessages(msgs) {
       const q = (this.whatsapp.chatSearch||'').toLowerCase().trim();
       if (!q) return msgs;
       return msgs.filter(m => (m.body || '').toLowerCase().includes(q));
     },
 
-    // ---------- "Emoji only" detection, to render a large bubble ----------
     isOnlyEmoji(text) {
       if (!text) return false;
-      // Strip spaces and variation selectors. If only chars in the emoji range
-      // are left (U+1F000-U+1FFFF, U+2600-U+27FF, etc.) and the display total is
-      // at most 6 chars, it counts as "emoji only".
       const t = text.replace(/\s/g,'').replace(/[‍️]/g,'');
       if (t.length === 0 || t.length > 16) return false;
-      // Pragmatic regex: at least ONE char is in an emoji range and nothing is an ASCII letter/digit.
       const hasEmoji = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F1FF}]/u.test(t);
       const hasNonEmoji = /[a-zA-Z0-9]/.test(t);
       return hasEmoji && !hasNonEmoji;
     },
 
-    // Loads the WhatsApp Status (Stories) feed. Lazy: only called when the user
-    // enters the "Status" tab. Simple cache — the user can force a reload with
-    // the ↻ button.
     async whatsappLoadStatus() {
       const wa = this.whatsapp;
       wa.statusLoading = true;
@@ -18222,9 +14517,6 @@ function app() {
         const r = await this.api('/api/whatsapp/status-updates');
         if (!r.ok) return;
         const d = await r.json();
-        // Sanitize to guarantee that s.jid and it.id are NEVER undefined —
-        // an undefined Alpine x-for :key crashes the whole panel.
-        // Belt-and-suspenders alongside the fallback in the template.
         const senders = (d.by_sender || []).filter(s => s && s.jid).map((s, idx) => ({
           jid: s.jid,
           name: s.name || '',
@@ -18248,11 +14540,6 @@ function app() {
       }
     },
 
-    // Reports our "composing/paused" presence to the WhatsApp of the contact —
-    // they see "X is typing..." in real time.
-    // Debounces BOTH composing and paused. It used to POST /typing on EVERY
-    // keystroke (~30 reqs per sentence). Now it throttles to 4s between
-    // composing=true, and a 1.5s timer for paused once typing stops.
     whatsappOnComposerInput() {
       const wa = this.whatsapp;
       const jid = wa.activeJid;
@@ -18273,29 +14560,19 @@ function app() {
       }, 1500);
     },
 
-    // Override of whatsappOpenChat so it also subscribes presence + fetches the avatar.
-    // The original already exists above; this is called afterwards via _whatsappAfterOpen.
     _whatsappAfterOpen(jid) {
-      // Subscribe presence (best-effort — some privacy settings block it).
       this.api('/api/whatsapp/chat/subscribe-presence', {
         method:'POST', body: JSON.stringify({ chat_jid: jid })
       }).catch(()=>{});
-      // Pre-load the avatar if we do not have it yet.
       const c = this.whatsapp.chatById[jid];
       if (c && !c.avatar_url && !c._avatar_checked) {
-        // Mark it as already attempted to avoid a re-fetch on a re-openChat.
         c._avatar_checked = true;
-        // With redirect:'manual' the response becomes an opaqueredirect (status 0)
-        // on a 3xx, or has status 404 when the contact has no avatar. We set
-        // c.avatar_url='1' (a truthy marker) only when there IS an avatar — that
-        // way <template x-if="c.avatar_url"> only renders an <img> in that case
-        // and fires no request for contacts without one.
         fetch('/api/whatsapp/avatar/' + encodeURIComponent(jid), {
           method:'GET', headers: { 'Authorization':'Bearer ' + this.token }, redirect:'manual'
         }).then(r => {
           if (!r) return;
-          if (r.status === 404 || r.status === 204) return; // no avatar — stays with the initials
-          if (r.status === 429) { c._avatar_checked = false; return; } // rate-limited, try again later
+          if (r.status === 404 || r.status === 204) return;
+          if (r.status === 429) { c._avatar_checked = false; return; }
           if (this.whatsapp.chatById[jid]) this.whatsapp.chatById[jid].avatar_url = '1';
         }).catch(()=>{});
       }
@@ -18304,8 +14581,6 @@ function app() {
     whatsappPickFile(ev) {
       const f = ev.target.files && ev.target.files[0];
       if (!f) return;
-      // Routed through _whatsappQueueFile: images open the preview modal,
-      // other types become a direct attachment. The 100MB cap is already in there.
       this._whatsappQueueFile(f);
       ev.target.value = '';
     },
@@ -18316,7 +14591,6 @@ function app() {
       return '/api/whatsapp/media/' + p.replace(/^\/+/, '');
     },
 
-    // Visual icon on the "Download" button for each media type.
     whatsappMediaIcon(t) {
       switch (t) {
         case 'image': return '🖼️';
@@ -18338,20 +14612,13 @@ function app() {
       }
     },
 
-    // Fires the download of a media item in the backend (which calls WAHA, copies
-    // the bytes to MediaRoot and updates the store). Marks _downloading/_downloadErr
-    // on the msg itself so the UI can show state; on success it sets m.media.path =
-    // the returned path — the x-if template then renders the <img>/<audio>/<video>.
     async whatsappDownloadMedia(m) {
-      // chat OR chat_jid: server msgs use `chat`; optimistic objects use
-      // `chat_jid`. Without this fallback the click fell into the early return and
-      // NO request went out (the button looked stuck in loading).
       const chat = m && (m.chat || m.chat_jid);
       if (!m || !m.id || !chat) return;
       if (m._downloading) return;
       m._downloading = true;
       m._downloadErr = '';
-      this._whatsappRerender(chat); // shows "Downloading…" immediately (the object is raw)
+      this._whatsappRerender(chat);
       try {
         const r = await this.api(
           '/api/whatsapp/messages/download/' + encodeURIComponent(m.id)
@@ -18371,15 +14638,10 @@ function app() {
         m._downloadErr = (e && e.message) || 'network error';
       } finally {
         m._downloading = false;
-        this._whatsappRerender(chat); // swaps the button for the <img> / clears the loading state
+        this._whatsappRerender(chat);
       }
     },
 
-    // Forces Alpine to re-render the message list of a chat. The msgs in
-    // wa.messages[jid] are RAW objects — mutating m._downloading/m.media.path on
-    // them does NOT trigger a re-render by itself (the same reason as the .slice()
-    // on send). Without this, the download completes but the bubble never swaps the
-    // "Download" button for the <img> and the loading state "freezes" in the DOM.
     _whatsappRerender(jid) {
       const wa = this.whatsapp;
       if (jid && Array.isArray(wa.messages[jid])) {
@@ -18390,7 +14652,6 @@ function app() {
     _whatsappNotify(chat, m) {
       const wa = this.whatsapp;
       if (wa.notifPermission !== 'granted') {
-        // Ask once, when the first msg arrives.
         if (wa.notifPermission === 'default' && typeof Notification !== 'undefined') {
           Notification.requestPermission().then(p => { wa.notifPermission = p; });
         }
@@ -18408,10 +14669,7 @@ function app() {
       } catch(_){}
     },
 
-    // Visual helpers
     chatColor(jid) {
-      // Deterministic hash → a stable color per chat.
-      // jid is null/'' when no chat is selected (the initial activeJid).
       if (!jid) return 'hsl(220,15%,30%)';
       let h = 0;
       for (let i = 0; i < jid.length; i++) h = ((h<<5) - h + jid.charCodeAt(i)) | 0;
@@ -18438,20 +14696,15 @@ function app() {
       return n.toFixed(1) + ' ' + u[i];
     },
     ackTicks(a) {
-      // WhatsApp-style: ✓ sent, ✓✓ delivered, blue ✓✓ = read.
-      // Unicode text is lighter than SVG and adapts to font-size automatically.
       if (a >= 2) return '✓✓';
       if (a >= 1) return '✓';
       return '🕐';
     },
 
-    // HELPERS
     contName(c){ return (c.Names&&c.Names[0]||'').replace(/^\//,''); },
     portsStr(ps){ return (ps||[]).map(p => p.PublicPort?`${p.PublicPort}:${p.PrivatePort}/${p.Type}`:`${p.PrivatePort}/${p.Type}`).join(', '); },
     imgRepo(img){ const t=(img.RepoTags&&img.RepoTags[0])||'<none>:<none>'; return t.split(':').slice(0,-1).join(':')||'<none>'; },
     imgTag(img){ const t=(img.RepoTags&&img.RepoTags[0])||'<none>:<none>'; return t.split(':').slice(-1)[0]||'<none>'; },
-    // Called 4-5x per render (counters + list + empty state). The memo below makes
-    // the filter run once per real data/search change instead of once per read.
     filteredContainers(){
       const q=(this.filter.containers||'').toLowerCase(); const src=this.containers;
       return __panelMemo('containers', [src, src && src.length, q], () =>
@@ -18462,23 +14715,15 @@ function app() {
     filteredNetworks(){ const q=(this.filter.networks||'').toLowerCase(); return q?this.networks.filter(n=>(n.Name+(n.Driver||'')+(n.Id||'')).toLowerCase().includes(q)):this.networks; },
     filteredCompose(){ const q=(this.filter.compose||'').toLowerCase(); return q?this.composeProjects.filter(p=>((p.Name||'')+(p.WorkingDir||'')).toLowerCase().includes(q)):this.composeProjects; },
     bytes(n){ if(n===null||n===undefined)return '—'; if(n===0)return '0 B'; const u=['B','KB','MB','GB','TB']; let i=0; while(n>=1024&&i<u.length-1){n/=1024;i++;} return n.toFixed(1)+' '+u[i]; },
-    // cpuClass/memClass: the visual color on the stats cards. The front end uses
-    // :class="cpuClass(stats?.cpu?.overall)" to swap background/border.
     cpuClass(p){ p = Number(p)||0; if (p >= 90) return 'meter-crit'; if (p >= 70) return 'meter-warn'; return ''; },
     memClass(p){ p = Number(p)||0; if (p >= 90) return 'meter-crit'; if (p >= 75) return 'meter-warn'; return ''; },
     diskClass(p){ p = Number(p)||0; if (p >= 95) return 'meter-crit'; if (p >= 85) return 'meter-warn'; return ''; },
     clamp01(p){ p = Number(p); if (!Number.isFinite(p) || p < 0) return 0; if (p > 100) return 100; return p; },
     uptime(s){ if(!s)return '—'; const d=Math.floor(s/86400), h=Math.floor((s%86400)/3600), m=Math.floor((s%3600)/60); if(d>0)return d+'d '+h+'h'; if(h>0)return h+'h '+m+'m'; return m+'m'; },
     timeAgo(ts){ if(!ts)return '—'; const s=Math.floor(Date.now()/1000-ts); if(s<60)return s+'s ago'; if(s<3600)return Math.floor(s/60)+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; },
-    // Absolute timestamp for the tooltip (hovering over "X min ago"). Accepts an
-    // epoch in seconds (the backend default) or an ISO string (e.g. v.CreatedAt
-    // from Docker). Returns '' when it cannot be parsed — so the :title disappears on its own.
     fmtAbs(ts){ if(ts===undefined||ts===null||ts==='')return ''; let d; if(typeof ts==='number'){ d=new Date(ts*1000); } else { d=new Date(ts); } return isNaN(d.getTime())?'':d.toLocaleString(); },
     stateClass(s){ if(s==='running')return 'bg-running'; if(s==='exited'||s==='dead')return 'bg-exited'; if(s==='paused')return 'bg-paused'; if(s==='restarting')return 'bg-restart'; return 'bg-other'; },
 
-    // ---------- Video call (WebRTC P2P) ----------
-    // The backend is internal/videocall/. The WebRTC client lives in /vendor/panel/videocall.js
-    // (window.PanelVideoCall). State is in this.videocall (declared further up).
     async vcLoadRooms() {
       if (this.videocall.busy) return;
       this.videocall.busy = true;
@@ -18506,9 +14751,6 @@ function app() {
         await this.vcLoadRooms();
       } catch (e) { this.vcError('create room: ' + e.message); }
     },
-    // Inline rename of the room name (PATCH /api/videocall/rooms).
-    // Binding: an input with x-show=videocall.renamingRoomId — the pencil button in
-    // the header toggles edit mode + focuses the input. Enter confirms, Escape cancels.
     vcStartRenameRoom() {
       if (!this.videocall.selectedRoom) return;
       if (this.videocall.selectedRoom.owner !== this.username) return;
@@ -18528,7 +14770,7 @@ function app() {
       const name = (this.videocall.renameDraft || '').trim();
       if (!id || !name) { this.vcCancelRenameRoom(); return; }
       if (this.videocall.selectedRoom && this.videocall.selectedRoom.name === name) {
-        this.vcCancelRenameRoom(); return; // no-op
+        this.vcCancelRenameRoom(); return;
       }
       try {
         const r = await fetch('/api/videocall/rooms', {
@@ -18538,7 +14780,6 @@ function app() {
         });
         if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + await r.text());
         const fresh = await r.json();
-        // Update selectedRoom + the list inline
         if (this.videocall.selectedRoom && this.videocall.selectedRoom.id === id) {
           this.videocall.selectedRoom = fresh;
         }
@@ -18581,7 +14822,6 @@ function app() {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         this.videocall.newMember = '';
         await this.vcLoadRooms();
-        // refresh selectedRoom from new list
         const fresh = this.videocall.rooms.find(rm => rm.id === room.id);
         if (fresh) this.videocall.selectedRoom = fresh;
       } catch (e) { this.vcError('add member: ' + e.message); }
@@ -18603,15 +14843,11 @@ function app() {
       this.videocall.selectedRoom = room;
     },
     async vcJoinCall(roomId) {
-      // 58KB gz on demand: only whoever ENTERS a call needs it. Presence (which
-      // announces an incoming call) is another file, 2KB, and it's eager.
       if (!(await this._ensureScript('/vendor/panel/videocall.js', 'PanelVideoCall'))) {
         this.vcError('the video call client did not load');
         return;
       }
       if (this.videocall.inCall) return;
-      // E2EE flow: if user wants E2EE, prompt for passphrase first. Skips
-      // when unsupported and user already toggled off the wanted flag.
       let passphrase = '';
       if (this.videocall.e2eeWanted) {
         if (!this.videocall.e2eeSupported) {
@@ -18620,10 +14856,9 @@ function app() {
           this.videocall.e2eePendingRoomId = roomId;
           this.videocall.e2eePassphraseInput = '';
           this.videocall.e2eePromptOpen = true;
-          return; // resumes via vcConfirmPassphrase → vcLobbyOpen
+          return;
         }
       }
-      // Open the lobby (preview + device picker) unless user opted out.
       if (this.videocall.lobbySkipNext) {
         return this._vcStartCall(roomId, passphrase);
       }
@@ -18654,13 +14889,10 @@ function app() {
       this.videocall.activeRoomId = roomId;
       this.videocall.inCall = true;
       this.videocall.callStartedAt = Date.now();
-      // Reset the owner-controls state — populated below via selectedRoom.
       this.videocall.amOwner = false;
       this.videocall.roomOwnerName = '';
       this.videocall.roomLocked = false;
       this.videocall.peers = [];
-      // Helper: re-derive amOwner whenever selectedRoom or username changes.
-      // We do not use x-effect here to avoid re-triggering on every render.
       this._vcDeriveOwner = () => {
         const r = this.videocall.selectedRoom;
         if (r && this.username && r.owner === this.username) {
@@ -18672,35 +14904,19 @@ function app() {
         }
       };
       this._vcDeriveOwner();
-      // Reapplies the saved mirror via a MutationObserver on #vc-videos
-      // (childList) instead of blind setTimeouts. attachLocalPreview (the engine)
-      // creates the <video> asynchronously and rewrites cssText on creation (wiping
-      // the transform) — the observer reapplies at the exact instant the node
-      // enters/changes, with no race and no flicker. Disconnected in vcHangup/vcHangupSafe.
       this._vcSetupMirrorObserver();
-      // The bottombar popovers are bounded by the height of the call PANEL,
-      // not by the viewport (see .vc-popover in index.html).
       this._vcSetupPopoverBounds();
-      // Initial whisper-local probe — enables the button in the UI.
       if (window.PanelSTT && window.PanelSTT.probeWhisperLocal) {
         window.PanelSTT.probeWhisperLocal().then(ok => {
           this.videocall.whisperLocalAvailable = !!ok;
         }).catch(() => { this.videocall.whisperLocalAvailable = false; });
       }
-      // Makes sure selectedRoom is populated even when we arrived via reload/URL
-      // hash/recovery (no card click → vcSelectRoom was never called).
-      // Without this the "👑 Apply this mode to everyone" button disappears for the
-      // owner and any other UI depending on selectedRoom.owner === username breaks.
       if (!this.videocall.selectedRoom || this.videocall.selectedRoom.id !== roomId) {
         const fresh = (this.videocall.rooms || []).find(r => r.id === roomId);
         if (fresh) {
           this.videocall.selectedRoom = fresh;
-          // CRITICAL: re-derive amOwner after populating selectedRoom. Without this,
-          // the initial derive ran with selectedRoom null and stayed false forever.
           this._vcDeriveOwner();
         } else {
-          // rooms[] does not have it — silent refetch. It will resolve after the
-          // call has already started (the UI updates reactively on setRoom).
           this.vcLoadRooms && this.vcLoadRooms().then(() => {
             const r = (this.videocall.rooms || []).find(x => x.id === roomId);
             if (r) {
@@ -18710,13 +14926,9 @@ function app() {
           }).catch(() => {});
         }
       }
-      // Retry the derive at 1s and 3s — covers the case where rooms only loads
-      // after vcInit finishes (a race on login + reload + URL hash).
       setTimeout(() => { if (this._vcDeriveOwner) this._vcDeriveOwner(); }, 1000);
       setTimeout(() => { if (this._vcDeriveOwner) this._vcDeriveOwner(); }, 3000);
-      // Try to restore a saved transcript (a previous crash in the same room).
       this.$nextTick(() => { try { this.vcRestoreTranscriptFromDB && this.vcRestoreTranscriptFromDB(); } catch(_){} });
-      // Snapshot of device picks; passed to the engine via opts.deviceIds.
       const deviceIds = {
         camera:  this.videocall.selectedDevices.camera,
         mic:     this.videocall.selectedDevices.mic,
@@ -18725,13 +14937,10 @@ function app() {
       this.videocall.chat = [];
       this.videocall.transcript = '';
       this.videocall.muted = false;
-      // With no camera the UI has to start with video off — otherwise the button
-      // offers to "turn off video" for a video that never existed.
       this.videocall.videoOff = !!(caps && caps.audioOnly);
       this.videocall.screenSharing = false;
       this.videocall.recording = false;
       this.videocall.autoVideoOff = false;
-      // Start each call with the annotation layer closed + state clean.
       this.videocall.annotActive = false;
       this._annotWasAvailable = false;
       this.videocall.e2eeActive = !!passphrase;
@@ -18739,14 +14948,9 @@ function app() {
         await window.PanelVideoCall.connect({
           roomId,
           token: this.token,
-          // guestMode uses /ws/videocall-guest instead of /ws/videocall.
-          // The guest token carries the roomID inside it — the server rejects a
-          // divergent query, so we simply do not pass room_id in the URL.
           guestMode: this.guestMode,
           displayName: this.username || 'User',
           codec: this.videocall.codec,
-          // quality wins over budgetKbps when set (apply full preset
-          // including resolution + fps + audio bitrate)
           quality: this.videocall.qualityMode === 'custom' ? null : this.videocall.qualityMode,
           budgetKbps: this.videocall.budgetKbps,
           e2eePassphrase: passphrase,
@@ -18758,29 +14962,21 @@ function app() {
           micOff:    !!(caps && caps.micOff),
           videosEl: container,
           onState: (ev) => {
-            // The engine came up with less than was asked for (camera gone, mic
-            // busy, a saved deviceId now dead). Staying silent about it would let
-            // the user believe they are transmitting something they are not.
             if (ev.type === 'devices-degraded') { this.vcInfo('Devices: ' + ev.note); return; }
             if (ev.type === 'disconnected') {
               this.videocall.inCall = false;
               this.videocall.activeRoomId = '';
               this.videocall.e2eeActive = false;
               this.videocall.peerStates = {};
-              // Drop the annotation layer + its observers/listeners.
               this.videocall.annotActive = false;
               this._annotWasAvailable = false;
               this.vcAnnotTeardown();
-              // Guest mode: clears the session token + URL query + shows the
-              // "call ended" screen. Without clearing the URL, F5 tried to
-              // reconnect with an expired/invalid token.
               if (this.guestMode) {
                 try {
                   sessionStorage.removeItem('panel_vc_guest_token');
                   sessionStorage.removeItem('panel_vc_guest_room_id');
                   sessionStorage.removeItem('panel_vc_guest_room_name');
                   sessionStorage.removeItem('panel_vc_guest_expires_at');
-                  // Strip vc_guest=1 from the URL — F5 from here on goes back to login.
                   history.replaceState(null, '', '/');
                 } catch (_) {}
                 this.videocall.guestEnded = true;
@@ -18789,8 +14985,6 @@ function app() {
               setTimeout(() => this.vcLoadHistory(), 800);
             } else if (ev.type === 'screen-share') {
               this.videocall.screenSharing = !!ev.on;
-              // My own share started/stopped → reconcile the layer
-              // (stop tears down + clears the screen buffer on both sides).
               this.vcAnnotReconcile();
             } else if (ev.type === 'recording') {
               this.videocall.recording = !!ev.on;
@@ -18800,7 +14994,6 @@ function app() {
             } else if (ev.type === 'auto-video-on') {
               this.videocall.autoVideoOff = false;
             } else if (ev.type === 'weak-connection') {
-              // Warn BEFORE auto-video-off; it gives the user visibility.
               this.videocall.weakConnection = true;
               this.videocall.weakConnLoss = ev.loss || 0;
               this.videocall.weakConnRtt = ev.rtt || 0;
@@ -18816,25 +15009,14 @@ function app() {
             } else if (ev.type === 'peer-count') {
               this.videocall.peerCount = ev.count || 0;
               this.videocall.peersList = ev.peers || [];
-              // Replicated into videocall.peers for the owner-panel template (which
-              // iterates peers). The two are identical today — peersList is the
-              // legacy one, peers is the canonical one for the owner-controls MVP.
               this.videocall.peers = ev.peers || [];
-              // Clear peerStates for IDs that are no longer connected.
-              // (It used to accumulate junk.)
               const live = new Set((ev.peers || []).map(p => p.id));
               const cleaned = {};
               for (const id in this.videocall.peerStates) {
                 if (live.has(id)) cleaned[id] = this.videocall.peerStates[id];
               }
               this.videocall.peerStates = cleaned;
-              // A presenter may have dropped without a clean screen:off
-              // (abrupt disconnect) — reconcile so the layer tears down + clears.
               this.vcAnnotReconcile();
-              // Prune the orphaned caption maps too — only peerStates used to be
-              // cleaned, so captionsByPeer/livePartials from a peer that left stayed
-              // hanging around (and their timers leaked). ALWAYS preserve
-              // 'me' (our own transcript uses the 'me' key, not a peerId).
               const keep = (obj) => {
                 const o = {};
                 for (const id in obj) if (id === 'me' || live.has(id)) o[id] = obj[id];
@@ -18851,7 +15033,6 @@ function app() {
                 }
               }
             } else if (ev.type === 'owner-action') {
-              // The owner applied an action to a peer — notify (non-fatal).
               const targetName = this.vcPeerName(ev.target) || ev.target.slice(-6);
               const byName = this.vcPeerName(ev.by) || 'Owner';
               if (ev.action === 'mute') this.vcToast('🔇 ' + byName + ' muted ' + targetName);
@@ -18873,29 +15054,19 @@ function app() {
             } else if (ev.type === 'mic-gain') {
               if (typeof ev.value === 'number') this.videocall.micGain = ev.value;
             } else if (ev.type === 'mic-muted') {
-              // Mute forced by the room owner. Without this the button kept
-              // showing the mic open and the first click "muted" it again.
               this.videocall.muted = true;
               if (ev.forced) this.vcToast('🔇 ' + (this.vcPeerName(ev.by) || 'The room owner') + ' muted your microphone');
             } else if (ev.type === 'mic-processing') {
               if (ev.value) this.videocall.micProc = Object.assign({}, ev.value);
             } else if (ev.type === 'subtitles-backend') {
               this.videocall.subtitlesBackendActive = ev.backend || '';
-              // Also populates subtitlesBackend (the var the "Engine:" footer in
-              // index.html watches via x-show) — merged in from the dead-code branch
-              // removed below. Without this the footer never appeared.
               this.videocall.subtitlesBackend = ev.backend || '';
-              // If whisper-local was attempted and fell back to web-speech, notify.
               if (this.videocall.sttBackend === 'whisper-local' && ev.backend === 'web-speech') {
                 this.vcInfo('Local Whisper unavailable, using Web Speech');
               }
             } else if (ev.type === 'peer-state') {
               this.vcHandlePeerState(ev.from, ev.state || {});
-              // A presenter may have started/stopped screen-share —
-              // reconcile the annotation layer (anchor/teardown).
               this.vcAnnotReconcile();
-              // Owner-forced quality: the peer sends { quality_force: 'economy' }
-              // → we apply it to our own Call automatically.
               const st = ev.state || {};
               if (st.quality_force && window.PanelVideoCall && window.PanelVideoCall.applyQualityProfile) {
                 this.videocall.qualityMode = st.quality_force;
@@ -18909,16 +15080,12 @@ function app() {
             } else if (ev.type === 'reconnected') {
               this.videocall.reconnectingOverlay = false;
             } else if (ev.type === 'kicked') {
-              // The server kicked us out. Show a clear modal/toast and close the call.
               const msg = ev.reason || 'You were removed from the call.';
               this.vcError(msg);
-              // A small delay so the toast appears before the tear-down.
               setTimeout(() => {
                 try { window.PanelVideoCall && window.PanelVideoCall.disconnect(); } catch(_) {}
               }, 200);
             } else if (ev.type === 'reconnect-gave-up') {
-              // Reconnect failed 8x — probably an expired token or a bad network.
-              // Guest: send them to /join. Normal user: show the error.
               this.videocall.reconnectingOverlay = false;
               if (this.guestMode) {
                 try { sessionStorage.clear(); } catch (_) {}
@@ -18928,34 +15095,21 @@ function app() {
                 this.vcHangup();
               }
             } else if (ev.type === 'caption') {
-              // Resolve the human name of the peer: use ev.displayName when the peer
-              // sent it along with the caption (always, in current builds). That way
-              // we do not depend on peer-count arriving before the first caption.
-              // Fallback: vcPeerLabel(ev.from), which looks at peersList/peerStates.
               const fromLabel = ev.displayName || this.vcPeerLabel(ev.from);
-              // Caption anchored per peer (no longer globally unique).
-              // The legacy currentCaption is kept for back-compat with a few views.
               this.videocall.currentCaption = {
                 from: fromLabel, text: ev.text || '', peerId: ev.from,
                 expireAt: Date.now() + (ev.final ? 4000 : 1500),
               };
-              // Map peerId → active caption (for rendering per tile)
               this.videocall.captionsByPeer = {
                 ...this.videocall.captionsByPeer,
                 [ev.from]: { text: ev.text || '', expireAt: Date.now() + (ev.final ? 4000 : 1500), fromLabel },
               };
-              // Live partial preview in the transcript panel — it disappears when the
-              // final arrives (replaced by the permanent entry). Without this the
-              // panel stayed empty until WhisperLive marked the segment completed (5-15s).
               if (!ev.final && ev.text) {
                 this.videocall.livePartials = {
                   ...this.videocall.livePartials,
                   [ev.from || 'me']: { text: ev.text, fromLabel, ts: Date.now() },
                 };
-                // Auto-scroll the panel to show the new partial (the same criterion
-                // as for a final — "if the user is near the end, scroll automatically").
                 if (this.videocall.sidePanel === 'transcript') this.vcMaybeScrollTranscript();
-                // Auto-clear the partial if it goes 8s without an update (the final never came).
                 const fromKey = ev.from || 'me';
                 if (this._livePartialTimers) {
                   if (this._livePartialTimers[fromKey]) clearTimeout(this._livePartialTimers[fromKey]);
@@ -18967,7 +15121,6 @@ function app() {
                   if (this._livePartialTimers) delete this._livePartialTimers[fromKey];
                 }, 8000);
               } else if (ev.final && this.videocall.livePartials[ev.from || 'me']) {
-                // The final arrived — remove the matching partial preview.
                 const lp = { ...this.videocall.livePartials };
                 delete lp[ev.from || 'me'];
                 this.videocall.livePartials = lp;
@@ -18976,7 +15129,6 @@ function app() {
                   delete this._livePartialTimers[ev.from || 'me'];
                 }
               }
-              // Accumulate the finals — a string for the AI summary + structured entries for the panel.
               if (ev.final && ev.text) {
                 const stamp = new Date().toLocaleTimeString();
                 this.videocall.transcript += '[' + stamp + '] ' + fromLabel + ': ' + ev.text + '\n';
@@ -18990,7 +15142,6 @@ function app() {
                   from: ev.from || 'me',
                   fromLabel, text: ev.text, ts: Date.now(), final: true,
                 };
-                // whisper-local enrichment: words[], confidence, startMs/endMs.
                 if (Array.isArray(ev.words) && ev.words.length) entry.words = ev.words;
                 if (typeof ev.confidence === 'number') entry.confidence = ev.confidence;
                 if (typeof ev.startMs === 'number') entry.startMs = ev.startMs;
@@ -18999,21 +15150,14 @@ function app() {
                 if (this.videocall.transcriptEntries.length > 500) {
                   this.videocall.transcriptEntries = this.videocall.transcriptEntries.slice(-500);
                 }
-                // IndexedDB persistence: survive a crash/refresh within the call.
                 try { this._vcPersistEntry(entry); } catch (_) {}
-                // Auto-scroll only if the user was near the end.
                 if (this.videocall.sidePanel === 'transcript') this.vcMaybeScrollTranscript();
-                // Polish via Claude (when the toggle is ON) — async, updates the entry when it returns.
                 if (this.videocall.polishWithAI) this._vcEnqueuePolish(entryId);
               }
             } else if (ev.type === 'subtitles-requested') {
-              // Another peer turned transcription on/off. UI feedback: a toast saying
-              // who turned it on, and open the transcript tab so it is already
-              // showing (for everyone joining the call too).
               const who = ev.requestedBy || this.vcPeerLabel(ev.from) || 'Another participant';
               if (ev.on) {
                 this.vcInfo('🎙 ' + who + ' turned transcription on — your speech will be captured too');
-                // Auto-open the transcript panel if it is not already open
                 if (this.videocall.sidePanel !== 'transcript') {
                   this.videocall.sidePanel = 'transcript';
                 }
@@ -19021,11 +15165,7 @@ function app() {
                 this.vcInfo(who + ' turned transcription off (yours stays on)');
               }
             } else if (ev.type === 'subtitles-broadcast-result') {
-              // Whoever TURNED IT ON gets feedback on how many peers received it.
               if (ev.on) {
-                // The copy no longer CLAIMS the other side was activated — that is
-                // confirmed by the ack (subtitles-ack). Here we only report that the
-                // request was sent; 'sent' measures the dc.send(), not that STT came up.
                 if (ev.total === 0) {
                   this.vcInfo('🎙 Transcription on — waiting for other participants');
                 } else if (ev.sent === ev.total) {
@@ -19035,7 +15175,6 @@ function app() {
                 } else {
                   this.vcInfo('🎙 Transcription: ' + ev.sent + ' requested, ' + ev.pending + ' pending');
                 }
-                // Auto-open the panel
                 if (this.videocall.sidePanel !== 'transcript') {
                   this.videocall.sidePanel = 'transcript';
                 }
@@ -19043,25 +15182,15 @@ function app() {
                 this.vcInfo('Transcription off (each participant still controls their own mic)');
               }
             } else if (ev.type === 'subtitles-ack') {
-              // The peer we activated remotely confirmed that its STT came up — the
-              // REAL confirmation (before, the initiator only knew that the
-              // dc.send() happened, never that the engine on the other side worked).
               const who = this.vcPeerLabel(ev.from) || 'Participant';
               this.vcInfo('🎙 ' + who + ': starting transcription…');
             } else if (ev.type === 'subtitles-status') {
-              // A failure status from the remote peer — makes the failure VISIBLE
-              // (it used to be mute). We only announce failure here; ok=true arrives as an ack.
               if (!ev.ok) {
                 const who = this.vcPeerLabel(ev.from) || 'Participant';
                 const reason = ev.reason ? (' (' + ev.reason + ')') : '';
                 this.vcInfo('⚠️ ' + who + ' could not turn transcription on' + reason);
               }
             } else if (ev.type === 'subtitles-state') {
-              // Syncs the UI with the real state of the engine. Covers EVERY path:
-              // manual activation, remote-activate over the DC, the loop guard
-              // tripping, the whisper→web-speech fallback, hangup. Without this the
-              // 🎙 button and the tabs could drift out of sync with the internal
-              // _subtitlesActive (especially when another peer turns transcription on).
               this.videocall.subtitlesActive = !!ev.active;
               if (ev.active && this.videocall.sidePanel !== 'transcript') {
                 this.videocall.sidePanel = 'transcript';
@@ -19070,8 +15199,6 @@ function app() {
           },
           onStats: (s) => {
             this.videocall.stats = s;
-            // Speaker active glow: extracts the inbound audioLevel per peer.
-            // The engine sends aggregated stats; per-peer lives in s.peers[peerId].audioLevel when available.
             if (s && s.peers) {
               const levels = {};
               for (const pid in s.peers) {
@@ -19079,7 +15206,6 @@ function app() {
                 if (typeof al === 'number') levels[pid] = al;
               }
               this.videocall.peerAudioLevels = levels;
-              // Add/remove the vc-speaker-active class on the tiles in real time.
               try {
                 document.querySelectorAll('[data-vc-peer-tile]').forEach((el) => {
                   const pid = el.getAttribute('data-vc-peer-tile');
@@ -19091,14 +15217,12 @@ function app() {
             }
           },
           onChat:  (m) => {
-            // Intercept reactions disguised as chat
             if (typeof m.text === 'string' && m.text.startsWith('✨REACT✨')) {
               this.vcShowReaction({ emoji: m.text.slice('✨REACT✨'.length), from: m.from, ts: m.ts });
               return;
             }
             this.videocall.chat.push(m);
             if (this.videocall.chat.length > 200) this.videocall.chat = this.videocall.chat.slice(-200);
-            // Play a subtle beep if the chat is not open
             if (this.videocall.sidePanel !== 'chat') {
               // Increment unread implicit via chatLastRead being behind
             }
@@ -19107,7 +15231,6 @@ function app() {
           onFileProgress: (p) => this.vcOnFileProgress(p),
           onFileReceived: (f) => this.vcOnFileReceived(f),
           onWhiteboard:   (w) => this.vcOnWhiteboard(w),
-          // Cloud-aware: when opted in, upload to the server; otherwise fall back to a local download.
           onRecordingReady: (r) => {
             if (this.videocall.recordToCloud) {
               this.vcUploadRecording(r.blob, r.durationS);
@@ -19130,7 +15253,7 @@ function app() {
     vcHangup() {
       if (!window.PanelVideoCall) return;
       this.vcWBTeardown();
-      this._vcTeardownMirrorObserver(); // (covers vcHangupSafe → vcHangup)
+      this._vcTeardownMirrorObserver();
       this._vcTeardownPopoverBounds();
       window.PanelVideoCall.disconnect();
       this.videocall.inCall = false;
@@ -19159,19 +15282,15 @@ function app() {
     vcSetCodec(codec) {
       this.videocall.codec = codec;
       localStorage.setItem('panel_vc_codec', codec);
-      // Note: codec applied on next call connect, not live (would require renegotiation)
     },
     vcError(msg) {
       this.videocall.errors.unshift({ ts: Date.now(), msg, kind: 'err' });
       if (this.videocall.errors.length > 20) this.videocall.errors = this.videocall.errors.slice(0, 20);
     },
-    // Success/info — "Copied" used to come through vcError, in red, so a
-    // confirmation read like a failure.
     vcInfo(msg) {
       this.videocall.errors.unshift({ ts: Date.now(), msg, kind: 'ok' });
       if (this.videocall.errors.length > 20) this.videocall.errors = this.videocall.errors.slice(0, 20);
     },
-    // ---- Cloud recording / AI summary / WhatsApp invite ----
     vcToggleCloudRec() {
       this.videocall.recordToCloud = !this.videocall.recordToCloud;
       localStorage.setItem('panel_vc_cloud_rec', this.videocall.recordToCloud ? '1' : '0');
@@ -19224,14 +15343,12 @@ function app() {
     async vcOpenSummary(id) {
       this.videocall.summaryModal = { open: true, recId: id, busy: true, summary: '' };
       try {
-        // Try the cache first.
         const cacheResp = await fetch('/api/videocall/recordings/' + encodeURIComponent(id) + '/summary', { headers: { Authorization: 'Bearer ' + this.token } });
         if (cacheResp.ok) {
           this.videocall.summaryModal.summary = await cacheResp.text();
           this.videocall.summaryModal.busy = false;
           return;
         }
-        // Generate one. It needs the transcript left in the state of the previous call.
         const transcript = this.videocall.transcript || '';
         if (!transcript.trim()) {
           this.videocall.summaryModal.summary = '⚠ There is no transcript for this call. Turn on "Live transcription" during the call to generate the AI summary afterwards.';
@@ -19244,7 +15361,6 @@ function app() {
           body: JSON.stringify({ transcript }),
         });
         if (!r.ok) {
-          // Specific messages for the most common errors.
           if (r.status === 503) {
             this.videocall.summaryModal.summary = '⚠ The AI summary is not configured on this server.\n\nTo enable it, the admin has to set ANTHROPIC_API_KEY in systemd and restart the server-control-panel.';
             return;
@@ -19263,14 +15379,6 @@ function app() {
         this.videocall.summaryModal.busy = false;
       }
     },
-    // One-click: call a WhatsApp contact. Creates a room if needed, generates a
-    // magic link, sends it over WAHA to the JID of the open chat, and opens the
-    // call on the side of the owner immediately — when the guest clicks the link,
-    // they land in the same room.
-    //
-    // Reuses a room if the owner already has a "Call with <name>" one.
-    // In a group the button is hidden (WhatsApp has no group ringing in the 1:1
-    // sense — the owner can use the normal invite from the video call panel).
     async whatsappCallContact(jid) {
       if (!jid) return;
       if (this.videocall.callingContact) return;
@@ -19279,7 +15387,6 @@ function app() {
       const roomName = 'Call with ' + name;
       this.videocall.callingContact = true;
       try {
-        // 1) Find an existing room with the same name (reuse) — or create one.
         await this.vcLoadRooms();
         let room = (this.videocall.rooms || []).find(r => r.owner === this.username && r.name === roomName);
         if (!room) {
@@ -19293,7 +15400,6 @@ function app() {
           room = (this.videocall.rooms || []).find(r => r.owner === this.username && r.name === roomName);
           if (!room) throw new Error('room created but not found');
         }
-        // 2) Send the invite over WhatsApp (60min TTL).
         const r = await fetch('/api/videocall/invite/whatsapp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this.token },
@@ -19309,15 +15415,12 @@ function app() {
           throw new Error('WhatsApp: HTTP ' + r.status + (errTxt ? ' — ' + errTxt : ''));
         }
         this.vcInfo('Invite sent to ' + name + ' via WhatsApp');
-        // 3) Open the call on the side of the owner — they wait there. Skips the
-        // lobby (they are already signed in, no need to configure devices every time).
         this.videocall.selectedRoom = room;
         const wasSkip = this.videocall.lobbySkipNext;
         this.videocall.lobbySkipNext = true;
         this.setPage('videocall', { silent: true });
         await this.$nextTick();
         await this.vcJoinCall(room.id);
-        // Restore the lobby preference for the next call.
         this.videocall.lobbySkipNext = wasSkip;
       } catch (e) {
         this.vcError('call contact: ' + e.message);
@@ -19326,10 +15429,6 @@ function app() {
       }
     },
 
-    // Opens the WhatsApp picker modal for an invite. If whatsapp.chats is
-     // empty (the user never opened the WhatsApp tab this session), load it first
-     // — without that the modal showed "No chat synced yet" even with the gateway
-     // WORKING.
     async vcOpenWaInvitePicker() {
       this.vcClosePopovers();
       this.videocall.waInviteOpen = true;
@@ -19366,7 +15465,6 @@ function app() {
       return b.toFixed(1) + ' ' + u[i];
     },
 
-    // ---- In-call controls ----
     async vcToggleScreenShare() {
       if (!window.PanelVideoCall) return;
       this.videocall.screenSharing = !!(await window.PanelVideoCall.setScreenShare(!this.videocall.screenSharing));
@@ -19386,7 +15484,6 @@ function app() {
       localStorage.setItem('panel_vc_e2ee_wanted', this.videocall.e2eeWanted ? '1' : '0');
     },
 
-    // ---- Magic-link invite ----
     async vcGenerateInvite(roomId, ttlMin) {
       try {
         const r = await fetch('/api/videocall/invite', {
@@ -19409,7 +15506,6 @@ function app() {
         setTimeout(() => { this.videocall.inviteCopyDone = false; }, 2500);
       } catch (e) { this.vcError('clipboard: ' + e.message); }
     },
-    // ---- Anonymous PIN ----
     async vcGeneratePIN(roomId) {
       try {
         const r = await fetch('/api/videocall/pin', {
@@ -19419,7 +15515,6 @@ function app() {
         });
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const data = await r.json();
-        // Update selectedRoom inline + reload the list (for everywhere else)
         if (this.videocall.selectedRoom && this.videocall.selectedRoom.id === roomId) {
           this.videocall.selectedRoom = { ...this.videocall.selectedRoom, pin: data.pin, pin_expires_at: data.expires_at };
         }
@@ -19482,7 +15577,6 @@ function app() {
     },
 
     async vcConsumeInviteFromHash() {
-      // Called from init() when URL hash matches #videocall=join&token=...
       const m = (location.hash || '').match(/[#&]token=([^&]+)/);
       if (!m) return;
       const token = decodeURIComponent(m[1]);
@@ -19497,28 +15591,21 @@ function app() {
           throw new Error(t || ('HTTP ' + r.status));
         }
         const data = await r.json();
-        // Navigate to videocall and select the room
         this.setPage('videocall');
         await this.vcLoadRooms();
         const fresh = this.videocall.rooms.find(rm => rm.id === (data.room && data.room.id));
         if (fresh) this.videocall.selectedRoom = fresh;
-        // Clean hash so a refresh doesn't try to consume again
         try { history.replaceState(null, '', '#videocall'); } catch (_) {}
       } catch (e) { this.vcError('consume invite: ' + e.message); }
     },
 
-    // ---- QoL: Keyboard shortcuts (M/V/C/P/F/Space/?) ----
     vcInstallShortcuts() {
       if (this._vcShortcutsInstalled) return;
       this._vcShortcutsInstalled = true;
-      // Keep the handlers in refs so they can be removed on logout.
       this._vcKeydownHandler = (e) => {
         if (!this.videocall.inCall || !this.videocall.shortcutsEnabled) return;
         const t = e.target;
         if (!t) return;
-        // PTT (Space hold) takes priority — it works EVEN in inputs/textareas
-        // except the chat input (where typing a space is normal). A refinement of
-        // the guard: Space used to be blocked in any input.
         if (e.code === 'Space' && !e.repeat) {
           const isChatInput = t.tagName === 'INPUT' && (t.placeholder === 'Message…' || t.placeholder === 'Message...');
           if (!isChatInput && this.videocall.muted) {
@@ -19529,22 +15616,14 @@ function app() {
           }
         }
         if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
-        // Space hold = push-to-talk while muted (legacy fallback — in case the
-        // path above did not take, e.g. the user is not muted)
         if (e.code === 'Space' && !e.repeat) {
           if (this.videocall.muted) {
             this.videocall.pttActive = true;
-            // Temporarily unmute (don't change persistent muted state)
             for (const tr of (window.PanelVideoCall._call?.localStream?.getAudioTracks() || [])) tr.enabled = true;
           }
           e.preventDefault();
           return;
         }
-        // Ctrl+Shift+! opens/closes the shortcuts overlay. It used to be ? / /
-        // (a single key), but Ctrl+Shift+! avoids a conflict when the user is
-        // typing in any context (even outside an input — e.g. focus on the body,
-        // where a lone ? fired it). e.key === '!' (with Shift) OR e.code === 'Digit1'
-        // (more robust combos across ABNT/US/etc. layouts where shift+1 = !).
         if (e.ctrlKey && e.shiftKey && (e.key === '!' || e.code === 'Digit1')) {
           this.videocall.shortcutsOverlay = !this.videocall.shortcutsOverlay;
           e.preventDefault();
@@ -19576,7 +15655,6 @@ function app() {
       window.addEventListener('keydown', this._vcKeydownHandler);
       window.addEventListener('keyup', this._vcKeyupHandler);
     },
-    // The inverse of vcInstallShortcuts — removes the listeners on logout so nothing leaks.
     vcUninstallShortcuts() {
       if (!this._vcShortcutsInstalled) return;
       try { if (this._vcKeydownHandler) window.removeEventListener('keydown', this._vcKeydownHandler); } catch(_) {}
@@ -19590,7 +15668,6 @@ function app() {
       localStorage.setItem('panel_vc_shortcuts', this.videocall.shortcutsEnabled ? '1' : '0');
     },
 
-    // ---- QoL: Connection quality bars (Wi-Fi-like) ----
     vcConnectionQuality() {
       const s = this.videocall.stats || {};
       const rtt = s.rtt || 0;
@@ -19600,7 +15677,6 @@ function app() {
       else if (rtt > 250 || loss > 20) bars = 2;
       else if (rtt > 100 || loss > 5) bars = 3;
       else bars = 4;
-      // Relay caps at 3 bars (visual hint that we're going through TURN)
       if (s.connectionType === 'relay') bars = Math.min(bars, 3);
       return bars;
     },
@@ -19613,7 +15689,6 @@ function app() {
       return b >= 4 ? 'excellent' : b === 3 ? 'good' : b === 2 ? 'unstable' : 'bad';
     },
 
-    // ---- QoL: Reactions (emoji floating) ----
     vcToggleReactionsPicker() {
       this.videocall.reactionsPickerOpen = !this.videocall.reactionsPickerOpen;
       this.vcClosePopovers();
@@ -19621,30 +15696,25 @@ function app() {
     vcSendReaction(emoji) {
       this.videocall.reactionsPickerOpen = false;
       this.vcShowReaction({ emoji, from: 'me', ts: Date.now() });
-      // Broadcast via existing chat DataChannel as a chat-flavored frame.
       if (window.PanelVideoCall) {
-        // hack: send as chat message with reserved prefix; receiver detects
         window.PanelVideoCall.sendChat('✨REACT✨' + emoji);
       }
     },
     vcShowReaction(r) {
       const id = (r.id || ('r' + Date.now() + Math.random().toString(36).slice(2,6)));
       this.videocall.reactions.push({ id, emoji: r.emoji, from: r.from, ts: r.ts || Date.now() });
-      // Hard cap at 50 — a burst of reactions must not fill the DOM.
       if (this.videocall.reactions.length > 50) this.videocall.reactions = this.videocall.reactions.slice(-50);
       setTimeout(() => {
         this.videocall.reactions = this.videocall.reactions.filter(x => x.id !== id);
       }, 3500);
     },
 
-    // ---- QoL: Peer state (mic/cam/hand) listener ----
     vcHandlePeerState(from, state) {
       const cur = this.videocall.peerStates[from] || {};
       const updated = { ...cur, ...state };
       this.videocall.peerStates = { ...this.videocall.peerStates, [from]: updated };
     },
 
-    // ---- QoL: Chat unread badge ----
     vcChatUnread() {
       return Math.max(0, this.videocall.chat.length - this.videocall.chatLastRead);
     },
@@ -19652,7 +15722,6 @@ function app() {
       this.videocall.chatLastRead = this.videocall.chat.length;
     },
 
-    // ---- QoL: Snapshot remote ----
     vcSnapshotRemote() {
       const peers = document.querySelectorAll('#vc-videos video[data-vc-peer]');
       if (!peers.length) { this.vcError('no remote video to capture'); return; }
@@ -19672,11 +15741,6 @@ function app() {
       }, 'image/png');
     },
 
-    // ---- QoL: Drag-and-drop + paste image ----
-    // A drop overlay with a watchdog: while the file is over the page `dragover`
-    // repeats (every ~50-350ms). If it stops repeating, the drag ended out of our
-    // reach — the overlay closes itself instead of staying stuck waiting for a
-    // `dragleave` that never comes.
     vcDropOverlayShow() {
       this.videocall.dropOverlay = true;
       clearTimeout(this._vcDropWatchdog);
@@ -19689,24 +15753,15 @@ function app() {
     },
     vcInstallDropHandlers() {
       if (this._vcDropInstalled) return;
-      // Skipped on mobile (no native drag-drop) — pasting via the clipboard still
-      // works on a touch device.
       if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
       this._vcDropInstalled = true;
-      const root = document.body; // catch globally; check inCall in handler
+      const root = document.body;
       ['dragenter', 'dragover'].forEach(ev => root.addEventListener(ev, (e) => {
         if (!this.videocall.inCall) return;
         if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes('Files')) return;
         e.preventDefault(); e.stopPropagation();
         this.vcDropOverlayShow();
       }));
-      // Closing the overlay is the treacherous part. `dragleave` fires when
-      // crossing ANY child (the old `e.target === root` test almost never matched,
-      // because the target was a tile/video inside it) and does NOT fire when the
-      // file leaves through the window edge or is dropped in another app — result:
-      // the overlay gets stuck on screen. Two defenses: a leave only counts when
-      // the pointer actually leaves the document, and the vcDropOverlayShow()
-      // watchdog closes it by itself when `dragover` stops repeating.
       root.addEventListener('dragleave', (e) => {
         if (!this.videocall.dropOverlay) return;
         const leftWindow = !e.relatedTarget ||
@@ -19715,7 +15770,6 @@ function app() {
         if (leftWindow) this.vcDropOverlayHide();
       });
       root.addEventListener('dragend', () => this.vcDropOverlayHide());
-      // Dragging out of the window (dropping into another app) usually just blurs.
       window.addEventListener('blur', () => this.vcDropOverlayHide());
       root.addEventListener('drop', async (e) => {
         if (!this.videocall.inCall) return;
@@ -19742,8 +15796,6 @@ function app() {
       });
     },
 
-    // A styled confirmation — replaces the native confirm(). The `onYes` callback
-    // only fires if the user clicks Confirm. Backdrop click / Esc cancel.
     vcAskConfirm(opts) {
       this.vcClosePopovers && this.vcClosePopovers();
       this.vcConfirm = {
@@ -19762,7 +15814,6 @@ function app() {
     },
     vcConfirmNo() { this.vcConfirm.open = false; },
 
-    // ---- QoL: Hangup confirm if call > 5min ----
     vcHangupSafe() {
       const dur = this.videocall.activeRoomId && window.PanelVideoCall && window.PanelVideoCall._call
         ? Math.round((Date.now() - (window.PanelVideoCall._call.callStartedAt || Date.now())) / 1000)
@@ -19780,7 +15831,6 @@ function app() {
       this.vcHangup();
     },
 
-    // ---- QoL: Picture-in-Picture ----
     async vcTogglePip() {
       try {
         if (document.pictureInPictureElement) {
@@ -19798,12 +15848,6 @@ function app() {
       } catch (e) { this.vcError('PiP: ' + e.message); }
     },
 
-    // Accordion for the ⚙ popover: opens/closes a group and persists it.
-    // On a phone the settings sheet fills nearly the whole screen, so several
-    // groups open at once become a wall of scrolling (measured: >1400px with
-    // everything open). There the accordion is EXCLUSIVE — opening one closes the
-    // others. On desktop the popover is wide and seeing several groups at once
-    // helps: the old behavior (multiple) stays intact.
     _vcSheetMobile() {
       try { return window.matchMedia('(max-width: 767.98px)').matches; } catch (_) { return false; }
     },
@@ -19817,7 +15861,6 @@ function app() {
       try { localStorage.setItem('panel_vc_settings_groups', JSON.stringify(this.videocall.settingsGroups)); } catch (e) {}
     },
 
-    // ---- Layout controls (local PiP + remote fit + spotlight) ----
     vcSetLocalPipSize(size) {
       if (!['sm','md','lg','hidden'].includes(size)) return;
       this.videocall.localPipSize = size;
@@ -19831,10 +15874,6 @@ function app() {
     vcToggleLocalMirror() {
       this.videocall.localMirror = !this.videocall.localMirror;
       localStorage.setItem('panel_vc_local_mirror', this.videocall.localMirror ? '1' : '0');
-      // Belt-and-suspenders: also apply it inline. The CSS rule
-      // (.vc-call-root[data-local-mirror=...] video[data-vc-local=...]) should be
-      // enough, but some combinations of selectors and attribute order lose on
-      // specificity. Inline always wins.
       try {
         const videos = document.querySelectorAll('video[data-vc-local="1"]');
         videos.forEach(v => {
@@ -19842,9 +15881,6 @@ function app() {
         });
       } catch (_) {}
     },
-    // Reapplies the inline mirror when the call starts OR when the local video is
-    // recreated (track replace, reconnect). Without this, the state saved in
-    // localStorage was not reflected visually until the user toggled it again.
     vcApplyLocalMirror() {
       try {
         const videos = document.querySelectorAll('video[data-vc-local="1"]');
@@ -19853,9 +15889,6 @@ function app() {
         });
       } catch (_) {}
     },
-    // Observes #vc-videos and reapplies the mirror whenever a tile enters/leaves
-    // (including the async creation of the local <video> by the engine, and a
-    // camera switch). Replaces the blind setTimeout(1000/3000) calls. Idempotent.
     _vcSetupMirrorObserver() {
       try {
         const el = document.getElementById('vc-videos');
@@ -19863,7 +15896,6 @@ function app() {
         if (this._vcMirrorObs) { try { this._vcMirrorObs.disconnect(); } catch (_) {} }
         this._vcMirrorObs = new MutationObserver(() => this.vcApplyLocalMirror());
         this._vcMirrorObs.observe(el, { childList: true });
-        // Covers the case where the local <video> already exists before the observer starts.
         this.vcApplyLocalMirror();
         setTimeout(() => this.vcApplyLocalMirror(), 600);
       } catch (_) {}
@@ -19871,12 +15903,6 @@ function app() {
     _vcTeardownMirrorObserver() {
       if (this._vcMirrorObs) { try { this._vcMirrorObs.disconnect(); } catch (_) {} this._vcMirrorObs = null; }
     },
-    // Publishes the real height of #vc-call-root in --vc-root-h. The settings
-    // popover (and the mic/camera ones) are children of that panel, which has
-    // overflow:hidden — sized by 100dvh they overflow the top of the panel in a
-    // short window and appear clipped at the top. The ResizeObserver covers window
-    // resize, entering/leaving fullscreen and the side panel opening.
-    // A height of 0 (panel with display:none) is ignored so the bound is not zeroed.
     _vcSetupPopoverBounds() {
       try {
         const el = document.getElementById('vc-call-root');
@@ -19885,10 +15911,6 @@ function app() {
         const apply = () => {
           const h = el.clientHeight, w = el.clientWidth;
           if (h > 0) el.style.setProperty('--vc-root-h', h + 'px');
-          // Width too: on mobile the options sheet is position:fixed INSIDE
-          // .vc-bottombar, which has transform/backdrop-filter and so becomes the
-          // containing block — left/right would resolve against the little bar, not
-          // against the screen. With --vc-root-w the sheet measures itself by the panel.
           if (w > 0) el.style.setProperty('--vc-root-w', w + 'px');
         };
         if (typeof ResizeObserver === 'function') {
@@ -19907,10 +15929,8 @@ function app() {
       localStorage.setItem('panel_vc_remote_fit', fit);
     },
     vcSpotlightPeer(peerId) {
-      // Toggle: clicking again turns it off. Marks/unmarks .vc-spotlighted on the tile.
       const videosEl = document.getElementById('vc-videos');
       if (!videosEl) return;
-      // Clear the old marking
       videosEl.querySelectorAll('.vc-spotlighted').forEach(el => el.classList.remove('vc-spotlighted'));
       if (this.videocall.spotlight === peerId) {
         this.videocall.spotlight = '';
@@ -19925,12 +15945,10 @@ function app() {
     vcInstallSpotlightClicks() {
       if (this._vcSpotlightInstalled) return;
       this._vcSpotlightInstalled = true;
-      // Delegated on #vc-videos — works for tiles created dynamically.
       document.addEventListener('click', (ev) => {
         if (!this.videocall.inCall) return;
         const tile = ev.target.closest && ev.target.closest('[data-vc-peer-tile]');
         if (!tile) return;
-        // Only handle clicks directly on the tile (not on controls inside it).
         if (ev.target !== tile && !ev.target.matches('video')) return;
         const peerId = tile.getAttribute('data-vc-peer-tile');
         if (peerId) {
@@ -19940,7 +15958,6 @@ function app() {
       });
     },
 
-    // ---- Quality modes (Phone / Minimum / Data saver / Medium / High / Custom) ----
     async vcSetQuality(mode) {
       this.videocall.qualityMode = mode;
       localStorage.setItem('panel_vc_quality', mode);
@@ -19952,16 +15969,10 @@ function app() {
           localStorage.setItem('panel_vc_budget_kbps', String(this.videocall.budgetKbps));
         }
       }
-      // Hot-apply if in call (also triggers SDP renegotiation when opusTweak flips).
       if (this.videocall.inCall && mode !== 'custom' && window.PanelVideoCall.applyQualityProfile) {
         await window.PanelVideoCall.applyQualityProfile(mode);
       }
     },
-    // Owner force quality — broadcast so every peer applies the same mode.
-    // Useful on a bad network: the owner says "let us move to data saver" and the
-    // whole call degrades automatically.
-    // Kick a participant. Owner-only — the server validates the ACL and closes the
-    // WS of the target peer. That client gets a `kicked` signal and drops with a clear toast.
     vcKickPeer(peerId, peerLabel) {
       if (!peerId) return;
       const roomId = this.videocall.activeRoomId || (this.videocall.selectedRoom && this.videocall.selectedRoom.id);
@@ -19993,12 +16004,7 @@ function app() {
         this.vcError('only the room owner can force a mode for everyone');
         return;
       }
-      // Apply locally first
       await this.vcSetQuality(mode);
-      // Broadcast via the signaling state — peers receive a peer-state with
-      // quality_force set and apply it via applyQualityProfile.
-      // (This used to call window.PanelVideoCall._call.send, which did not exist —
-      // _call is private inside the closure. It now uses the public sendState.)
       let sent = false;
       if (window.PanelVideoCall && window.PanelVideoCall.sendState) {
         sent = window.PanelVideoCall.sendState({ quality_force: mode, by: this.username });
@@ -20010,7 +16016,6 @@ function app() {
       }
     },
 
-    // ---- In-call UI helpers (side panels, fullscreen, auto-hide) ----
     vcToggleSidePanel(name) {
       this.videocall.sidePanel = (this.videocall.sidePanel === name) ? '' : name;
       this.videocall.settingsPopOpen = false;
@@ -20023,9 +16028,6 @@ function app() {
       this.videocall.settingsPopOpen = !this.videocall.settingsPopOpen;
       this.videocall.audioPopOpen = false;
       this.videocall.videoPopOpen = false;
-      // Opening on a phone: the saved state (or the default, which already starts
-      // with 'quality' and 'owner' open) can bring several groups expanded. Leave
-      // only the first one, otherwise the sheet opens in the middle of a wall of scrolling.
       if (this.videocall.settingsPopOpen && this._vcSheetMobile() && this.videocall.settingsGroups) {
         const openOnes = Object.keys(this.videocall.settingsGroups).filter((g) => this.videocall.settingsGroups[g]);
         if (openOnes.length > 1) {
@@ -20070,39 +16072,23 @@ function app() {
     },
     vcRaiseHand() {
       this.videocall.handRaised = !this.videocall.handRaised;
-      // broadcast as a state event
       try {
         if (window.PanelVideoCall && this.videocall.inCall) {
-          // Reuse the signaling state channel: send via the native method
           const ws = window.PanelVideoCall;
-          // Force it through a setMuted-like path? No API exposed. We skip the
-          // server-side broadcast: local state stays visible to me, peers only see
-          // it via the state events we already send. Simplest: emit it as our own
-          // signaling — add an API later. For now, local-only.
         }
       } catch (_) {}
     },
-    // async + pre-flight: before turning it ON, confirm that some usable engine
-    // exists right now and that the mic is not blocked — and give an honest toast
-    // if not. Without this the failure was MUTE (the button was clicked, nothing
-    // happened). Pre-flight only on the ON path; turning it off is always safe.
-    // _subtitlesToggling serializes clicks (the await opens a reentrancy window).
     async vcToggleSubtitles() {
       if (!window.PanelVideoCall || this._subtitlesToggling) return;
       this._subtitlesToggling = true;
       try {
         if (!this.videocall.subtitlesActive) {
-          // Capability + liveness. availableBackends() = what the browser can do;
-          // probeWhisperLocal() = whether the server backend is really up. We only
-          // block when NO engine will serve — the fine-grained fallback (whisper
-          // down → web-speech) belongs to setSubtitles. The probe is one cheap GET to /api/stt/health.
           const avail = (window.PanelSTT && window.PanelSTT.availableBackends) ? window.PanelSTT.availableBackends() : [];
           const whisperUsable = avail.includes('whisper-local') && await window.PanelSTT.probeWhisperLocal();
           if (!avail.includes('web-speech') && !whisperUsable) {
             this.vcInfo('🎙 No transcription engine available right now');
             return;
           }
-          // Mic explicitly denied → an honest toast (does not block on 'prompt').
           try {
             if (navigator.permissions && navigator.permissions.query) {
               const st = await navigator.permissions.query({ name: 'microphone' });
@@ -20121,8 +16107,6 @@ function app() {
             backend: this.videocall.sttBackend || 'web-speech',
           }
         );
-        // When transcription is enabled for the first time, propagate the current
-        // "show captions" state to the engine (preserving the saved preference).
         if (this.videocall.subtitlesActive && window.PanelVideoCall.setShowCaptions) {
           try { window.PanelVideoCall.setShowCaptions(this.videocall.subtitlesShow); } catch (_) {}
         }
@@ -20130,8 +16114,6 @@ function app() {
         this._subtitlesToggling = false;
       }
     },
-    // Switches the STT backend. If transcription is active, restart it with the
-    // new backend so it applies immediately.
     vcSetSttBackend(backend) {
       if (backend !== 'web-speech' && backend !== 'whisper-local') return;
       if (backend === 'whisper-local' && !this.videocall.whisperLocalAvailable) {
@@ -20141,13 +16123,9 @@ function app() {
       this.videocall.sttBackend = backend;
       try {
         localStorage.setItem('panel_vc_stt_backend', backend);
-        // Explicit flag: the user clicked (it was not an automatic default). Without
-        // this, the next auto-migration at boot could overwrite the choice made there.
         localStorage.setItem('panel_vc_stt_backend_explicit', '1');
       } catch (_) {}
-      // If transcription is already active, restart it with the new backend.
       if (this.videocall.subtitlesActive && window.PanelVideoCall) {
-        // A quick off + on to swap the driver.
         window.PanelVideoCall.setSubtitles(false, { _silentPropagate: true });
         setTimeout(() => {
           this.videocall.subtitlesActive = !!window.PanelVideoCall.setSubtitles(true, {
@@ -20158,10 +16136,6 @@ function app() {
         }, 200);
       }
     },
-    // Independent toggle: turns the visual caption overlay OVER the videos on and
-    // off. STT (transcription) keeps running — the text still goes to the panel +
-    // the summary. Useful when you want to keep the speech history but do not want
-    // letters over the picture of the peer.
     vcToggleCaptions() {
       const next = !this.videocall.subtitlesShow;
       this.videocall.subtitlesShow = next;
@@ -20170,8 +16144,6 @@ function app() {
         try { window.PanelVideoCall.setShowCaptions(next); } catch (_) {}
       }
     },
-    // Outgoing mic volume: applied live in a call and persisted. Outside a call
-    // it is only stored and takes effect on the next connect().
     vcSetMicGain(v) {
       const g = Math.min(4, Math.max(0.25, Number(v) || 1.0));
       this.videocall.micGain = g;
@@ -20183,8 +16155,6 @@ function app() {
     vcMicGainPct() {
       return Math.round((this.videocall.micGain || 1) * 100) + '%';
     },
-    // The slider moves in log2 of the volume (-2..2 = 25%..400%) so every step
-    // sounds equal and 100% sits in the middle; near the middle it snaps to 100%.
     vcMicGainPos() {
       return Math.log2(this.videocall.micGain || 1);
     },
@@ -20192,8 +16162,6 @@ function app() {
       const p = Math.abs(pos) < 0.08 ? 0 : pos;
       this.vcSetMicGain(Math.round(Math.pow(2, p) * 100) / 100);
     },
-    // Noise suppression / echo cancellation / auto gain. In a call it reopens
-    // the mic with the new config without the peers noticing.
     async vcSetMicProc(key, on) {
       if (!['noiseSuppression', 'echoCancellation', 'autoGainControl'].includes(key)) return;
       if (key === 'echoCancellation' && !on) {
@@ -20226,9 +16194,6 @@ function app() {
         this.vcLobbyStartMicMonitor();
       }
     },
-    // Live meter of what goes out to the peers. A single loop that runs only while
-    // the mic menu or settings are open in a call, then stops by itself. ~20
-    // updates/s is enough for the eye without making Alpine re-render every frame.
     _vcMicMeterEnsure() {
       if (this._vcMicMeterRaf) return;
       let last = 0;
@@ -20252,7 +16217,6 @@ function app() {
       };
       this._vcMicMeterRaf = requestAnimationFrame(tick);
     },
-    // Owner actions — all validated server-side, the UI is only a convenience.
     vcOwnerMutePeer(peerId) {
       if (!window.PanelVideoCall || !window.PanelVideoCall.ownerMutePeer) return;
       try { window.PanelVideoCall.ownerMutePeer(peerId); this.vcToast('🔇 Participant muted'); } catch (_) {}
@@ -20283,7 +16247,6 @@ function app() {
         this.vcToast('🔇 ' + n + ' participant(s) muted');
       } catch (_) {}
     },
-    // A light toast for owner-action feedback. Falls back to the console when vcStatusToast is unavailable.
     vcToast(msg) {
       try {
         if (typeof this.vcStatusToast === 'function') return this.vcStatusToast(msg);
@@ -20294,14 +16257,10 @@ function app() {
       this.videocall.subtitlesLang = lang;
       localStorage.setItem('panel_vc_subtitles_lang', lang);
       this.videocall.subtitlesLangPickerOpen = false;
-      // Uses changeSubtitlesLang, which restarts the local STT without firing an
-      // off→on broadcast (that confused remote peers and made their STT try to
-      // restart immediately → the loop guard tripped).
       if (this.videocall.subtitlesActive && window.PanelVideoCall) {
         if (window.PanelVideoCall.changeSubtitlesLang) {
           window.PanelVideoCall.changeSubtitlesLang(lang);
         } else {
-          // Fallback for the old engine (will disappear once every client is redeployed)
           window.PanelVideoCall.setSubtitles(false);
           window.PanelVideoCall.setSubtitles(true, { lang, token: this.token });
         }
@@ -20311,7 +16270,6 @@ function app() {
       const map = { 'en-US':'English (US)','pt-BR':'Portuguese (BR)','es-ES':'Spanish','fr-FR':'French','it-IT':'Italian','de-DE':'German','ja-JP':'Japanese' };
       return map[this.videocall.subtitlesLang] || this.videocall.subtitlesLang;
     },
-    // ---- Transcript panel (Tactiq style) ----
     vcOpenTranscriptPanel() { this.vcToggleSidePanel('transcript'); },
     vcClearTranscript() {
       this.vcAskConfirm({
@@ -20378,9 +16336,8 @@ function app() {
       a.download = 'transcript-' + room.replace(/[^a-z0-9-]/gi, '_') + '-' + ts + '.' + ext;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      return; // skip old code below
+      return;
     },
-    // ---- IndexedDB persistence (survive crash/refresh) ----
     async _vcDB() {
       if (this._vcDBHandle) return this._vcDBHandle;
       return new Promise((resolve, reject) => {
@@ -20419,13 +16376,11 @@ function app() {
         };
       } catch (_) {}
     },
-    // ---- Speaker active glow (correlated with audioLevel via the stats loop) ----
     vcIsSpeakerActive(peerId) {
       const s = this.videocall.peerAudioLevels || {};
       return (s[peerId] || 0) > 0.04;
     },
     _vcOriginalDownload() {
-      // kept for back-compat — dead body, the public vcDownloadTranscript function already covers everything
       const lines = this.videocall.transcriptEntries.map(e =>
         '[' + new Date(e.ts).toISOString() + '] ' + e.fromLabel + ': ' + e.text
       );
@@ -20445,12 +16400,10 @@ function app() {
         (e.text||'').toLowerCase().includes(q) || (e.fromLabel||'').toLowerCase().includes(q)
       );
     },
-    // ---- Polish via Claude (fixes punctuation, hesitations, errors) ----
     vcTogglePolishAI() {
       this.videocall.polishWithAI = !this.videocall.polishWithAI;
       localStorage.setItem('panel_vc_polish_ai', this.videocall.polishWithAI ? '1' : '0');
       if (this.videocall.polishWithAI) {
-        // Enqueue existing entries that have not been polished.
         for (const e of this.videocall.transcriptEntries) {
           if (!e.polishedText && !e.polishing && this._vcShouldPolish(e.text)) {
             this.videocall.polishQueue.push(e.id);
@@ -20463,14 +16416,12 @@ function app() {
       const cur = this.videocall.showOriginalIds || {};
       this.videocall.showOriginalIds = { ...cur, [entryId]: !cur[entryId] };
     },
-    // Heuristic: do not polish very short lines (not worth the cost) nor already-perfect ones.
     _vcShouldPolish(text) {
       if (!text) return false;
       const t = String(text).trim();
       if (t.length < 8) return false;
       const words = t.split(/\s+/).length;
       if (words < 3) return false;
-      // Already has closing punctuation + an initial capital? Probably fine.
       if (/^[A-ZÀ-Ý]/.test(t) && /[.!?]$/.test(t) && words < 10) return false;
       return true;
     },
@@ -20491,10 +16442,8 @@ function app() {
           const e = this.videocall.transcriptEntries.find(x => x.id === id);
           if (!e || e.polishedText) continue;
           e.polishing = true;
-          // Mark via re-assignment so Alpine picks up reactivity (entries is an array; direct mutation works in Alpine 3, but we make sure).
           this.videocall.transcriptEntries = this.videocall.transcriptEntries.slice();
           try {
-            // Take the last 3 POLISHED lines (preferred) as context.
             const idx = this.videocall.transcriptEntries.indexOf(e);
             const ctx = [];
             for (let i = Math.max(0, idx-5); i < idx && ctx.length < 3; i++) {
@@ -20517,7 +16466,6 @@ function app() {
                 e.polishedText = data.polished;
               }
             } else if (r.status === 503) {
-              // ANTHROPIC_API_KEY not configured — disable so we do not flood.
               this.videocall.polishWithAI = false;
               localStorage.setItem('panel_vc_polish_ai', '0');
               this.vcError('AI polish unavailable: set ANTHROPIC_API_KEY on the server');
@@ -20532,27 +16480,19 @@ function app() {
       }
     },
 
-    // ---- Transcription: display helpers ----
-    // Resolves peerId → a human name. peersList is populated by the cbState
-    // peer-count from the engine ({id, user}). user may arrive as "guest:Alice"
-    // for guests joining by PIN — strip the prefix.
     vcPeerLabel(peerId) {
       if (!peerId || peerId === 'me') return this.username || 'You';
       const list = this.videocall.peersList || [];
       const found = list.find(p => p.id === peerId);
       if (found && found.user) return String(found.user).replace(/^guest:/, '');
-      // displayName fallback in peerStates (when it was sent via peer-state)
       const st = this.videocall.peerStates && this.videocall.peerStates[peerId];
       if (st && st.displayName) return String(st.displayName).replace(/^guest:/, '');
       return 'Participant';
     },
-    // Peer name, or '' when unknown: callers have their own fallback ('Owner',
-    // short id). The owner-lock/owner-transferred handlers depend on it.
     vcPeerName(peerId) {
       const l = this.vcPeerLabel(peerId);
       return l === 'Participant' ? '' : l;
     },
-    // A consistent color per peerId — hash → HSL. "me" is always the panel blue.
     vcPeerColor(peerId) {
       if (!peerId || peerId === 'me') return '#2563eb';
       let h = 0;
@@ -20565,8 +16505,6 @@ function app() {
       const name = this.vcPeerLabel(peerId);
       return (name.trim().charAt(0) || '?').toUpperCase();
     },
-    // Groups consecutive entries from the same peer within a short window (90s).
-    // Returns [{...entry, grouped: bool}] — grouped=true hides the avatar/meta.
     vcGroupedTranscript() {
       const arr = this.vcFilteredTranscript();
       const out = [];
@@ -20578,15 +16516,11 @@ function app() {
       }
       return out;
     },
-    // Auto-scroll: called when a new entry arrives. Only scrolls if the user was
-    // near the end (do not interrupt them if they scrolled up).
     vcMaybeScrollTranscript() {
       this.$nextTick(() => {
         const el = document.getElementById('vc-tr-scroll');
         if (!el) return;
         const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
-        // Threshold 240 (it was 120) — a compact UI with bubble messages has entries
-        // of about 50px. 240 = roughly 4-5 entries of margin before auto-scroll stops.
         if (dist < 240) {
           el.scrollTop = el.scrollHeight;
           this.videocall.transcriptHasMore = false;
@@ -20627,34 +16561,24 @@ function app() {
         }
       } catch (e) { this.vcError('fullscreen: ' + e.message); }
     },
-    // Activity during the call (mouse OR touch) reveals the controls and rearms
-    // the auto-hide timer. On pure touch, without this the controls were
-    // unreachable (call-root only listened to @mousemove). The vcCallMouseMove alias is kept.
     vcCallActivity() {
       this.videocall.controlsVisible = true;
       if (this._idleTimer) clearTimeout(this._idleTimer);
       this._idleTimer = setTimeout(() => {
-        // Do not hide while some popover is open.
         if (this.videocall.settingsPopOpen || this.videocall.audioPopOpen || this.videocall.videoPopOpen) return;
         if (this.videocall.sidePanel) return;
         this.videocall.controlsVisible = false;
       }, 3500);
     },
-    vcCallMouseMove() { return this.vcCallActivity(); }, // legacy alias
+    vcCallMouseMove() { return this.vcCallActivity(); },
     vcVideosGridClass() {
-      // peerCount is updated via cbState from the engine (peer-joined/peer-left).
-      // Old bug: it used this.videocall.peers (which was NEVER set), so n was
-      // always 1 → always 'solo' → the .vc-videos:not(.solo) selectors never
-      // matched → the Layout controls (PiP size/pos/mirror/fit) had no visual
-      // effect at all.
-      const n = (this.videocall.peerCount || 0) + 1; // +1 = local
+      const n = (this.videocall.peerCount || 0) + 1;
       if (n <= 1) return 'solo';
       if (n === 2) return 'peers-2';
       if (n === 3) return 'peers-3';
       return 'peers-4';
     },
 
-    // ---- Lobby (pre-call device picker + preview) ----
     async vcLobbyOpen(roomId, passphrase) {
       this.videocall.lobbyForRoomId = roomId;
       this.videocall.lobbyForPassphrase = passphrase || '';
@@ -20662,34 +16586,20 @@ function app() {
       this.videocall.lobbyOpen = true;
       this.videocall.lobbyBusy = true;
       try {
-        // Probe permission (one-shot getUserMedia) so device labels populate.
-        // Returns {ok, error, name} — shows the specific message instead of the
-        // generic "please allow…", which does not help when the user already denied.
         const probe = await window.PanelVideoCall.probeDevicePermission();
-        // Capabilities per type. Having just one side is already enough to join:
-        // with no camera you join audio-only, with no mic you join just watching.
         this.videocall.lobbyCaps = { audio: !!(probe && probe.audio), video: !!(probe && probe.video) };
         this.videocall.lobbyPermission = probe && probe.ok ? 'granted' : 'denied';
         this.videocall.lobbyError = (probe && probe.ok && probe.audio && probe.video)
           ? '' : ((probe && probe.error) || 'Allow the camera and the microphone in the browser to continue.');
-        // ALWAYS enumerate, even when the probe fails. The `return` that used to
-        // be here was the reason the pickers showed up empty (only "System
-        // default") when ONE device was missing: the error and the empty list
-        // were the same event, and it looked as if the browser could not see any
-        // hardware at all.
         await this.vcRefreshDevices();
-        // Validate that saved device IDs still exist; fall back to default if not.
         const cams = this.videocall.devices.cameras.map(d => d.deviceId);
         const mics = this.videocall.devices.mics.map(d => d.deviceId);
         const spks = this.videocall.devices.speakers.map(d => d.deviceId);
         if (this.videocall.selectedDevices.camera !== 'default' && !cams.includes(this.videocall.selectedDevices.camera)) this.videocall.selectedDevices.camera = 'default';
         if (this.videocall.selectedDevices.mic    !== 'default' && !mics.includes(this.videocall.selectedDevices.mic))    this.videocall.selectedDevices.mic = 'default';
         if (this.videocall.selectedDevices.speaker !== 'default' && spks.length && !spks.includes(this.videocall.selectedDevices.speaker)) this.videocall.selectedDevices.speaker = 'default';
-        // Preview and VU only for the side that exists — asking for a camera that
-        // is not there would overwrite lobbyError with a less useful "camera: ...".
         if (this.videocall.lobbyCaps.video) await this.vcLobbyStartPreview();
         if (this.videocall.lobbyCaps.audio) this.vcLobbyStartMicMonitor();
-        // Plugged the webcam in with the lobby open? It re-detects by itself.
         this.vcLobbyWatchDevices();
       } catch (e) {
         this.videocall.lobbyError = e.message;
@@ -20704,7 +16614,6 @@ function app() {
     async vcLobbyStartPreview() {
       const v = document.getElementById('vc-lobby-preview');
       if (!v) return;
-      // Stop the previous preview stream if any.
       if (v.srcObject) {
         try { v.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {}
         v.srcObject = null;
@@ -20724,8 +16633,6 @@ function app() {
     vcLobbyStartMicMonitor() {
       if (this._lobbyMicMon) { this._lobbyMicMon.stop(); this._lobbyMicMon = null; }
       const micId = this.videocall.selectedDevices.mic;
-      // Same volume and processing as the call, so the lobby shows what the other
-      // side will hear. gain is a function so the slider applies live without reopening the mic.
       this._lobbyMicMon = window.PanelVideoCall.createMicLevelMonitor(micId, (lvl, info) => {
         this.videocall.lobbyMicLevel = lvl;
         this.videocall.micLimiting = !!(info && info.limiting);
@@ -20746,8 +16653,6 @@ function app() {
       localStorage.setItem('panel_vc_speaker_id', deviceId);
     },
     async vcLobbyTestSpeaker() {
-      // Visible feedback: without it the click was an act of faith. The beep lasts
-      // ~0.5s; the check stays a little longer so it gets noticed.
       clearTimeout(this._lobbyToneTimer);
       this.videocall.lobbyTone = true;
       this._lobbyToneTimer = setTimeout(() => { this.videocall.lobbyTone = false; }, 900);
@@ -20763,8 +16668,6 @@ function app() {
       const caps = this.videocall.lobbyCaps || { audio: true, video: true };
       this.vcLobbyCleanup();
       this.videocall.lobbyOpen = false;
-      // The lobby already measured what exists — pass it along so we do not even
-      // try the impossible. Whoever skips the lobby falls back to engine degradation.
       await this._vcStartCall(roomId, pass, { audioOnly: !caps.video, micOff: !caps.audio });
     },
     vcLobbyCancel() {
@@ -20773,17 +16676,8 @@ function app() {
       this.videocall.lobbyForRoomId = '';
       this.videocall.lobbyForPassphrase = '';
     },
-    // Connecting/disconnecting a device with the lobby open fires devicechange.
-    // Without this the user plugged in the webcam and kept seeing "no camera",
-    // without even a retry button that did anything.
     vcLobbyWatchDevices() {
       if (this._lobbyDevWatch || !navigator.mediaDevices) return;
-      // Careful: vcLobbyOpen ACQUIRES streams (probe + preview + VU), and granting
-      // permission makes the labels appear — which by itself fires devicechange.
-      // Reopening the lobby straight from here is a feedback loop:
-      // open -> acquire -> event -> open. Three brakes: only when the SET of
-      // devices actually changed, never during an open in progress, and with a
-      // debounce (plugging in one device emits several events in a row).
       this._lobbyDevSig = null;
       const signature = async () => {
         try {
@@ -20797,7 +16691,7 @@ function app() {
         this._lobbyDevTimer = setTimeout(async () => {
           if (!this.videocall.lobbyOpen || this.videocall.lobbyBusy) return;
           const sig = await signature();
-          if (sig === null || sig === this._lobbyDevSig) return; // only the labels changed
+          if (sig === null || sig === this._lobbyDevSig) return;
           this._lobbyDevSig = sig;
           this.vcLobbyOpen(this.videocall.lobbyForRoomId, this.videocall.lobbyForPassphrase);
         }, 400);
@@ -20820,7 +16714,6 @@ function app() {
       }
     },
 
-    // ---- In-call settings (hot-swap devices mid-call) ----
     async vcSettingsOpen() {
       this.videocall.settingsOpen = true;
       await this.vcRefreshDevices();
@@ -20834,9 +16727,6 @@ function app() {
     },
     vcSettingsStartMicMonitor() {
       if (this._settingsMicMon) { this._settingsMicMon.stop(); this._settingsMicMon = null; }
-      // In a call, measure what goes OUT (volume applied) straight from the engine,
-      // without opening a second mic capture. The separate monitor is the fallback
-      // for when the engine has no volume pipeline.
       const api = window.PanelVideoCall;
       if (this.videocall.inCall && api && api.getMicLevel && api.getMicLevel()) {
         this._vcMicMeterEnsure();
@@ -20864,19 +16754,15 @@ function app() {
       await window.PanelVideoCall.setSpeakerDevice(id);
     },
     async vcSettingsTestSpeaker() {
-      // The same visible feedback as the lobby — without it the click confirms nothing.
       clearTimeout(this._settingsToneTimer);
       this.videocall.settingsTone = true;
       this._settingsToneTimer = setTimeout(() => { this.videocall.settingsTone = false; }, 900);
       await window.PanelVideoCall.playTestTone(this.videocall.selectedDevices.speaker);
     },
 
-    // ---- In-call PIN (the owner can generate/share a PIN without leaving) ----
     async vcPinFromCall() {
       const room = this.videocall.selectedRoom;
       if (!room) {
-        // Can happen when they arrived via a deep link and selectedRoom has none.
-        // Load the room by activeRoomId
         if (this.videocall.activeRoomId) {
           await this.vcLoadRooms();
           this.videocall.selectedRoom = this.videocall.rooms.find(r => r.id === this.videocall.activeRoomId);
@@ -20887,20 +16773,17 @@ function app() {
       this.videocall.pinModalOpen = true;
     },
 
-    // ---- In-call invite (generates + opens the share modal without leaving the call) ----
     async vcInviteFromCall() {
       const roomId = this.videocall.activeRoomId || (this.videocall.selectedRoom && this.videocall.selectedRoom.id);
       if (!roomId) return;
       await this.vcGenerateInvite(roomId, this.videocall.inviteTTLMin || 60);
     },
 
-    // ---- Privacy frost ----
     async vcToggleFrost() {
       if (!window.PanelVideoCall) return;
       this.videocall.frostActive = !!(await window.PanelVideoCall.setPrivacyFrost(!this.videocall.frostActive));
     },
 
-    // ---- Push (off-app) ----
     async vcTogglePush() {
       if (!window.PanelPush) return;
       if (this.videocall.pushBusy) return;
@@ -20925,7 +16808,6 @@ function app() {
       }
     },
 
-    // ---- Invite share targets ----
     _vcShareMessage() {
       const r = this.videocall.selectedRoom;
       const name = (r && r.name) ? r.name : 'room';
@@ -20956,14 +16838,13 @@ function app() {
     },
     vcShareCopy() { return this.vcCopyInvite(); },
 
-    // ---- File transfer ----
     vcOpenFilePicker() {
       const inp = document.getElementById('vc-file-input');
       if (inp) inp.click();
     },
     async vcOnFilesPicked(ev) {
       const files = Array.from(ev.target.files || []);
-      ev.target.value = ''; // allow re-picking same file
+      ev.target.value = '';
       for (const f of files) {
         if (f.size > 500 * 1024 * 1024) { this.vcError(f.name + ': larger than 500MB; refused'); continue; }
         this.videocall.filesPanelOpen = true;
@@ -20985,7 +16866,6 @@ function app() {
     vcOnFileReceived(f) {
       const t = this.videocall.transfers.find(x => x.id === f.id);
       if (t) { t.done = true; t.blob = f.blob; }
-      // Auto-prompt save
       const url = URL.createObjectURL(f.blob);
       const a = document.createElement('a');
       a.href = url; a.download = f.name || 'file';
@@ -20994,13 +16874,10 @@ function app() {
     },
     vcCloseFilesPanel() { this.videocall.filesPanelOpen = false; },
 
-    // ---- Whiteboard ----
     vcToggleWhiteboard() {
       this.videocall.wbActive = !this.videocall.wbActive;
       this.$nextTick(() => {
         if (this.videocall.wbActive) {
-          // The board and the annotation layer share z-index:6 and the board is
-          // opaque — never stack them. Opening the board closes annotation.
           if (this.videocall.annotActive) { this.videocall.annotActive = false; this.vcAnnotTeardown(); }
           this.vcWBInit();
         }
@@ -21013,7 +16890,7 @@ function app() {
       this._wbCtx = ctx;
       this._wbDrawing = false;
       this._wbLast = null;
-      this.vcWBResize();          // size the backing store (DPR-aware) + redraw
+      this.vcWBResize();
       const pointerDown = (e) => {
         e.preventDefault();
         this._wbDrawing = true;
@@ -21024,7 +16901,7 @@ function app() {
         if (!this._wbDrawing) return;
         e.preventDefault();
         const p = this.vcWBPoint(canvas, e);
-        const color = this.videocall.wbColor;   // live read — respects the picker in real time
+        const color = this.videocall.wbColor;
         this.vcWBDrawLine(this._wbLast, p, color, 3);
         if (window.PanelVideoCall) {
           window.PanelVideoCall.sendWhiteboardEvent({ type: 'wb-line', from: this._wbLast, to: p, color: color, width: 3 });
@@ -21032,16 +16909,11 @@ function app() {
         this._wbLast = p;
       };
       const pointerUp = () => { this._wbDrawing = false; this._wbLast = null; };
-      // onpointer* assignment is idempotent (overwrite, not addEventListener),
-      // so re-running vcWBInit via the auto-open path is safe for handlers.
       canvas.onpointerdown = pointerDown;
       canvas.onpointermove = pointerMove;
       canvas.onpointerup = pointerUp;
       canvas.onpointercancel = pointerUp;
       canvas.onpointerleave = pointerUp;
-      // ResizeObserver is NOT idempotent — guard against duplicate observers on
-      // the re-entrant auto-open path. Resizing resets canvas.width (clears it),
-      // so we redraw the whole board from the shared buffer afterwards.
       if (!this._wbResizeObs) {
         this._wbResizeObs = new ResizeObserver(() => this.vcWBResize());
         this._wbResizeObs.observe(canvas.parentElement);
@@ -21053,15 +16925,11 @@ function app() {
       const sz = canvas.parentElement.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
       this._wbDpr = dpr;
-      // CSS size fills the parent; the backing store is scaled by DPR for a
-      // crisp stroke on retina. Normalized coords make this transparent.
       canvas.width = Math.round(Math.max(640, sz.width) * dpr);
       canvas.height = Math.round(Math.max(360, sz.height) * dpr);
       this.vcWBRedraw();
     },
     vcWBRedraw() {
-      // Repaint the entire board from the shared buffer. Local strokes keep the
-      // color they were drawn with; remote strokes are colored by author.
       const c = document.getElementById('vc-wb-canvas');
       if (c && this._wbCtx) this._wbCtx.clearRect(0, 0, c.width, c.height);
       const strokes = (window.PanelVideoCall && window.PanelVideoCall.getWhiteboardStrokes()) || [];
@@ -21071,22 +16939,15 @@ function app() {
       }
     },
     vcWBPoint(canvas, e) {
-      // Normalized [0..1] coords — resolution-independent so every peer sees the
-      // same drawing regardless of their local canvas size.
       const r = canvas.getBoundingClientRect();
       return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
     },
-    // Render-routing seam. Picks the canvas context by `surface` so a remote
-    // stroke tagged surface:'screen' lands on the transparent annotation canvas,
-    // and everything else on the opaque board. Returns {ctx,dpr} or null.
     _vcCanvasFor(surface) {
       if (surface === 'screen') {
         return this._annotCtx ? { ctx: this._annotCtx, dpr: this._annotDpr || 1 } : null;
       }
       return this._wbCtx ? { ctx: this._wbCtx, dpr: this._wbDpr || 1 } : null;
     },
-    // Draw one normalized segment. `surface` routes to the right canvas (board
-    // when absent, for backward-compat); `alpha` (<1) powers the highlighter.
     vcWBDrawLine(p1, p2, color, width, alpha, surface) {
       const target = this._vcCanvasFor(surface);
       if (!target || !p1 || !p2) return;
@@ -21105,24 +16966,15 @@ function app() {
       ctx.restore();
     },
     vcOnWhiteboard(ev) {
-      // The transport multiplexes two surfaces over one channel. Screen
-      // annotations render on the transparent overlay with their own lifecycle;
-      // board strokes keep the original behavior below. Absent surface => board.
       if (ev && ev.surface === 'screen') { this.vcOnAnnot(ev); return; }
       if (!this.videocall.wbActive) {
-        // Open the whiteboard automatically when a remote peer draws.
         this.videocall.wbActive = true;
         this.$nextTick(() => { this.vcWBInit(); this.vcOnWhiteboard(ev); });
         return;
       }
       if (ev.type === 'wb-snapshot') {
-        // (Re)joiner bootstrap: the buffer was already populated by the transport
-        // layer; just repaint the whole board so we see strokes drawn before we
-        // connected, each with its author's color.
         this.vcWBRedraw();
       } else if (ev.type === 'wb-line') {
-        // Use the remote peer's deterministic color for attribution — overrides
-        // whatever color they sent (so each person has a visually distinct stroke).
         const c = ev._from ? this.vcPeerColor(ev._from) : (ev.color || '#fbbf24');
         this.vcWBDrawLine(ev.from, ev.to, c, ev.width);
       } else if (ev.type === 'wb-clear') {
@@ -21142,27 +16994,15 @@ function app() {
       this._wbLast = null;
     },
 
-    // ---- Live annotation over the shared screen ----
-    // Reuses the whiteboard TRANSPORT (DataChannel panel-wb, surface:'screen'
-    // buffer) but renders to a TRANSPARENT canvas anchored to the shared
-    // screen's object-fit:contain content-box, with a lifecycle tied to the
-    // screen-share (no presenter => no layer).
-
-    // True while SOMEONE is sharing a screen — locally or any remote peer.
     vcAnnotAvailable() {
       if (this.videocall.screenSharing) return true;
       const ps = this.videocall.peerStates || {};
       for (const id in ps) { if (ps[id] && ps[id].screen === 'on') return true; }
       return false;
     },
-    // Overlay shows only while sharing is live AND the mode is on (the toggle, or
-    // a remote annotation auto-opened it). Sharing teardown forces this false.
     vcAnnotActive() {
       return this.videocall.annotActive && this.vcAnnotAvailable();
     },
-    // The <video> the layer anchors to: my local tile when I share (its track was
-    // swapped to the screen), else the FIRST peer reporting screen:'on'
-    // (MVP = single presenter; any extra sharers are logged + ignored).
     vcAnnotTarget() {
       const videosEl = document.getElementById('vc-videos');
       if (!videosEl) return null;
@@ -21181,11 +17021,6 @@ function app() {
       const tile = videosEl.querySelector('[data-vc-peer-tile="' + chosen + '"]');
       return tile ? tile.querySelector('video') : null;
     },
-    // Pure: content-box {left,top,w,h} (host-relative) of a contain-fitted video,
-    // or null when not yet measurable (collapsed rect / no track metadata) so the
-    // caller can defer. Intrinsic AR (videoWidth/Height) is the source of truth;
-    // under object-fit:contain the frame is letterboxed inside the element rect.
-    // *** This is the only new geometry math — covered by the headless harness. ***
     vcAnnotContentBox(video, hostRect) {
       const r = video.getBoundingClientRect();
       const EW = r.width, EH = r.height;
@@ -21204,7 +17039,6 @@ function app() {
     vcToggleAnnot() {
       this.videocall.annotActive = !this.videocall.annotActive;
       if (this.videocall.annotActive) {
-        // Opening annotation closes the opaque board (shared z-index:6).
         if (this.videocall.wbActive) { this.videocall.wbActive = false; this.vcWBTeardown(); }
         this.$nextTick(() => this.vcAnnotInit());
       } else {
@@ -21217,10 +17051,8 @@ function app() {
       this._annotCtx = canvas.getContext('2d');
       this._annotDrawing = false;
       this._annotLast = null;
-      // Force the anchored tile to contain (+un-mirror) so painted pixels match
-      // the content-box math; restored on teardown.
       this._vcApplyAnnotFit();
-      this.vcAnnotReanchor();   // position + size backing store + redraw buffer
+      this.vcAnnotReanchor();
       const toolWidth = () => (this.videocall.annotTool === 'hl' ? 14 : 3);
       const toolAlpha = () => (this.videocall.annotTool === 'hl' ? 0.35 : 1);
       const pointerDown = (e) => {
@@ -21232,7 +17064,7 @@ function app() {
         if (!this._annotDrawing) return;
         e.preventDefault();
         const p = this.vcAnnotPoint(canvas, e);
-        const color = this.videocall.wbColor;   // live read — respects the picker
+        const color = this.videocall.wbColor;
         const width = toolWidth(), alpha = toolAlpha();
         this.vcWBDrawLine(this._annotLast, p, color, width, alpha, 'screen');
         if (window.PanelVideoCall) {
@@ -21241,21 +17073,13 @@ function app() {
         this._annotLast = p;
       };
       const pointerUp = () => { this._annotDrawing = false; this._annotLast = null; };
-      // Idempotent (overwrite, not addEventListener) — safe on the auto-open path.
       canvas.onpointerdown = pointerDown;
       canvas.onpointermove = pointerMove;
       canvas.onpointerup = pointerUp;
       canvas.onpointercancel = pointerUp;
       canvas.onpointerleave = pointerUp;
-      // Binds metadata listeners AND (re)points the ResizeObserver at the target
-      // video — see the helper. Re-anchoring on spotlight needs the VIDEO's box,
-      // not the stage container's (the container size doesn't change on spotlight).
       this._vcBindAnnotVideoMeta();
     },
-    // Position the canvas exactly over the target video's content-box and size
-    // its backing store (DPR-aware), then repaint. No-op (deferred) while the
-    // rect is collapsed or the track has no dimensions yet — the ResizeObserver
-    // and loadedmetadata listener retry, so we never divide by zero.
     vcAnnotReanchor() {
       const canvas = document.getElementById('vc-annot-canvas');
       if (!canvas || !this._annotCtx) return;
@@ -21264,7 +17088,7 @@ function app() {
       const host = canvas.parentElement;
       if (!host) return;
       const geom = this.vcAnnotContentBox(video, host.getBoundingClientRect());
-      if (!geom) return;   // not measurable yet — observers will retry
+      if (!geom) return;
       canvas.style.left = geom.left + 'px';
       canvas.style.top = geom.top + 'px';
       canvas.style.width = geom.w + 'px';
@@ -21285,8 +17109,6 @@ function app() {
       }
     },
     vcAnnotPoint(canvas, e) {
-      // The canvas == the content-box, so simple element-relative normalization
-      // already matches every peer. Clamp into [0,1] for letterbox overshoot.
       const r = canvas.getBoundingClientRect();
       let x = (e.clientX - r.left) / r.width;
       let y = (e.clientY - r.top) / r.height;
@@ -21299,12 +17121,9 @@ function app() {
       if (c && this._annotCtx) this._annotCtx.clearRect(0, 0, c.width, c.height);
       if (window.PanelVideoCall) window.PanelVideoCall.sendWhiteboardEvent({ type: 'wb-clear', surface: 'screen' });
     },
-    // Remote screen annotation handler (dispatched from vcOnWhiteboard).
     vcOnAnnot(ev) {
-      // Only meaningful while a screen-share is live — drop stray late strokes.
       if (!this.vcAnnotAvailable()) return;
       if (!this.videocall.annotActive) {
-        // Auto-open the layer when a remote peer annotates (mirrors the board).
         this.videocall.annotActive = true;
         this.$nextTick(() => { this.vcAnnotInit(); this.vcOnAnnot(ev); });
         return;
@@ -21320,11 +17139,6 @@ function app() {
         if (cv && this._annotCtx) this._annotCtx.clearRect(0, 0, cv.width, cv.height);
       }
     },
-    // Reconcile annotation against the current sharing state. Called whenever a
-    // peer-state / screen-share / peer-count event may have flipped who (if
-    // anyone) is presenting. Handles three transitions: last presenter left
-    // (close+clear), presenter appeared with buffered strokes (surface them),
-    // presenter/tile changed (re-anchor).
     vcAnnotReconcile() {
       const avail = this.vcAnnotAvailable();
       const was = !!this._annotWasAvailable;
@@ -21343,9 +17157,6 @@ function app() {
         this.$nextTick(() => { this._vcApplyAnnotFit(); this._vcBindAnnotVideoMeta(); this.vcAnnotReanchor(); });
       }
     },
-    // Sharing ended: close the layer and clear the shared screen buffer. The
-    // broadcast clear is idempotent and zeroes our own _annotStrokes too (via
-    // broadcastWhiteboard's local record), so both sides start blank next time.
     vcAnnotOnShareEnded() {
       this.videocall.annotActive = false;
       this.vcAnnotTeardown();
@@ -21367,16 +17178,10 @@ function app() {
       if (!video || this._annotMetaEl === video) return;
       this._vcUnbindAnnotVideoMeta();
       const h = () => this.vcAnnotReanchor();
-      // `resize` fires on intrinsic dimension changes (track swap / resolution
-      // downscale under ECO); `loadedmetadata` for the first frame's dimensions.
       video.addEventListener('loadedmetadata', h);
       video.addEventListener('resize', h);
       this._annotMetaEl = video;
       this._annotMetaH = h;
-      // (Re)point the ResizeObserver at the current target video: its border-box
-      // changes on window resize AND on spotlight (the stage container does not),
-      // so observing the video — not the container — catches both. Re-observing
-      // on presenter change keeps the anchor following the active tile.
       if (!this._annotResizeObs) this._annotResizeObs = new ResizeObserver(() => this.vcAnnotReanchor());
       try { this._annotResizeObs.disconnect(); } catch (_) {}
       try { this._annotResizeObs.observe(video); } catch (_) {}
@@ -21402,24 +17207,9 @@ function app() {
       this._annotLast = null;
     },
 
-    // ---- Incoming-call (presence) ----
-    //
-    // The ring now has a LIFECYCLE. Before, `incoming` was set and only left on a
-    // click — the sound stopped at 20s but the "Call from X" modal stayed on
-    // screen indefinitely, for a call that had already ended, and clicking it
-    // tried to join a dead room. The ring now has:
-    //   - identity (call_id) → the same ring never duplicates;
-    //   - a lifetime (45s) → it disappears by itself;
-    //   - cancellation → the server sends call-answered-elsewhere when you answer
-    //     on ANOTHER device, and call-ended when the call is over.
     vcOnIncoming(msg) {
-      // Ignore if we're already in this exact call (e.g. echoes from
-      // multi-tab/PWA scenarios where the same user has multiple presence
-      // connections).
       if (this.videocall.inCall && this.videocall.activeRoomId === msg.room_id) return;
       const callId = msg.call_id || '';
-      // Dedup per call: our own presence reconnecting, a duplicated tab or a
-      // server resend must not become a second ring.
       if (callId) {
         if (!this._vcRungCalls) this._vcRungCalls = [];
         if (this._vcRungCalls.indexOf(callId) !== -1) return;
@@ -21431,17 +17221,12 @@ function app() {
         from: msg.from || 'someone', ts: Date.now(), callId: callId,
       };
       if (window.PanelPresence) window.PanelPresence.playRing(20000);
-      // A hard lifetime: without it the modal becomes permanent litter on screen.
       if (this._vcIncomingTimer) clearTimeout(this._vcIncomingTimer);
       this._vcIncomingTimer = setTimeout(() => {
         if (this.videocall.incoming && this.videocall.incoming.callId === callId) {
           this.vcClearIncoming();
         }
       }, 45000);
-      // OS notification: only when permission has ALREADY been granted. Asking for
-      // permission here (as it used to) is a request with no user gesture — Chrome
-      // ignores it and it still trains the user to hit "Block". The request lives
-      // in the push toggle, which is born from a click.
       try {
         if (window.Notification && Notification.permission === 'granted') {
           const n = new Notification('Call from ' + (msg.from||'someone'), { body: 'Room: ' + (msg.room_name||''), tag: 'panel-vc-' + msg.room_id });
@@ -21451,9 +17236,6 @@ function app() {
       } catch (_) {}
     },
 
-    // vcClearIncoming is the ONLY exit path for the ring — sound, modal, timer and
-    // OS notification die together. Spreading that across the call sites is what
-    // left an orphan notification on screen.
     vcClearIncoming() {
       this.videocall.incoming = null;
       if (this._vcIncomingTimer) { clearTimeout(this._vcIncomingTimer); this._vcIncomingTimer = 0; }
@@ -21463,9 +17245,6 @@ function app() {
       } catch (_) {}
     },
 
-    // vcOnPresenceEvent handles the CONTROL events of the ring. Matching is by
-    // call_id (with a room fallback, for older servers/clients): a cancellation
-    // must never take down the ring of ANOTHER call.
     vcOnPresenceEvent(msg) {
       if (!msg || !msg.type) return;
       if (msg.type !== 'call-answered-elsewhere' && msg.type !== 'call-ended') return;
@@ -21493,20 +17272,15 @@ function app() {
       this.vcClearIncoming();
     },
 
-    // "Do not ring on this device": declines the call AND silences THIS device
-    // from here on. It is the shortcut for the symptom that started this work —
-    // ringing on a computer the owner did not choose to answer on.
     async vcDismissAndSilenceHere() {
       this.vcClearIncoming();
       await this.vcSetDeviceRing(this.videocall.thisDeviceId, false);
     },
-    // "Silence 8h here": the same idea, but temporary (a meeting, the small hours).
     async vcDismissAndMuteHere(hours) {
       this.vcClearIncoming();
       await this.vcMuteDevice(this.videocall.thisDeviceId, hours || 8);
     },
 
-    // ---- Devices that ring ----
     async vcLoadDevices() {
       if (!this.token) return;
       this.videocall.ringDevicesBusy = true;
@@ -21556,8 +17330,6 @@ function app() {
     vcDeviceIsThis(dev) {
       return !!dev && dev.device_id === this.videocall.thisDeviceId;
     },
-    // A status label for the list — it has to say WHY it is muted, otherwise the
-    // user cannot tell whether they turned the toggle off or it is a temporary silence.
     vcDeviceStatus(dev) {
       if (!dev) return '';
       const now = Math.floor(Date.now() / 1000);
@@ -21579,7 +17351,6 @@ function app() {
       catch (_) { return ''; }
     },
 
-    // ---- Bandwidth history ----
     async vcLoadHistory() {
       try {
         const r = await fetch('/api/videocall/history?limit=30', { headers: { Authorization: 'Bearer ' + this.token } });
@@ -21592,9 +17363,9 @@ function app() {
       const canvas = document.getElementById('vc-history-chart');
       if (!canvas) return;
       if (!(await this._ensureChart())) return;
-      const data = (this.videocall.history || []).slice().reverse(); // oldest left
+      const data = (this.videocall.history || []).slice().reverse();
       const labels = data.map(h => new Date(h.started_at * 1000).toLocaleString('en-US', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }));
-      const totals = data.map(h => (h.bytes_sent + h.bytes_recv) / 1024 / 1024); // MB per call
+      const totals = data.map(h => (h.bytes_sent + h.bytes_recv) / 1024 / 1024);
       const prev = __panelCharts.get('vc-history-chart');
       if (prev) { try { prev.destroy(); } catch (_) {} }
       __panelCharts.set('vc-history-chart', new Chart(canvas, {

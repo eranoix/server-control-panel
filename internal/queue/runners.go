@@ -17,12 +17,6 @@ import (
 	"time"
 )
 
-// streamCommand runs cmd while piping its combined stdout+stderr line-by-line
-// into logW. Returns nil if the command exits 0, error otherwise.
-//
-// The progress callback receives best-effort percentages parsed from common
-// patterns (apt "X%", docker pull "X/Y"); runners that don't fit this can
-// pass nil and rely on the queue's status updates only.
 func streamCommand(ctx context.Context, cmd *exec.Cmd, logW io.Writer, progress func(int)) error {
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -59,12 +53,9 @@ func copyLines(r io.Reader, w io.Writer, progress func(int)) {
 	}
 }
 
-// parsePercent looks for "NN%" or "N/M" patterns; returns -1 when neither
-// fits. Best-effort and intentionally lossy.
 func parsePercent(s string) int {
 	for i := 0; i < len(s)-1; i++ {
 		if s[i] == '%' && i > 0 {
-			// walk back to start of number
 			j := i - 1
 			for j >= 0 && s[j] >= '0' && s[j] <= '9' {
 				j--
@@ -82,8 +73,6 @@ func parsePercent(s string) int {
 	}
 	return -1
 }
-
-// --- AptUpgrade runner ---
 
 type AptUpgradeRunner struct{}
 
@@ -112,8 +101,6 @@ func (AptUpgradeRunner) Run(ctx context.Context, _ json.RawMessage, logW io.Writ
 	return nil
 }
 
-// --- DockerPull runner ---
-
 type DockerPullArgs struct {
 	Ref string `json:"ref"`
 }
@@ -121,7 +108,7 @@ type DockerPullArgs struct {
 type DockerPullRunner struct{}
 
 func (DockerPullRunner) Kind() string                    { return "docker_pull" }
-func (DockerPullRunner) AuthorizedFor(string, bool) bool { return true } // any authed user
+func (DockerPullRunner) AuthorizedFor(string, bool) bool { return true }
 
 func (DockerPullRunner) Run(ctx context.Context, args json.RawMessage, logW io.Writer, progress func(int), step func(string)) error {
 	var a DockerPullArgs
@@ -152,8 +139,6 @@ func validImageRef(s string) bool {
 	return true
 }
 
-// --- DockerComposePull runner ---
-
 type ComposePullArgs struct {
 	Dir string `json:"dir"`
 }
@@ -178,15 +163,10 @@ func (DockerComposePullRunner) Run(ctx context.Context, args json.RawMessage, lo
 	return streamCommand(ctx, cmd, logW, progress)
 }
 
-// --- ImagePrune runner ---
-
 type ImagePruneRunner struct{}
 
 func (ImagePruneRunner) Kind() string { return "image_prune" }
 
-// Prune deletes every untagged docker image on the host — a destructive,
-// host-wide operation that wipes other tenants' WIP builds too. PRIMARY-ONLY
-// (previously open to any authed user → privilege escalation).
 func (ImagePruneRunner) AuthorizedFor(_ string, isPrimary bool) bool { return isPrimary }
 
 func (ImagePruneRunner) Run(ctx context.Context, _ json.RawMessage, logW io.Writer, progress func(int), step func(string)) error {
@@ -196,18 +176,15 @@ func (ImagePruneRunner) Run(ctx context.Context, _ json.RawMessage, logW io.Writ
 	return streamCommand(ctx, cmd, logW, progress)
 }
 
-// --- BackupNow runner ---
-
 type BackupNowArgs struct {
-	Target     string `json:"target"`                // "vault" | "config" | "all"
-	Dest       string `json:"dest,omitempty"`        // local folder (abs, no ..); default <DataDir>/backups
-	Retention  int    `json:"retention,omitempty"`   // keep the last N per target locally (0 = unlimited)
-	DestType   string `json:"dest_type,omitempty"`   // "local" (default) | "rclone"
-	Remote     string `json:"remote,omitempty"`      // rclone remote name (when dest_type=rclone)
-	RemotePath string `json:"remote_path,omitempty"` // folder inside the remote
+	Target     string `json:"target"`
+	Dest       string `json:"dest,omitempty"`
+	Retention  int    `json:"retention,omitempty"`
+	DestType   string `json:"dest_type,omitempty"`
+	Remote     string `json:"remote,omitempty"`
+	RemotePath string `json:"remote_path,omitempty"`
 }
 
-// validRcloneRemote accepts an rclone remote name (alnum + _-).
 func validRcloneRemote(s string) bool {
 	if s == "" || len(s) > 64 {
 		return false
@@ -221,7 +198,6 @@ func validRcloneRemote(s string) bool {
 }
 
 type BackupNowRunner struct {
-	// DataDir is what the runner backs up from / writes archives into.
 	DataDir string
 }
 
@@ -239,10 +215,6 @@ func (b BackupNowRunner) Run(ctx context.Context, args json.RawMessage, logW io.
 	if destType == "" {
 		destType = "local"
 	}
-	// Local staging/destination dir: default <DataDir>/backups. For dest_type
-	// "local" a custom absolute Dest is honored; for "rclone" we stage locally
-	// here and upload to the cloud remote afterwards (keeping the local copy so
-	// retention still applies and you have a local fallback).
 	out := b.DataDir + "/backups"
 	if destType == "local" && a.Dest != "" {
 		if !strings.HasPrefix(a.Dest, "/") || strings.Contains(a.Dest, "..") {
@@ -257,8 +229,6 @@ func (b BackupNowRunner) Run(ctx context.Context, args json.RawMessage, logW io.
 	}
 	archive := fmt.Sprintf("%s/panel-backup-%s-%s.tgz", out, target, stamp)
 	fmt.Fprintln(logW, "$ tar czf "+archive)
-	// Allowlist what gets backed up — never the whole DataDir (would
-	// include the queue history we're writing into right now).
 	var inputs []string
 	switch target {
 	case "vault":
@@ -270,16 +240,9 @@ func (b BackupNowRunner) Run(ctx context.Context, args json.RawMessage, logW io.
 	default:
 		return errors.New("invalid target: " + target)
 	}
-	// --warning=no-file-changed silences the noisy warning; even so we treat
-	// exit 1 as non-fatal below (several versions of tar still return 1).
 	tarArgs := append([]string{"--warning=no-file-changed", "-C", b.DataDir, "-czf", archive}, inputs...)
 	cmd := exec.CommandContext(ctx, "tar", tarArgs...)
 	if err := streamCommand(ctx, cmd, logW, progress); err != nil {
-		// tar exit 1 = non-fatal WARNINGS (e.g. "file changed as we read it" on live
-		// data such as users/*/whatsapp, which the wad daemon rewrites during the
-		// backup). The .tgz IS produced and extractable; only exit >= 2 is a real
-		// failure. Before, any exit != 0 marked the job as "failed" — hence the daily
-		// alarm at 04:30.
 		var ee *exec.ExitError
 		if errors.As(err, &ee) && ee.ExitCode() == 1 {
 			fmt.Fprintln(logW, "⚠ tar finished with warnings (a file changed while being read) — archive created; carrying on")
@@ -288,7 +251,6 @@ func (b BackupNowRunner) Run(ctx context.Context, args json.RawMessage, logW io.
 		}
 	}
 	fmt.Fprintln(logW, "✓ archive: "+archive)
-	// Cloud upload via rclone (Drive/OneDrive/S3/… depending on the configured remote).
 	if destType == "rclone" {
 		if !validRcloneRemote(a.Remote) {
 			return errors.New("invalid rclone remote")
@@ -315,11 +277,6 @@ func (b BackupNowRunner) Run(ctx context.Context, args json.RawMessage, logW io.
 	return nil
 }
 
-// pruneBackups keeps the newest `keep` archives for a given target in dir and
-// deletes the rest. Archive names embed a sortable UTC stamp
-// (panel-backup-<target>-YYYYMMDD-HHMMSS.tgz), so lexical sort == chronological.
-// Returns the basenames removed. Per-target so retention on "config" never
-// touches "vault" archives.
 func pruneBackups(dir, target string, keep int) ([]string, error) {
 	prefix := "panel-backup-" + target + "-"
 	entries, err := os.ReadDir(dir)
@@ -336,7 +293,7 @@ func pruneBackups(dir, target string, keep int) ([]string, error) {
 	if len(names) <= keep {
 		return nil, nil
 	}
-	sort.Strings(names) // oldest first
+	sort.Strings(names)
 	var removed []string
 	for _, n := range names[:len(names)-keep] {
 		if err := os.Remove(filepath.Join(dir, n)); err == nil {
@@ -346,11 +303,9 @@ func pruneBackups(dir, target string, keep int) ([]string, error) {
 	return removed, nil
 }
 
-// --- Shell runner (primary-only escape hatch) ---
-
 type ShellArgs struct {
-	Cmd  string   `json:"cmd"`  // binary name only — no shell parsing
-	Args []string `json:"args"` // explicit args list
+	Cmd  string   `json:"cmd"`
+	Args []string `json:"args"`
 }
 
 type ShellRunner struct{}
@@ -366,17 +321,11 @@ func (ShellRunner) Run(ctx context.Context, args json.RawMessage, logW io.Writer
 	if a.Cmd == "" {
 		return errors.New("cmd required")
 	}
-	// Defense: refuse anything that looks like shell metachars in Cmd.
-	// Args are passed as []string so no shell parsing happens.
 	for _, r := range a.Cmd {
 		if r == ';' || r == '|' || r == '&' || r == '$' || r == '`' || r == '\n' || r == ' ' {
 			return errors.New("cmd must be a bare binary name, not a shell line")
 		}
 	}
-	// Defense in depth: even with shell-metachar rejection above, allowing
-	// /bin/sh /bin/bash etc with -c re-introduces arbitrary shell. Block
-	// the common shell binaries explicitly — primary that needs a shell
-	// can use /api/exec (also primary-only).
 	base := a.Cmd
 	if i := strings.LastIndex(base, "/"); i >= 0 {
 		base = base[i+1:]
@@ -391,10 +340,6 @@ func (ShellRunner) Run(ctx context.Context, args json.RawMessage, logW io.Writer
 	return streamCommand(ctx, cmd, logW, progress)
 }
 
-// validContainerName accepts a docker container name or id: a leading
-// alphanumeric followed by alphanumerics and [_.-]. Rejects empty, oversized,
-// and anything with shell metachars / slashes (args are passed as []string to
-// exec, so this is belt-and-suspenders against a malicious schedule entry).
 func validContainerName(s string) bool {
 	if s == "" || len(s) > 128 {
 		return false
@@ -414,8 +359,6 @@ func validContainerName(s string) bool {
 	return true
 }
 
-// --- DockerRestart runner ---
-
 type DockerRestartArgs struct {
 	Container string `json:"container"`
 }
@@ -424,8 +367,6 @@ type DockerRestartRunner struct{}
 
 func (DockerRestartRunner) Kind() string { return "docker_restart" }
 
-// Restarting an arbitrary container by name is host-wide (it can bounce another
-// tenant's service), so PRIMARY-ONLY — same posture as image_prune/shell.
 func (DockerRestartRunner) AuthorizedFor(_ string, isPrimary bool) bool { return isPrimary }
 
 func (DockerRestartRunner) Run(ctx context.Context, args json.RawMessage, logW io.Writer, progress func(int), step func(string)) error {
@@ -442,8 +383,6 @@ func (DockerRestartRunner) Run(ctx context.Context, args json.RawMessage, logW i
 	return streamCommand(ctx, cmd, logW, progress)
 }
 
-// --- DockerComposeRestart runner ---
-
 type ComposeRestartArgs struct {
 	Dir string `json:"dir"`
 }
@@ -452,7 +391,6 @@ type DockerComposeRestartRunner struct{}
 
 func (DockerComposeRestartRunner) Kind() string { return "docker_compose_restart" }
 
-// Bouncing a whole compose project is host-impacting → PRIMARY-ONLY.
 func (DockerComposeRestartRunner) AuthorizedFor(_ string, isPrimary bool) bool { return isPrimary }
 
 func (DockerComposeRestartRunner) Run(ctx context.Context, args json.RawMessage, logW io.Writer, progress func(int), step func(string)) error {
@@ -470,9 +408,6 @@ func (DockerComposeRestartRunner) Run(ctx context.Context, args json.RawMessage,
 	return streamCommand(ctx, cmd, logW, progress)
 }
 
-// validUnitName accepts a systemd unit name: leading alnum, then alnum and
-// [_.@-] (covers templated units like panel-whatsapp@sam.service). Rejects
-// slashes/spaces/metachars.
 func validUnitName(s string) bool {
 	if s == "" || len(s) > 128 {
 		return false
@@ -492,10 +427,8 @@ func validUnitName(s string) bool {
 	return true
 }
 
-// --- SystemdRestart runner ---
-
 type SystemdRestartArgs struct {
-	Action string `json:"action"` // "restart" | "reload"
+	Action string `json:"action"`
 	Unit   string `json:"unit"`
 }
 
@@ -503,7 +436,6 @@ type SystemdRestartRunner struct{}
 
 func (SystemdRestartRunner) Kind() string { return "systemd_restart" }
 
-// systemctl mutates host services → PRIMARY-ONLY.
 func (SystemdRestartRunner) AuthorizedFor(_ string, isPrimary bool) bool { return isPrimary }
 
 func (SystemdRestartRunner) Run(ctx context.Context, args json.RawMessage, logW io.Writer, progress func(int), step func(string)) error {
@@ -527,17 +459,14 @@ func (SystemdRestartRunner) Run(ctx context.Context, args json.RawMessage, logW 
 	return streamCommand(ctx, cmd, logW, progress)
 }
 
-// --- DockerPrune runner — volumes/networks/builder (image_prune covers images) ---
-
 type DockerPruneArgs struct {
-	Scope string `json:"scope"` // "volumes" | "networks" | "builder"
+	Scope string `json:"scope"`
 }
 
 type DockerPruneRunner struct{}
 
 func (DockerPruneRunner) Kind() string { return "docker_prune" }
 
-// Destructive host-wide cleanup → PRIMARY-ONLY (same posture as image_prune).
 func (DockerPruneRunner) AuthorizedFor(_ string, isPrimary bool) bool { return isPrimary }
 
 func (DockerPruneRunner) Run(ctx context.Context, args json.RawMessage, logW io.Writer, progress func(int), step func(string)) error {
@@ -562,20 +491,15 @@ func (DockerPruneRunner) Run(ctx context.Context, args json.RawMessage, logW io.
 	return streamCommand(ctx, cmd, logW, progress)
 }
 
-// --- HTTPCheck runner — uptime/health ping ---
-
 type HTTPCheckArgs struct {
 	URL    string `json:"url"`
-	Expect int    `json:"expect,omitempty"` // expected status; 0 = accept 200-399
+	Expect int    `json:"expect,omitempty"`
 }
 
 type HTTPCheckRunner struct{}
 
 func (HTTPCheckRunner) Kind() string { return "http_check" }
 
-// PRIMARY-ONLY: an arbitrary outbound GET is an SSRF primitive for a non-primary
-// user (probing internal services). Primary already has shell, so this grants no
-// new privilege. (Follow-up: open to any user behind an egress allowlist.)
 func (HTTPCheckRunner) AuthorizedFor(_ string, isPrimary bool) bool { return isPrimary }
 
 func (HTTPCheckRunner) Run(ctx context.Context, args json.RawMessage, logW io.Writer, progress func(int), step func(string)) error {

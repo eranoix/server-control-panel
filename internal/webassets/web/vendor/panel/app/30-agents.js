@@ -1,7 +1,3 @@
-// 30-agents.js — the Agents tab module: a kanban of sessions by state plus a
-// platform-level cost dashboard. An IIFE spread into app() (00-shell.js), so
-// `this` is the Alpine component (this.api, this.showToast, this.timeAgo and
-// this._fmtTok are already available).
 (function () {
   window.PanelAgentsModule = function () {
     return {
@@ -10,7 +6,6 @@
         accounts: [], accountsTotal: { today: 0, week: 0, total: 0 },
       },
 
-      // kanban columns, in display order
       agentCols: [
         { key: 'running', label: 'Running', color: '#22c55e' },
         { key: 'waiting_input', label: 'Waiting for input', color: '#f59e0b' },
@@ -24,9 +19,6 @@
       async loadAgents() {
         this.agents.loading = true;
         try {
-          // raw:true — a 403 here is not an error, it is "user without agent
-          // permission": the tab shows the access-denied notice instead of a
-          // failure toast.
           const r = await this.api('/api/agent/sessions', { raw: true });
           if (r.status === 403) { this.agents.forbidden = true; this.agents.sessions = []; return; }
           if (!r.ok) throw await this._apiError(r);
@@ -41,8 +33,6 @@
 
       async loadAgentAccounts() {
         try {
-          // The cost panel is an accessory: any failure becomes a console warn and the
-          // section stays empty — api() throws and the catch below absorbs it.
           const r = await this.api('/api/claude/accounts/usage');
           const d = await r.json();
           const accs = d.accounts || [];

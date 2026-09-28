@@ -1,10 +1,5 @@
 package api
 
-// handlers_android_install_test.go — covers the auth gate, the rendered content
-// (QR + fingerprint) and the assembly of the add-repo URL from the request's own
-// Host (never a fixed hostname, since this project serves more than one public
-// domain from the same binary).
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +12,6 @@ import (
 
 const testFdroidFingerprint = "AABBCCDDEEFF00112233445566778899AABBCCDDEEFF00112233445566778899"
 
-// TestHandleAndroidInstallPage — behaviours 1/2/3 of the install page.
 func TestHandleAndroidInstallPage(t *testing.T) {
 	t.Run("unauthenticated never sees fingerprint or QR", func(t *testing.T) {
 		r := newSmokeRouter(t)
@@ -130,8 +124,6 @@ func TestHandleAndroidInstallPage(t *testing.T) {
 	})
 }
 
-// androidInstallReq builds a valid session (panel_token cookie) and fires
-// GET /android/install with the given Host.
 func androidInstallReq(t *testing.T, r *Router, host string) *httptest.ResponseRecorder {
 	t.Helper()
 	tok, _, err := r.auth.Issue("sam", nil)
@@ -146,17 +138,6 @@ func androidInstallReq(t *testing.T, r *Router, host string) *httptest.ResponseR
 	return w
 }
 
-// TestAndroidPackageID ties the androidPackageID constant to the build's SINGLE
-// source of truth (android/gradle.properties, servercontrolpanel.applicationId).
-//
-// Why a test and not just a comment: the wrong value produces no error symptom
-// at all — latestAndroidRelease returns ok=false and the page says
-// "no version published yet" even with a full repository. That was exactly
-// the bug found (the constant had been born as
-// "tech.northwind.servercontrolpanel"). Reading the build file instead of repeating the
-// literal here is what makes the test fail if the applicationId changes on one
-// side only — including for every new consumer of the constant (incremental
-// patch generation would inherit the same silent bug).
 func TestAndroidPackageID(t *testing.T) {
 	const prop = "servercontrolpanel.applicationId"
 	raw, err := os.ReadFile(filepath.Join("..", "..", "android", "gradle.properties"))
@@ -179,10 +160,6 @@ func TestAndroidPackageID(t *testing.T) {
 	}
 }
 
-// TestLatestAndroidReleaseFindsRealPackage is the behaviour test that the one
-// above protects by construction: with an index-v2.json keyed by the production
-// applicationId, latestAndroidRelease MUST find the highest versionCode. With
-// the constant wrong, this test fails.
 func TestLatestAndroidReleaseFindsRealPackage(t *testing.T) {
 	dir := t.TempDir()
 	idx := `{"packages":{"` + androidPackageID + `":{"versions":{` +

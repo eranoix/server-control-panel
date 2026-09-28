@@ -15,12 +15,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.servercontrolpanel.feature.terminal.transport.ConnectionState
 
-/**
- * Always composed above the terminal grid, so a frozen-looking screen is never
- * confused with one that is reconnecting. Every [ConnectionState] renders a
- * distinct label; [isStalled] adds one for a `Live` socket that has not noticed a
- * problem (see `TerminalViewModel.evaluateStall`). Hidden only for a healthy `Live`.
- */
 @Composable
 fun ConnectionBanner(
     state: ConnectionState,
@@ -56,8 +50,6 @@ private fun bannerContent(
     isStalled: Boolean,
     typingDiscarded: Boolean = false,
 ): BannerContent = when {
-    // Takes precedence over any connection state: discarded typing is the only
-    // case here that has already cost the user work.
     typingDiscarded -> BannerContent(
         visible = true,
         text = "The connection dropped and what you typed was not sent — run the command again",

@@ -9,20 +9,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/**
- * Instrumented: needs the real `libhpatchz.so` on a device or emulator. Uses
- * the SMALL committed fixtures (`src/androidTest/assets/hdiff`), so it runs on
- * a clean checkout.
- *
- * Covers the FAILURE paths that `ApkPatcherRealApkTest` does not. In
- * [wrongBase_nativePassesButHashFails] and
- * [patchCorruptedInMiddle_nativePassesButHashFails], `hpatchz` returns success
- * with a wrong file, so reaching [PatchResult.IntegrityMismatch] proves the
- * SHA-256 check is what protects the installer.
- */
 class ApkPatcherSmokeTest {
 
-    // Printed by tools/make-smoke-fixtures.sh; update it when regenerating the fixtures.
     private val expectedNewSha256 = "4cacda8517f06e47973f6b7450e27212728da54f880d34523948c8346ffbd2ae"
     private val expectedNewSize = 270_336L
     private val expected get() = ExpectedApk(expectedNewSha256, expectedNewSize)
@@ -62,8 +50,6 @@ class ApkPatcherSmokeTest {
 
     @Test
     fun wrongBase_nativePassesButHashFails() {
-        // Same SIZE as the correct base, different content: the diff header
-        // still checks out, so hpatchz cannot notice.
         val wrongBase = File(dir, "wrong-old.bin").apply {
             val bytes = oldFile.readBytes()
             for (i in bytes.indices step 4096) bytes[i] = (bytes[i] + 1).toByte()
@@ -121,8 +107,6 @@ class ApkPatcherSmokeTest {
 
     @Test
     fun wrongExpectedHash_failsEvenWithGoodPatch() {
-        // Guards against the opposite bug: the module must not "fix" a wrong
-        // manifest by accepting whatever came out.
         val result = patcher.apply(
             oldFile,
             patchFile,

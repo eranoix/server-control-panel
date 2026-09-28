@@ -9,15 +9,6 @@ import dev.servercontrolpanel.terminalengine.CellSnapshot
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
-/**
- * SurfaceView alternative to [TerminalCanvas]: a dedicated render thread draws
- * onto the `Surface` with `lockCanvas`/`unlockCanvasAndPost`, using the same
- * [buildRowDrawOps] + [rasterizeRow] + [GlyphAtlas] pipeline, so
- * `GridThroughputBenchmark` compares renderer architecture, not drawing code.
- *
- * [postSnapshot] is the whole thread-safety contract: callable from any thread;
- * the render thread only reads the latest posted value.
- */
 class TerminalSurfaceGrid @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -33,10 +24,8 @@ class TerminalSurfaceGrid @JvmOverloads constructor(
     var defaultFg: Int = DarkTerminalPalette.defaultFg
     var defaultBg: Int = DarkTerminalPalette.defaultBg
 
-    /** Light-theme legibility guard; see [TerminalPalette]. */
     var minLumaDelta: Int = DarkTerminalPalette.minLumaDelta
 
-    /** Set by the render loop after each completed frame; read-only for callers/benchmarks. */
     @Volatile var framesRendered: Long = 0
         private set
 
@@ -78,9 +67,6 @@ class TerminalSurfaceGrid @JvmOverloads constructor(
     private fun drawFrame(snapshot: CellSnapshot) {
         val canvas: Canvas = holder.lockCanvas() ?: return
         try {
-            // Same path as [TerminalCanvas]: `lockCanvas` returns a buffer from a
-            // circular queue holding an older frame, so no "unchanged row" cache
-            // is valid. See [rasterizeFrame].
             rasterizeFrame(
                 canvas = canvas,
                 cols = snapshot.cols,

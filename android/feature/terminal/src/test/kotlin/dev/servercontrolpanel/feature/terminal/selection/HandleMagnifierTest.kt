@@ -4,10 +4,6 @@ import androidx.compose.ui.geometry.Offset
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/**
- * The magnifier's Y must stick to the center of the line, not to the finger, so it
- * does not tremble with the hand or show half of two lines.
- */
 class HandleMagnifierTest {
 
     private val hitTester = CellHitTester(
@@ -19,7 +15,6 @@ class HandleMagnifierTest {
 
     @Test
     fun `the Y goes to the center of the cell, not to the finger`() {
-        // Finger at y=25: inside row 1 (20..40), but near the top of it.
         val cell = hitTester.hitTest(Offset(x = 35f, y = 25f))
         val rect = hitTester.cellRect(cell.row, cell.col)
 

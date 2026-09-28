@@ -16,15 +16,6 @@ import (
 	"server-control-panel/internal/files"
 )
 
-// registerTransfer registers the app's LARGE file transfer routes — download
-// with Range (resumable) and chunked upload (init/chunk/complete), plus the
-// discovery of the "inbox" directory that the share-target flow uses when the
-// user does not pick an explicit destination. This is the backend for
-// resumable download, resumable upload and share-target.
-//
-// All the I/O and session-protocol logic comes from
-// internal/files.(OpenForRange|InitUpload|WriteChunk|CompleteUpload|
-// SessionStatus|MobileInboxDir); all that lives here is HTTP translation.
 func init() { Register("transfer", registerTransfer) }
 
 type filesDownloadInput struct {
@@ -80,9 +71,6 @@ type uploadCompleteOutput struct {
 	Body UploadCompleteResponse
 }
 
-// UploadIncompleteResponse is the error body returned with 409 when
-// upload/complete is called before all the bytes have arrived — the app knows
-// exactly how much is missing without needing a second status call.
 type UploadIncompleteResponse struct {
 	Reason        string `json:"error"`
 	ReceivedBytes int64  `json:"received_bytes"`
@@ -215,17 +203,6 @@ func registerTransfer(api huma.API, deps Deps) {
 	})
 }
 
-// mapTransferErr translates internal/files' errors into the matching HTTP
-// status. files.ErrIncomplete is handled separately in completeUpload
-// because it carries a body of its own (UploadIncompleteResponse). The
-// sentinels (ErrSessionNotFound/ErrInvalidChunk/ErrTooLarge) have fixed
-// messages owned by this package — no risk of leaking a server detail, which is
-// why they keep echoing err.Error(). The branches below
-// (os.IsNotExist/os.IsPermission/default) cover *os.PathError coming straight
-// out of os.Stat/os.Rename and by their nature carry the server's absolute
-// path — never echo err.Error() to the client here, the same stance as
-// handlers_screens.go/handlers_actions.go: a generic message for the client,
-// the full error only in the server log.
 func mapTransferErr(err error) error {
 	switch {
 	case errors.Is(err, files.ErrSessionNotFound):
@@ -234,21 +211,12 @@ func mapTransferErr(err error) error {
 		return huma.Error400BadRequest(err.Error())
 	case errors.Is(err, files.ErrTooLarge):
 		return huma.Error413RequestEntityTooLarge(err.Error())
-	// Disk full. It used to fall into `default` and reach the app as a 400
-	// "invalid request" — the app retried forever an upload that was never
-	// going to fit, and the operator had no way to know the problem was space.
-	// 507 is the status that exists precisely for this, and it is what lets the
-	// app stop trying and say what needs to be done. No echo of err.Error():
-	// an ENOSPC coming from os.WriteFile carries the server's absolute path.
 	case errors.Is(err, syscall.ENOSPC):
 		log.Printf("mobilebff: transfer out of disk space: %v", err)
 		return huma.Error507InsufficientStorage("no space left on device")
 	case os.IsNotExist(err):
 		log.Printf("mobilebff: transfer not-found: %v", err)
 		return huma.Error404NotFound("not found")
-	// Permission denied is a condition of the REQUEST (the chosen folder is not
-	// writable), not a server defect: as a 500 it told the app to retry
-	// forever against a folder that is never going to accept the write.
 	case os.IsPermission(err):
 		log.Printf("mobilebff: transfer permission error: %v", err)
 		return huma.Error403Forbidden("permission denied")

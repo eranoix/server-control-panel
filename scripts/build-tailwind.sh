@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# Regenerates internal/webassets/web/tailwind.css from the classes used in the
-# front end. Run it (or `make tailwind`) after adding or changing Tailwind
-# classes; the CSS is committed, so a plain build does not need it.
-#
-# The compiler is the pinned Tailwind v3 standalone binary, downloaded once
-# into scripts/tailwindcss (git-ignored) and checked against its sha256.
 set -euo pipefail
 
 VERSION=3.4.17

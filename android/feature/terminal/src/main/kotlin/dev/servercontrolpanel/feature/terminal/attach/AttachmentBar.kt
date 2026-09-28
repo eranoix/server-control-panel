@@ -19,21 +19,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.util.UUID
 
-/** Test tag of the attachments bar. */
 const val ATTACHMENT_BAR_TAG = "bar-terminal-attachments"
 
-/** Label of the button that puts the path of ONE ready attachment on the command line. */
 const val INSERT_LABEL = "Insert"
 
-/** Label of the button that inserts every ready attachment at once. */
 const val INSERT_ALL_LABEL = "Insert all"
 
-/**
- * The attachments strip, flush above the key bar where the thumb and eye already
- * are. With no attachment it emits no node, so it costs no height (the rule
- * `TerminalRoute` applies to all chrome). Each row states its status in words,
- * not just colour, for screen readers and bright sunlight.
- */
 @Composable
 fun AttachmentBar(
     attachments: List<ScreenAttachment>,
@@ -62,7 +53,6 @@ fun AttachmentBar(
                 onDiscard = { onDiscard(attachment.id) },
             )
         }
-        // "All" only when there is more than one; otherwise the row button suffices.
         if (readyIds.size > 1) {
             TextButton(onClick = { onInsert(readyIds) }) { Text(text = "$INSERT_ALL_LABEL (${readyIds.size})") }
         }
@@ -114,11 +104,6 @@ private fun AttachmentRow(
     }
 }
 
-/**
- * The status in words. Errors show the server's reason (made actionable by
- * `transferErrorFor` in `:data`), never a generic "failed": "no disk space" and
- * "file too large" call for opposite actions.
- */
 internal fun stateDescription(state: AttachmentState): String = when (state) {
     is AttachmentState.Uploading ->
         if (state.percent == UNKNOWN_PERCENT) "Uploading…" else "Uploading ${state.percent}%"

@@ -21,18 +21,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/** A comfortable margin over `longPressTimeoutMillis` (400 to 500 ms). */
 private const val LONG_PRESS_SLACK_MS = 700L
 
-/** Well inside `doubleTapTimeoutMillis` (300 ms on devices and on the emulator). */
 private const val DOUBLE_TAP_INTERVAL_MS = 60L
 
-/**
- * Every meaning a single finger can have on the grid: a short tap opens the keyboard,
- * long press selects ([canvasDragGestures] + [SelectionGestureController]), and
- * double/triple taps count up. Both recognizers are mounted together on the same
- * `Modifier` so the tests prove they coexist.
- */
 @RunWith(RobolectricTestRunner::class)
 class CanvasTapGestureTest {
 
@@ -53,13 +45,11 @@ class CanvasTapGestureTest {
 
     private val sink = RecordingSink()
 
-    /** Behaves like the native encoder with mouse tracking active. */
     private val trackingEncoder = MouseEventEncoder { action, _, _, _ ->
         val terminator = if (action == MouseAction.RELEASE) 'm' else 'M'
         "\u001b[<0;1;1$terminator".toByteArray(Charsets.US_ASCII)
     }
 
-    /** The same gesture stack [dev.servercontrolpanel.feature.terminal.ui.TerminalRoute] mounts on the grid. */
     private fun buildGrid(policy: TouchRouting) {
         val mouseController = MouseReportGestureController(trackingEncoder, sink)
         val dragTarget = routeCanvasDrag(policy, selectionController, mouseController)
@@ -101,8 +91,6 @@ class CanvasTapGestureTest {
     fun `a long press still selects and does not request the keyboard`() {
         buildGrid(noMouse())
 
-        // `advanceEventTime` only stamps event times; the long-press timer runs on the
-        // test clock, which must be advanced separately.
         composeRule.onRoot().performTouchInput {
             down(center)
             advanceEventTime(LONG_PRESS_SLACK_MS)
@@ -224,8 +212,6 @@ class CanvasTapGestureTest {
 
     @Test
     fun `with no program asking for the mouse no mouse bytes are emitted`() {
-        // At a bash prompt, touches must not put any mouse bytes into the stream (they
-        // would show up as garbage text).
         buildGrid(noMouse())
 
         composeRule.onRoot().performTouchInput { down(center); up() }

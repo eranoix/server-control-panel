@@ -1,15 +1,3 @@
-// Package aiprompts is the runtime registry for the editable AI prompts
-// used by the Jira "Start AI" feature.
-//
-// Each prompt has a compiled-in default (defaults.go) and an optional
-// admin override persisted to <DataDir>/ai_prompts.json. The registry is
-// read by internal/jiraai at job time and written by the gated
-// GET/PUT /api/ai/prompts endpoint.
-//
-// Only the instructional "brain" of each prompt is editable; the output
-// CONTRACT (the exact markdown headers the Go parsers read) is locked and
-// spliced in at the {{OUTPUT_CONTRACT}} placeholder. See defaults.go for
-// the full rationale.
 package aiprompts
 
 import (
@@ -21,13 +9,11 @@ import (
 	"sync"
 )
 
-// Placeholder tokens recognised inside editable templates.
 const (
 	PlaceholderContract  = "{{OUTPUT_CONTRACT}}"
 	PlaceholderThreshold = "{{THRESHOLD}}"
 )
 
-// ID identifies an editable prompt.
 type ID string
 
 const (
@@ -37,19 +23,15 @@ const (
 	Work   ID = "work"
 )
 
-// spec is the immutable description of a prompt: its default text, the
-// locked contract to splice (empty = none), and whether the contract
-// placeholder is mandatory in any override.
 type spec struct {
 	id              ID
 	title           string
 	description     string
 	def             string
-	contract        string // "" → no contract (e.g. Work)
+	contract        string
 	requireContract bool
 }
 
-// order is the stable display/iteration order.
 var order = []ID{Audit, Refine, Verify, Work}
 
 var specs = map[ID]spec{
@@ -87,16 +69,12 @@ var specs = map[ID]spec{
 	},
 }
 
-// Registry holds the current overrides, persisted atomically.
 type Registry struct {
 	mu        sync.RWMutex
 	path      string
 	overrides map[ID]string
 }
 
-// New opens (or initialises) the registry at <dataDir>/ai_prompts.json.
-// A missing/corrupt file is tolerated — the registry falls back to
-// compiled-in defaults and the first successful Set rewrites the file.
 func New(dataDir string) *Registry {
 	r := &Registry{
 		path:      filepath.Join(dataDir, "ai_prompts.json"),
@@ -109,11 +87,11 @@ func New(dataDir string) *Registry {
 func (r *Registry) load() {
 	b, err := os.ReadFile(r.path)
 	if err != nil {
-		return // missing → defaults
+		return
 	}
 	var m map[string]string
 	if err := json.Unmarshal(b, &m); err != nil {
-		return // corrupt → defaults
+		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -125,8 +103,6 @@ func (r *Registry) load() {
 	}
 }
 
-// template returns the editable template (override if present, else
-// default) for id.
 func (r *Registry) template(id ID) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -139,10 +115,6 @@ func (r *Registry) template(id ID) string {
 	return ""
 }
 
-// assemble splices the locked contract into an editable template and
-// substitutes the threshold. If the template lacks the placeholder (which
-// Validate rejects for contract-required prompts), the contract is appended
-// so assembly never silently drops the machine-readable section.
 func assemble(template string, s spec, threshold int) string {
 	if s.contract == "" {
 		return template
@@ -157,31 +129,22 @@ func assemble(template string, s spec, threshold int) string {
 	return strings.TrimRight(template, "\n") + "\n\n" + c
 }
 
-// AuditPreamble returns the assembled auditor preamble (editable brain +
-// locked contract). The caller appends the ticket data block.
 func (r *Registry) AuditPreamble() string {
 	return assemble(r.template(Audit), specs[Audit], 0)
 }
 
-// RefinePreamble returns the assembled "improve the existing plan" preamble
-// used on re-runs. Same locked contract as Audit (identical output sections),
-// so the runner parses both paths with the same regexes.
 func (r *Registry) RefinePreamble() string {
 	return assemble(r.template(Refine), specs[Refine], 0)
 }
 
-// VerifyPreamble returns the assembled reviewer preamble with the accept
-// threshold injected into the locked contract.
 func (r *Registry) VerifyPreamble(threshold int) string {
 	return assemble(r.template(Verify), specs[Verify], threshold)
 }
 
-// WorkTrailer returns the editable "Work on it now" instruction block.
 func (r *Registry) WorkTrailer() string {
 	return r.template(Work)
 }
 
-// View is the JSON shape returned by GET /api/ai/prompts for one prompt.
 type View struct {
 	ID              ID     `json:"id"`
 	Title           string `json:"title"`
@@ -189,11 +152,10 @@ type View struct {
 	Default         string `json:"default"`
 	Value           string `json:"value"`
 	Overridden      bool   `json:"overridden"`
-	Contract        string `json:"contract,omitempty"` // locked block, shown read-only
+	Contract        string `json:"contract,omitempty"`
 	RequireContract bool   `json:"require_contract"`
 }
 
-// List returns every prompt's current state for the UI, in stable order.
 func (r *Registry) List() []View {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -218,11 +180,6 @@ func (r *Registry) List() []View {
 	return out
 }
 
-// Validate checks a candidate override for id. Returns a list of
-// human-readable failures (empty = OK). This is the conformance guard the
-// PUT endpoint runs before persisting — it guarantees the editable template
-// still carries the contract placeholder, so the locked headers the Go
-// parsers depend on can never be edited away.
 func Validate(id ID, candidate string) []string {
 	s, ok := specs[id]
 	if !ok {
@@ -238,9 +195,6 @@ func Validate(id ID, candidate string) []string {
 			"the %s marker is missing — it is required: it is where the system injects the output contract (the headers the parsers read). Without it the loop never converges.",
 			PlaceholderContract))
 	}
-	// A stray {{THRESHOLD}} in the editable part would never be substituted
-	// (substitution happens only inside the locked contract). Flag it so the
-	// admin doesn't think they can inject the threshold from the brain.
 	if strings.Contains(candidate, PlaceholderThreshold) {
 		fails = append(fails, fmt.Sprintf(
 			"%s does not work here — the threshold is injected automatically into the managed contract. Remove it from the editable text.",
@@ -249,8 +203,6 @@ func Validate(id ID, candidate string) []string {
 	return fails
 }
 
-// Set validates and atomically persists an override for id. Passing the
-// exact default text (or empty) clears the override (reset to default).
 func (r *Registry) Set(id ID, candidate string) []string {
 	s, ok := specs[id]
 	if !ok {
@@ -280,8 +232,6 @@ func (r *Registry) Set(id ID, candidate string) []string {
 	return nil
 }
 
-// persist writes the overrides map atomically (tmp + rename), mirroring
-// handleUserPrefs (api.go).
 func (r *Registry) persist(snapshot map[string]string) error {
 	out, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {

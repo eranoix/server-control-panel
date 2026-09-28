@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-// notifyCounter is a thread-safe terminal-hook sink: it records a COPY of every
-// job the queue notifies on, so tests can assert count + final status.
 type notifyCounter struct {
 	mu   sync.Mutex
 	jobs []Job
@@ -41,7 +39,6 @@ func (n *notifyCounter) forID(id string) []Job {
 	return out
 }
 
-// waitCount blocks until the sink has >= n notifications or the deadline.
 func waitCount(t *testing.T, n *notifyCounter, want int) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -64,7 +61,6 @@ func newQueueWorkers(t *testing.T, workers int) *Queue {
 	return q
 }
 
-// Hook 2/5 — normal success exit notifies exactly once with StatusDone.
 func TestNotifyOnSuccess(t *testing.T) {
 	q := newTmpQueue(t)
 	nc := &notifyCounter{}
@@ -79,7 +75,6 @@ func TestNotifyOnSuccess(t *testing.T) {
 	}
 }
 
-// Hook 2/5 — failure exit notifies exactly once with StatusFailed.
 func TestNotifyOnFail(t *testing.T) {
 	q := newTmpQueue(t)
 	nc := &notifyCounter{}
@@ -94,8 +89,6 @@ func TestNotifyOnFail(t *testing.T) {
 	}
 }
 
-// Hook 2/5 — cancelling a RUNNING job reaches terminal via runOne's ctx-cancel
-// switch (NOT the queued branch). Exactly one Cancelled notify.
 func TestNotifyOnCancelRunning(t *testing.T) {
 	q := newTmpQueue(t)
 	nc := &notifyCounter{}
@@ -114,19 +107,16 @@ func TestNotifyOnCancelRunning(t *testing.T) {
 	}
 }
 
-// Hook 4/5 — cancelling a QUEUED job (worker busy) is terminal in Cancel itself.
 func TestNotifyOnCancelQueued(t *testing.T) {
 	q := newQueueWorkers(t, 1)
 	nc := &notifyCounter{}
 	q.SetNotifier(nc.fn())
 	q.Register(&fakeRunner{kind: "block", mode: "block"})
 
-	// Occupy the single worker so the second job stays Queued.
 	busy, _ := q.Enqueue("block", nil, "a", "user")
 	waitFor(t, q, busy.ID, StatusRunning)
 
 	queued, _ := q.Enqueue("block", nil, "a", "user")
-	// Confirm it is actually still queued before we cancel it.
 	if jj, _ := q.Get(queued.ID); jj.Status != StatusQueued {
 		t.Fatalf("second job should be queued, got %s", jj.Status)
 	}
@@ -137,19 +127,11 @@ func TestNotifyOnCancelQueued(t *testing.T) {
 	if got := nc.forID(queued.ID); len(got) != 1 || got[0].Status != StatusCancelled {
 		t.Fatalf("want 1 Cancelled notify for queued job, got %+v", got)
 	}
-	// The busy job hasn't terminated yet, so it must NOT have notified.
 	if got := nc.forID(busy.ID); len(got) != 0 {
 		t.Fatalf("busy job should not have notified yet, got %+v", got)
 	}
 }
 
-// Hook 1/5 — the runOne unknown-kind path. Enqueue rejects unknown kinds up
-// front, so this branch is reachable only when a job persisted with a kind that
-// is no longer registered (a removed runner) is resumed and dispatched to
-// runOne. We exercise it deterministically: inject a Queued job of an
-// unregistered kind WITHOUT pushing it to pending (so the background workers
-// never touch it, avoiding the accepted boot-window race), then call runOne
-// directly after SetNotifier.
 func TestNotifyUnknownKindResume(t *testing.T) {
 	q := newTmpQueue(t)
 	nc := &notifyCounter{}
@@ -162,23 +144,19 @@ func TestNotifyUnknownKindResume(t *testing.T) {
 	q.order = append(q.order, jid)
 	q.mu.Unlock()
 
-	q.runOne(jid) // runner not registered → unknown-kind terminal, hook 1/5
+	q.runOne(jid)
 	got := nc.forID(jid)
 	if len(got) != 1 || got[0].Status != StatusFailed || !strings.Contains(got[0].Error, "unknown kind") {
 		t.Fatalf("want 1 unknown-kind Failed notify, got %+v", got)
 	}
 }
 
-// Hook 5/5 — the reaper adopting a detached job's terminal result notifies
-// exactly once; a second reap (job now terminal) notifies zero more.
 func TestNotifyDetachedReapOnce(t *testing.T) {
 	q := newTmpQueue(t)
 	nc := &notifyCounter{}
 	q.SetNotifier(nc.fn())
 
 	const jid = "det1"
-	// Write the terminal detached result FIRST, so any concurrent background
-	// reaper takes the adoption branch (Done), never the vanished branch.
 	if err := WriteDetachedStatus(q.dataDir, jid, DetachedStatus{
 		Status: StatusDone, Progress: 100, Finished: time.Now().Unix(),
 	}); err != nil {
@@ -196,7 +174,6 @@ func TestNotifyDetachedReapOnce(t *testing.T) {
 		t.Fatalf("want 1 Done notify from reaper, got %+v", got)
 	}
 
-	// Second reap: job is terminal now, excluded from the scoped set → no more.
 	q.reapDetachedOnce()
 	time.Sleep(30 * time.Millisecond)
 	if got := nc.forID(jid); len(got) != 1 {
@@ -204,9 +181,6 @@ func TestNotifyDetachedReapOnce(t *testing.T) {
 	}
 }
 
-// Discriminant: a detached job already TERMINAL in state.json after a restart
-// must produce ZERO renotifications — proving the set-once flag's
-// non-persistence is harmless and boot reconcile never fires the hook.
 func TestNotifyDetachedTerminalAfterRestart(t *testing.T) {
 	dir := t.TempDir()
 	q1, err := NewQueue(Options{DataDir: dir, Workers: 1, MaxKeep: 50})
@@ -230,28 +204,22 @@ func TestNotifyDetachedTerminalAfterRestart(t *testing.T) {
 	nc := &notifyCounter{}
 	q2.SetNotifier(nc.fn())
 
-	// Force a reap and let the background reaper tick a couple times.
 	q2.reapDetachedOnce()
 	time.Sleep(80 * time.Millisecond)
 	if nc.count() != 0 {
 		t.Fatalf("terminal-at-boot job re-notified after restart: %+v", nc.jobs)
 	}
-	// Sanity: the job is still present and Done.
 	if jj, err := q2.Get(jid); err != nil || jj.Status != StatusDone {
 		t.Fatalf("job not preserved as Done: %v %+v", err, jj)
 	}
 }
 
-// Hook 3/5 — fail() (reached when runOne can't create the log file) shares the
-// identical notifyTerminalLocked call. Trigger it by making the runs/ dir a
-// regular file so os.Create fails.
 func TestNotifyOnLogCreateFailure(t *testing.T) {
 	q := newTmpQueue(t)
 	nc := &notifyCounter{}
 	q.SetNotifier(nc.fn())
 	q.Register(&fakeRunner{kind: "ok", mode: "ok", steps: 1})
 
-	// Replace <queueDir>/runs with a file so os.Create(runs/<id>.log) fails.
 	runs := filepath.Join(q.dataDir, "runs")
 	_ = os.RemoveAll(runs)
 	if err := os.WriteFile(runs, []byte("not a dir"), 0o600); err != nil {

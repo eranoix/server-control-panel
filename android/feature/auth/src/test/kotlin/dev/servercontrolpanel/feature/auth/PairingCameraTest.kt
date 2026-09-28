@@ -11,13 +11,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Pure tests of camera failure classification, which decides the action the
- * screen offers (ask permission, open Settings, retry, skip the camera).
- *
- * Exceptions mimic CameraX's real wrapping: `ExecutionException` around
- * `InitializationException` around the `CameraUnavailableException` with the reason.
- */
 class PairingCameraTest {
 
     private fun asCameraXDelivers(cause: Throwable): Throwable =
@@ -25,7 +18,6 @@ class PairingCameraTest {
 
     @Test
     fun `an emulator without a camera is classified as NoCamera`() {
-        // CameraX's message when a device advertises a camera but exposes none.
         val error = asCameraXDelivers(
             CameraUnavailableException(
                 CameraUnavailableException.CAMERA_ERROR,
@@ -121,8 +113,6 @@ class PairingCameraTest {
         assertTrue(classifyCameraFailure(a, deviceCameras = 1) is CameraFailure.UnexpectedFailure)
     }
 
-    // Failures after the camera opened arrive as CameraState errors, not exceptions.
-
     @Test
     fun `another app taking the camera while scanning is CameraInUse`() {
         assertEquals(
@@ -181,7 +171,6 @@ class PairingCameraTest {
         assertEquals("each cause needs its own title", causes.size, titles.toSet().size)
         causes.forEach { cause ->
             val text = cause.text()
-            // Each text must offer a way out: an action, or the manual server plus password path.
             assertTrue(
                 "the explanation for $cause must say what to do: ${text.explanation}",
                 text.action != null || text.explanation.contains("manually"),

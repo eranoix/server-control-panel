@@ -3,22 +3,6 @@ package dev.servercontrolpanel.terminalengine
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/**
- * Immutable, JVM-owned copy of a terminal viewport at one point in time.
- *
- * Every field here is a plain Kotlin value or array copied out of the
- * engine's single reused native snapshot buffer at construction time —
- * nothing in this class ever aliases native memory. A later [TerminalEngine.write]
- * or [TerminalEngine.snapshot] call reuses and overwrites that native buffer,
- * but it cannot change a [CellSnapshot] that has already been built, because
- * the copy already happened. This is the Kotlin-side half of the
- * lock-then-copy discipline: the native side copies out of the live grid
- * under a lock into the reused buffer, and this class copies out of that
- * buffer into independent, immutable storage.
- *
- * This is the only type Wave 4's Compose renderer needs to read — it never
- * touches the native buffer or any terminal-library type directly.
- */
 class CellSnapshot private constructor(
     val cols: Int,
     val rows: Int,
@@ -33,7 +17,6 @@ class CellSnapshot private constructor(
 
     enum class Wide { NARROW, WIDE, SPACER_TAIL, SPACER_HEAD }
 
-    /** One grid cell. `fg`/`bg` are packed 0xRRGGBB, or null when unset (caller uses its own default). */
     data class Cell(
         val codepoint: Int,
         val fg: Int?,
@@ -64,14 +47,6 @@ class CellSnapshot private constructor(
 
         private fun rowFlagsBytes(rows: Int): Int = (rows + 3) and 0x03.inv()
 
-        /**
-         * Parses the layout written by the native JNI shim's `nativeSnapshot`
-         * (see that source file's header comment for the exact byte layout).
-         * `buffer` is the engine's single reused direct buffer; this only
-         * reads it and never advances its shared position (every access is
-         * an absolute index), so it is safe to call right after
-         * `nativeSnapshot()` without disturbing the buffer for later reuse.
-         */
         internal fun fromBuffer(buffer: ByteBuffer, cols: Int, rows: Int): CellSnapshot {
             val b = buffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
 

@@ -36,7 +36,6 @@ func TestAttachReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// (1) a normal shell → the replay returns the content.
 	if err := os.WriteFile(logp, []byte("$ echo hi\r\nhi\r\n$ "), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +43,6 @@ func TestAttachReplay(t *testing.T) {
 		t.Errorf("normal shell: expected a replay with the history, got %q", string(rep))
 	}
 
-	// (2) a TUI session (alt-screen open) → replay skipped (nil).
 	if err := os.WriteFile(logp, []byte("$ claude\r\n\x1b[?1049hclaude frame"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -52,14 +50,10 @@ func TestAttachReplay(t *testing.T) {
 		t.Errorf("alt-screen: expected nil (skipped), got %q", string(rep))
 	}
 
-	// (3) missing log → nil, no panic.
 	if rep := attachReplay(dir, "nonexistent", "nonexistent"); rep != nil {
 		t.Errorf("log missing: expected nil, got %q", string(rep))
 	}
 
-	// (3b) rotation: the alt-screen ENTER stayed in .1, the tail in .log → it must
-	// detect alt-screen (scanning .1+.log) and SKIP the replay (otherwise it throws
-	// garbage into a TUI).
 	if err := os.WriteFile(logp+".1", []byte("$ claude\r\n\x1b[?1049hold claude frame"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -71,8 +65,7 @@ func TestAttachReplay(t *testing.T) {
 	}
 	_ = os.Remove(logp + ".1")
 
-	// (4) byte ceiling: it starts on a line boundary and respects the cap.
-	big := strings.Repeat("scrollback line goes here\r\n", 20000) // ~ 500 KiB
+	big := strings.Repeat("scrollback line goes here\r\n", 20000)
 	if err := os.WriteFile(logp, []byte(big), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -85,10 +78,6 @@ func TestAttachReplay(t *testing.T) {
 	}
 }
 
-// TestStripMouseReports pins the filter that strips out of the replay the
-// mouse reports recorded in the log. Table-driven because the danger here is at
-// the edges: the 128 KiB cut can land in the middle of a sequence, and a scanner
-// that trusts it will find the terminator reads past the end of the buffer.
 func TestStripMouseReports(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -97,13 +86,6 @@ func TestStripMouseReports(t *testing.T) {
 	}{
 		{"plain text passes intact", "hello world\n", "hello world\n"},
 		{"SGR press and release vanish", "a\x1b[<35;80;24Mb\x1b[<35;80;24mc", "abc"},
-		// `ESC [ M` is indistinguishable from `CSI M`, which in ECMA-48 is DL
-		// (Delete Line) — an everyday editor sequence. The old branch
-		// ate the sequence AND THE THREE FOLLOWING BYTES, which in a DL are
-		// content. Both sides are unlikely, but not equally so: the
-		// X10 only shows up if some program asks for tracking mode 9,
-		// which practically nothing has asked for in decades; DL comes out of any editor.
-		// Measured across the 28 logs on this machine: ZERO occurrences of `ESC[M`.
 		{"CSI M (Delete Line) passes intact with its content", "a\x1b[M 0@b", "a\x1b[M 0@b"},
 		{"CSI M at the end also passes", "a\x1b[M ", "a\x1b[M "},
 		{"SGR truncated at the end vanishes entirely", "a\x1b[<35;80;", "a"},
@@ -121,9 +103,6 @@ func TestStripMouseReports(t *testing.T) {
 	}
 }
 
-// TestStripMouseReports_NoAllocWhenNotNeeded: the common case is a log
-// with no mouse byte at all, and it must not pay for a 128 KiB copy on every
-// attach.
 func TestStripMouseReports_NoAllocWhenNotNeeded(t *testing.T) {
 	entry := []byte("line 1\nline 2\n\x1b[32mgreen\x1b[0m\n")
 	output := stripMouseReports(entry)

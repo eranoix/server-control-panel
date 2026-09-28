@@ -13,18 +13,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-/**
- * Third-party license attribution. sora-editor (`io.github.rosemoe/editor`,
- * LGPL-2.1-or-later) is the concrete reason this screen exists (Plan
- * 10-04): it is consumed exclusively as an unmodified library from Maven
- * Central, never vendored or forked, and LGPL's permission to link it into
- * this differently-licensed app depends on this notice plus a link back to
- * its own source -- not on anything the app does at runtime.
- *
- * A static list is deliberately sufficient here (no settings module, no
- * dependency-scanning Gradle plugin): the obligation is discoverability and
- * accuracy, not tooling.
- */
 private data class OssLicense(
     val name: String,
     val coordinates: String,
@@ -39,13 +27,6 @@ private val ossLicenses = listOf(
         license = "LGPL-2.1-or-later",
         sourceUrl = "https://github.com/Rosemoe/sora-editor",
     ),
-    // The five below are NOT Gradle dependencies: they are vendored SOURCE,
-    // compiled into :patch-engine's libhpatchz.so (see
-    // android/patch-engine/vendor/ and vendor-manifest.json, which pins the
-    // exact commit of each). A plugin that scans the dependency graph would
-    // never find them — and the licence obligation does not disappear because
-    // they came in by another route. The full texts are in
-    // vendor/<project>/LICENSE.
     OssLicense(
         name = "HDiffPatch",
         coordinates = "sisong/HDiffPatch v5.1.3 (native, :patch-engine)",

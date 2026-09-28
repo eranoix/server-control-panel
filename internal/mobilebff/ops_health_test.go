@@ -1,9 +1,5 @@
 package mobilebff
 
-// ops_health_test.go covers Task 3's <done> criteria: GET /ops/status
-// admin-gated; the live "ops.health" channel publishes an OpsStatus-shaped
-// envelope while at least one connection is subscribed, and does nothing
-// (no wasted health-check/alert-scan work) while nobody is listening.
 import (
 	"encoding/json"
 	"net/http"
@@ -22,8 +18,6 @@ func fakeHealthDetailed(ok bool) func() (bool, map[string]string) {
 	}
 }
 
-// firingAlertsEngine returns an Engine with one rule already firing, so
-// buildOpsStatus's alert-scan has something non-empty to project.
 func firingAlertsEngine(t *testing.T) *metrics.Engine {
 	t.Helper()
 	e := metrics.NewEngine()
@@ -32,8 +26,6 @@ func firingAlertsEngine(t *testing.T) *metrics.Engine {
 	}); err != nil {
 		t.Fatalf("AddRule: %v", err)
 	}
-	// Duration 0 + a value above threshold fires immediately on this single
-	// Evaluate call (see internal/metrics/alerts.go's edge-triggered logic).
 	e.Evaluate(metrics.Snapshot{T: time.Now().Unix(), Values: map[string]float64{"test.cpu": 1}})
 	return e
 }
@@ -96,9 +88,6 @@ func TestOpsStatus_Unauthenticated_401(t *testing.T) {
 	}
 }
 
-// TestOpsHealthPublisher_NoSubscriber_NoPublish proves the ticker skips
-// computing/publishing OpsStatus entirely when nobody is subscribed to
-// "ops.health" — the T-06 "wasted resources at scale" guard.
 func TestOpsHealthPublisher_NoSubscriber_NoPublish(t *testing.T) {
 	old := opsHealthTickInterval
 	opsHealthTickInterval = 20 * time.Millisecond
@@ -117,20 +106,15 @@ func TestOpsHealthPublisher_NoSubscriber_NoPublish(t *testing.T) {
 	t.Cleanup(srv.Close)
 	baseURL := "ws" + strings.TrimPrefix(srv.URL, "http")
 
-	// Connect WITHOUT subscribing to ops.health — several ticks pass with
-	// nobody listening on that channel.
 	conn, rd := dialWithTicket(t, baseURL, testPrimary)
 	if err := conn.WriteJSON(controlFrame{Op: "subscribe", Channel: "unrelated"}); err != nil {
 		t.Fatalf("subscribe unrelated: %v", err)
 	}
-	rd.next(t, time.Second) // ack
+	rd.next(t, time.Second)
 	rd.expectNone(t, 150*time.Millisecond)
 	_ = conn.Close()
 }
 
-// TestOpsHealthPublisher_PublishesWhileSubscribed is Task 3's live-channel
-// <done> criterion: a connection subscribed to "ops.health" receives at
-// least one OpsStatus-shaped envelope within the tick interval.
 func TestOpsHealthPublisher_PublishesWhileSubscribed(t *testing.T) {
 	old := opsHealthTickInterval
 	opsHealthTickInterval = 20 * time.Millisecond
@@ -159,7 +143,7 @@ func TestOpsHealthPublisher_PublishesWhileSubscribed(t *testing.T) {
 	if err := conn.WriteJSON(controlFrame{Op: "subscribe", Channel: "ops.health"}); err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
-	rd.next(t, time.Second) // ack
+	rd.next(t, time.Second)
 
 	ev := rd.next(t, 2*time.Second)
 	if ev["channel"] != "ops.health" || ev["type"] != "ops.status" {

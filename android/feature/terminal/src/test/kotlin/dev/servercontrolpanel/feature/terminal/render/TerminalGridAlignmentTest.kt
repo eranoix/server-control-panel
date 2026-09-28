@@ -13,15 +13,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/**
- * Checks in pixels that the terminal draws on a true grid: glyph advance equals the
- * cell width, no glyph is clipped, and every column places a glyph at the same offset.
- *
- * Uses `@GraphicsMode(NATIVE)` so Robolectric renders with real Skia and fonts; the
- * default stub would make the measurements meaningless. Inside a `Paint.apply {}`, a
- * bare `typeface` resolves to the Paint's own (null) property, which silently selects
- * the proportional default face; these tests catch that.
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -30,7 +21,6 @@ class TerminalGridAlignmentTest {
     private val fontSizePx = 42f
     private val metrics = computeTerminalCellMetrics(fontSizePx)
 
-    /** Cell size must be whole pixels, or columns alternate between w and w+1 pixels. */
     @Test
     fun cellMetrics_areWholePixels_soTheGridNeverAccumulatesRoundingError() {
         assertTrue("cell width must be positive", metrics.cellWidthPx > 0)
@@ -43,7 +33,6 @@ class TerminalGridAlignmentTest {
         )
     }
 
-    /** `computeTerminalCellMetrics` must use a monospaced face whose advance equals the cell width. */
     @Test
     fun layoutCellWidth_comesFromAMonospacedAdvance() {
         val advances = SAMPLE.associateWith { monospaceAdvanceOf(it) }
@@ -61,11 +50,6 @@ class TerminalGridAlignmentTest {
         )
     }
 
-    /**
-     * [GlyphAtlas] must rasterize with the monospaced face the grid was measured from.
-     * Checked on the atlas's own pixels (not a rebuilt `Paint`) by comparing ink width,
-     * which ignores position, in a two-cell `wide` slot so nothing is clipped.
-     */
     @Test
     fun atlasRasterizesWithTheSameMonospaceFaceTheGridWasMeasuredFrom() {
         val atlas = GlyphAtlas(
@@ -88,10 +72,6 @@ class TerminalGridAlignmentTest {
         )
     }
 
-    /**
-     * No glyph may be clipped by its cell: its ink in a narrow slot must match the same
-     * glyph in a two-cell `wide` slot, which has room to spare.
-     */
     @Test
     fun noGlyphIsClippedByItsCell() {
         val atlas = GlyphAtlas(
@@ -112,10 +92,6 @@ class TerminalGridAlignmentTest {
         }
     }
 
-    /**
-     * In an 80-column row, each glyph's ink must sit at the same offset from its cell
-     * origin `N * cellWidthPx`. Ink need not be centered, only consistent across columns.
-     */
     @Test
     fun everyColumnPlacesItsGlyphAtTheSameOffsetFromTheCellOrigin() {
         val w = metrics.cellWidthPx
@@ -155,14 +131,12 @@ class TerminalGridAlignmentTest {
         }
     }
 
-    /** Column N lands at the same x on every row, whatever the row content. */
     @Test
     fun sameColumnLandsAtTheSameXOnEveryRow_regardlessOfRowContent() {
         val w = metrics.cellWidthPx
         val h = metrics.cellHeightPx
         val cols = 40
 
-        // Different content before the last column, which is '#' on both rows.
         val rowA = CharArray(cols) { 'i' }.also { it[cols - 1] = '#' }.concatToString()
         val rowB = CharArray(cols) { 'W' }.also { it[cols - 1] = '#' }.concatToString()
 
@@ -172,7 +146,6 @@ class TerminalGridAlignmentTest {
         assertEquals("column ${cols - 1} must end at the same x on both rows", inkA?.last, inkB?.last)
     }
 
-    /** With a fractional cell width, column N spans exactly `round(N*w)` to `round((N+1)*w)`. */
     @Test
     fun fractionalCellWidth_stillPlacesEachColumnAtItsRoundedGridPosition() {
         val w = 20.16f
@@ -188,7 +161,6 @@ class TerminalGridAlignmentTest {
             defaultFg = 0xE0E0E0,
             defaultBg = 0x000000,
         )
-        // debugSolidBlocks fills each destination rect, exposing exactly the arithmetic under test.
         rasterizeRow(canvas, ops, 0f, w, h, atlas, defaultBg = 0x000000, debugSolidBlocks = true)
 
         for (column in 0 until cols) {
@@ -200,7 +172,6 @@ class TerminalGridAlignmentTest {
         }
     }
 
-    /** `Paint` on the intended monospaced face, at the grid's font size. */
     private fun monospacePaint(): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
         textSize = metrics.textSizePx
@@ -209,7 +180,6 @@ class TerminalGridAlignmentTest {
 
     private fun monospaceAdvanceOf(ch: Char): Float = monospacePaint().measureText(ch.toString())
 
-    /** Reference ink width of the glyph drawn in the monospaced face with room to spare. */
     private fun referenceMonospaceInkWidth(ch: Char): Int {
         val paint = monospacePaint()
         val pad = metrics.cellWidthPx
@@ -247,11 +217,9 @@ class TerminalGridAlignmentTest {
         return inkRangeIn(bitmap, column * w, (column + 1) * w)
     }
 
-    /** Ink width within the given band, 0 if there is none. */
     private fun inkWidthIn(bitmap: Bitmap, fromX: Int, toX: Int): Int =
         inkRangeIn(bitmap, fromX, toX)?.let { it.last - it.first + 1 } ?: 0
 
-    /** First and last pixel column with ink (non-background) in the band. */
     private fun inkRangeIn(bitmap: Bitmap, fromX: Int, toX: Int): IntRange? {
         var first = -1
         var last = -1
@@ -259,7 +227,6 @@ class TerminalGridAlignmentTest {
             var hasInk = false
             for (y in 0 until bitmap.height) {
                 val p = bitmap.getPixel(x, y)
-                // Background is opaque black; any lit channel is ink.
                 if ((p and 0x00ffffff) != 0) {
                     hasInk = true
                     break
@@ -274,7 +241,6 @@ class TerminalGridAlignmentTest {
     }
 
     private companion object {
-        /** Characters with very different widths in a proportional font but equal in a monospaced one. */
         const val SAMPLE = "iWl1m@#Mgt0"
     }
 }

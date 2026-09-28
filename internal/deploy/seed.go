@@ -9,10 +9,6 @@ import (
 	"path/filepath"
 )
 
-// CreateAndSeed creates an app from a template and seeds the
-// docker-compose.yml as the initial commit on the production branch — WITHOUT
-// deploying (fast, no build). The caller queues the deploy so the build can be
-// streamed. `env` initialises App.Env (EnvHints already resolved by the caller).
 func (s *Store) CreateAndSeed(ctx context.Context, tmpl Template, app App, env map[string]string) (App, error) {
 	if app.Branch == "" {
 		app.Branch = "main"
@@ -31,13 +27,12 @@ func (s *Store) CreateAndSeed(ctx context.Context, tmpl Template, app App, env m
 	if err := seedCommit(ctx, created.Name, created.Branch, map[string]string{
 		"docker-compose.yml": tmpl.Compose,
 	}, "seed: "+tmpl.Name); err != nil {
-		_ = s.Destroy(context.Background(), created.Name, io.Discard) // undo the half-made app
+		_ = s.Destroy(context.Background(), created.Name, io.Discard)
 		return App{}, fmt.Errorf("seed template: %w", err)
 	}
 	return created, nil
 }
 
-// CreateFromTemplate = CreateAndSeed + an inline Deploy (the CLI and test path).
 func (s *Store) CreateFromTemplate(ctx context.Context, tmpl Template, app App, env map[string]string, logW io.Writer) (App, DeployRecord, error) {
 	created, err := s.CreateAndSeed(ctx, tmpl, app, env)
 	if err != nil {
@@ -47,10 +42,6 @@ func (s *Store) CreateFromTemplate(ctx context.Context, tmpl Template, app App, 
 	return created, rec, err
 }
 
-// seedCommit writes the files into the app's work-tree and makes a commit on
-// the given branch, straight against the bare repo (GIT_DIR + GIT_WORK_TREE +
-// the bare repo's own index). It leaves HEAD pointing at the branch → Deploy
-// resolves the ref.
 func seedCommit(ctx context.Context, name, branch string, files map[string]string, msg string) error {
 	repo := RepoPath(name)
 	work := WorkDir(name, "")
@@ -66,7 +57,6 @@ func seedCommit(ctx context.Context, name, branch string, files map[string]strin
 			return err
 		}
 	}
-	// point the bare repo's HEAD at the target branch before committing
 	git := func(args ...string) error {
 		c := exec.CommandContext(ctx, "git", args...)
 		c.Env = append(os.Environ(),

@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// baseConfig mirrors the real tunnel config shape enough to exercise device ops.
 const baseConfig = `{
   "log": {"level":"info"},
   "inbounds": [
@@ -61,7 +60,6 @@ func TestDeviceLifecycle(t *testing.T) {
 	m, cfg := newTestMgr(t)
 	ctx := context.Background()
 
-	// Add
 	d, err := m.Add(ctx, "pc-sam")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
@@ -69,7 +67,6 @@ func TestDeviceLifecycle(t *testing.T) {
 	if d.UUID == "" || d.Exit != ExitVPS {
 		t.Fatalf("unexpected device: %+v", d)
 	}
-	// appears in the device inbounds, NOT in the legacy ws inbound
 	if got := len(usersOf(t, cfg, "vless-ws-in")); got != 2 {
 		t.Fatalf("ws-in users = %d, want 2", got)
 	}
@@ -79,20 +76,17 @@ func TestDeviceLifecycle(t *testing.T) {
 	if got := len(usersOf(t, cfg, "vless-ws-home")); got != 1 {
 		t.Fatalf("ws-home users = %d, want 1 (it must not receive devices)", got)
 	}
-	// the reality user got a flow
 	for _, u := range usersOf(t, cfg, "vless-reality-in") {
 		if u["name"] == "pc-sam" && u["flow"] != "xtls-rprx-vision" {
 			t.Fatalf("reality device with no flow vision")
 		}
 	}
 
-	// List
 	devs, err := m.List()
 	if err != nil || len(devs) != 1 || devs[0].Name != "pc-sam" {
 		t.Fatalf("List = %+v, err=%v", devs, err)
 	}
 
-	// Link
 	link, err := m.Link(devs[0])
 	if err != nil || link == "" {
 		t.Fatalf("Link: %v", err)
@@ -101,7 +95,6 @@ func TestDeviceLifecycle(t *testing.T) {
 		t.Fatalf("the link does not have the expected path/uuid: %s", link)
 	}
 
-	// SetExit → home
 	if err := m.SetExit(ctx, d.UUID, ExitHome); err != nil {
 		t.Fatalf("SetExit home: %v", err)
 	}
@@ -109,12 +102,10 @@ func TestDeviceLifecycle(t *testing.T) {
 	if devs[0].Exit != ExitHome {
 		t.Fatalf("exit did not become home: %+v", devs[0])
 	}
-	// and the auth_user carries the name
 	if !homeMembersHas(t, cfg, "pc-sam") {
 		t.Fatalf("auth_user home does not contain pc-sam")
 	}
 
-	// SetExit → vps (removes it from home)
 	if err := m.SetExit(ctx, d.UUID, ExitVPS); err != nil {
 		t.Fatalf("SetExit vps: %v", err)
 	}
@@ -122,7 +113,6 @@ func TestDeviceLifecycle(t *testing.T) {
 		t.Fatalf("auth_user home still contains pc-sam after going back to vps")
 	}
 
-	// Rename
 	if err := m.Rename(ctx, d.UUID, "notebook"); err != nil {
 		t.Fatalf("Rename: %v", err)
 	}
@@ -131,7 +121,6 @@ func TestDeviceLifecycle(t *testing.T) {
 		t.Fatalf("rename failed: %+v", devs)
 	}
 
-	// Remove
 	if err := m.Remove(ctx, d.UUID); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
@@ -139,7 +128,6 @@ func TestDeviceLifecycle(t *testing.T) {
 	if len(devs) != 0 {
 		t.Fatalf("device not removed: %+v", devs)
 	}
-	// the shared user (unnamed) stays in ws-in — the guard does not let it empty out
 	if got := len(usersOf(t, cfg, "vless-ws-in")); got != 1 {
 		t.Fatalf("ws-in users after remove = %d, want 1", got)
 	}
@@ -147,8 +135,6 @@ func TestDeviceLifecycle(t *testing.T) {
 
 func TestGuardRefusesEmptyInbound(t *testing.T) {
 	m, cfg := newTestMgr(t)
-	// empty ws-in by hand and try to save via an Add that removes? Instead,
-	// we remove the only shared user directly and save.
 	raw, _ := os.ReadFile(cfg)
 	var doc map[string]any
 	_ = json.Unmarshal(raw, &doc)
@@ -179,7 +165,6 @@ func homeMembersHas(t *testing.T, cfg, name string) bool {
 	return homeMembers(doc)[name]
 }
 
-// rulesOf returns the route.rules as maps for assertions.
 func rulesOf(t *testing.T, cfg string) []map[string]any {
 	t.Helper()
 	raw, _ := os.ReadFile(cfg)
@@ -217,7 +202,6 @@ func hasRule(rules []map[string]any, outbound, user string, wantReject bool) boo
 	return false
 }
 
-// TestDatasaverMatrix exercises the (datasaver on/off) × (exit vps/home) routing.
 func TestDatasaverMatrix(t *testing.T) {
 	m, cfg := newTestMgr(t)
 	ctx := context.Background()
@@ -225,11 +209,9 @@ func TestDatasaverMatrix(t *testing.T) {
 	pc, _ := m.Add(ctx, "pc")
 	cel, _ := m.Add(ctx, "cel")
 
-	// cel → home exit; pc stays vps
 	if err := m.SetExit(ctx, cel.UUID, ExitHome); err != nil {
 		t.Fatal(err)
 	}
-	// both datasaver ON
 	if err := m.SetDatasaver(ctx, pc.UUID, true); err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +219,6 @@ func TestDatasaverMatrix(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// List reflects flags
 	devs, _ := m.List()
 	byName := map[string]Device{}
 	for _, d := range devs {
@@ -251,23 +232,19 @@ func TestDatasaverMatrix(t *testing.T) {
 	}
 
 	rules := rulesOf(t, cfg)
-	// pc (ds, vps) → proxy-vps ; cel (ds, home) → proxy-home
 	if !hasRule(rules, "proxy-vps", "pc", false) {
 		t.Fatalf("proxy-vps missing for pc: %+v", rules)
 	}
 	if !hasRule(rules, "proxy-home", "cel", false) {
 		t.Fatalf("proxy-home missing for cel: %+v", rules)
 	}
-	// QUIC reject covers both
 	if !hasRule(rules, "", "pc", true) || !hasRule(rules, "", "cel", true) {
 		t.Fatalf("the QUIC reject is missing for the ds devices: %+v", rules)
 	}
-	// cel still has home for non-web
 	if !hasRule(rules, "home", "cel", false) {
 		t.Fatalf("cel should keep the home rule (non-web): %+v", rules)
 	}
 
-	// Turn pc's datasaver off → no proxy-vps, and since pc is vps no rule of its own is left
 	if err := m.SetDatasaver(ctx, pc.UUID, false); err != nil {
 		t.Fatal(err)
 	}
@@ -275,8 +252,6 @@ func TestDatasaverMatrix(t *testing.T) {
 	if hasRule(rules, "proxy-vps", "pc", false) {
 		t.Fatalf("pc's proxy-vps should have disappeared: %+v", rules)
 	}
-	// the http-home-in bridge does NOT exist in this baseConfig, but the resolve rule must
-	// still be the first one (preserved).
 	if act, _ := rules[0]["action"].(string); act != "resolve" {
 		t.Fatalf("the resolve rule should still come 1st: %+v", rules[0])
 	}
@@ -303,7 +278,6 @@ func TestProxyEndpoint(t *testing.T) {
 	if ep, err := m.ProxyEndpoint(ExitHome); err != nil || ep != "172.18.0.41:8080" {
 		t.Fatalf("ProxyEndpoint(ExitHome) = %q, %v; want 172.18.0.41:8080", ep, err)
 	}
-	// missing outbound → a clear error, not a panic
 	os.WriteFile(cfg, []byte(`{"inbounds":[{"type":"vless","tag":"vless-ws-in","users":[{"uuid":"x","name":"d"}]}],"outbounds":[{"type":"direct","tag":"direct"}],"route":{"rules":[],"final":"direct"}}`), 0o644)
 	if _, err := m.ProxyEndpoint(ExitHome); err == nil {
 		t.Fatal("ProxyEndpoint should fail when the outbound proxy does not exist")

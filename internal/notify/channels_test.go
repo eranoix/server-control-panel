@@ -44,7 +44,6 @@ func TestInAppChannelPushesToSink(t *testing.T) {
 	if len(got) != 1 || got[0].Type != "job.failed" {
 		t.Fatalf("sink not called: %+v", got)
 	}
-	// nil sink must not panic.
 	if err := (&InAppChannel{}).Send(context.Background(), Event{}, ChannelConfig{}); err != nil {
 		t.Fatalf("nil sink: %v", err)
 	}
@@ -80,7 +79,6 @@ func TestSecretRedactionAndPreservation(t *testing.T) {
 	saved, _ := rt.UpsertChannel(ChannelDef{Name: "tg", Type: TypeTelegram, Enabled: true,
 		Config: ChannelConfig{BotToken: "secret-token", ChatID: "99"}})
 
-	// GET redacts the secret.
 	red := rt.ChannelDefsRedacted()
 	if len(red) != 1 || red[0].Config.BotToken != "" {
 		t.Fatalf("bot_token not redacted: %+v", red)
@@ -89,9 +87,8 @@ func TestSecretRedactionAndPreservation(t *testing.T) {
 		t.Fatalf("non-secret lost in redaction: %+v", red)
 	}
 
-	// Edit with blank secret preserves the old one.
 	rt.UpsertChannel(ChannelDef{ID: saved.ID, Name: "tg2", Type: TypeTelegram, Enabled: true,
-		Config: ChannelConfig{ChatID: "100"}}) // BotToken blank
+		Config: ChannelConfig{ChatID: "100"}})
 	full := rt.ChannelDefs()
 	if full[0].Config.BotToken != "secret-token" {
 		t.Fatalf("secret not preserved on blank edit: %q", full[0].Config.BotToken)
@@ -101,9 +98,6 @@ func TestSecretRedactionAndPreservation(t *testing.T) {
 	}
 }
 
-// TestWebhookWithFixedBodyLeaksNothing: a free ntfy topic is PUBLIC, so a
-// webhook with a fixed body must not leak any event field. The test plants
-// recognisable data in every field and requires none of it in the POST body.
 func TestWebhookWithFixedBodyLeaksNothing(t *testing.T) {
 	var seen []byte
 	var contentType string
@@ -145,10 +139,6 @@ func TestWebhookWithFixedBodyLeaksNothing(t *testing.T) {
 	}
 }
 
-// 🔴 THE NEGATIVE CONTROL: without a fixed body, NOTHING changes. A webhook
-// pointed at a private destination (n8n, an internal Discord) keeps receiving
-// the whole Event — which is exactly what it is for. Without this test,
-// "fixing the leak" could have turned into "breaking every webhook".
 func TestWebhookWithoutFixedBodyStillSendsEvent(t *testing.T) {
 	var seen []byte
 	var contentType string

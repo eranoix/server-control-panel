@@ -51,9 +51,6 @@ func validatePath(p string) error {
 			return fmt.Errorf("path must not contain '..'")
 		}
 	}
-	// Deny explicit reads/writes of high-value secrets — file browser has
-	// no business case for these, and bug-bounty class attackers reach
-	// /etc/shadow / /etc/sudoers in seconds once a low-priv account exists.
 	switch cleaned {
 	case "/etc/shadow", "/etc/gshadow", "/etc/sudoers":
 		return fmt.Errorf("path is on the deny list")
@@ -80,10 +77,6 @@ var protectedTopLevel = map[string]bool{
 	"root": true,
 }
 
-// isProtectedSymlinkTarget reports whether the resolved absolute target of a
-// symlink lands inside a protectedTopLevel directory. Used to flag (not block)
-// symlinks that point outside user-managed areas — UI shows "(protected)" so
-// users don't follow them silently into /etc, /root, etc.
 func isProtectedSymlinkTarget(abs string) bool {
 	parts := strings.Split(strings.TrimPrefix(abs, "/"), "/")
 	if len(parts) == 0 {
@@ -92,10 +85,8 @@ func isProtectedSymlinkTarget(abs string) bool {
 	return protectedTopLevel[parts[0]]
 }
 
-// Handler returns an http.ServeMux with the file browser routes mounted at root.
 func Handler() http.Handler {
 	mux := http.NewServeMux()
-	// Basics (CRUD)
 	mux.HandleFunc("/list", handleList)
 	mux.HandleFunc("/read", handleRead)
 	mux.HandleFunc("/write", handleWrite)
@@ -108,26 +99,20 @@ func Handler() http.Handler {
 	mux.HandleFunc("/bulk-move", handleBulkMove)
 	mux.HandleFunc("/download", handleDownload)
 	mux.HandleFunc("/upload", handleUpload)
-	// Compression
 	mux.HandleFunc("/zip", handleZip)
 	mux.HandleFunc("/tar", handleTar)
 	mux.HandleFunc("/7z", handle7z)
 	mux.HandleFunc("/extract", handleExtract)
-	// Permissions
 	mux.HandleFunc("/chmod", handleChmod)
 	mux.HandleFunc("/chown", handleChown)
-	// Trash
 	mux.HandleFunc("/trash", handleTrash)
 	mux.HandleFunc("/trash/list", handleTrashList)
 	mux.HandleFunc("/trash/restore", handleTrashRestore)
-	// Import from URL
 	mux.HandleFunc("/fetch", handleFetch)
-	// Metadata / analysis
 	mux.HandleFunc("/properties", handleProperties)
 	mux.HandleFunc("/dir-size", handleDirSize)
 	mux.HandleFunc("/search", handleSearch)
 	mux.HandleFunc("/hash", handleHash)
-	// Inline preview
 	mux.HandleFunc("/preview", handlePreview)
 	return mux
 }
@@ -169,17 +154,12 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		}
 		if e.IsLink {
 			if tgt, err := os.Readlink(full); err == nil {
-				// Resolve relative symlinks vs full dir; flag it when it points at
-				// protectedTopLevel or outside any safe base.
 				abs := tgt
 				if !filepath.IsAbs(abs) {
 					abs = filepath.Join(p, abs)
 				}
 				abs = filepath.Clean(abs)
 				e.Target = tgt
-				// Mark symlinks pointing outside the current dir as "external" — the UI
-				// already does not follow them automatically, but this avoids silent
-				// confusion when one points at /etc/passwd and the like.
 				if isProtectedSymlinkTarget(abs) {
 					e.Target = tgt + " (protected)"
 				}
@@ -400,19 +380,8 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 	name := filepath.Base(p)
-	// Explicit Content-Type BEFORE ServeContent: ServeContent only infers the
-	// type from the extension when the header is not already set, and here the
-	// intent is always "download", never "render in the browser".
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
-	// ServeContent in place of Content-Length + io.Copy: what used to be here
-	// ALWAYS answered 200 with the entire file, ignoring the Range header, so an
-	// interrupted download restarted from zero — on a bad connection a large
-	// file never finished. ServeContent negotiates Range/If-Range/
-	// If-Modified-Since, answers 206 with Content-Range and 416 on an impossible
-	// range, and still sets the correct Content-Length in the common case.
-	// We do not call WriteHeader beforehand: the one that decides the status
-	// (200 or 206) is ServeContent.
 	http.ServeContent(w, r, name, fi.ModTime(), f)
 }
 

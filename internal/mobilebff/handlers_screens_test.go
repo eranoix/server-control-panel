@@ -24,13 +24,6 @@ func screensTestCfg() *config.Config {
 	}
 }
 
-// Two test screens, registered once for the whole package:
-//   - "test.screens.basic": every authenticated Viewer sees the same screen —
-//     used to prove the happy path (200, sdui_version, screen.id, every
-//     component in a single call).
-//   - "test.screens.adminonly": returns sdui.ErrScreenNotFound for a non-admin
-//     Viewer — used to prove that "does not exist" and "exists but is not
-//     yours" are indistinguishable over HTTP.
 func init() {
 	sdui.Register("test.screens.basic", func(ctx context.Context, v sdui.Viewer) (*sdui.Envelope, error) {
 		return &sdui.Envelope{
@@ -63,8 +56,6 @@ func init() {
 	})
 }
 
-// Test 1: an unauthenticated request returns 401 — inherited from the protected
-// mux (requireAuth), not reimplemented here.
 func TestHandleScreen_Unauthenticated(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: screensTestCfg()})
@@ -78,8 +69,6 @@ func TestHandleScreen_Unauthenticated(t *testing.T) {
 	}
 }
 
-// Test 2: an authenticated GET of a registered screen returns 200,
-// Content-Type: application/json, the current sdui_version and a matching screen.id.
 func TestHandleScreen_Authenticated_ReturnsFilteredEnvelope(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: screensTestCfg()})
@@ -115,8 +104,6 @@ func TestHandleScreen_Authenticated_ReturnsFilteredEnvelope(t *testing.T) {
 	}
 }
 
-// Test 3: a GET of an unregistered id returns 404 with the body
-// {"error":"screen_not_found"}.
 func TestHandleScreen_UnregisteredID_404(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: screensTestCfg()})
@@ -135,17 +122,13 @@ func TestHandleScreen_UnregisteredID_404(t *testing.T) {
 	}
 }
 
-// Test 4 (anti-enumeration): a screen registered with an admin-only builder
-// returns, for a non-admin Viewer, a 404 byte-identical to the one for an id
-// that never existed — the response must not distinguish "does not exist" from
-// "is not yours". This is the proof of the 404-not-403 property.
 func TestHandleScreen_NotPermitted_Is404IdenticalToUnknown(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: screensTestCfg()})
 
 	doGet := func(path string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
-		req = req.WithContext(auth.WithUser(req.Context(), "screenviewer")) // non-admin
+		req = req.WithContext(auth.WithUser(req.Context(), "screenviewer"))
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		return rec
@@ -166,7 +149,6 @@ func TestHandleScreen_NotPermitted_Is404IdenticalToUnknown(t *testing.T) {
 		t.Errorf("Content-Type diverges — unknown id: %q, not-permitted id: %q", got, want)
 	}
 
-	// Non-vacuity proof: an admin Viewer DOES see the same screen.
 	req := httptest.NewRequest(http.MethodGet, "/api/mobile/v1/screens/test.screens.adminonly", nil)
 	req = req.WithContext(auth.WithUser(req.Context(), "screenadmin"))
 	rec := httptest.NewRecorder()
@@ -176,8 +158,6 @@ func TestHandleScreen_NotPermitted_Is404IdenticalToUnknown(t *testing.T) {
 	}
 }
 
-// Test 5: the whole screen arrives in a SINGLE request — no redirect, with
-// every component the builder produced present in the body.
 func TestHandleScreen_WholeScreenInOneCall(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: screensTestCfg()})

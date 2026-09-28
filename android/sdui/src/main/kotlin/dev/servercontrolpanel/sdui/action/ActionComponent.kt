@@ -19,22 +19,6 @@ import dev.servercontrolpanel.sdui.actionrunner.Confirmation
 import dev.servercontrolpanel.sdui.confirm.ConfirmDestructiveComponent
 import kotlinx.coroutines.launch
 
-/**
- * Renders a standalone [SduiComponent.Action] as a button dispatching
- * `action_id` with no input. [style] maps to a
- * `:design-system`/Material3 button tone -- it is presentation only, never a
- * signal of what the action does.
- *
- * Whether the button routes through confirmation first is decided purely by
- * [confirmations] -- the index of every `confirm_destructive` the server
- * declared for the current screen, keyed by `action_id`. There is no
- * inspection of [SduiComponent.Action.label] or `action_id` text anywhere in
- * this file: an action this build has never seen before is handled exactly
- * like one it has, and a missing confirmation declaration means this
- * component dispatches directly -- the server still refuses an unconfirmed
- * action that actually is destructive (plan 07-04), so a missing declaration
- * surfaces as a visible `_confirmation` error rather than as a silent bypass.
- */
 @Composable
 fun ActionComponent(
     component: SduiComponent.Action,
@@ -89,9 +73,6 @@ fun ActionComponent(
     }
 }
 
-/** [style] is a presentation-only tone ("primary"/"secondary"/"danger") --
- *  never read as a hint about what the action does. Any other value, or
- *  none, falls back to the default button tone. */
 @Composable
 private fun colorsFor(style: String?): ButtonColors = when (style) {
     "danger" -> ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)

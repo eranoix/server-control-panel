@@ -8,7 +8,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Hands out a new ticket on every call; these tests only care about frames. */
 private class ClientUnlimitedTicketSource : MobileEventsTicketSource {
     private var counter = 0
     override suspend fun wsTicket(): WsTicketResult {
@@ -17,7 +16,6 @@ private class ClientUnlimitedTicketSource : MobileEventsTicketSource {
     }
 }
 
-/** Records every frame it was asked to send. */
 private class ClientRecordingWebSocket : MobileEventsWebSocket {
     val textFrames = mutableListOf<String>()
     override fun sendText(text: String): Boolean {
@@ -27,7 +25,6 @@ private class ClientRecordingWebSocket : MobileEventsWebSocket {
     override fun close(code: Int, reason: String): Boolean = true
 }
 
-/** Records every open() call and returns a fresh [ClientRecordingWebSocket]. */
 private class ClientFakeWebSocketFactory : MobileEventsWebSocketFactory {
     val sockets = mutableListOf<ClientRecordingWebSocket>()
     val listeners = mutableListOf<MobileEventsWebSocketListener>()
@@ -140,7 +137,6 @@ class MobileEventsClientTest {
                 factory.sockets[0].textFrames,
             )
 
-            // Drop and reconnect: a fresh ticket and a new socket reach CONNECTED again.
             factory.listeners[0].onFailure("connection lost")
             runCurrent()
             advanceTimeBy(70_000)

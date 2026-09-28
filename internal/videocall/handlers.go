@@ -10,18 +10,10 @@ import (
 	"server-control-panel/internal/auth"
 )
 
-// Wires the cross-package user-from-context resolution used by push.go.
-// push.go can't import internal/auth without dragging the dependency into
-// a file we'd rather keep minimal. This indirection costs nothing at runtime.
 func init() {
 	authUserFunc = func(r *http.Request) string { return auth.UserFrom(r) }
 }
 
-// HandleRooms dispatches GET/POST/DELETE on /api/videocall/rooms.
-//
-//	GET    /api/videocall/rooms          — list rooms this user owns or is member of
-//	POST   /api/videocall/rooms          — body: {name}; creates room owned by caller
-//	DELETE /api/videocall/rooms?id=<id>  — owner only; evicts active peers
 func (s *Service) HandleRooms(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFrom(r)
 	if user == "" {
@@ -46,7 +38,6 @@ func (s *Service) HandleRooms(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSONHTTP(w, room)
 	case http.MethodPatch:
-		// Rename a room. Body: {id, name}.
 		var req struct {
 			ID   string `json:"id"`
 			Name string `json:"name"`
@@ -74,12 +65,6 @@ func (s *Service) HandleRooms(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HandleMembers manages a room's member list.
-//
-//	POST   /api/videocall/members          — body: {room_id, member}; add
-//	DELETE /api/videocall/members?room_id=&member=  — remove
-//
-// Both require the caller to be the room owner.
 func (s *Service) HandleMembers(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFrom(r)
 	if user == "" {
@@ -119,9 +104,6 @@ func (s *Service) HandleMembers(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HandleTURN returns ephemeral TURN credentials valid for 1h. The frontend
-// fetches these immediately before opening RTCPeerConnection so the creds
-// are fresh. Re-fetched if a call lasts longer than the TTL.
 func (s *Service) HandleTURN(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFrom(r)
 	if user == "" {
@@ -132,8 +114,6 @@ func (s *Service) HandleTURN(w http.ResponseWriter, r *http.Request) {
 	writeJSONHTTP(w, creds)
 }
 
-// HandleHistory returns the user's recent call sessions for the bandwidth
-// dashboard. GET /api/videocall/history?limit=50
 func (s *Service) HandleHistory(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFrom(r)
 	if user == "" {
@@ -149,11 +129,6 @@ func (s *Service) HandleHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSONHTTP(w, s.HistoryForUser(user, limit))
 }
 
-// HandleRecordSession persists a finished call's totals. Posted by the
-// client on hangup. Untrusted input — the user can only record sessions
-// for themselves (server stamps `user` from auth context).
-//
-// POST /api/videocall/sessions  body: CallSession (subset; user is overridden)
 func (s *Service) HandleRecordSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -169,12 +144,8 @@ func (s *Service) HandleRecordSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
-	cs.User = user // never trust client-supplied user
-	// Sanity caps — reject obviously bogus values. Also upper caps on
-	// BytesSent/Recv: a malicious client could send 1e18 and pollute the
-	// history dashboard. 100 GB is a generous ceiling (a 24h call at
-	// 1080p ~ 50 GB).
-	const maxBytes int64 = 100 * 1024 * 1024 * 1024 // 100 GB
+	cs.User = user
+	const maxBytes int64 = 100 * 1024 * 1024 * 1024
 	if cs.DurationS < 0 || cs.DurationS > 24*3600 {
 		cs.DurationS = 0
 	}

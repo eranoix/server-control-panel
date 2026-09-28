@@ -17,19 +17,10 @@ import (
 	"server-control-panel/internal/scope"
 )
 
-// ---- GitHub token (vault) ----
-
-// credLineRe captures the token from a line in ~/.git-credentials format:
-// https://[user:]TOKEN@github.com  (group 1 = TOKEN). It accepts it with or without a user.
 var credLineRe = regexp.MustCompile(`^https?://(?:[^/@]*:)?([^@/]+)@github\.com`)
 
-// bareTokenRe recognizes a bare PAT (classic ghp_/gho_/ghs_ or fine-grained
-// github_pat_).
 var bareTokenRe = regexp.MustCompile(`^(ghp_|gho_|ghs_|ghu_|github_pat_)[A-Za-z0-9_]+$`)
 
-// parseGitHubToken extracts a usable token from several shapes: a
-// git-credentials file (https://user:token@github.com lines), a bare PAT, or
-// a single-line value with no spaces. It returns "" when it cannot.
 func parseGitHubToken(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -44,19 +35,12 @@ func parseGitHubToken(raw string) string {
 	if bareTokenRe.MatchString(raw) {
 		return raw
 	}
-	// a single-line value that does NOT look like a URL/credential → assume it is the token
 	if !strings.ContainsAny(raw, " \n\t") && !strings.Contains(raw, "://") && !strings.Contains(raw, "@") {
 		return raw
 	}
 	return ""
 }
 
-// gitCredentialToken asks git ITSELF for the repo's https credential, through
-// `git credential fill`. It is git's canonical mechanism: it honours the
-// credential.helper configured IN THE REPO. In northwind-web the local config
-// resets the helpers and uses the work store (the sam@northwind account);
-// in the personal repos it uses the global helper (northwind-dev). Deterministic
-// and per-repo. The VALUE (the token) is never logged. "" when git returns no password.
 func gitCredentialToken(ctx context.Context, repoPath string) string {
 	c, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -76,9 +60,6 @@ func gitCredentialToken(ctx context.Context, repoPath string) string {
 	return ""
 }
 
-// githubToken resolves the GitHub token FOR THE REPO: first through git
-// credential fill (per-repo, the right account — work for northwind, personal
-// for northwind-dev); failing that, it falls back to the git_credentials vault entry (personal). The value is never logged.
 func (s *svc) githubToken(repoPath string) (string, bool) {
 	if t := gitCredentialToken(context.Background(), repoPath); t != "" {
 		return t, true
@@ -97,8 +78,6 @@ func (s *svc) githubToken(repoPath string) (string, bool) {
 	tok := parseGitHubToken(raw)
 	return tok, tok != ""
 }
-
-// ---- call to the GitHub API ----
 
 func ghRequest(ctx context.Context, token, method, apiPath string, body []byte) (int, []byte, error) {
 	var rdr io.Reader
@@ -126,7 +105,6 @@ func ghRequest(ctx context.Context, token, method, apiPath string, body []byte) 
 	return resp.StatusCode, b, nil
 }
 
-// ghErrMsg extracts the "message" out of a GitHub error body.
 func ghErrMsg(status int, body []byte) string {
 	var e struct {
 		Message string `json:"message"`
@@ -145,7 +123,6 @@ func ghErrMsg(status int, body []byte) string {
 	return msg
 }
 
-// githubOwnerRepo extracts (owner, repo, true) from a GitHub remote.
 func githubOwnerRepo(remoteURL string) (string, string, bool) {
 	m := remoteRe.FindStringSubmatch(strings.TrimSpace(remoteURL))
 	if m == nil || !strings.Contains(strings.ToLower(m[1]), "github") {
@@ -158,8 +135,6 @@ func githubOwnerRepo(remoteURL string) (string, string, bool) {
 	return parts[0], parts[1], true
 }
 
-// prCtx resolves repo+origin+owner/repo(GitHub)+token, writing the
-// appropriate HTTP error and returning ok=false on any failure.
 func (s *svc) prCtx(w http.ResponseWriter, r *http.Request) (owner, name, token string, ok bool) {
 	repo, ok := s.repoParam(w, r)
 	if !ok {
@@ -182,8 +157,6 @@ func (s *svc) prCtx(w http.ResponseWriter, r *http.Request) (owner, name, token 
 	}
 	return owner, name, token, true
 }
-
-// ---- simplified payloads ----
 
 type prUser struct {
 	Login  string `json:"login"`
@@ -220,8 +193,6 @@ type prItem struct {
 	RequestedReviewers []prUser  `json:"requested_reviewers"`
 }
 
-// ---- GET /pr/list ----
-
 func (s *svc) handlePRList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
 		return
@@ -255,8 +226,6 @@ func (s *svc) handlePRList(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"prs": prs, "owner": owner, "repo": name})
 }
 
-// ---- GET /pr/get ----
-
 func (s *svc) handlePRGet(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
 		return
@@ -280,7 +249,6 @@ func (s *svc) handlePRGet(w http.ResponseWriter, r *http.Request) {
 	}
 	var pr prItem
 	json.Unmarshal(body, &pr)
-	// files
 	fstatus, fbody, _ := ghRequest(r.Context(), token, "GET", "/repos/"+owner+"/"+name+"/pulls/"+num+"/files?per_page=100", nil)
 	var files []struct {
 		Filename  string `json:"filename"`
@@ -292,7 +260,6 @@ func (s *svc) handlePRGet(w http.ResponseWriter, r *http.Request) {
 	if fstatus >= 200 && fstatus < 300 {
 		json.Unmarshal(fbody, &files)
 	}
-	// REVIEW comments (per line/file = conversation threads on the diff)
 	rcstatus, rcbody, _ := ghRequest(r.Context(), token, "GET", "/repos/"+owner+"/"+name+"/pulls/"+num+"/comments?per_page=100", nil)
 	var reviewComments []struct {
 		User     prUser `json:"user"`
@@ -305,7 +272,6 @@ func (s *svc) handlePRGet(w http.ResponseWriter, r *http.Request) {
 	if rcstatus >= 200 && rcstatus < 300 {
 		json.Unmarshal(rcbody, &reviewComments)
 	}
-	// conversation comments (issues API — a PR is an issue)
 	cstatus, cbody, _ := ghRequest(r.Context(), token, "GET", "/repos/"+owner+"/"+name+"/issues/"+num+"/comments?per_page=100", nil)
 	var comments []struct {
 		User      prUser `json:"user"`
@@ -315,7 +281,6 @@ func (s *svc) handlePRGet(w http.ResponseWriter, r *http.Request) {
 	if cstatus >= 200 && cstatus < 300 {
 		json.Unmarshal(cbody, &comments)
 	}
-	// reviews (approvals / change requests)
 	rstatus, rbody, _ := ghRequest(r.Context(), token, "GET", "/repos/"+owner+"/"+name+"/pulls/"+num+"/reviews?per_page=100", nil)
 	var reviews []struct {
 		User        prUser `json:"user"`
@@ -326,7 +291,6 @@ func (s *svc) handlePRGet(w http.ResponseWriter, r *http.Request) {
 	if rstatus >= 200 && rstatus < 300 {
 		json.Unmarshal(rbody, &reviews)
 	}
-	// the PR's commits
 	mstatus, mbody, _ := ghRequest(r.Context(), token, "GET", "/repos/"+owner+"/"+name+"/pulls/"+num+"/commits?per_page=100", nil)
 	var rawCommits []struct {
 		Sha    string `json:"sha"`
@@ -349,7 +313,6 @@ func (s *svc) handlePRGet(w http.ResponseWriter, r *http.Request) {
 		}
 		commits = append(commits, map[string]any{"sha": shortHash(c.Sha), "subject": subj, "author": c.Commit.Author.Name, "date": c.Commit.Author.Date})
 	}
-	// checks/CI (combines commit status + the head sha's check-runs)
 	checks := prChecks(r.Context(), token, owner, name, pr.Head.Sha)
 	httpx.WriteJSON(w, map[string]any{
 		"pr": pr, "files": files, "comments": comments,
@@ -358,15 +321,12 @@ func (s *svc) handlePRGet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// prChecks summarizes the CI state of the head sha: it combines the "combined
-// status" (legacy statuses) with the check-runs (GitHub Actions etc.) into a single summary.
 func prChecks(ctx context.Context, token, owner, name, sha string) map[string]any {
 	out := map[string]any{"total": 0, "passed": 0, "failed": 0, "pending": 0, "state": "none"}
 	if sha == "" {
 		return out
 	}
 	total, passed, failed, pending := 0, 0, 0, 0
-	// combined status (Travis-like / contexts)
 	if st, body, err := ghRequest(ctx, token, "GET", "/repos/"+owner+"/"+name+"/commits/"+sha+"/status", nil); err == nil && st >= 200 && st < 300 {
 		var cs struct {
 			Statuses []struct {
@@ -386,7 +346,6 @@ func prChecks(ctx context.Context, token, owner, name, sha string) map[string]an
 			}
 		}
 	}
-	// check-runs (GitHub Actions)
 	if st, body, err := ghRequest(ctx, token, "GET", "/repos/"+owner+"/"+name+"/commits/"+sha+"/check-runs?per_page=100", nil); err == nil && st >= 200 && st < 300 {
 		var cr struct {
 			CheckRuns []struct {
@@ -418,7 +377,6 @@ func prChecks(ctx context.Context, token, owner, name, sha string) map[string]an
 	return map[string]any{"total": total, "passed": passed, "failed": failed, "pending": pending, "state": state}
 }
 
-// prWriteCtx = writeGate (writable repo) + resolves owner/repo(GitHub)+token.
 func (s *svc) prWriteCtx(w http.ResponseWriter, r *http.Request) (caller, owner, name, token string, ok bool) {
 	caller, repo, ok := s.writeGate(w, r)
 	if !ok {
@@ -442,8 +400,6 @@ func (s *svc) prWriteCtx(w http.ResponseWriter, r *http.Request) (caller, owner,
 	return caller, o, n, t, true
 }
 
-// ---- POST /pr/update (edit title/body/base; close/reopen through state) ----
-
 func (s *svc) handlePRUpdate(w http.ResponseWriter, r *http.Request) {
 	caller, owner, name, token, ok := s.prWriteCtx(w, r)
 	if !ok {
@@ -454,7 +410,7 @@ func (s *svc) handlePRUpdate(w http.ResponseWriter, r *http.Request) {
 		Title  string `json:"title"`
 		Body   string `json:"body"`
 		Base   string `json:"base"`
-		State  string `json:"state"` // "open" | "closed"
+		State  string `json:"state"`
 	}
 	if err := decodeBody(r, &b); err != nil || b.Number <= 0 {
 		httpx.WriteErr(w, http.StatusBadRequest, "invalid number/body")
@@ -493,8 +449,6 @@ func (s *svc) handlePRUpdate(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"ok": true, "pr": pr})
 }
 
-// ---- POST /pr/merge ----
-
 func (s *svc) handlePRMerge(w http.ResponseWriter, r *http.Request) {
 	caller, owner, name, token, ok := s.prWriteCtx(w, r)
 	if !ok {
@@ -502,7 +456,7 @@ func (s *svc) handlePRMerge(w http.ResponseWriter, r *http.Request) {
 	}
 	var b struct {
 		Number       int    `json:"number"`
-		Method       string `json:"method"` // merge | squash | rebase
+		Method       string `json:"method"`
 		Title        string `json:"title"`
 		DeleteBranch bool   `json:"delete_branch"`
 		Head         string `json:"head"`
@@ -526,15 +480,12 @@ func (s *svc) handlePRMerge(w http.ResponseWriter, r *http.Request) {
 	}
 	deleted := false
 	if b.DeleteBranch && validRef(b.Head) {
-		// delete the source branch after the merge (best-effort)
 		ds, _, _ := ghRequest(r.Context(), token, "DELETE", "/repos/"+owner+"/"+name+"/git/refs/heads/"+b.Head, nil)
 		deleted = ds >= 200 && ds < 300
 	}
 	httpx.AuditEvent(s.audit, r, caller, "git.pr_merge", owner+"/"+name+" #"+strconv.Itoa(b.Number)+" ("+b.Method+")")
 	httpx.WriteJSON(w, map[string]any{"ok": true, "branch_deleted": deleted})
 }
-
-// ---- POST /pr/review (approve / request changes / comment) ----
 
 func (s *svc) handlePRReview(w http.ResponseWriter, r *http.Request) {
 	caller, owner, name, token, ok := s.prWriteCtx(w, r)
@@ -543,7 +494,7 @@ func (s *svc) handlePRReview(w http.ResponseWriter, r *http.Request) {
 	}
 	var b struct {
 		Number int    `json:"number"`
-		Event  string `json:"event"` // APPROVE | REQUEST_CHANGES | COMMENT
+		Event  string `json:"event"`
 		Body   string `json:"body"`
 	}
 	if err := decodeBody(r, &b); err != nil || b.Number <= 0 {
@@ -561,9 +512,6 @@ func (s *svc) handlePRReview(w http.ResponseWriter, r *http.Request) {
 	payload, _ := json.Marshal(map[string]any{"event": b.Event, "body": b.Body})
 	status, body, err := ghRequest(r.Context(), token, "POST", "/repos/"+owner+"/"+name+"/pulls/"+strconv.Itoa(b.Number)+"/reviews", payload)
 	if err != nil || status < 200 || status >= 300 {
-		// GitHub refuses (422) to approve your own PR; the raw message
-		// ("Unprocessable Entity") is confusing. We give the real cause + the way out:
-		// in a repo with no review rule, approval is not even needed — Merge is enough.
 		if b.Event == "APPROVE" && status == http.StatusUnprocessableEntity {
 			httpx.WriteErr(w, http.StatusUnprocessableEntity,
 				"GitHub does not allow approving your own PR. If there is no required-review rule, skip the approval and use the Merge button directly. (detail: "+ghErrMsg(status, body)+")")
@@ -575,8 +523,6 @@ func (s *svc) handlePRReview(w http.ResponseWriter, r *http.Request) {
 	httpx.AuditEvent(s.audit, r, caller, "git.pr_review", owner+"/"+name+" #"+strconv.Itoa(b.Number)+" "+b.Event)
 	httpx.WriteJSON(w, map[string]any{"ok": true})
 }
-
-// ---- POST /pr/comment (a comment in the conversation) ----
 
 func (s *svc) handlePRComment(w http.ResponseWriter, r *http.Request) {
 	caller, owner, name, token, ok := s.prWriteCtx(w, r)
@@ -603,10 +549,8 @@ func (s *svc) handlePRComment(w http.ResponseWriter, r *http.Request) {
 
 var regexpNum = regexp.MustCompile(`^[0-9]{1,9}$`)
 
-// ---- POST /pr/create ----
-
 func (s *svc) handlePRCreate(w http.ResponseWriter, r *http.Request) {
-	caller, repo, ok := s.writeGate(w, r) // creating a PR requires a writable repo
+	caller, repo, ok := s.writeGate(w, r)
 	if !ok {
 		return
 	}
@@ -661,7 +605,6 @@ func (s *svc) handlePRCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	var pr prItem
 	json.Unmarshal(respBody, &pr)
-	// request reviewers (best-effort: an error here does not fail the create)
 	var cleanRev []string
 	for _, rv := range body.Reviewers {
 		rv = strings.TrimSpace(rv)

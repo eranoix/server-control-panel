@@ -8,24 +8,6 @@ import (
 	"server-control-panel/internal/pve"
 )
 
-// storage_test.go — the pins for capacity and zpool in the inventory.
-//
-// Two defects are defended here, and both have already bitten this repo:
-//
-//  1. 🔴 AGE HITCHING A RIDE. The hypervisor was split off from the Node
-//     because nodeObservedAt fuses together the timestamps of things that are
-//     not observed together. Storage and zpool come out of TWO OTHER calls —
-//     if their timestamp went into hypervisorObservedAt, a /status that
-//     still answers would keep the card green while capacity ages in silence.
-//     Same defect, one layer up.
-//
-//  2. 🔴 AN EMPTY LIST LYING. /nodes/{n}/storage returns 200 with [] when the
-//     token has no privilege. "No storage" and "no permission to see storage"
-//     are the same answer on the wire and opposite readings on the screen,
-//     and what tells them apart is the privilege verdict. It travels in the
-//     SAME document, with a timestamp of its own, so that no screen is ever
-//     built out of half a truth.
-
 func testPools() []pve.Storage {
 	return []pve.Storage{
 		{Storage: "local-zfs", Type: "zfspool", Content: "images,rootdir",
@@ -44,20 +26,10 @@ func testZPools() []pve.ZPool {
 	}
 }
 
-// -------------------------------------------------- timestamp of its OWN ----
-
-// 🔴 TestStorageAgeDoesNotPiggybackOnHealth is the central test of this file.
-//
-// Real scenario: the node's /status keeps answering (the poller stamps it on
-// every tick), but /nodes/pve/storage has started failing. If the age of the
-// capacity block comes out of the hypervisor's timestamp, the screen shows
-// 6.9% used with a "live" badge over a number from half an hour ago.
 func TestStorageAgeDoesNotPiggybackOnHealth(t *testing.T) {
 	var inv Inventory
-	// t=1,800,000,000: capacity is observed.
 	applyStorage(&inv, testPools(), 1800000000)
 	applyZPools(&inv, testZPools(), 1800000000)
-	// t=1,800,000,300 (5 min later): ONLY health answers.
 	applyHypervisor(&inv, "pve", testStatus(), 1800000300)
 
 	now := time.Unix(1800000300, 0)
@@ -77,19 +49,7 @@ func TestStorageAgeDoesNotPiggybackOnHealth(t *testing.T) {
 	}
 }
 
-// 🔴 TestHealthStampClassifiesEveryField is the STRUCTURAL version of the
-// test above. It discovers, field by field through reflection, which
-// measurements feed hypervisorObservedAt — and demands that the set be
-// EXACTLY the declared one.
-//
-// Without it, the next field added to the document lands in one of the two
-// lists by accident and nobody finds out: if it joins health without
-// deserving to, it rejuvenates the card; if it stays out without deserving
-// to, its age never counts. The classification becomes a mandatory DECISION
-// rather than an oversight.
 func TestHealthStampClassifiesEveryField(t *testing.T) {
-	// Outside health on purpose: each one comes from its OWN call to the
-	// hypervisor and has its own view (ViewStorage/ViewZPools).
 	outsideHealth := map[string]bool{
 		"Storage":        true,
 		"ZPools":         true,
@@ -100,10 +60,8 @@ func TestHealthStampClassifiesEveryField(t *testing.T) {
 	for i := 0; i < tp.NumField(); i++ {
 		f := tp.Field(i)
 		if f.Name == "Node" {
-			continue // identity, not a measurement
+			continue
 		}
-		// Builds a Hypervisor with ONLY this field stamped and asks whether the
-		// health function sees it.
 		h := reflect.New(tp).Elem()
 		h.Field(i).FieldByName("ObservedAt").SetInt(1800000000)
 		seen := hypervisorObservedAt(h.Interface().(Hypervisor)) == 1800000000
@@ -119,7 +77,6 @@ func TestHealthStampClassifiesEveryField(t *testing.T) {
 	}
 }
 
-// TestNeverObservedSaysSoInNewBlocks: -1 is the marker, and never 0.
 func TestNeverObservedSaysSoInNewBlocks(t *testing.T) {
 	now := time.Unix(1800000000, 0)
 	vs := ViewStorage(Hypervisor{}, 90*time.Second, now)
@@ -138,11 +95,6 @@ func TestNeverObservedSaysSoInNewBlocks(t *testing.T) {
 	}
 }
 
-// ------------------------------------------------- empty ≠ no permission ----
-
-// 🔴 TestEmptyWithPrivilegeDiffersFromEmptyWithoutPrivilege: BOTH lists are empty
-// and the two screens have to be different. It is the whole trap in a single
-// test.
 func TestEmptyWithPrivilegeDiffersFromEmptyWithoutPrivilege(t *testing.T) {
 	now := time.Unix(1800000000, 0)
 
@@ -173,9 +125,6 @@ func TestEmptyWithPrivilegeDiffersFromEmptyWithoutPrivilege(t *testing.T) {
 	}
 }
 
-// TestNeverObservedVerdictDoesNotFakeGreen: with no observation at all, the
-// timestamp is 0. Whoever reads it has to be able to say "I do not know yet"
-// instead of "not allowed".
 func TestNeverObservedVerdictDoesNotFakeGreen(t *testing.T) {
 	v := ViewStorage(Hypervisor{}, 90*time.Second, time.Unix(1800000000, 0))
 	if v.DatastoreAudit.ObservedAt != 0 {
@@ -186,11 +135,6 @@ func TestNeverObservedVerdictDoesNotFakeGreen(t *testing.T) {
 	}
 }
 
-// -------------------------------------------------------- data conversion ---
-
-// TestPoolsArriveNormalized: `content` becomes a list, 0|1 becomes a boolean
-// and the fraction becomes a percentage. The screen FORMATS; it does not
-// interpret.
 func TestPoolsArriveNormalized(t *testing.T) {
 	var inv Inventory
 	applyStorage(&inv, testPools(), 1800000000)
@@ -216,9 +160,6 @@ func TestPoolsArriveNormalized(t *testing.T) {
 	}
 }
 
-// 🔴 TestUsedPctFallsBackToComputedWhenPVEOmitsIt: the day a hypervisor
-// upgrade stops sending `used_fraction`, a FULL disk would show up at 0% — an
-// empty, green bar. The fallback is the arithmetic, never zero.
 func TestUsedPctFallsBackToComputedWhenPVEOmitsIt(t *testing.T) {
 	var inv Inventory
 	applyStorage(&inv, []pve.Storage{{
@@ -229,7 +170,6 @@ func TestUsedPctFallsBackToComputedWhenPVEOmitsIt(t *testing.T) {
 	if p.UsedPct < 94.9 || p.UsedPct > 95.1 {
 		t.Errorf("UsedPct = %v, want 95 — with no used_fraction, used/total is the way out, not 0", p.UsedPct)
 	}
-	// A total of zero must not become a division by zero, nor 100%.
 	var inv2 Inventory
 	applyStorage(&inv2, []pve.Storage{{Storage: "empty", Total: 0, Used: 0}}, 1800000000)
 	if got := inv2.Hypervisor.Storage.Value[0].UsedPct; got != 0 {
@@ -237,7 +177,6 @@ func TestUsedPctFallsBackToComputedWhenPVEOmitsIt(t *testing.T) {
 	}
 }
 
-// TestZPoolsArriveWithLiteralHealth: DEGRADED becomes nothing but DEGRADED.
 func TestZPoolsArriveWithLiteralHealth(t *testing.T) {
 	var inv Inventory
 	applyZPools(&inv, []pve.ZPool{

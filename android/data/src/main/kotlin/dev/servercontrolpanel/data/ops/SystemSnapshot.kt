@@ -6,16 +6,6 @@ import dev.servercontrolpanel.mobileapiclient.model.MemoryMetrics
 import dev.servercontrolpanel.mobileapiclient.model.NetMetrics
 import dev.servercontrolpanel.mobileapiclient.model.SystemMetrics
 
-/**
- * The machine's resources, as `GET /api/mobile/v1/ops/status` now returns them
- * in the `system` field.
- *
- * Every quantity arrives as a PAIR: the raw number (to compare against a
- * threshold) and the text the server has already formatted (to display). The
- * rule is not to reformat here — "8.0 GiB" is the server's to write, and two
- * diverging formattings of the same number is how a dashboard starts lying on
- * its own.
- */
 data class SystemSnapshot(
     val cpu: CpuSnapshot,
     val memory: MemorySnapshot,
@@ -29,14 +19,6 @@ data class SystemSnapshot(
     val platform: String?,
 )
 
-/**
- * CPU.
- *
- * [steal] and [iowait] are here, and not hidden away, on purpose: they are the
- * two quantities that explain "the machine is slow and usage is not high".
- * Steal is time the hypervisor took — from inside the VM there is nothing to
- * fix, only something to know: the capacity that was paid for is not arriving.
- */
 data class CpuSnapshot(
     val usedPercent: Double,
     val cores: Long,
@@ -48,7 +30,6 @@ data class CpuSnapshot(
     val model: String?,
 )
 
-/** Memory or swap — the server returns both with the same shape. */
 data class MemorySnapshot(
     val usedPercent: Double,
     val usedText: String,
@@ -56,7 +37,6 @@ data class MemorySnapshot(
     val freeBytes: Long,
 )
 
-/** A mount point. The server already filters out the pseudo filesystems. */
 data class DiskSnapshot(
     val mount: String,
     val usedPercent: Double,
@@ -65,7 +45,6 @@ data class DiskSnapshot(
     val fstype: String?,
 )
 
-/** The uplink interface and the instantaneous rate on it. */
 data class NetSnapshot(
     val iface: String,
     val sentRateText: String?,

@@ -29,36 +29,17 @@ import dev.servercontrolpanel.feature.files.share.SharedItem
 import java.io.File
 import java.io.FileOutputStream
 
-/**
- * Entry point when another Android app shares content into server-control-panel
- * via `ACTION_SEND`/`ACTION_SEND_MULTIPLE`. A dedicated activity
- * (not [MainActivity]) so the share flow gets its own clean task/back-stack,
- * independent of wherever the main app happens to be navigated at the time,
- * and so it can be launched cold -- by the share sheet, with no prior
- * [MainActivity] instance -- without disturbing any existing one.
- *
- * A single-screen `ComponentActivity` wrapping one Composable, following the
- * same `enableEdgeToEdge()` + theme pattern [MainActivity] established.
- */
 class ShareTargetActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Extraction (and the persistable-permission grab inside it) happens
-        // exactly once here, in onCreate -- a shared content Uri's read grant
-        // is otherwise transient and tied to this activity's lifetime, but
-        // UploadWorker (Plan 10-05) may run the actual upload well after this
-        // activity, and the app that shared the content, are both gone.
         val sharedItems = extractSharedItems(intent)
 
         val serverConfigRepository = (application as PanelApplication).serverConfigRepository
         val alreadyConfigured = serverConfigRepository.currentBaseUrl() != null
 
-        // The same appearance preference as MainActivity (it is a process
-        // singleton): sharing a file must not open a window in the opposite
-        // theme to the rest of the app.
         val themePreference = ThemePreference.get(applicationContext)
 
         setContent {
@@ -78,15 +59,6 @@ class ShareTargetActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Handles the three real share shapes: a single-file `ACTION_SEND`, a
-     * multi-file `ACTION_SEND_MULTIPLE`, and a text-only `ACTION_SEND` (no
-     * `EXTRA_STREAM`, just `EXTRA_TEXT` -- a shared URL or note from a
-     * browser/notes app). Anything else (an action this activity's manifest
-     * entry does not advertise, or a `SEND`/`SEND_MULTIPLE` with neither a
-     * stream nor usable text) yields an empty list, handled explicitly by
-     * [NothingSharedContent] rather than silently dropping the share.
-     */
     private fun extractSharedItems(intent: Intent): List<SharedItem> = when (intent.action) {
         Intent.ACTION_SEND -> {
             val streamUri = intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
@@ -105,39 +77,15 @@ class ShareTargetActivity : ComponentActivity() {
         else -> emptyList()
     }
 
-    /**
-     * Claims a persistable read grant immediately (the sharing
-     * app already granted `FLAG_GRANT_READ_URI_PERMISSION` implicitly via the
-     * share-sheet mechanism, but only for this transient delivery) and
-     * resolves the display name/size the destination screen shows before
-     * committing to an upload. A provider that refuses a persistable grant
-     * (rare, but not contractually guaranteed by every content provider) is
-     * still forwarded as-is -- if the transient grant does not survive long
-     * enough for `UploadWorker` to run, the upload fails visibly through its
-     * normal retry/`Result.failure` path rather than being silently dropped
-     * here before the admin ever sees it.
-     */
     private fun resolveSharedUri(uri: Uri): SharedItem {
         try {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (e: SecurityException) {
-            // See doc above -- proceed with the transient grant regardless.
         }
         val (name, size) = queryDisplayNameAndSize(contentResolver, uri)
         return SharedItem(uri = uri.toString(), displayName = name ?: uri.lastPathSegment ?: "file", sizeBytes = size)
     }
 
-    /**
-     * A plain-text share (`EXTRA_TEXT`, e.g. a URL selected in a browser) has
-     * no `Uri` at all. Writing it to a small generated `.txt` file in
-     * app-private cache storage first lets it converge onto the exact same
-     * upload path as a real file share -- [ShareDestinationScreen] never
-     * needs a second code path for text. This file's `Uri` is never placed
-     * in an outgoing `Intent` (it stays purely internal, read back by this
-     * same app's `UploadWorker` via `ContentResolver`), so it needs no
-     * `FileProvider`/persistable-grant machinery, unlike [resolveSharedUri]'s
-     * content Uris from another app.
-     */
     private fun writeSharedTextToFile(text: String): SharedItem {
         val filename = "shared-${System.currentTimeMillis()}.txt"
         val file = File(cacheDir, filename)
@@ -146,7 +94,6 @@ class ShareTargetActivity : ComponentActivity() {
     }
 }
 
-/** `null` name/zero size are both legitimate misses (a provider that doesn't answer these columns). */
 private fun queryDisplayNameAndSize(contentResolver: ContentResolver, uri: Uri): Pair<String?, Long> {
     var name: String? = null
     var size = 0L
@@ -161,14 +108,6 @@ private fun queryDisplayNameAndSize(contentResolver: ContentResolver, uri: Uri):
     return name to size
 }
 
-/**
- * Shown when the app is launched cold, by the share sheet, on a device that
- * has never been paired with a server (`MainActivity`'s own first-run gate
- * would show `PasskeyRegisterFlow` for the exact same reason). There is
- * nowhere for the shared content to land yet -- the admin is sent to
- * [MainActivity] to pair first, rather than the share silently failing or
- * this activity crashing on a null base URL.
- */
 @Composable
 private fun UnconfiguredContent(onOpenApp: () -> Unit) {
     Column(
@@ -183,7 +122,6 @@ private fun UnconfiguredContent(onOpenApp: () -> Unit) {
     }
 }
 
-/** Shown when the incoming Intent carries no recognizable content -- never a silent no-op. */
 @Composable
 private fun NothingSharedContent(onDone: () -> Unit) {
     Column(

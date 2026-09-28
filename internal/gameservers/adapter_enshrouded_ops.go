@@ -9,12 +9,6 @@ import (
 	"strings"
 )
 
-// World and backup operations of the Enshrouded adapter.
-//
-// Everything here touches a save — the rule is: NEVER write to the savegame with
-// the server up. The handlers stop the container before calling Restore.
-
-// safeName rejects a name that could escape the worlds directory.
 func safeName(n string) error {
 	if n == "" || strings.ContainsAny(n, `/\`) || strings.HasPrefix(n, ".") {
 		return fmt.Errorf("invalid name: %q", n)
@@ -22,9 +16,6 @@ func safeName(n string) error {
 	return nil
 }
 
-// DuplicateWorld copies a world's whole family of files, preserving the
-// .saveid — two worlds may share the same save id without conflict, because
-// only one at a time goes to savegame (renamed to the canonical id).
 func (e enshrouded) DuplicateWorld(s Server, src, dst string) error {
 	if err := safeName(src); err != nil {
 		return err
@@ -52,16 +43,13 @@ func (e enshrouded) DuplicateWorld(s Server, src, dst string) error {
 			continue
 		}
 		if err := copyFile(filepath.Join(from, en.Name()), filepath.Join(to, en.Name())); err != nil {
-			os.RemoveAll(to) // do not leave a half-finished copy
+			os.RemoveAll(to)
 			return err
 		}
 	}
 	return nil
 }
 
-// DeleteWorld removes an archived world. It refuses to delete the active one —
-// the active one lives in savegame and deleting it here would leave the server
-// with no world to archive.
 func (e enshrouded) DeleteWorld(s Server, name string) error {
 	if err := safeName(name); err != nil {
 		return err
@@ -83,8 +71,6 @@ func enshSaveDir(s Server) string {
 	return filepath.Join(s.Root, "data", "server", "savegame")
 }
 
-// BackupPath resolves a backup's path validating the name, so a download does
-// not turn into arbitrary file reading.
 func (enshrouded) BackupPath(s Server, file string) (string, error) {
 	if err := safeName(file); err != nil {
 		return "", err
@@ -96,8 +82,6 @@ func (enshrouded) BackupPath(s Server, file string) (string, error) {
 	return p, nil
 }
 
-// CreateBackup zips the current savegame. The name carries the active world so
-// you can tell what is inside without opening it.
 func (e enshrouded) CreateBackup(s Server, stamp string) (string, error) {
 	src := enshSaveDir(s)
 	if _, err := os.Stat(src); err != nil {
@@ -143,11 +127,6 @@ func (e enshrouded) CreateBackup(s Server, stamp string) (string, error) {
 	return name, nil
 }
 
-// RestoreBackup overwrites the savegame with the zip's content.
-//
-// The caller MUST have stopped the server beforehand. Before touching anything,
-// it takes a safety zip of the current state — restoring the wrong backup is
-// irreversible otherwise.
 func (e enshrouded) RestoreBackup(s Server, file, stamp string) error {
 	path, err := e.BackupPath(s, file)
 	if err != nil {
@@ -167,7 +146,6 @@ func (e enshrouded) RestoreBackup(s Server, file, stamp string) error {
 	if err := os.MkdirAll(save, 0o755); err != nil {
 		return err
 	}
-	// Clean only loose savegame files (the backup brings the whole family).
 	olds, _ := os.ReadDir(save)
 	for _, o := range olds {
 		if !o.IsDir() {
@@ -178,7 +156,6 @@ func (e enshrouded) RestoreBackup(s Server, file, stamp string) error {
 		if zf.FileInfo().IsDir() {
 			continue
 		}
-		// Zip Slip: never trust the name inside the zip.
 		name := filepath.Base(zf.Name)
 		if err := safeName(name); err != nil {
 			continue
@@ -199,20 +176,9 @@ func (e enshrouded) RestoreBackup(s Server, file, stamp string) error {
 			return cerr
 		}
 	}
-	// The owner of the restored save comes from OBSERVING the disk, never from a
-	// constant. The literal pair that used to be here is Enshrouded's uid; Palworld
-	// uses PUID 1000 — assuming the panel knows the game's uid is how this defect
-	// was born the first time.
-	//
-	// The reference is s.Root, and not `save`'s immediate parent: the parent may
-	// have just been created by the panel, already root:root. The server's root is
-	// the only point of the tree whose owner is reliably the game's. An inspectable
-	// root is a precondition — without it, an error naming the path, never an invented default.
 	return chownLikeRef(save, s.Root, true)
 }
 
-// ConnectionInfo exposes what a player needs in order to join (the password
-// comes from the server config, shown masked in the UI).
 func (enshrouded) ConnectionInfo(s Server) map[string]interface{} {
 	out := map[string]interface{}{"address": s.Address}
 	cfg, err := readJSONFile(enshConfigPath(s))
@@ -228,8 +194,6 @@ func (enshrouded) ConnectionInfo(s Server) map[string]interface{} {
 	out["serverName"] = cfg["name"]
 	return out
 }
-
-// ---------- helpers ----------
 
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)

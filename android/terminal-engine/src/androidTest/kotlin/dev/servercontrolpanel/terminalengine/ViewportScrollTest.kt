@@ -6,15 +6,6 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Instrumented, needs the real `.so`. Proves the emulator's history is
- * navigable: moving the viewport changes what [TerminalEngine.snapshot] returns.
- *
- * Also pins library behavior the gesture layer depends on:
- *  - new output does not drag the viewport while the user reads the past;
- *  - the alternate screen has no history to navigate;
- *  - the wheel is xterm's button 4/5, which is how `htop` recognizes it.
- */
 class ViewportScrollTest {
 
     private fun row(snapshot: CellSnapshot, y: Int): String {
@@ -26,7 +17,6 @@ class ViewportScrollTest {
         return sb.toString().trimEnd()
     }
 
-    /** Writes [lines] numbered lines to become history. */
     private fun fillHistory(engine: TerminalEngine, lines: Int) {
         val sb = StringBuilder()
         for (i in 1..lines) sb.append("line-").append(i).append("\r\n")
@@ -39,7 +29,6 @@ class ViewportScrollTest {
         try {
             fillHistory(engine, 100)
             val snap = engine.snapshot()
-            // End of history: the last lines written are in view.
             assertTrue(
                 "expected the last lines on screen, got: ${row(snap, 0)}",
                 (0 until snap.rows).any { row(snap, it) == "line-100" },
@@ -61,7 +50,6 @@ class ViewportScrollTest {
 
             val after = (0 until 10).map { row(engine.snapshot(), it) }
             assertNotEquals("the viewport did not move", before, after)
-            // 100 lines written, 10 visible, up 50: we land in the 40s.
             assertTrue(
                 "expected past lines, got: $after",
                 after.any { it.startsWith("line-4") || it.startsWith("line-5") },
@@ -109,14 +97,12 @@ class ViewportScrollTest {
             assertEquals(0L, top.offset)
             assertFalse(top.atEnd)
             assertEquals(0f, top.progress, 0.001f)
-            // The total does not change just because we looked back.
             assertEquals(end.total, top.total)
         } finally {
             engine.close()
         }
     }
 
-    /** A position read back returns to the engine unconverted (same line space). */
     @Test
     fun scrollToRow_roundTripsWithReadOffset() {
         val engine = TerminalEngine.create(cols = 40, rows = 10)
@@ -136,7 +122,6 @@ class ViewportScrollTest {
         }
     }
 
-    /** New output arriving while reading the past must not drag the screen down. */
     @Test
     fun newOutput_doesNotDragViewport_whileReadingPast() {
         val engine = TerminalEngine.create(cols = 40, rows = 10)
@@ -154,7 +139,6 @@ class ViewportScrollTest {
                 (0 until 10).map { row(engine.snapshot(), it) },
             )
             assertFalse(engine.scrollState().atEnd)
-            // The offset grows with the history to keep the SAME lines in view.
             assertTrue(engine.scrollState().offset >= offsetBefore)
         } finally {
             engine.close()
@@ -196,7 +180,6 @@ class ViewportScrollTest {
         }
     }
 
-    /** The alternate screen has no history; the library pins the viewport there. */
     @Test
     fun altScreen_hasNoHistoryToBrowse() {
         val engine = TerminalEngine.create(cols = 40, rows = 10)
@@ -219,10 +202,6 @@ class ViewportScrollTest {
         }
     }
 
-    /**
-     * `less` and `man` do not enable 1007 themselves, so scrolling in them
-     * relies on the terminal's default being ON.
-     */
     @Test
     fun altScroll_startsOn_likeXterm() {
         val engine = TerminalEngine.create(cols = 40, rows = 10)
@@ -233,7 +212,6 @@ class ViewportScrollTest {
         }
     }
 
-    /** DECSET 1007 and DECCKM reach the gesture layer as the emulator's truth. */
     @Test
     fun altScroll_andCursorKeys_areTrackedByEmulator() {
         val engine = TerminalEngine.create(cols = 40, rows = 10)
@@ -253,7 +231,6 @@ class ViewportScrollTest {
         }
     }
 
-    /** The wheel is xterm's button 4/5; otherwise `htop` does not recognize scrolling. */
     @Test
     fun wheel_isEncodedAsButtons4And5_whenProgramAsksForMouse() {
         val engine = TerminalEngine.create(cols = 40, rows = 10)
@@ -264,14 +241,12 @@ class ViewportScrollTest {
                 screenWidthPx = 400,
                 screenHeightPx = 200,
             )
-            // No tracking: no bytes, as at any shell prompt.
             assertTrue(
                 engine.encodeMouse(
                     MouseAction.PRESS, MouseButton.WHEEL_UP, 5f, 5f, geometry,
                 ) == null,
             )
 
-            // The program requests mouse (1000) in SGR format (1006).
             engine.write("\u001b[?1000h\u001b[?1006h".toByteArray(Charsets.UTF_8))
             assertTrue(engine.modes().mouseTracking)
 
@@ -282,7 +257,6 @@ class ViewportScrollTest {
 
             assertTrue("wheel up produced no report", upText != null)
             assertTrue("wheel down produced no report", downText != null)
-            // SGR: ESC [ < 64 ; col ; line M for wheel up, 65 for wheel down.
             assertTrue("expected button 64 (wheel up), got: $upText", upText!!.contains("<64;"))
             assertTrue("expected button 65 (wheel down), got: $downText", downText!!.contains("<65;"))
         } finally {

@@ -2,10 +2,6 @@
 <html>
 <head>
 <meta charset="utf-8">
-<!-- Monaco is isolated in an iframe so Alpine's MutationObserver in the parent
-     never walks the editor tree (that walk froze the page). The parent calls
-     window.gitEditor* via contentWindow (same-origin); readiness is signalled
-     with postMessage. -->
 <style>
   html, body { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background: #1e1e1e; }
   #ed { position: absolute; inset: 0; }

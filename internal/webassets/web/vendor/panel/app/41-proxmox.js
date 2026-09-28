@@ -1,65 +1,6 @@
-// 41-proxmox.js — the SINGLE lab screen (Operations → Proxmox).
-// IIFE exposing window.PanelProxmoxModule(); the object is spread inside
-// app() in 00-shell.js, so `this` here is the Alpine component
-// (this.api, this.showToast, this.askConfirm, this._apiError and
-// this._errText already exist).
-// Cast from: 40-nodes.js.
-//
-// ────────────────────────────────────────────────────────────────────────────
-// 🔴 THE "Nodes" TAB WAS MERGED IN HERE. The node is the axis.
-//
-// They were two screens about the same subject: one listed the nodes without
-// ever saying what they were consuming, the other showed the hypervisor as if
-// it were not a node. The operator had to remember which of the two held the
-// thing he wanted — and the answer changed with the question.
-//
-// Now it is one screen: the hypervisor is the HEADER and the guests are the
-// rows. With one node and nine guests, a Datacenter→Node→Guest tree would
-// spend a whole column of the screen to express a one-item hierarchy; the
-// design is a dense list with a gauge embedded in every row.
-//
-// This ANTICIPATES the planned "node as the primary axis, tabs filtered by
-// caps". The missing half is the `caps` half, which depends on the lab agent
-// that does not exist yet — which is why the requirement is NOT called done.
-//
-// The module stays SEPARATE from 40-nodes.js, and now for another reason: that
-// file is the DATA layer (fetch from the server, translate the four credential
-// states), this one is the SCREEN layer. Re-copying `nodesCredLabel` here would
-// create two truths about what a revoked credential is.
-//
-// 🔴 THE BROWSER CLOCK DOES NOT COME IN HERE.
-//
-// The age arrives ready-made from the server (`age_seconds`), for the same
-// reason written in the header of 40-nodes.js: this project spans two machines
-// and a tailnet, and the clock on the operator’s machine is not a controlled
-// variable. A fast clock would make everything look expired; a slow one would
-// show a mute hypervisor as if it were live.
-//
-// 🔴 pvxFormatAge is a DELIBERATE COPY of nodesFormatAge (40-nodes.js).
-//
-// It is not an import, and not `this.nodesFormatAge`. Both modules land in the
-// SAME Alpine component, so calling the neighbour’s WOULD WORK — and would
-// create a silent dependency between tabs: renaming a method in 40-nodes.js
-// would break the Proxmox tab with no build error and no test. The copy is
-// honest because scripts/test-proxmox-tab.mjs extracts BOTH functions from the
-// served files, runs both and fails if they diverge.
-// ────────────────────────────────────────────────────────────────────────────
 (function () {
-  // Gauge hysteresis memory, keyed by "id:gauge". Outside the component on
-  // purpose — see the comment in pvxGauge.
   const hysteresisTiers = new Map();
 
-  // ── gauge helpers, OUTSIDE the object ────────────────────────────────────
-  //
-  // They live here because they do not depend on the component and because
-  // `pvxNodeState` needs them: as methods, `pvxNodeState` would have to read `this`
-  // and would stop being extractable by the harness. A rule that is only testable
-  // once you stand up a whole Alpine component is not tested.
-
-  // 🔴 pvxGaugePct returns null — not 0 — when there is no measurement.
-  // `disk_used` from QEMU without a guest agent arrives as -1 (the "not reported" sentinel from
-  // the server), and 0% would draw a roomy disk over a number nobody measured.
-  // null is absence saying its own name.
   function pvxGaugePct(n, which) {
     if (!n) return null;
     const val = (o) => (o && o.value !== undefined && o.value !== null) ? Number(o.value) : null;
@@ -81,9 +22,6 @@
     const stamp = which === 'cpu' ? n.cpu_frac : (which === 'ram' ? n.mem_used : n.disk_used);
     if (!stamp || !stamp.observed_at) return 'the panel has not observed this node yet';
     if (which === 'disco') {
-      // The concrete case in this house, measured: qemu/100 and qemu/208 return
-      // `disk: 0` because the guest agent is not installed. Saying "0%" there would
-      // be asserting disk headroom over a question with no answer.
       return 'not reported — QEMU without a guest agent does not report disk usage';
     }
     return 'not reported';
@@ -91,11 +29,6 @@
 
   function pvxGaugeText(comp, n, which, pct) {
     if (which === 'cpu') {
-      // 🔴 DO NOT repeat the percentage here. The screen already shows the number
-      // next to the bar; returning "0.8% of 2 core(s)" produced TWO percentages on
-      // the same line, rounded differently ("1%" and "0.8%"), and the phrase was
-      // still long enough to truncate into "0.8% of 2 cor…".
-      // The text complements the number, it does not duplicate it.
       const cores = (n.cpu_cores && n.cpu_cores.value) || 0;
       if (!cores) return 'cores not reported';
       return cores === 1 ? '1 core' : `${cores} cores`;
@@ -107,106 +40,63 @@
   window.PanelProxmoxModule = function () {
     return {
       pvx: {
-        health: null,        // HypervisorView exactly as the server delivered it
+        health: null,
         ttl: 90,
         tasks: [],
-        errorsOnly: true,      // the filter that reveals the failures nobody sees
-        taskLog: null,      // { upid, lines } while the modal is open
+        errorsOnly: true,
+        taskLog: null,
         logOpen: false,
         disks: [],
-        storage: null,      // { pools, datastore_audit:{value,observed_at}, age_seconds, stale }
-        zfs: null,          // { pools, age_seconds, stale }
-        perms: null,        // { permissions, storage_visible }
+        storage: null,
+        zfs: null,
+        perms: null,
         permsOpen: false,
         snaps: [],
-        newSnap: '',       // name typed for the new snapshot
-        guestSel: '',       // guest id ("lxc/204")
+        newSnap: '',
+        guestSel: '',
         loading: false,
-        firstLoad: true, // while true the table draws a skeleton, not a spinner
+        firstLoad: true,
         forbidden: false,
         lastError: '',
-        busy: '',           // operation in flight (re-entrancy guard)
+        busy: '',
 
-        // ── the merged screen ────────────────────────────────────────────
-        filter: '',         // `field:value` filter text, ANDed
-        segment: '',       // active health-band segment; '' = none
-        sel: [],            // ids selected for bulk action
-        open: '',         // id of the node whose side panel is open
-        detail: null,      // { node, services, deployments, jobs } of the open node
-        // 🔴 `rolando` is a BOOLEAN armed by setTimeout, never an instant.
-        // The temptation was to store "do not refresh until T" and compare it with
-        // the clock — and this file reads no clock at all, because the rule that
-        // forbids computing age in the browser admits no "just this once" exception.
+        filter: '',
+        segment: '',
+        sel: [],
+        open: '',
+        detail: null,
         rolando: false,
 
-        // Remote console
         con: {
-          guest: '',        // id of the guest with the console open ("lxc/204")
-          state: 'closed',// closed | opening | on | error
+          guest: '',
+          state: 'closed',
           error: '',
         },
 
-        // Master-detail. The operator chose layout A2 and ONLY it; A5 — which was A2
-        // plus a fixed exceptions band — was rejected. So there is NO exceptions band
-        // on this screen.
-        tab: '',            // active tab of the right-hand panel
-        paused: false,     // live cycle suspended?
-        pauseReason: '',    // why, in plain words, so the screen can say it
-        focusFilter: false,  // does the filter have the cursor inside it?
-        ageSec: null,     // age of the data, coming FROM THE SERVER
-        // 🔴 STATE IS BORN WITH A SHAPE, NEVER NULL.
-        //
-        // The previous version initialised all of this with `null`, and the template
-        // dereferenced it (`pvx.series.points`, `pvx.system.network`). Before the
-        // first load — which is the state the screen ALWAYS opens in — that throws, and
-        // a throw inside Alpine takes down the WHOLE app: the Proxmox tab dragged the
-        // terminal down with it, and the operator was locked out of the only remote
-        // access he has.
-        //
-        // Leaning on `?.` in every expression is fragile: the next expression somebody
-        // writes may forget it. A stable shape in the state removes the entire class at
-        // the source — `pvx.series.points` becomes always safe.
-        //
-        // "Has it loaded yet?" moved house: it used to be the nullness of the field
-        // itself, now it is `loaded`. The two questions are different, and mixing
-        // them is what created the defect.
+        tab: '',
+        paused: false,
+        pauseReason: '',
+        focusFilter: false,
+        ageSec: null,
         loaded: {},
 
-        // Maintenance. Born with a SHAPE, never null: the template reads
-        // `pvx.clone.newID` before any load, which is the state the screen ALWAYS
-        // opens in.
         clone: { open: false, loading: false, origin: '', originName: '', newID: 0, name: '', on: false,
                  needsSnap: false, snapshots: [], snapshot: '', error: '' },
         bkp: { storage: '', mode: 'snapshot' },
-        // The note that EXPLAINS the node. Born with a shape; `loading` and `origin`
-        // separate the three states the screen has to tell apart: I have not read it
-        // yet, I read it and it is empty, I read it and it is not from this hypervisor.
         note: { node: '', markdown: '', origin: '', reason: '', loading: false, error: '',
                 editing: false, draft: '', saving: false },
 
-        backup: { datastores: [] },     // freshness per layer — see pvxBackups()
-        topology: { pools: [] },       // pool topology
+        backup: { datastores: [] },
+        topology: { pools: [] },
         series: { points: [], scope: '', window: '' },
         seriesLoading: false,
         window: 'hour',
-        system: {},                    // network, DNS, time, certificates
+        system: {},
         packages: { packages: [] },
-        registry: { lines: [] },       // syslog
+        registry: { lines: [] },
         packageFilter: '',
       },
 
-      // ── HYPERVISOR power ──────────────────────────────────────────────────
-      //
-      // 🔴 THE ONLY PANEL ACTION WHOSE MISTAKE HAS NO REMOTE UNDO.
-      //
-      // This machine has no IPMI. Wake-on-LAN is no help either: the thing routing
-      // the admin network is the host itself (it runs the Tailscale subnet router),
-      // so when it goes down there is nowhere to wake it from. Powering it back on
-      // means walking to the machine.
-      //
-      // The operator asked for this knowing the risk — that is on record. What the
-      // screen owes him is the CONCRETE CONSEQUENCE up front, not a generic warning:
-      // how many guests fall, which ones, and that the way back is physical.
       pvxRunningGuests() {
         return this.pvxNodes().filter((n) => {
           if (!this.pvxIsGuest(n)) return false;
@@ -221,8 +111,6 @@
         const running = this.pvxRunningGuests();
         const list = running.map((g) => (g.name || g.id)).join(', ') || 'none';
 
-        // The sentence changes with the command because the RISK changes. Rebooting is
-        // betting the machine comes back; shutting down guarantees it will not by itself.
         const title = cmd === 'reboot' ? 'Restart the hypervisor' : 'POWER OFF the hypervisor';
         const volta = cmd === 'reboot'
           ? 'If it does not come back — a new kernel that fails to boot, a pool that fails to import, a stuck fsck — the outcome is the same as a power off: somebody has to be standing in front of the machine.'
@@ -245,8 +133,6 @@
                 (cmd === 'reboot' ? 'restart' : 'power off') + ' accepted by the hypervisor' +
                 (howMany ? ` — ${howMany} guest(s) going down with it` : '') +
                 (d.upid ? ` (task ${d.upid})` : ''), 'ok');
-              // No point going on polling something that is dying: the pause avoids a flood
-              // of network errors on screen while the machine goes down.
               this.pvx.paused = true;
               this.pvx.pauseReason = 'hypervisor ' + (cmd === 'reboot' ? 'restarting' : 'powering off');
               this.pvxStopTimer();
@@ -261,11 +147,6 @@
           { danger: true, requireText: label });
       },
 
-      // ── hypervisor Summary panel ──────────────────────────────────────────
-      //
-      // Mirrors what the Proxmox screen shows at the top, because the operator CANNOT
-      // reach that UI: CPU, IO delay, load, RAM, KSM, root disk, swap, processor
-      // model, kernel, PVE version and uptime.
       pvxHealthObs(field) {
         const h = this.pvx.health;
         return h ? h[field] : null;
@@ -274,8 +155,6 @@
         const o = this.pvxHealthObs(field);
         return o && o.observed_at ? o.value : null;
       },
-      // A number with no timestamp is a number nobody observed. Returning zero there
-      // would make the screen say "0% CPU" about a mute hypervisor.
       pvxNum(field, decimals) {
         const v = this.pvxVal(field);
         return v === null || v === undefined ? '—' : Number(v).toFixed(decimals === undefined ? 1 : decimals);
@@ -285,8 +164,6 @@
         if (u === null || t === null || !(Number(t) > 0)) return null;
         return (Number(u) / Number(t)) * 100;
       },
-      // Hypervisor fractions 0..1 become percentages only at presentation time.
-      // Storing percentages in the state would create two conventions for one quantity.
       pvxFracPct(field) {
         const v = this.pvxVal(field);
         return v === null || v === undefined ? null : Number(v) * 100;
@@ -308,26 +185,12 @@
         const l = this.pvxVal('load');
         return Array.isArray(l) && l.length === 3 ? l.map((x) => Number(x).toFixed(2)) : null;
       },
-      // 🔴 Load only means something DIVIDED by the cores. Load 8 on a 16-thread
-      // server is half the capacity; that same 8 on a 2-thread box is a queue four
-      // times deeper than the machine can take. Proxmox shows the raw number and
-      // leaves the arithmetic to the reader; here the arithmetic is done.
       pvxLoadRelative() {
         const l = this.pvxLoadTrio(), n = this.pvxVal('cpu_cores');
         if (!l || !(Number(n) > 0)) return null;
         return (Number(l[0]) / Number(n)) * 100;
       },
 
-      // ── time series and charts ────────────────────────────────────────────
-      //
-      // 🔴 NO LIBRARY. The panel’s CSP is `script-src 'self'`, so no Chart.js gets in
-      // — and it is no loss: an area chart with a grid and a highlighted final point
-      // is ~40 lines of SVG, against 200 KB of dependency that then needs security
-      // updates forever.
-      //
-      // The chart is the centrepiece of the Proxmox screen, and it is what separates
-      // "the dev is at 83% RAM" from "the dev has been climbing for three hours". The
-      // second lets you act in time; the first only states a fact.
       WINDOWS: [
         { id: 'hour',  rot: '1 h' },
         { id: 'day',   rot: '1 day' },
@@ -335,9 +198,6 @@
         { id: 'month', rot: '1 month' },
         { id: 'year',  rot: '1 year' },
       ],
-      // Drawable metrics. `pct` says whether the axis is a fixed 0-100 (percentage)
-      // or scaled to the observed maximum — scaling a percentage would make 2% CPU
-      // look like a spike, and that is the classic automatic-charting mistake.
       NODE_METRICS: [
         { id: 'cpu',        rot: 'CPU',        pct: true,  color: '#38bdf8', fmt: 'pct' },
         { id: 'iowait',     rot: 'IO delay',   pct: true,  color: '#f59e0b', fmt: 'pct' },
@@ -379,7 +239,6 @@
           this.pvx.loaded.series = true;
         } catch (e) {
           this.pvx.lastError = this._errText(e);
-          // Stable shape in the error path too: see pvxLoad.
           this.pvx.series = { points: [], scope: '', window: this.pvx.window };
         } finally {
           this.pvx.seriesLoading = false;
@@ -387,24 +246,9 @@
       },
       pvxSwitchWindow(j) { this.pvx.window = j; this.pvxLoadSeries(); },
 
-      // ── the drawing ───────────────────────────────────────────────────────
-      //
-      // A fixed viewBox + width:100% scales the chart without recomputing anything.
-      // The stroke uses `vector-effect: non-scaling-stroke` because the scaling is
-      // NON-uniform: without it the line fattens horizontally and thins vertically.
       GW: 600, GH: 120,
-      // 🔴 A HOLE IN THE SERIES IS A HOLE. The RRD returns a missing sample when the
-      // hypervisor was off or the data did not exist yet. Bridging over it would turn
-      // a power cut into a straight line, and filling it with zero would turn it into
-      // a period of idleness. The drawing BREAKS the stroke.
       pvxDrawing(metric) {
         const d = this.pvx.series;
-        // 🔴 ONE SHAPE ONLY, always. The previous version returned TWO different
-        // objects: the full one had `endX`/`endY`, the empty one did not. The template
-        // reads `:cx="pvxDrawing(m).endX"` outside any guard, so in the empty state
-        // the attribute got `undefined` and the SVG refused it with
-        // "attribute cx: Unexpected end of attribute". The same disease as state born
-        // null, one level down — in the return value of a function.
         const empty = {
           hasData: false, area: '', stroke: '', points: '',
           cap: 1, max: 0, min: 0, last: null, endX: 0, endY: 0, gaps: 0, n: 0,
@@ -420,13 +264,9 @@
 
         const t0 = Number(pts[0].time), t1 = Number(pts[pts.length - 1].time);
         const dur = Math.max(1, t1 - t0);
-        // Axis ceiling: 100 for percentages; for everything else, the larger of the
-        // observed peak and the point’s own ceiling field (memtotal, maxdisk…), which
-        // is what makes "5 GB of RAM" mean different things on a 2 GB guest and on a
-        // 64 GB one.
         let cap;
         if (metric.pct) {
-          cap = 1; // PVE fractions arrive as 0..1
+          cap = 1;
         } else {
           cap = Math.max(...present);
           if (metric.cap) {
@@ -451,32 +291,13 @@
         if (current.length) segments.push(current);
 
         const dPath = (seg) => seg.map(([x, y], i) => (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1)).join(' ');
-        // The area only closes over continuous segments: one single area drawn across
-        // a hole would paint the gap as if there were data in it.
         const area = segments
           .filter((s) => s.length > 1)
           .map((s) => dPath(s) + ` L${s[s.length - 1][0].toFixed(1)} ${this.GH} L${s[0][0].toFixed(1)} ${this.GH} Z`)
           .join(' ');
 
         const lastIdx = vals.map((v, i) => (v === null ? -1 : i)).filter((i) => i >= 0).pop();
-        // 🔴 ONE <path> ONLY, WITH SEVERAL SUBPATHS — not one <path> per segment.
-        //
-        // The original intent ("one path per segment so the stroke breaks at the
-        // hole") was right; the means were wrong. It required `x-for`, and the `x-for`
-        // sat INSIDE the <svg>: there `<template>` is not the HTML element, it is an
-        // unknown SVG element — with no `.content` and not inert. Alpine threw inside
-        // importNode and rendered the children anyway, with the loop variable out of
-        // scope. The charts broke whenever there was DATA, which is exactly when
-        // nobody tests.
-        //
-        // SVG already solves this with no loop at all: every `M` starts a NEW subpath,
-        // and the stroke does not join the end of one to the start of the next. Joining
-        // the segments into a single `d` gives exactly the same drawing — a stroke
-        // broken at the hole — with no template, no loop and no error.
         const stroke = segments.filter((s) => s.length > 1).map(dPath).join(' ');
-        // A lone point (a single sample surrounded by holes) drawn as a zero-length
-        // subpath: with `stroke-linecap="round"` the renderer paints a disc. It comes
-        // free for the same reason: no loop.
         const points = segments
           .filter((s) => s.length === 1)
           .map((s) => `M${s[0][0].toFixed(1)} ${s[0][1].toFixed(1)} L${s[0][0].toFixed(1)} ${s[0][1].toFixed(1)}`)
@@ -496,8 +317,6 @@
           n: present.length,
         };
       },
-      // Formatting per metric type. A raw number with no unit forces the operator to
-      // guess whether 0.83 is 83% or a load of 0.83.
       pvxMetricValue(metric, v) {
         if (v === null || v === undefined) return '—';
         switch (metric.fmt) {
@@ -511,28 +330,12 @@
         const j = this.WINDOWS.find((x) => x.id === this.pvx.window);
         return j ? j.rot : this.pvx.window;
       },
-      // Grid marks at 25/50/75%. Faint on purpose: the grid orients, it does not
-      // compete with the data.
       GRADE: [0.25, 0.5, 0.75],
 
-      // ── storage: physical disk, pool and storage become ONE story ─────────
-      //
-      // 🔴 They were three lists with no connection at all. "Disks" said a 1 TB Lexar
-      // NVMe exists; "ZFS pools" said an `rpool` with 70 GB allocated exists;
-      // "Storage" said a `pbs` datastore exists. Nothing said one lives inside the
-      // other — and in a SINGLE-DISK lab with NO MIRROR the question that matters is
-      // exactly that one:
-      // "what do I lose if THIS disk dies?".
       pvxTopologyOf(name) {
         const ps = (this.pvx.topology && this.pvx.topology.pools) || [];
         return ps.find((p) => p.name === name) || null;
       },
-      // Matches physical disk ↔ pool by the serial embedded in the by-id path.
-      //
-      // This lab’s NVMe is addressed as `nvme-eui.…`, which does NOT carry a readable
-      // serial. In that case the serial match does not happen and the function returns
-      // empty — rather than guessing by type and risking tying the pool to the wrong
-      // disk, which is worse than not tying it at all.
       pvxSerialOfPath(path) {
         let base = String(path || '');
         const i = base.lastIndexOf('/');
@@ -557,11 +360,6 @@
         }
         return findings;
       },
-      // SSD lifetime. 🔴 MEASURED at the Proxmox source, not assumed:
-      // Diskmanage.pm:156 does `wearout = 100 - Percentage Used`, i.e. the field is
-      // REMAINING life. Showing this as "wear" would invert the meaning and make a
-      // new disk look end-of-life — on a single-disk server that is the difference
-      // between calm and panic.
       pvxLifespan(d) {
         if (!d || d.wearout_pct === null || d.wearout_pct === undefined) {
           return { measured: false, text: 'not reported', reason: 'this disk exposes no wear indicator (common on spinning disks and USB enclosures)' };
@@ -583,10 +381,6 @@
         const c = h === 'PASSED' || h === 'OK' ? '#22c55e' : (!h || h === 'UNKNOWN') ? '#64748b' : '#ef4444';
         return `background:${c}22;color:${c};border:1px solid ${c}66`;
       },
-      // 🔴 The redundancy verdict is DERIVED from the topology, never asserted by
-      // fixed text. A screen that says "no mirror" by hardcode lies the day the
-      // second NVMe goes in — and the day of the change is exactly when the operator
-      // most needs the screen to be right.
       pvxRedundancy(namePool) {
         const t = this.pvxTopologyOf(namePool);
         if (!t) return { known: false, text: 'topology not read', style: 'background:#64748b22;color:#94a3b8;border:1px solid #64748b66' };
@@ -599,8 +393,6 @@
                  text: t.n_devices === 1 ? 'single disk · NO redundancy' : t.n_devices + ' striped disks · NO redundancy',
                  style: 'background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b66' };
       },
-      // Error counters. In a pool with no mirror, any non-zero one is lost data:
-      // there is no second copy to rebuild from.
       pvxPoolErrors(namePool) {
         const t = this.pvxTopologyOf(namePool);
         if (!t) return { known: false };
@@ -611,10 +403,6 @@
         if (!t) return [];
         return (t.vdevs || []).flatMap((v) => (v.devices || []).map((d) => ({ ...d, vdev: v.name, type: v.type })));
       },
-      // 🔴 THE FIELD NEVER GOES BACK TO NULL, not even on the error path. Zeroing it
-      // to `null` in a catch would recreate exactly the defect the stable shape just
-      // solved — and the error path is the MOST likely one to happen with the
-      // hypervisor down, which is when the screen most needs to open.
       async pvxLoad(route, field, empty) {
         try {
           const r = await this.api(route, { raw: true });
@@ -631,22 +419,14 @@
       pvxLoadPackages()  { return this.pvxLoad('/api/proxmox/packages', 'packages', { packages: [] }); },
       pvxLoadRegistry() { return this.pvxLoad('/api/proxmox/syslog?limit=300', 'registry', { lines: [] }); },
 
-      // ── reading the system ────────────────────────────────────────────────
       pvxInterfaces() { return (this.pvx.system && this.pvx.system.network) || []; },
       pvxDNS()        { return (this.pvx.system && this.pvx.system.dns) || null; },
       pvxTime()       { return (this.pvx.system && this.pvx.system.time) || null; },
       pvxCertificates(){ return (this.pvx.system && this.pvx.system.certificates) || []; },
-      // 🔴 The difference between the hypervisor’s clock and the timezone IS the
-      // information: one server in UTC and another in São Paulo produce backup
-      // windows that never meet — that is how this lab’s off-site chain stayed dead
-      // for 14 days, with nothing on screen able to say so.
       pvxNodeTimezone() {
         const t = this.pvxTime();
         return t ? (t.timezone || 'unknown') : '—';
       },
-      // Certificate expiry: days remaining, computed between TWO server
-      // timestamps (notafter and observed_at), never with the browser’s
-      // clock.
       pvxCertDays(c) {
         const d = this.pvx.system;
         if (!c || !c.notafter || !d) return null;
@@ -666,9 +446,6 @@
                              || (p.Version || '').toLowerCase().includes(t));
       },
       pvxRegistryRows() { return (this.pvx.registry && this.pvx.registry.lines) || []; },
-      // Severity highlighting read from the TEXT of the line. The journal does not
-      // return a structured level over this route, so the highlighting is heuristic —
-      // and because of that it never HIDES a line, it only emphasises.
       pvxLogLineStyle(t) {
         const s2 = String(t || '');
         if (/\b(error|error|failed|failure|fatal|panic|refused|denied)\b/i.test(s2)) return 'color:#ef4444';
@@ -689,27 +466,11 @@
         }
       },
 
-      // ── node type: container, VM, hypervisor or external ─────────────────────
-      //
-      // 🔴 The information was ALWAYS in the data — and never on the screen. The real
-      // type lives in the id prefix (`lxc/203`, `qemu/208`, `node/pve`), so knowing
-      // whether that thing was a container or a VM required the operator to decode a
-      // string. Proxmox solves this with an icon; here the list is dense and
-      // monospaced, so a short tag reads better than a drawing.
-      //
-      // COLOUR MEANS STATE, LETTERS MEAN TYPE. The state badge already uses
-      // green/amber/red; if the type used the same palette, the two would compete for
-      // the same visual channel and neither would be trustworthy. That is why the
-      // type lives in a hue family outside the semantic one.
       TYPES: {
         node:    { abbrev: 'NODE',  label: 'hypervisor',        color: '#94a3b8' },
         lxc:     { abbrev: 'CT',  label: 'LXC container',     color: '#38bdf8' },
         qemu:    { abbrev: 'VM',  label: 'virtual machine',   color: '#a78bfa' },
         external: { abbrev: 'EXT', label: 'outside the hypervisor', color: '#2dd4bf' },
-        // 🔴 Do NOT use #64748b here: it is the colour of the "stopped" state. The
-        // collision pin caught it — an unknown type would show up in the same colour as
-        // a powered-off guest, which is exactly the confusion that separating the two
-        // palettes exists to prevent.
         '?':     { abbrev: '?',   label: 'unknown type', color: '#a1887f' },
       },
       pvxTypeKey(n) {
@@ -718,10 +479,6 @@
         if (pre === 'lxc' || pre === 'qemu' || pre === 'node') return pre;
         if (n.kind === 'host') return 'node';
         if (n.kind === 'external') return 'external';
-        // 🔴 The fallback does NOT guess "VM". An id that matches nothing
-        // known is a type this panel cannot classify, and saying so is the only
-        // honest answer — inventing a type makes the operator act on the wrong
-        // category.
         return '?';
       },
       pvxType(n) {
@@ -732,16 +489,11 @@
         const c = this.pvxType(n).color;
         return `background:${c}1f;color:${c};border:1px solid ${c}55`;
       },
-      // Badge title: the long text the short badge has no room for. A template is not
-      // a startable guest, and the screen has to say so where the difference matters —
-      // before somebody tries to start it.
       pvxTypeTitle(n) {
         const t = this.pvxType(n);
         const base = t.label + (n && n.vmid > 0 ? ` · vmid ${n.vmid}` : '');
         return t.template ? base + ' · TEMPLATE (not a bootable guest)' : base;
       },
-      // Count per type for the list header. Answers "what do I have?" without forcing
-      // anyone to count row by row.
       pvxCountByType() {
         const count = {};
         for (const n of this.pvxNodes()) {
@@ -753,17 +505,6 @@
           .map((k) => ({ key: k, abbrev: this.TYPES[k].abbrev, label: this.TYPES[k].label, n: count[k] }));
       },
 
-      // ── contextual tabs of the right-hand panel ─────────────────────────
-      //
-      // What replaces the stacked blocks. There were six always-open sections, one
-      // under the other: guests, tasks, disks, storage, ZFS, permissions. Now the
-      // right-hand panel shows ONE of them, chosen by you, and the set of tabs
-      // changes with the TYPE of the selected node — the way Proxmox itself does it.
-      // Nothing appears unless you ask for it: that is what gets the error history
-      // out of the way without needing a drawer.
-      // The density follows the Proxmox menu, which groups System (network, DNS,
-      // time, certificates) and keeps Disks apart from Storage. The operator CANNOT
-      // reach that UI, so whatever is not here does not exist for him.
       TABS_HOST: [
         { id: 'summary',   rot: 'Summary' },
         { id: 'charts', rot: 'Charts' },
@@ -782,11 +523,6 @@
         { id: 'summary',   rot: 'Summary' },
         { id: 'charts', rot: 'Charts' },
         { id: 'console',  rot: 'Console' },
-// 🔴 "Copies", not "Snapshots": the three ways of preserving this guest —
-        // snapshot, clone and stored copy — live together because they answer the SAME
-        // operator question ("how do I not lose this?"). Spreading them across
-        // different tabs would force him to remember which of the three was where. And
-        // one more tab on a screen that already has eleven is cost, not organisation.
         { id: 'snaps',    rot: 'Copies' },
         { id: 'tasks',  rot: 'Tasks' },
       ],
@@ -795,10 +531,6 @@
         if (!n) return [];
         return this.pvxIsGuest(n) ? this.TABS_GUEST : this.TABS_HOST;
       },
-      // A tab inherited from a node of ANOTHER type does not exist in the current
-      // set. Without this normalisation, going from "Disks" (host) to a guest would
-      // leave the right-hand panel blank, with no error at all — the same family of
-      // defect that once made the whole tab open black.
       pvxActiveTab() {
         const n = this.pvxOpenNode();
         if (!n) return '';
@@ -813,30 +545,16 @@
         } else {
           this.pvxCloseConsole();
         }
-        // Loads on demand, the first time the tab is opened. That is what makes the
-        // screen cheap: before, EVERY visit fetched tasks, disks, storage, ZFS and
-        // permissions, even if all you wanted was to look at one guest.
         if (tab === 'tasks' && !this.pvx.tasks.length) this.pvxLoadTasks();
         if (tab === 'disks' && !this.pvx.disks.length) this.pvxLoadDisks();
         if (tab === 'storage' && !this.pvx.storage) this.pvxLoadStorage();
         if (tab === 'zfs' && !this.pvx.zfs) this.pvxLoadZfs();
-        // The topology serves ALL THREE storage tabs: it is what ties physical disk,
-        // pool and datastore into a single story.
         if ((tab === 'zfs' || tab === 'disks' || tab === 'storage') && !this.pvx.loaded.topology) this.pvxLoadTopology();
         if (tab === 'perms' && !this.pvx.perms && !this.pvx.permsOpen) this.pvxLoadPerms();
         if (tab === 'charts') this.pvxLoadSeries();
         if ((tab === 'network' || tab === 'system') && !this.pvx.loaded.system) this.pvxLoadSystem();
-        // The HOST Summary shows the timezone, and the timezone comes from /system.
-        // Without this it would be born an em-dash and would only appear after the
-        // operator visited another tab — a datum that exists, hidden by navigation order.
         if (tab === 'summary' && !this.pvx.loaded.system && !this.pvxIsGuest(this.pvxOpenNode())) this.pvxLoadSystem();
-        // The note is the BODY of the summary, so it loads together with the tab — not
-        // after a second click.
         if (tab === 'summary') this.pvxLoadNote(this.pvx.open);
-        // The Copies tab NEEDS the storage list to know where the copy can go. Without
-        // this it only had the list if the operator had visited the Storage tab first —
-        // and then the button said "no storage accepts backups", which is a lie about
-        // the hypervisor.
         if (tab === 'snaps' && !this.pvx.storage) this.pvxLoadStorage();
         if (tab === 'packages' && !this.pvx.loaded.packages) this.pvxLoadPackages();
         if (tab === 'registry' && !this.pvx.loaded.registry) this.pvxLoadRegistry();
@@ -850,35 +568,11 @@
       pvxClearSelection() { this.pvx.tab = ''; this.pvxClose(); },
       pvxHasSelection() { return !!this.pvx.open; },
 
-      // ── lab summary: the right-hand panel when NOTHING is selected ───────
-      //
-      // Half the screen would sit empty for free. Here it answers "do I need to act
-      // now?" — which is the role the fixed band would have played, and which the
-      // operator rejected along with layout A5.
-      //
-      // 🔴 Sums only what was ACTUALLY observed. A guest whose datum has no timestamp
-      // goes into `noData`, never in as zero: adding absence up as zero is the
-      // classic way for a panel to lie that everything is roomy.
       pvxLabSummary() {
         const guests = this.pvxNodes().filter((n) => this.pvxIsGuest(n));
         let memU = 0, memT = 0, cpuSum = 0, cpuN = 0, noData = 0, running = 0, unknown = 0;
         for (const g of guests) {
           const st = (g.status && g.status.value) || '';
-          // 🔴 "POWERED ON" IS A CLAIM ABOUT RIGHT NOW, AND DEMANDS OBSERVING RIGHT NOW.
-          //
-          // This line used to count raw `status.value` — the last known value — as if it
-          // were fact about the instant. With the hypervisor unreachable, the panel said
-          // "9 / 10 powered on" about a house it had not managed to see for almost an
-          // hour. The operator noticed.
-          //
-          // And the inconsistency was INSIDE this very function: two lines below, memory
-          // and CPU already checked `observed_at` and fell into "no data". Only the
-          // on/off count did not check.
-          //
-          // 🔴 THE FIX IS NOT TO COUNT ZERO. "All powered off" would be another lie, and
-          // a more dangerous one: it would assert a state nobody observed. The right
-          // answer is the third one — I DO NOT KNOW —, the only true one when you cannot
-          // look.
           const observed = !g.stale && !g.absent_since && !!(g.status && g.status.observed_at);
           if (!observed) unknown++;
           else if (st === 'running' || st === 'online') running++;
@@ -898,34 +592,9 @@
           poolState: !pools.length ? 'unmeasured' : (poolBad ? 'degraded' : 'ok'),
         };
       },
-      // Backup freshness — MEASURED as unavailable over the current route, not
-      // assumed. `pvesh` as root lists the datastore contents; the panel’s token has
-      // PVEAuditor on / with propagate=1, PASSES the permission check and still gets
-      // an empty list for a datastore with 46.9 GB used. There is no PBS credential
-      // in the vault.
-      //
-      // Until a source exists (a PBS token of its own, or the lab agent) this tile
-      // SAYS so. Never an invented number, and never disappearing in silence —
-      // disappearing in silence is what let the off-site die for 14 days.
-      // 🔴 THIS TILE SPENT HALF A DAY SAYING "NO SOURCE", and saying that was the
-      // right thing: the token did not enumerate the datastore. Once the access was
-      // widened it gained a real source.
-      //
-      // Each datastore appears SEPARATELY, and that already paid for itself on the
-      // first measurement: `pbs` was at 3.6 h with 9 guests while `backupusb` was at
-      // 340 h (14 days) with 3 guests. A single number would have let the fresh layer
-      // mask the stoppage — exactly the case this screen exists to reveal.
-      // "Has it loaded?" and "does it have data?" are DIFFERENT questions, and mixing
-      // them is what produced the crash: the field was null until it loaded, and the
-      // template dereferenced it before then. Now the shape is stable and the question
-      // has a flag of its own.
       pvxBackups() {
         return { loaded: !!this.pvx.loaded.backup, items: this.pvx.backup.datastores || [] };
       },
-      // Computing the age ON THE SERVER would be the right thing, but the timestamp
-      // here is an absolute unix epoch from the hypervisor, and the browser only
-      // compares it with the `observed_at` of the SAME response — never with the local
-      // clock. So the age stays a difference between two server clocks.
       pvxBackupAge(ds) {
         const d = this.pvx.backup;
         if (!ds || !d) return { known: false };
@@ -934,22 +603,6 @@
         const seg = Math.max(0, Number(d.observed_at) - Number(ds.last_ctime));
         return { known: true, empty: false, seg, text: this.pvxFormatAge(seg) };
       },
-      // The threshold is per datastore because the layers have different cadences: PBS
-      // runs every day, the external-HD rotation is "whenever I remember to swap the
-      // disk". A single threshold would paint a healthy rotation red, or a PBS that
-      // has been dead three days green.
-      // 🔴 DISARMED IS NOT A FAILURE, and that distinction is the difference between a
-      // trustworthy panel and a permanent red that trains you to ignore it.
-      //
-      // This lab’s `backupusb` has had no fresh copy for two weeks because the
-      // operator turned the schedule off in a deliberate, recorded decision, after PBS
-      // was up, verify-by-content was running and a restore had been rehearsed.
-      // Painting that red is being wrong about the FACT, not about the colour.
-      //
-      // "outside-pve" is not a failure either: it means this panel does not know who
-      // schedules it. The `pbs` here gets a copy every day from a systemd timer on the
-      // host, invisible to /cluster/backup — and the live proof caught that before
-      // deploy, when a boolean would have painted the live layer as disarmed.
       pvxBackupState(ds) {
         const i = this.pvxBackupAge(ds);
         if (ds.error) return { key: 'error', label: 'error', color: '#ef4444', note: ds.error };
@@ -989,17 +642,6 @@
         return `background:${c}22;color:${c};border:1px solid ${c}66`;
       },
 
-      // ── live refresh with automatic pause ───────────────────────────────
-      //
-      // The 4 "Refresh" buttons are gone: a panel that needs a click to be
-      // correct is not a panel. But the operator uses this from his PHONE during
-      // an incident, and a list that reorders under his finger makes him tap the
-      // wrong guest. Hence the AUTOMATIC pause while the console is open or the
-      // filter has focus.
-      //
-      // The age stamp KEEPS running during the pause. Stale data has to LOOK stale —
-      // freezing the stamp along with it would turn the pause into a lie about
-      // freshness.
       pvxPauseReason() {
         if (this.pvx.con.guest) return 'console open';
         if (this.pvx.focusFilter) return 'typing in the filter';
@@ -1024,8 +666,6 @@
         const p = this.nodes && this.nodes.poll;
         this.pvx.ageSec = p && typeof p.age_seconds === 'number' ? p.age_seconds : null;
       },
-      // The browser NEVER subtracts clocks here: the age comes from the server and the
-      // browser only formats it. An inherited invariant.
       pvxAgeText() {
         const s = this.pvx.ageSec;
         if (s == null) return 'no timestamp';
@@ -1041,29 +681,11 @@
       pvxStartTimer() { this.pvxStopTimer(); this._pvxTimer = setInterval(() => this.pvxTick(), 15000); },
 
       pvxInit() {
-        // 🔴 The screen stopped fetching EVERYTHING on entry.
-        // Before: health + tasks + disks + storage + ZFS, five requests, every
-        // visit, even if all you wanted was to look at one guest — and the five
-        // responses were dumped stacked on the same page. Now each tab loads on
-        // demand (pvxGoTo).
-        //
-        // ZFS is the exception and sits here on purpose: the lab summary, which is what
-        // shows with nothing selected, displays the pool health. Without it the state
-        // would be born "not measured" on every entry.
         this.pvxLoadHealth();
         this.pvxLoadZfs();
         this.pvxLoadBackup();
         this.pvxStartTimer();
-        // 🔴 THE GUEST LIST HAS TO COME ALONG. pvxGuests() reads `nodes.list`, which is
-        // loaded by the Nodes tab — and anyone landing straight on Proxmox via link or
-        // reload found the snapshot selector EMPTY, with no error at all. The console
-        // made that worse: each guest’s credential state is what decides whether it CAN
-        // have a console, and without the list every guest would show as unavailable.
-        // It is a store read, and it is cheap.
         if (typeof this.loadNodes === 'function') {
-// The age has to be stamped as soon as the list arrives. Before, it was only
-          // read on the first tick, 15s later — and in that gap the screen said
-          // "no timestamp" next to a badge already showing "11s ago".
           Promise.resolve(this.loadNodes()).finally(() => {
             this.pvx.firstLoad = false;
             this.pvxRefreshAge();
@@ -1071,11 +693,6 @@
         } else { this.pvx.firstLoad = false; }
       },
 
-      // ---- health ----------------------------------------------------------
-
-      // Health comes out of the server’s STORE (the poller collects it every tick).
-      // This route does NOT touch the hypervisor: if it did, the age would always be
-      // "0 s" and the screen would hide exactly the mute hypervisor.
       async pvxLoadHealth() {
         this.pvx.loading = true;
         try {
@@ -1093,9 +710,6 @@
         } finally { this.pvx.loading = false; }
       },
 
-// pvxFormatAge receives age_seconds ALREADY COMPUTED BY THE SERVER.
-      // -1 is the marker for "never observed" and must NOT become "now": "0 s ago"
-      // reads as just-seen, which is stale data presented as live.
       pvxFormatAge(ageSeconds) {
         if (ageSeconds === null || ageSeconds === undefined) return 'no timestamp';
         if (ageSeconds < 0) return 'never observed';
@@ -1113,7 +727,6 @@
         return `background:${c}22;color:${c};border:1px solid ${c}66`;
       },
 
-      // pvxBytes formats bytes; no clock, no state — presentation only.
       pvxBytes(n) {
         if (n === null || n === undefined) return '—';
         const u = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -1135,11 +748,6 @@
         return (l && l.length === 3) ? l.map(x => Number(x).toFixed(2)).join('  ') : '—';
       },
 
-      // ---- tasks -----------------------------------------------------------
-
-      // The limit is 50 and it is fixed: the server owns the ceiling (it truncates at
-      // pve.MaxTasks anyway). A "how many rows" selector here would be a path from the
-      // browser to the size of the hypervisor’s response.
       async pvxLoadTasks() {
         this.pvx.loading = true;
         try {
@@ -1151,11 +759,6 @@
           this.pvx.tasks = d.tasks || [];
           this.pvx.lastError = '';
         } catch (e) {
-          // 🔴 THE PREVIOUS DATA STAYS. Clearing the list here turned a 300 ms network
-          // failure into "no tasks in this window" — which is an assertion about the
-          // hypervisor, made precisely when we failed to talk to it. The screen shows the
-          // error on top of the stale data; what goes away is the certainty, not the
-          // information.
           this.pvx.lastError = this._errText(e);
         } finally { this.pvx.loading = false; }
       },
@@ -1165,8 +768,6 @@
         return this.pvxLoadTasks();
       },
 
-      // pvxTaskOK: in PVE, "OK" is the only exitstatus that means success. Everything
-      // else is the real reason for the failure, and that is what the table shows.
       pvxTaskOK(t) { return t && t.status === 'OK'; },
       pvxTaskStyle(t) {
         const c = this.pvxTaskOK(t) ? '#22c55e' : '#ef4444';
@@ -1187,8 +788,6 @@
       },
       pvxCloseLog() { this.pvx.logOpen = false; this.pvx.taskLog = null; },
 
-      // ---- disks -----------------------------------------------------------
-
       async pvxLoadDisks() {
         try {
           const r = await this.api('/api/proxmox/disks', { raw: true });
@@ -1197,13 +796,10 @@
           const d = await r.json();
           this.pvx.disks = d.disks || [];
         } catch (e) {
-          // Same rule as the tasks: a failure does not erase what was already known.
           this.pvx.lastError = this._errText(e);
         }
       },
 
-      // wearout_pct arrives null when the disk does not report lifetime. Null does NOT
-      // become 0: a silent disk would show up as a worn-out disk.
       pvxWearout(d) {
         if (!d || d.wearout_pct === null || d.wearout_pct === undefined) return 'not reported';
         return `${d.wearout_pct}%`;
@@ -1213,14 +809,6 @@
         const c = ok ? '#22c55e' : (d && d.health ? '#f59e0b' : '#64748b');
         return `background:${c}22;color:${c};border:1px solid ${c}66`;
       },
-
-      // ---- storage and zpool capacity --------------------------------------
-      //
-      // 🔴 Both routes come out of the server’s STORE, like the health — capacity is a
-      // heartbeat, not navigation. Each brings its OWN age_seconds, and the screen’s
-      // three ages (health, storage, zpool) may diverge on purpose: they come from
-      // three calls that fail separately. A divergent age is not a bug, it is the
-      // symptom showing up.
 
       async pvxLoadStorage() {
         try {
@@ -1246,16 +834,6 @@
         }
       },
 
-      // 🔴 pvxStorageState is the guard arriving on screen. `pools: []` has THREE
-      // readings, and the screen has to say which one:
-      //
-      //   'unmeasured'  — nobody has asked yet (timestamp 0). Do not accuse anything.
-      //   'no-permission' — asked, and the token cannot see datastores. The empty
-      //                     list is the ACL filtering, not the absence of storage.
-      //   'ok'          — asked, allowed to see. Empty here is genuinely empty.
-      //
-      // Before the ACL was widened the state was 'no-permission'; today it is 'ok',
-      // and the band disappears on its own. It comes back the day the privilege goes.
       pvxStorageState() {
         const d = this.pvx.storage && this.pvx.storage.datastore_audit;
         if (!d || !d.observed_at) return 'unmeasured';
@@ -1265,9 +843,6 @@
       pvxStoragePools() { return (this.pvx.storage && this.pvx.storage.pools) || []; },
       pvxZfsPools() { return (this.pvx.zfs && this.pvx.zfs.pools) || []; },
 
-      // pvxUsageStyle colours the bar by usage band. The cut at 85% is not cosmetic: the
-      // pool in this lab is SINGLE-DISK, with no redundancy, and filling it up is one
-      // of the few ways to lose data without any hardware failing.
       pvxUsageStyle(pct) {
         const v = Math.max(0, Math.min(100, Number(pct) || 0));
         const c = v >= 85 ? '#ef4444' : (v >= 70 ? '#f59e0b' : '#22c55e');
@@ -1278,9 +853,6 @@
         return `${(Number(p.used_pct) || 0).toFixed(1)}% · ${this.pvxBytes(p.used)} / ${this.pvxBytes(p.total)}`;
       },
 
-      // 🔴 pvxZfsStyle: only ONLINE is green. DEGRADED, FAULTED, SUSPENDED and UNAVAIL
-      // are all red — the whole server lives in a pool with no redundancy, and
-      // "amber" would invite leaving it for later.
       pvxZfsStyle(p) {
         const c = (p && p.healthy) ? '#22c55e' : '#ef4444';
         return `background:${c}22;color:${c};border:1px solid ${c}66`;
@@ -1289,8 +861,6 @@
         if (!p || p.frag_pct === null || p.frag_pct === undefined) return '—';
         return `frag ${p.frag_pct}%`;
       },
-
-      // ---- permissions -----------------------------------------------------
 
       async pvxLoadPerms() {
         this.pvx.permsOpen = !this.pvx.permsOpen;
@@ -1306,8 +876,6 @@
         const p = this.pvx.perms && this.pvx.perms.permissions ? this.pvx.perms.permissions : {};
         return Object.keys(p).sort().map(k => ({ path: k, privs: Object.keys(p[k]).sort().join(', ') }));
       },
-
-      // ---- snapshots -------------------------------------------------------
 
       pvxGuests() {
         return (this.nodes && this.nodes.list ? this.nodes.list : []).filter(n => n.kind === 'guest' && n.vmid > 0);
@@ -1327,9 +895,6 @@
         }
       },
 
-      // 🔴 The two mutations below wait for the WHOLE response. The server only
-      // answers after the WaitTask (status stopped + exitstatus OK), so the spinner
-      // covers the real operation, not the "request accepted".
       pvxCreateSnap(nodeId) {
         const name = (this.pvx.newSnap || '').trim();
         this.askConfirm('Create snapshot',
@@ -1378,16 +943,6 @@
           });
       },
 
-      // ---- snapshot rollback -----------------------------------------------
-      //
-      // 🔴 The privilege ALREADY EXISTED and the panel did not surface it.
-      // `VM.Snapshot` is enough for rollback (LXC/Snapshot.pm:274-276), and every
-      // node token already carries it. Destructive power that is hidden stays
-      // reachable by whoever holds the token — it just stops being auditable.
-      //
-      // The confirmation is BY TYPING (requireText = the guest’s name) and not by
-      // clicking: what gets lost has no second copy, because this lab’s pool is
-      // SINGLE-DISK, with no mirror.
       pvxRollbackSnap(nodeId, name) {
         const g = this.pvxGuests().find(x => x.id === nodeId);
         const label = (g && g.name) || nodeId;
@@ -1422,33 +977,8 @@
       // errors — and the next error, the real one, goes unnoticed. It comes back when
       // CRIU works here, measured.
 
-      // ---- remote console --------------------------------------------------
-      //
-      // 🔴 THE TICKET AND THE PORT NEVER REACH HERE. The naive path would be for the
-      // panel to return {ticket, port} and for this code to open the WebSocket
-      // straight at the hypervisor. It cannot and it must not: `hypervisor.local` does
-      // not resolve from outside the house, the certificate is from the cluster’s own
-      // CA, and the ticket is a console credential — whoever holds it opens a shell.
-      // It stays locked inside internal/pve; all that leaves here is `?node=<id>`.
-      //
-      // 🔴 AND THE TOKEN DOES NOT GO IN THE URL. Same reason written on the terminal’s
-      // WS (00-shell.js): the query lands in the proxy’s access log = a replayable
-      // shell credential. The session travels in the HttpOnly cookie, on a same-origin
-      // upgrade. The server REFUSES `?token=` with a 400 — it does not merely ignore it.
-
-      // pvxConsoleGuestState says whether the guest CAN have a console, and why not.
-      // The `pbs` CT (202) has no node token: it gets no console, and the screen has
-      // to SAY that instead of offering a button that fails.
-      // 🔴 THE HOST HAS A SHELL, and it is NOT the same thing as a guest console: it is
-      // root ON THE HYPERVISOR, from where the nine guests can be shut down with one
-      // command. Its credential is a different one too — the hypervisor’s read token,
-      // because no node token has Sys.Console.
       pvxIsHost(n) { return !!(n && n.kind === 'host'); },
       pvxConsoleGuestState(g) {
-        // No `this.`: this function is PURE on purpose. The pin harness extracts it and
-        // runs it isolated from the object, and a dependency on `this` here would break
-        // it — which is what happened in the first version of this change. A predicate
-        // about a node does not need the component.
         if (g && g.kind === 'host') {
           return { can: true, reason: '', host: true };
         }
@@ -1463,11 +993,6 @@
       pvxConsoleReason(g) { return this.pvxConsoleGuestState(g).reason; },
 
       pvxOpenConsole(nodeId) {
-        // 🔴 THE REFUSAL LIVES HERE, not in the widget. It used to be a `:disabled` on
-        // an <option>: calling the function by any other path (the side panel, the
-        // palette, the browser console) was enough to open the WebSocket against a guest
-        // with no token, and the error would only show up coming back from the server.
-        // A screen guard is a convenience; a function guard is the rule.
         const g = this.pvxNodes().find(x => x.id === nodeId);
         if (g && !this.pvxConsoleCan(g)) {
           this.pvx.con = { guest: '', state: 'error', error: this.pvxConsoleReason(g) };
@@ -1478,8 +1003,6 @@
         this.pvxCloseConsole();
         this.pvx.con = { guest: nodeId, state: 'opening', error: '' };
 
-        // The terminal is only mounted after Alpine’s next tick: before that the
-        // container is still at x-show=false and the FitAddon would measure zero.
         this.$nextTick(() => {
           const el = document.getElementById('pvx-console');
           if (!el || typeof Terminal === 'undefined') {
@@ -1493,8 +1016,6 @@
             fontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace',
             cursorBlink: true,
             scrollback: 5000,
-            // convertEol STAYS FALSE: the guest’s getty already sends \r\n. Converting
-            // here would inject an extra \r and the screen would draw a staircase.
             convertEol: false,
           });
           const fit = new FitAddon.FitAddon();
@@ -1507,10 +1028,6 @@
             + '/ws/proxmox/console?node=' + encodeURIComponent(nodeId));
           ws.binaryType = 'arraybuffer';
 
-          // 🔴 THE INPUT GOES AS TEXT, and the byte count is the SERVER’s. Measured against
-          // CT 204: termproxy reads N BYTES after "0:N:", and `data.length` here counts
-          // UTF-16 units — "ü" would become half a character. Assembling the frame in the
-          // browser would be the bug.
           term.onData(d => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', data: d })); });
           term.onResize(({ cols, rows }) => {
             if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', cols, rows }));
@@ -1523,9 +1040,6 @@
             term.focus();
           };
           ws.onmessage = (ev) => {
-            // BINARY is raw terminal output; TEXT is a control frame. Writing the Uint8Array
-            // straight through preserves ANSI and UTF-8 split across two frames — going via
-            // a string would break both.
             if (typeof ev.data === 'string') {
               let m = null;
               try { m = JSON.parse(ev.data); } catch (_) { return; }
@@ -1547,9 +1061,6 @@
             this.pvx.con.error = this.pvx.con.error || 'the connection to the panel dropped';
           };
 
-          // Application-level keepalive: termproxy closes an idle session, and the server
-          // sends its own as well. Two heartbeats cost nothing and an idle console does
-          // not die "by itself".
           this._pvxConPing = setInterval(() => {
             if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'ping' }));
           }, 20000);
@@ -1584,46 +1095,8 @@
         return `background:${c}22;color:${c};border:1px solid ${c}66`;
       },
 
-      // ══════════════════════════════════════════════════════════════════
-      // THE MERGED SCREEN — the node as the axis
-      // ══════════════════════════════════════════════════════════════════
-      //
-      // Everything from here to the poll is a PURE FUNCTION on purpose: `pvxNodeState`,
-      // `pvxTier`, `pvxFilterNodes`, `pvxRescope`, `pvxSegments`, `pvxStep` and
-      // `pvxActionState` do not read `this`, do not touch the network and hold no state.
-      // That is what lets scripts/test-proxmox-tab.mjs EXTRACT each one from the served
-      // file and actually run it — a test that reimplemented the rule would only prove
-      // the reimplementation.
-
-      // ---- the vocabulary: SIX states, one single name for each ----------
-      //
-      // 🔴 `ok` gets no indicator at all on screen. With eleven nodes, nine greens
-      // become silence and two reds become the whole screen; a green badge on every
-      // row spends the operator’s attention exactly where there is no news. Whoever is
-      // fine does not need to announce it.
-      //
-      // The ORDER below is precedence, and each rung short-circuits the next:
-      //
-      //   stale        the data is past its TTL — I can no longer assert anything
-      //   no-credential I can see, but I cannot act; and that holds stopped or not
-      //   stopped        powered off is a STATE, not a defect; and a gauge on a
-      //                  powered-off guest means nothing at all
-      //   critical        some gauge at the top of the scale
-      //   warning        some gauge climbing, or a credential close to expiring
-      //   ok             nothing to say
       pvxNodeState(n) {
         if (!n) return 'ok';
-        // 🔴 "GONE" COMES BEFORE "STALE", and the two are not the same thing.
-        //
-        // `stale` means the panel COULD NOT LOOK — the data aged
-        // out. `gone` means the panel DID look and the hypervisor no longer
-        // listed this node. They are different silences and they ask for
-        // different things: one is an observation problem, the other is news
-        // about the laboratory.
-        //
-        // Mixing them is what the operator saw: a destroyed clone stayed
-        // counted forever as "stale", spending the health band — which exists
-        // to say whether there is something to do NOW.
         if (n.absent_since) return 'gone';
         if (n.stale) return 'stale';
         const cred = (n.credential && n.credential.state) || '';
@@ -1649,9 +1122,6 @@
       },
       pvxStateColor(e) {
         return ({
-          // Grey, like `stopped`: vanishing from the hypervisor is NOT an incident.
-          // Painting it red or amber is what spends the operator’s attention on something
-          // he, most of the time, caused himself (he deleted a guest).
           'gone': '#64748b',
           'stale': '#f59e0b', 'no-credential': '#ef4444', 'stopped': '#64748b',
           'critical': '#ef4444', 'warning': '#f59e0b', 'ok': '#22c55e',
@@ -1662,18 +1132,6 @@
         return `background:${c}22;color:${c};border:1px solid ${c}66`;
       },
 
-      // ---- thresholds, with hysteresis ----------------------------------
-      //
-      // 🔴 70% and 90%, and the numbers have provenance: they are the
-      // `warning`/`critical` from Unraid’s default.cfg. Beszel uses 65/90; the
-      // difference between 65 and 70 is taste, the existence of TWO rungs is not. They
-      // are written here, in one place only, so that changing the criterion is an edit
-      // and not an archaeological dig through seventeen scattered `>= 85`s.
-      //
-      // The 3-point SLACK is what stops the colour flickering. A guest oscillating
-      // between 89.7% and 90.2% would change colour on every 30 s tick; the flicker
-      // informs nothing and teaches the operator to ignore the colour. Once in
-      // `critical`, you only leave below 87%.
       pvxTier(pct, anterior) {
         const WARN = 70, CRITICAL = 90, SLACK = 3;
         const v = Number(pct);
@@ -1691,19 +1149,6 @@
         return 'ok';
       },
 
-      // ---- the `field:value` filter, ANDed -------------------------------
-      //
-      // Fields: node:, status:, type:, state:, cred:, id:. Terms are ANDed, and a term
-      // with no `:` is a free search over id/name/address/state.
-      //
-      // 🔴 `tag:` DOES NOT exist, and the absence is declared: the inventory model does
-      // not store tags (model.go, Node) — offering the field would always return an
-      // empty list, and the operator would conclude the nodes had lost their tags.
-      //
-      // 🔴 An UNKNOWN field (`foo:bar`) is not ignored: it becomes a literal search for
-      // the whole term. Discarding the restriction nobody understood would return MORE
-      // rows than the operator asked for, silently — the worst possible error in a
-      // filter, because the list looks like it obeyed.
       pvxFilterNodes(list, text, segment, stateOf) {
         const terms = String(text || '').toLowerCase().split(/\s+/).filter(Boolean);
         return (list || []).filter(function (n) {
@@ -1718,10 +1163,6 @@
             switch (field) {
               case 'node': return String(n.name || '').toLowerCase().includes(value);
               case 'status': return st.toLowerCase().includes(value);
-              // 🔴 The filter has to accept THE WORD THE SCREEN SHOWS. The badges say
-              // CT, VM, NODE and EXT; if `type:ct` did not filter, the screen would be
-              // teaching a vocabulary it then refuses — and the operator would only find
-              // out by typing and seeing an empty list.
               case 'type': {
                 const canon = { ct: 'lxc', container: 'lxc',
                                 vm: 'qemu', machine: 'qemu',
@@ -1739,33 +1180,13 @@
         });
       },
 
-      // 🔴 pvxRescope is the fix for Portainer #4430 — "select all, FILTER,
-      // delete" deleted containers that had never been on the operator’s screen
-      // ("tragedy all containers have been deleted"). The selection does NOT
-      // survive a change of filter: whoever is not visible is not selected, and
-      // there is no path in this file that changes the filter without going
-      // through here.
       pvxRescope(sel, visible) {
         const seen = {};
         (visible || []).forEach(function (n) { seen[n.id] = true; });
         return (sel || []).filter(function (id) { return seen[id] === true; });
       },
 
-      // ---- the health band, which IS the filter --------------------------
-      //
-      // 🔴 One thing, not two. A band that informs plus a separate filter that acts
-      // force the operator to read the number in one place and reproduce it in another.
-      // Here the number IS the button (cast from Portainer’s StatusSummaryBar, in
-      // production): radiogroup, a count in each segment, and clicking the segment
-      // ALREADY ACTIVE turns the filter off.
-      //
-      // The count shows even when it is ZERO, and the zeroed segment stays drawn: a
-      // layout that changes width with the health of the laboratory moves the click
-      // target precisely during an incident.
       pvxSegments(list, stateOf) {
-        // `gone` goes at the END, next to `stopped`: the band is read left to right by
-        // urgency, and a node that left the hypervisor does not compete with a critical
-        // one.
         const order = ['stale', 'no-credential', 'critical', 'warning', 'stopped', 'gone', 'ok'];
         const count = {};
         order.forEach(function (k) { count[k] = 0; });
@@ -1776,33 +1197,12 @@
         return order.map(function (k) { return { key: k, n: count[k] }; });
       },
 
-      // ---- the confirmation ladder, in three rungs -----------------------
-      //
-      //   1 — no dialog.          Turn on. Restoring destroys nothing.
-      //   2 — confirmation.       Graceful shutdown, create/delete snapshot.
-      //   3 — TYPE the name.      Cut power, rollback, revoke credential.
-      //
-      // Precedent: Vercel requires typing the project name to delete AND to pause, but
-      // resuming "takes effect immediately and does not ask for confirmation". The
-      // destructive direction locks; the restorative one is free.
-      //
-      // 🔴 And a bulk action climbs A WHOLE RUNG. Starting one guest is rung 1;
-      // starting seven at once is rung 2. A bulk mistake is not the individual mistake
-      // repeated — it is irreversible on another scale.
       pvxStep(action, howMany) {
         const BASE = {
           start: 1, shutdown: 2, stop: 3,
           snapcriar: 2, snapapagar: 2, rollback: 3, revoke: 3,
-          // restarting interrupts service but does not destroy: same rung as the graceful
-          // shutdown. `stop` stays at 3 because pulling the cord is another category
-          // altogether.
           reboot: 2,
-          // cloning does NOT alter the source — the risk is spending disk and creating a
-          // guest nobody wanted, not losing data. Rung 2.
           clone: 2,
-          // storing a copy is the only action on the screen that only ADDS. Rung 1: a
-          // dialog on every click would train him to confirm without reading, and the price
-          // of one extra backup is disk space.
           backup: 1,
         };
         const base = BASE[action] || 2;
@@ -1810,46 +1210,21 @@
         return Math.min(3, base + step);
       },
 
-      // ---- the states of a CONTROL, and the reason always written out -----
-      //
-      // 🔴 An unavailable control IS DISABLED WITH A REASON; it does not vanish.
-      // Portainer does `if (!authorized) return null` and the button evaporates — the
-      // operator is left hunting for a button he remembers seeing. Coolify disables it
-      // and writes "You do not have permission…". For a single operator, vanishing in
-      // silence is the worse of the two: there is no colleague to ask what happened to
-      // the button.
-      //
-      // One function for every control, and it always returns the pair {can, reason} —
-      // never a naked boolean, because a naked boolean is exactly what produces a grey
-      // button with no explanation.
       pvxActionState(n, action) {
         if (!n) return { can: false, reason: 'unknown node' };
         const st = (n.status && n.status.value) || '';
         const cred = (n.credential && n.credential.state) || '';
         const on = st === 'running' || st === 'online';
 
-        // A node the hypervisor no longer lists accepts no action at all — and the reason
-        // says so, instead of letting the operator click and get back the Perl error PVE
-        // returns for a vmid that does not exist.
         if (n.absent_since) {
           return { can: false, reason: 'the hypervisor no longer lists this node — it was deleted, or the panel lost access to it' };
         }
         if (action === 'revoke') {
           if (cred === 'absent') return { can: false, reason: 'there is no credential to revoke on this node' };
           if (cred === 'revoked') return { can: false, reason: 'the credential for this node has already been revoked' };
-          // An EXPIRED credential can still be revoked: revoking is cleanup, and the
-          // expired token goes on existing on the hypervisor until somebody deletes it.
           return { can: true, reason: '' };
         }
 
-        // 🔴 CLONING AND STORING A COPY DO NOT DEPEND ON THE NODE’S CREDENTIAL.
-        //
-        // Both go through the PANEL’s token, because they require VM.Allocate on
-        // /vms/<newid> and Datastore.AllocateSpace on /storage/<name> — paths where the
-        // node token has no ACL at all. Letting them fall into the `cred !== 'ok'` guard
-        // further down would lock the button on a guest the panel can copy perfectly well
-        // (`pbs`, today, is exactly that case: it has no node token and is clonable all
-        // the same).
         if (action === 'clone' || action === 'backup') {
           if (!this.pvxIsGuest(n)) {
             return { can: false, reason: n.kind === 'host'
@@ -1857,13 +1232,6 @@
               : 'external node: not a guest of this hypervisor' };
           }
           if (action === 'backup') {
-// 🔴 "I HAVE NOT READ IT YET" IS NOT "IT DOES NOT EXIST".
-            //
-            // The storage list only arrives when somebody asks for it. While it has not
-            // arrived, saying "no storage accepts backups" is asserting something about the
-            // HYPERVISOR from an absence that belongs to the PANEL. The operator read that on
-            // screen with `pbs` up and running on the other side — and it is the same disease
-            // that makes absent data add up as zero.
             if (!this.pvx.storage) {
               return { can: false, reason: 'I have not read this hypervisor storage list yet' };
             }
@@ -1876,12 +1244,6 @@
 
         const power = action === 'start' || action === 'shutdown' || action === 'stop' || action === 'reboot';
         if (power && (n.kind !== 'guest' || !(n.vmid > 0))) {
-          // 🔴 The two cases are NOT the same, and the message has to know that. Found by
-          // reading the live inventory: besides the host, there is the `canary` node (kind
-          // `external`, transport `agent`), which is not a guest of any hypervisor. Telling
-          // it "the hypervisor is not powered from the panel" would be explaining with the
-          // wrong reason — and a wrong reason is worse than no reason, because it sends the
-          // operator looking in the wrong place.
           if (n.kind === 'external') {
             return { can: false, reason: 'external node: not a guest of this hypervisor — powering on and off will depend on the lab agent (Phase 8)' };
           }
@@ -1895,13 +1257,6 @@
           })[cred] || 'credential state unknown';
           return { can: false, reason: reason + ' — the panel has no way to act on this node' };
         }
-        // 🔴 These two guards were born from a MEASURED defect: the first wave found
-        // `qmstart 208 — VM 208 already running` in the hypervisor’s trail, three times.
-        // Somebody orders a start on something already running. A button that accepts the
-        // useless order fills the task trail with noise, and that trail is where the real
-        // failure gets hunted afterwards.
-        // Restarting a powered-off guest is not "starting" it: PVE returns an error and
-        // the trail gains noise. The right button for that already sits next to it.
         if (action === 'reboot' && !on) {
           return { can: false, reason: 'it is powered off — to start it, use "Turn on"' };
         }
@@ -1914,53 +1269,28 @@
         return { can: true, reason: '' };
       },
 
-      // ══ THE NOTE: what this box DOES ════════════════════════════════════
-      //
-      // 🔴 THE SOURCE ALREADY EXISTED AND IT WAS NOT THE PANEL. Every guest in this
-      // laboratory — and the hypervisor itself — already has a description written in
-      // PVE’s `description` field (the "Notes" of the native screen), in Markdown,
-      // explaining what the box does, why it exists, what happens if it falls and where
-      // the things that matter live. The panel READS that. Writing a second description
-      // here would create the second truth, and the two would diverge on the first day
-      // somebody edited the Proxmox one.
       async pvxLoadNote(id) {
         if (!id) return;
-        if (this.pvx.note.node === id && !this.pvx.note.error) return; // already have it
+        if (this.pvx.note.node === id && !this.pvx.note.error) return;
         this.pvx.note = { node: id, markdown: '', origin: '', reason: '', loading: true, error: '',
                           editing: false, draft: '', saving: false };
         try {
           const r = await this.api('/api/nodes/' + id + '/note', { raw: true });
           if (!r.ok) throw await this._apiError(r);
           const d = await r.json();
-          // Only applies if the selection did not change in the meantime: with fast
-          // clicking between nodes, the slow response from the first would arrive LATER and
-          // paint the wrong node’s note onto the right node’s screen.
           if (this.pvx.note.node !== id) return;
           this.pvx.note.markdown = d.markdown || '';
           this.pvx.note.origin = d.origin || '';
           this.pvx.note.reason = d.reason || '';
         } catch (e) {
           if (this.pvx.note.node !== id) return;
-          // Stable shape on the error path: the field does NOT go back to null.
           this.pvx.note.error = this._errText(e);
         } finally {
           if (this.pvx.note.node === id) this.pvx.note.loading = false;
         }
       },
 
-      // ── editing the note WITHOUT leaving the panel ──────────────────────
-      //
-      // 🔴 THE DRAFT IS SEPARATE FROM THE TEXT IN FORCE. `pvx.note.markdown` is what
-      // the hypervisor holds; `draft` is what is being typed. Editing the first one
-      // directly would make "cancel" lose the original — and would make the screen
-      // show, while you type, a note nobody saved.
       pvxEditNote() {
-        // 🔴 DOES NOT OPEN WHILE THE NOTE IS LOADING.
-        //
-        // The markup already hides the button at that instant, but a guard that lives
-        // only in the markup is a guard the next screen forgets. And the price here is
-        // high: opening the draft before the note arrives gives an EMPTY text, and saving
-        // that empty text WIPES the description that was on the hypervisor.
         if (this.pvx.note.loading) {
           this.showToast('the note is still loading', 'err');
           return;
@@ -1979,9 +1309,6 @@
       pvxNoteChanged() {
         return this.pvx.note.editing && this.pvx.note.draft !== (this.pvx.note.markdown || '');
       },
-      // The ceiling is the server’s own (the note size limit in the pve package). Duplicating a number
-      // is debt, but the alternative — finding out the limit only after writing 9 KB
-      // and pressing save — is worse. The server remains the one in charge.
       NOTE_MAX: 8192,
       pvxNoteFits() { return (this.pvx.note.draft || '').length <= this.NOTE_MAX; },
 
@@ -1999,8 +1326,6 @@
             method: 'PUT', body: JSON.stringify({ markdown: n.draft }),
           });
           const d = await r.json().catch(() => ({}));
-          // Only applies if we are still on the same node: with fast clicking, the slow
-          // response would paint the saved note onto another guest’s screen.
           if (this.pvx.note.node !== n.node) return;
           this.pvx.note.markdown = d.markdown !== undefined ? d.markdown : n.draft;
           this.pvx.note.origin = d.origin || 'pve-notes';
@@ -2016,16 +1341,6 @@
         }
       },
 
-      // pvxMd: minimal Markdown, and SAFE BY CONSTRUCTION.
-      //
-      // 🔴 THE ORDER IS WHAT MAKES THIS SAFE: escape EVERYTHING first, then reintroduce
-      // the tags this renderer knows. No character from the source text can turn into a
-      // tag, because by the time the tags go in there is no `<` left coming from the
-      // text. The reverse path — convert and then try to sanitise — is the classic
-      // source of XSS.
-      //
-      // The note comes from the hypervisor, written by the operator. It is not hostile
-      // input today; but "not hostile today" is exactly the premise that ages.
       pvxMd(txt) {
         const esc = (x) => String(x).replace(/[&<>"']/g, (c) => (
           { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -2034,14 +1349,10 @@
         let inList = false, inCode = false;
         const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
 
-        // Inline spans, applied AFTER the escape. `code` comes first so that ** inside
-        // backticks does not turn into bold.
         const inline = (l) => esc(l)
           .replace(/`([^`]+)`/g, '<code class="pvx-md-code">$1</code>')
           .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
           .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
-          // Link: http(s) only. Any other scheme (javascript:, data:) stays as text — it
-          // does not disappear, but it does not become a clickable link either.
           .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
             '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 
@@ -2059,7 +1370,7 @@
           const h = l.match(/^(#{1,6})\s+(.*)$/);
           if (h) {
             closeList();
-            const n = Math.min(6, h[1].length + 2); // a # in the note becomes an h3 on screen
+            const n = Math.min(6, h[1].length + 2);
             out.push('<h' + n + ' class="pvx-md-h">' + inline(h[2]) + '</h' + n + '>');
             continue;
           }
@@ -2077,30 +1388,11 @@
         return out.join('\n');
       },
 
-      // ══ MAINTENANCE: cloning and storing a copy ═════════════════════════
-      //
-      // 🔴 NEITHER WAITS FOR THE TASK, AND THE SCREEN SAYS SO.
-      //
-      // A full clone of 14 GB takes minutes. Holding the request for minutes is the
-      // same as having no button — the browser gives up first. The server returns
-      // `status: "accepted"` with the UPID, and here the screen OPENS THE TASK LOG right
-      // away. The operator follows the real outcome instead of reading a "done" nobody
-      // verified.
-
-      // pvxBackupStorages filters the storages that accept `backup`. It comes
-      // out of pvx.storage, which the Storage tab already loads — there is no
-      // second call, and no hand-typed list to go stale when a storage comes or
-      // goes (`backupusb` left, and a fixed list would still be offering it
-      // today).
       pvxBackupStorages() {
         const pools = (this.pvx.storage && this.pvx.storage.pools) || [];
         return pools.filter(p => Array.isArray(p.content) && p.content.indexOf('backup') >= 0);
       },
 
-      // pvxOpenClone ASKS the hypervisor which id is free. Nobody types a number here:
-      // guessing from the list on screen is a race with anything else that allocates in
-      // the meantime, and the prize for getting it wrong is an error in the middle of a
-      // clone.
       async pvxOpenClone(n) {
         const state = this.pvxActionState(n, 'clone');
         if (!state.can) { this.showToast(state.reason, 'err'); return; }
@@ -2114,14 +1406,10 @@
           this.pvx.clone.newID = d.next_id || 0;
           this.pvx.clone.name = d.suggestion || '';
           this.pvx.clone.on = !!d.on;
-          // 🔴 A RUNNING container only clones from a snapshot. A hypervisor rule,
-          // discovered by live proof — not by reading the source.
           this.pvx.clone.needsSnap = !!d.needs_snapshot;
           this.pvx.clone.snapshots = Array.isArray(d.snapshots) ? d.snapshots : [];
           this.pvx.clone.snapshot = this.pvx.clone.snapshots[0] || '';
         } catch (e) {
-          // The shape does NOT go back to null on the error path: the dialog stays open
-          // showing the reason, instead of vanishing without explaining.
           this.pvx.clone.error = this._errText(e);
         } finally {
           this.pvx.clone.loading = false;
@@ -2136,14 +1424,6 @@
           this.showToast('a running container only clones from a snapshot — create one above, or shut the guest down', 'err');
           return;
         }
-        // The warning changes with the guest’s STATE, and that difference is real:
-        // copying a running guest produces a crash-consistent copy, as if the cord
-        // had been pulled mid-way. That is no reason to forbid it — databases
-        // survive that —, it is a reason for the operator to know.
-        // The warning changes with what EXISTS, not with a generic text: cloning
-        // from a snapshot, the copy is the state of that snapshot — it is not
-        // crash-consistent, and saying that it is would be a lie that trains
-        // people to ignore warnings.
         let warnOn = '';
         if (c.snapshot) {
           warnOn = `\n\nThe copy comes from snapshot "${c.snapshot}", not from the current state: `
@@ -2191,10 +1471,6 @@
         const st = this.pvx.bkp.storage || (this.pvxBackupStorages()[0] || {}).id || '';
         if (!st) { this.showToast('no storage accepts backups', 'err'); return; }
         this.pvx.bkp.storage = st;
-        // Rung 1: no dialog. Storing a copy is the only action on this screen that only
-        // ADDS — it does not alter, does not interrupt, does not delete. A dialog here
-        // would train him to confirm without reading, and it is that automatic
-        // confirmation that later lets "cut power" slip through.
         this.pvxBackupNow(n, st);
       },
 
@@ -2220,11 +1496,7 @@
         }
       },
 
-      // ---- bridge between the pure functions and the component ------------
-
       pvxNodes() {
-        // The list comes from 40-nodes.js, which is what talks to /api/nodes. This module
-        // draws; it neither fetches nodes nor translates credentials.
         return (this.nodes && this.nodes.list) ? this.nodes.list : [];
       },
 
@@ -2233,33 +1505,20 @@
       },
       pvxHost() { return this.pvxNodes().filter(n => n.kind === 'host'); },
 
-      // 🔴 EVERY filter change goes through here, and that is why the re-scoping cannot
-      // be forgotten on one of the paths: there is no second path.
       pvxSetFilter(text) {
         this.pvx.filter = text;
         this.pvx.sel = this.pvxRescope(this.pvx.sel, this.pvxFilteredNodes());
       },
       pvxSetSegment(key) {
-        // Clicking the segment ALREADY ACTIVE turns the filter off (cast from Portainer:
-        // `value === key ? null : key`). Without it, the operator who filtered by
-        // "critical" has to hunt for a clear button he does not know exists.
         this.pvx.segment = (this.pvx.segment === key) ? '' : key;
         this.pvx.sel = this.pvxRescope(this.pvx.sel, this.pvxFilteredNodes());
       },
-      // 🔴 pvxClearFilter exists even when the filtered value has vanished from
-      // the dataset — it is the fix for Portainer #12938, where the filter chip
-      // disappeared while STAYING active and the list sat empty with no way at
-      // all to clear it. The "Showing: X" indicator is rendered from the filter
-      // state, never from the data.
       pvxClearFilter() {
         this.pvx.filter = '';
         this.pvx.segment = '';
         this.pvx.sel = this.pvxRescope(this.pvx.sel, this.pvxFilteredNodes());
       },
       pvxHasFilter() {
-        // Note that it looks ONLY at the filter state. Consulting the data here ("are
-        // there results?") would make the announcement vanish exactly when the filter
-        // emptied the list — which is when it is most needed.
         return !!(this.pvx.filter || this.pvx.segment);
       },
       pvxShowing() {
@@ -2275,11 +1534,6 @@
         return this.pvxSegments(this.pvxNodes(), this.pvxNodeState);
       },
 
-      // ---- gauges ---------------------------------------------------------
-      //
-      // 🔴 The gauge goes GREY when the node is not live. A green bar over expired
-      // data, or over a powered-off guest, is a visual lie: the colour asserts "I
-      // measured this and it is fine" when nobody measured. Grey is "I do not know".
       pvxGaugeLive(n) {
         if (!n || n.stale) return false;
         const st = (n.status && n.status.value) || '';
@@ -2292,13 +1546,6 @@
         if (pct === null) {
           return { measured: false, live, pct: 0, tier: 'ok', text: '—', reason: pvxNoMeasureReason(n, which) };
         }
-        // 🔴 The hysteresis memory does NOT live in Alpine’s state, and that is no
-        // detail: `pvxGauge` is called from inside rendering expressions (x-text,
-        // :style, :aria-valuenow), and writing to REACTIVE state during rendering
-        // is the classic route to an effect loop — the write invalidates the effect
-        // that produced it. The Map lives in the IIFE’s closure, outside the
-        // reactive proxy, and because of that storing the previous tier re-triggers
-        // no render at all.
         const key = (n.id || '') + ':' + which;
         const tier = this.pvxTier(pct, hysteresisTiers.get(key));
         hysteresisTiers.set(key, tier);
@@ -2312,53 +1559,16 @@
         const v = Math.max(0, Math.min(100, Number(m && m.pct) || 0));
         return `width:${v}%;background:${this.pvxGaugeColor(m)}`;
       },
-      // pvxRate formats bytes/s. -1 means "cannot be derived" (first observation,
-      // a gap wider than a tick and a half, or a counter that reset because the
-      // guest rebooted) — and that NEVER becomes "0 B/s", which reads as
-      // "no traffic".
       pvxRate(v) {
         if (v === null || v === undefined) return '—';
         if (Number(v) < 0) return 'no baseline';
         return this.pvxBytes(v) + '/s';
       },
       pvxObs(o) { return (o && o.value !== undefined) ? o.value : null; },
-      // 🔴 READING A TIMESTAMP IN ONE CALL, SAFE AT BOTH LEVELS.
-      //
-      // The template wrote `pvx.health.version.value` under the shallow guard
-      // `pvx.health ? …`. The guard covered ONE level and the expression descended
-      // THREE: a hypervisor that returns the health WITHOUT one of the fields — a
-      // trimmed permission, an error path, a PVE version that stopped sending that —
-      // throws, and a throw in Alpine takes the whole app down, terminal included.
-      //
-      // Nine expressions had that shape. Fixing the nine with `?.` would leave the
-      // tenth to the memory of whoever writes it. A single function is the fix that
-      // does not depend on remembering.
       pvxField(obj, name) { return this.pvxObs(obj && obj[name]); },
 
-      // 🔴 "IS IT BUSY?" HAS TO RETURN A BOOLEAN. This is not fussiness — it is the
-      // defect that left the operator WITH NO BUTTONS AT ALL.
-      //
-      // `pvx.busy` is a STRING: empty when idle, holding the node id during the
-      // operation (the screen uses that id to know WHICH row is in flight). The
-      // template wrote `:disabled="!can || pvx.busy"`. With the action allowed and
-      // nothing in flight that gives `false || ''`, which is `''`.
-      //
-      // And Alpine, on a BOOLEAN attribute, only removes the attribute when the value
-      // is `null`, `undefined` or `false` — an empty string SETS it. In other words:
-      // the expression said "it is not busy" and the browser understood "disabled".
-      // Every node action button was born dead, forever, on every guest.
-      //
-      // A `!!` in the expression would fix today’s six occurrences and leave the
-      // seventh to the memory of whoever writes it. A function with a name is the fix
-      // that does not depend on remembering.
       pvxBusy() { return !!this.pvx.busy; },
 
-      // ---- node side panel -----------------------------------------------
-      //
-      // 🔴 A SIDE panel, not an accordion. The accordion pushes everything below it off
-      // the screen: opening the detail of the first guest hides the other eight, which
-      // is the opposite of what a list is for. The panel sits alongside and the list
-      // stays whole, with the open row highlighted.
       async pvxOpen(n) {
         if (this.pvx.open === n.id) { this.pvxClose(); return; }
         this.pvxCloseConsole();
@@ -2373,16 +1583,6 @@
           this.pvx.lastError = this._errText(e);
         }
         if (this.pvx.guestSel) this.pvxLoadSnaps(this.pvx.guestSel);
-        // 🔴 THE NOTE LOADS HERE, ON THE CLICK PATH.
-        //
-        // It used to hang off `pvxGoTo` alone, which is the TAB change — and clicking
-        // a node does NOT go through there: `pvxSelect` sets `pvx.tab` and calls
-        // `pvxOpen` directly. Result: the "What this box does" block opened with a title,
-        // a button and NOTHING in between, neither text nor empty state, because the
-        // state was still the initial one.
-        //
-        // The harness did not catch it because its `open()` called `pvxGoTo`
-        // explicitly — it was more generous than a real click.
         this.pvxLoadNote(n.id);
       },
       pvxClose() {
@@ -2397,16 +1597,12 @@
         return id ? (this.pvxNodes().find(n => n.id === id) || null) : null;
       },
 
-      // ---- selection and bulk action -------------------------------------
-
       pvxSelected(id) { return this.pvx.sel.indexOf(id) >= 0; },
       pvxToggleSel(id) {
         const i = this.pvx.sel.indexOf(id);
         if (i >= 0) this.pvx.sel.splice(i, 1);
         else this.pvx.sel.push(id);
       },
-      // "All" means all the VISIBLE ones, never all the existing ones — it is the same
-      // rule as the re-scoping, in the input direction.
       pvxSelAll() {
         const visible = this.pvxFilteredNodes().map(n => n.id);
         this.pvx.sel = (this.pvx.sel.length === visible.length) ? [] : visible;
@@ -2417,10 +1613,6 @@
         return this.pvxNodes().filter(n => ids.indexOf(n.id) >= 0);
       },
 
-      // 🔴 pvxPowerBulk ENUMERATES what is going to happen, and enumerates what is
-      // NOT going to happen as well. A confirmation that says "7 nodes selected" hides
-      // that two of them will be silently skipped for want of a credential — and the
-      // operator only finds out afterwards, counting who came up.
       pvxPowerBulk(action) {
         const labels = { start: 'Turn on', shutdown: 'Shut down gracefully', stop: 'Cut the power' };
         const sel = this.pvxSelNodes();
@@ -2450,9 +1642,6 @@
         }, options);
       },
 
-      // pvxPower is the single-node version, with the ladder applied. Rung 1 (start)
-      // opens no dialog at all: restoring destroys nothing, and a dialog on every click
-      // trains the operator to confirm without reading.
       pvxPower(n, action) {
         const state = this.pvxActionState(n, action);
         if (!state.can) { this.showToast(state.reason, 'err'); return; }
@@ -2465,9 +1654,6 @@
             + `Whatever is in memory and has not been written is lost. `
             + `Type the node name (${n.name}) to confirm.`;
         } else if (action === 'reboot') {
-          // The warning says what REALLY happens, not "are you sure?". Whoever reads it
-          // needs to know that the service goes down during the round trip and that the
-          // request is made FROM THE INSIDE — a hung guest can simply ignore it.
           warning = `Restarts "${n.name}" from the inside (the system receives the request and reboots itself). `
             + `Everything running on it is offline until it comes back. `
             + `If the system is stuck it may IGNORE the request — the task then fails `
@@ -2479,9 +1665,6 @@
         this.askConfirm(labels[action] || action, warning, () => this.pvxPowerNow(n, action), options);
       },
 
-      // pvxPowerNow runs it and WAITS for the whole response: the server only answers
-      // after the WaitTask, so the spinner covers the real operation, and not the
-      // "request accepted".
       async pvxPowerNow(n, action) {
         if (this.pvx.busy && this.pvx.busy !== n.id) return;
         this.pvx.busy = n.id;
@@ -2493,8 +1676,6 @@
           const d = await r.json().catch(() => ({}));
           this.showToast(`${n.name}: ${action} finished (task ${d.upid || '—'})`, 'ok');
         } catch (e) {
-          // The error body carries PVE’s exitstatus or the step that failed, and it goes to
-          // the screen WHOLE. A summarised error is an error that does not help.
           const txt = this._errText(e);
           this.pvx.lastError = txt;
           this.showToast(`${n.name}: ${action} failed: ${txt}`, 'err');
@@ -2504,9 +1685,6 @@
         }
       },
 
-      // pvxRevoke is the visible tip of the revocation decision, and it remains the
-      // strongest warning on the screen: the operation is irreversible on BOTH sides
-      // (the token leaves the hypervisor AND the vault). Rung 3, by definition.
       pvxRevoke(n) {
         const state = this.pvxActionState(n, 'revoke');
         if (!state.can) { this.showToast(state.reason, 'err'); return; }
@@ -2524,16 +1702,11 @@
               const d = await r.json().catch(() => ({}));
               this.showToast('credential revoked (' + (d.steps || []).join(' → ') + ')', 'ok');
             } catch (e) {
-              // The error response NAMES the step that failed (pve.delete, pve.confirm401,
-              // vault.delete, vault.recheck). Without that the operator does not know whether
-              // the token died on the hypervisor or not.
               const txt = this._errText(e);
               this.pvx.lastError = txt;
               this.showToast('revocation failed: ' + txt, 'err');
             } finally {
               this.pvx.busy = '';
-              // 🔴 Re-fetch from the SERVER: the credential’s new state comes from there, never
-              // from a local cache that "knows" what it just did.
               await this.pvxReload();
             }
           }, { danger: true, requireText: n.name });
@@ -2546,27 +1719,13 @@
         if (open && this.pvx.guestSel) await this.pvxLoadSnaps(this.pvx.guestSel);
       },
 
-      // ---- the "needs you" band ------------------------------------------
-      //
-      // Only shows when there is something to say. A healthy node does not enter, and
-      // the band disappears entirely when the laboratory is fine — a permanent header
-      // saying "0 problems" is noise that teaches the eye to skip the region.
       pvxNeedYou() {
         return this.pvxNodes().filter(n => {
           const e = this.pvxNodeState(n);
-          // `gone` deliberately does NOT enter here: there is nothing to do about a node
-          // the hypervisor no longer lists, and counting it as pending is exactly the noise
-          // the operator complained about.
           return e === 'stale' || e === 'no-credential' || e === 'critical';
         });
       },
 
-      // ---- empty state: THREE, never one ---------------------------------
-      //
-      // "there is nothing" · "I am not allowed to see" · "the fetch failed" are
-      // three diagnoses with three different operator actions. A single "no
-      // results" turns a network failure into a conclusion about the
-      // laboratory.
       pvxEmpty() {
         if (this.pvx.forbidden || (this.nodes && this.nodes.forbidden)) return 'no-permission';
         if (this.nodes && this.nodes.lastError) return 'failed';
@@ -2575,36 +1734,16 @@
         return '';
       },
 
-      // ---- periodic refresh ------------------------------------------------
-
-      // 🔴 THERE IS NO "refresh every 10/30/60 s" SELECTOR, and there will not be. The
-      // cadence is DERIVED from the resolution of the data: the server’s poller stamps
-      // once per tick and the TTL comes in the payload, so asking faster than TTL/3
-      // returns the same number with an age one second lower. A selector would offer
-      // the operator a choice whose only real effect is spending network.
-      //
-      // Three rules go with the cadence:
-      //   · a background tab does not refresh (document.hidden) — that was already so;
-      //   · scrolling inside the table SUSPENDS the refresh, otherwise the rows escape
-      //     from under the cursor mid-read;
-      //   · the PREVIOUS dataset stays on screen during the fetch. Clearing it before
-      //     the new one exists flashes the whole screen on every tick.
       pvxCadence() {
         const ttl = Number(this.pvx.ttl) || 90;
         return Math.max(5000, Math.round((ttl * 1000) / 3));
       },
-      // 🔴 `rolando` is armed by setTimeout and disarmed by setTimeout. Storing
-      // "suspended until instant T" would require reading the browser’s clock, and this
-      // file’s rule makes no exception even for a harmless use: the exception is what
-      // makes the next person think they may compute age here.
       pvxScrolled() {
         this.pvx.rolando = true;
         if (this._pvxRolTimer) clearTimeout(this._pvxRolTimer);
         this._pvxRolTimer = setTimeout(() => { this.pvx.rolando = false; }, 1500);
       },
 
-      // Its OWN timer. It never touches another module’s timer — that is why this
-      // module was born separate, and it still holds.
       pvxStartPoll() {
         if (this.pvxPollTimer) return;
         const bate = () => {
@@ -2614,14 +1753,8 @@
           if (this.pvx.rolando) return;
           this.pvxLoadHealth();
           this.pvxLoadTasks();
-          // Capacity and zpool go into the poll because they are a heartbeat: it is the
-          // refresh that makes the age GROW on screen when the hypervisor goes mute.
-          // Without it the operator would see a frozen number without knowing that it had
-          // stopped.
           this.pvxLoadStorage();
           this.pvxLoadZfs();
-          // And the nodes, which are now the body of this screen. What used to re-fetch
-          // them was 40-nodes.js’s timer, removed along with the Nodes tab.
           if (typeof this.loadNodes === 'function') this.loadNodes();
         };
         this.pvxPollTimer = setTimeout(bate, this.pvxCadence());
@@ -2630,9 +1763,6 @@
         if (this.pvxPollTimer) { clearTimeout(this.pvxPollTimer); this.pvxPollTimer = null; }
         if (this._pvxRolTimer) { clearTimeout(this._pvxRolTimer); this._pvxRolTimer = null; }
         this.pvx.rolando = false;
-        // Leaving the tab CLOSES the console. Leaving it open would keep a live shell on
-        // a guest with nobody watching — and the audit trail would record a session of
-        // hours that was really a misclick.
         this.pvxCloseConsole();
       },
     };

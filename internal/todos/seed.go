@@ -12,21 +12,10 @@ import (
 	"time"
 )
 
-// SuggestSeed reads the real host state and returns TODO candidates the
-// operator might want. Empty result is fine and means "nothing interesting
-// to seed right now". This function is intentionally read-only — the caller
-// chooses which suggestions to actually persist.
-//
-// Sources, in order:
-//   - TLS cert at <DataDir>/tls.crt expiring in <60d → ssl_renewal
-//   - apt last-update older than 14d → apt_upgrade (recurring 14d)
-//   - secrets.vault mtime older than 90d → secret_rotation (recurring 90d)
-//   - uptime > 30d → reboot_due
 func SuggestSeed(ctx context.Context, dataDir string) []Todo {
 	var out []Todo
 	now := time.Now()
 
-	// TLS expiry
 	if t := tlsExpiry(filepath.Join(dataDir, "tls.crt")); !t.IsZero() {
 		days := int(time.Until(t).Hours() / 24)
 		if days < 60 {
@@ -39,7 +28,6 @@ func SuggestSeed(ctx context.Context, dataDir string) []Todo {
 		}
 	}
 
-	// apt last update
 	if age := aptLastUpdateAge(); age > 14*24*time.Hour {
 		out = append(out, Todo{
 			Title:        "Run apt update + upgrade",
@@ -50,7 +38,6 @@ func SuggestSeed(ctx context.Context, dataDir string) []Todo {
 		})
 	}
 
-	// secrets rotation
 	if info, err := os.Stat(filepath.Join(dataDir, "secrets.vault")); err == nil {
 		age := now.Sub(info.ModTime())
 		if age > 90*24*time.Hour {
@@ -64,7 +51,6 @@ func SuggestSeed(ctx context.Context, dataDir string) []Todo {
 		}
 	}
 
-	// uptime
 	if up := uptime(); up > 30*24*time.Hour {
 		out = append(out, Todo{
 			Title:    "Consider a scheduled reboot",
@@ -90,7 +76,7 @@ func tlsExpiry(path string) time.Time {
 	if err != nil {
 		return time.Time{}
 	}
-	_ = tls.Config{} // import touch; keeps imports honest if pem path ever fails
+	_ = tls.Config{}
 	return cert.NotAfter
 }
 
@@ -120,7 +106,6 @@ func uptime() time.Duration {
 }
 
 func parseFloat(s string) float64 {
-	// minimal float parser to avoid strconv.ParseFloat import here
 	var n float64
 	var dec, div float64 = 0, 10
 	seenDot := false
@@ -164,5 +149,4 @@ func itoa(n int) string {
 	return string(buf[pos:])
 }
 
-// keep go vet happy about exec import (used by future hooks)
 var _ = exec.Command

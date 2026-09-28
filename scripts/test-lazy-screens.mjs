@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-// test-lazy-screens.mjs — the heavy screens must not be built at boot,
-// and must not be destroyed afterwards.
-//
-// The gain: four sections (maintenance, schedules, AI, games) add up to ~195 KB
-// of markup and thousands of nodes that the browser built and Alpine walked on
-// EVERY load, even for someone who never opened those screens. Wrapped in a
-// <template x-if="_mounted.X">, they are only born on the first visit.
-//
-// The risk, and the reason this pin exists: an x-if tied to VISIBILITY would
-// destroy the screen on a tab switch, losing scroll and state — that is how the
-// code-server iframe broke. The _mounted latch never goes back to false, and
-// that is what has to stay true.
-//
-// Only EXECUTION proves it: the test renders the REAL markup in a real browser
-// and measures the DOM before and after navigating.
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -33,8 +18,6 @@ catch {
 const SCREENS = ['maintenance', 'schedules', 'ai', 'gamesettings'];
 const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
 
-// Cut each <template x-if="_mounted.X"> … </template> out of the real markup,
-// counting nesting (there are hundreds of <template> tags inside them).
 function clip(name) {
   const open = `<template x-if="_mounted.${name}">`;
   const ini = html.indexOf(open);
@@ -57,10 +40,6 @@ const blocks = SCREENS.map((t) => {
 
 const styles = [...html.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/g)].map((m) => m[0]).join('\n');
 
-// The fixture neutralises only the NETWORK and init(): everything else is the
-// real app(), with the real initial state. If one of these screens depended on
-// state that only exists after a fetch, the pin has to say so — today they render
-// at boot with the default state, so continuing to render is exactly the contract.
 const fixture = `
   window.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}), text: () => Promise.resolve('') });
   const appReal = window.app;
@@ -130,7 +109,6 @@ const no = (m) => { console.log('FAIL ' + m); fail++; };
 
 const count = (screen) => page.evaluate((t) => document.querySelectorAll(`section[x-show*="${t}"] *`).length, screen);
 
-// ── 1. at boot, none of them exist ──────────────────────────────────────────
 {
   let born = [];
   for (const t of SCREENS) if ((await count(t)) > 0) born.push(t);
@@ -139,7 +117,6 @@ const count = (screen) => page.evaluate((t) => document.querySelectorAll(`sectio
     : no('screens built at boot anyway: ' + born.join(', '));
 }
 
-// ── 2. the first visit mounts — and really mounts, with content ─────────────
 const sizes = {};
 for (const t of SCREENS) {
   await page.evaluate((screen) => {
@@ -152,18 +129,11 @@ for (const t of SCREENS) {
   const n = await count(t);
   const exists = await page.evaluate((screen) => !!document.querySelector(`section[x-show*="${screen}"]`), t);
   sizes[t] = n;
-  // The floor is deliberately low and measures what can be measured without
-  // inventing: part of the content of these screens is only born after a fetch
-  // (games.settings, for one, keeps the whole body hidden under the default
-  // state). What the pin asserts is the 0 → mounted transition, with the real
-  // section in the DOM and no error — a broken mount gives 0 nodes or blows up in
-  // the console, and both are caught.
   (exists && n > 10)
     ? ok(`visiting "${t}" mounts the screen (${n} nodes)`)
     : no(`"${t}" did not mount (section present=${exists}, ${n} nodes)`);
 }
 
-// ── 3. the latch: leaving the screen must NOT destroy it ────────────────────
 {
   await page.evaluate(() => {
     const app = Alpine.$data(document.querySelector('[x-data]'));
@@ -178,7 +148,6 @@ for (const t of SCREENS) {
     : no('screens destroyed on a tab switch: ' + lost.join(', '));
 }
 
-// ── 4. rendering must not cost an error ─────────────────────────────────────
 errors.length === 0
   ? ok('no console/page error while mounting the four screens')
   : no('errors while mounting:\n    ' + errors.slice(0, 8).join('\n    '));

@@ -1,33 +1,4 @@
 #!/usr/bin/env bash
-# android-publish.sh <versionCode>: publishes a signed release to the F-Droid
-# repository served by this host (data/fdroid/repo/).
-#
-# KEY CUSTODY (docs/android-signing-keystore.md, docs/android-fdroid-repo.md):
-# both the APK signing key and the F-Droid index `repokey` live ONLY on the
-# operator's offline machine. This script NEVER reads, requests or handles
-# either private key. It only:
-#
-#   1. checks the PUBLIC SHA-256 fingerprint of the signed APK's certificate
-#      against the value recorded in docs/android-signing-keystore.md, so no APK
-#      with a wrong or corrupt signature reaches the served repository;
-#   2. atomically applies an F-Droid repository bundle that arrives ALREADY
-#      SIGNED, because `fdroid update` (which needs the repokey) runs on the
-#      operator's machine (docs/android-fdroid-repo.md, section 6).
-#
-# No public distribution signing key is ever reachable from the host that also
-# serves public traffic. See docs/android-release-pipeline.md for the full flow.
-#
-# INPUTS (fixed staging layout):
-#   data/android-release-staging/<versionCode>/app-release-signed.apk
-#     produced by the operator's offline signing.
-#   data/android-release-staging/<versionCode>/fdroid-repo/
-#     the operator's own data/fdroid/repo/ AFTER running `fdroid update`
-#     offline: already contains the APK and the regenerated, signed index
-#     (index-v2.json, index-v1.jar, entry.json, entry.jar, icons). This script
-#     only validates and publishes it.
-#
-# Environment overrides (for tests; production uses the defaults):
-#   STAGING_DIR, FDROID_REPO_DIR, KEYSTORE_DOC, APKSIGNER
 set -euo pipefail
 
 VERSION_CODE="${1:?usage: scripts/android-publish.sh <versionCode>}"
@@ -38,8 +9,6 @@ FDROID_REPO_DIR="${FDROID_REPO_DIR:-$ROOT_DIR/data/fdroid/repo}"
 KEYSTORE_DOC="${KEYSTORE_DOC:-$ROOT_DIR/docs/android-signing-keystore.md}"
 APKSIGNER="${APKSIGNER:-apksigner}"
 
-# A release is published from a clean main that matches origin/main, so the
-# tag created at the end points at code everyone can fetch.
 "$ROOT_DIR/scripts/release-git.sh" check
 
 RELEASE_DIR="$STAGING_DIR/$VERSION_CODE"
@@ -51,8 +20,6 @@ fail() {
   exit 1
 }
 
-# Normalizes a SHA-256 fingerprint for comparison: keytool prints "66:2D:33...",
-# apksigner prints "662d3390..." (no colons, lower case).
 normalize_fp() {
   tr -d ':[:space:]' <<<"$1" | tr '[:upper:]' '[:lower:]'
 }
@@ -95,22 +62,10 @@ fi
 echo "OK: index-v2.json references $APK_BASENAME"
 
 mkdir -p "$FDROID_REPO_DIR"
-# --delete-after: the operator's bundle is the complete new state of the served
-# directory (full APK history plus signed index), not a delta. rsync copies real
-# bytes to the path the index references; never a redirect.
 rsync -a --delete-after "$REPO_BUNDLE"/ "$FDROID_REPO_DIR"/
 
 echo "OK: F-Droid repository published at $FDROID_REPO_DIR (versionCode=$VERSION_CODE)"
 
-# Incremental update (HDiffPatch patches). Runs AFTER the fingerprint gate and
-# the publication on purpose: patches must be built from the ALREADY SIGNED
-# bytes, which this host only has now. A patch from the unsigned artifact would
-# rebuild a file Android refuses to install.
-#
-# A failure here does NOT undo the publication: the F-Droid repository is live
-# and always works. Without the catalogue the app only loses the incremental
-# path (GET /app/update reports the channel as not published), so this warns
-# instead of exiting 1.
 if [ "${SKIP_PATCHES:-0}" != "1" ]; then
   if "$ROOT_DIR/scripts/android-patches.sh"; then
     :
@@ -119,8 +74,6 @@ if [ "${SKIP_PATCHES:-0}" != "1" ]; then
   fi
 fi
 
-# The git half of the release: push main, tag vX.Y.Z and create the GitHub
-# Release. The version is read from the signed APK, never typed.
 AAPT2="${AAPT2:-$(command -v aapt2 || ls /opt/android-sdk/build-tools/*/aapt2 2>/dev/null | sort -r | head -1)}"
 VERSION_NAME="$("$AAPT2" dump badging "$SIGNED_APK" 2>/dev/null | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)"
 if [ "${SKIP_GIT_RELEASE:-0}" != "1" ]; then

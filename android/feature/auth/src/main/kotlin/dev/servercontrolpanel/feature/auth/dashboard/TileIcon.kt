@@ -8,13 +8,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
 import dev.servercontrolpanel.designsystem.PanelIcons
 
-/**
- * A dashboard tile's icon, shown beside (never instead of) its label, so it
- * needs no screen reader description.
- *
- * Matched by tile id (`cpu`, `memory`, `disco:/mnt/x`, aggregates); disk ids
- * match by prefix since there is one tile per mount point.
- */
 internal fun tileIcon(id: String): ImageVector = when {
     id == "cpu" || id == "steal" || id == "iowait" -> PanelIcons.Speedometer
     id == "memory" -> PanelIcons.Memory

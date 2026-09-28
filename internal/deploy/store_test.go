@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// migrated builds a dataDir already in the v2 envelope (the normal state after boot).
 func migrated(t *testing.T, apps ...App) string {
 	t.Helper()
 	dataDir := setupLegacyAppsDir(t, apps...)
@@ -18,9 +17,6 @@ func migrated(t *testing.T, apps ...App) string {
 	return dataDir
 }
 
-// TestStoreReadsV2: the compatibility layer — with the v2 envelope on disk, the
-// methods handlers_deploy.go and the hook use return exactly what they returned
-// before the migration.
 func TestStoreReadsV2(t *testing.T) {
 	orig := App{
 		Name: "hello", Branch: "main", ComposeFile: "docker-compose.yml",
@@ -55,9 +51,6 @@ func TestStoreReadsV2(t *testing.T) {
 	}
 }
 
-// TestStoreRefusesV1AfterMigration: no write from the store may put the v1
-// array back. It is the most likely data-loss mode in this work — one forgotten
-// write path silently undoes the migration on the first deploy.
 func TestStoreRefusesV1AfterMigration(t *testing.T) {
 	dataDir := migrated(t, App{Name: "hello", Branch: "main"})
 	st := Open(dataDir)
@@ -83,7 +76,6 @@ func TestStoreRefusesV1AfterMigration(t *testing.T) {
 		t.Fatalf("after the writes apps.json became %q (schema_version=%d)", sh, ver)
 	}
 
-	// And the data survived the round-trip.
 	got, ok, err := st.Get("hello")
 	if err != nil || !ok {
 		t.Fatalf("Get: ok=%v err=%v", ok, err)
@@ -93,9 +85,6 @@ func TestStoreRefusesV1AfterMigration(t *testing.T) {
 	}
 }
 
-// TestStorePreservesForeignNodeID: the compat layer speaks App, which has NO
-// node_id. A naive persist would stamp every deployment with the local node and
-// silently erase the one piece of information the multi-node model exists to keep.
 func TestStorePreservesForeignNodeID(t *testing.T) {
 	dataDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dataDir, "deploy"), 0o700); err != nil {
@@ -138,10 +127,6 @@ func TestStorePreservesForeignNodeID(t *testing.T) {
 	}
 }
 
-// TestStoreRejectsUnmigratedV1: the store does NOT migrate (the server's boot is
-// what migrates). Meeting v1 here is defence in depth — an error that NAMES
-// what to do, never an empty list (an empty list makes the UI say "no apps" and
-// the next Save wipe the whole registry).
 func TestStoreRejectsUnmigratedV1(t *testing.T) {
 	dataDir := setupLegacyAppsDir(t, App{Name: "hello", Branch: "main"})
 	before := sha256Of(t, appsPath(dataDir))
@@ -159,8 +144,6 @@ func TestStoreRejectsUnmigratedV1(t *testing.T) {
 	}
 }
 
-// TestStoreMissingAndEmpty: a fresh install goes on working (v1 treated a missing
-// file as an empty list, and that must not regress).
 func TestStoreMissingAndEmpty(t *testing.T) {
 	st := Open(t.TempDir())
 	apps, err := st.List()
@@ -172,11 +155,6 @@ func TestStoreMissingAndEmpty(t *testing.T) {
 	}
 }
 
-// TestStoreWritePathIsDurable is a STRUCTURAL pin over the source: the store's
-// write path has to go through writeFileAtomic (fsync of the file AND of the
-// directory). A behavioural test does not tell rename-with-fsync from
-// rename-without-fsync — the difference only shows up in a power cut, and this
-// house has a UPS with no data cable. Cast from inventory.TestStoreWritePathIsDurable.
 func TestStoreWritePathIsDurable(t *testing.T) {
 	src, err := os.ReadFile("store.go")
 	if err != nil {
@@ -197,9 +175,6 @@ func TestStoreWritePathIsDurable(t *testing.T) {
 	}
 }
 
-// TestStorePersistIsAtomicJSON: what lands on disk after a write is still JSON
-// decodable into the current envelope (a guard against accidental
-// concatenation or append).
 func TestStorePersistIsAtomicJSON(t *testing.T) {
 	dataDir := migrated(t, App{Name: "hello"})
 	st := Open(dataDir)

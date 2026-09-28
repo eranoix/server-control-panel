@@ -2,9 +2,6 @@ package webassets
 
 import "net/http"
 
-// HandleManifest serves the desktop PWA manifest. It allows installing as a
-// native app on phone/desktop (its own icon on the home screen/dock, no URL bar).
-// Chrome requires 192x192 + 512x512 PNG icons for the install prompt to appear.
 func HandleManifest(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")

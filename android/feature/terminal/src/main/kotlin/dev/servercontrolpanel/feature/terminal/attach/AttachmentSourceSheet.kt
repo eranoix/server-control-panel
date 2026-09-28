@@ -31,35 +31,18 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import java.io.File
 
-/** Test tag for the attachment source sheet. */
 const val ATTACHMENT_SHEET_TAG = "attachment-source-sheet"
 
-/** Label of the item that opens the attachment sheet, in the terminal's options sheet. */
 const val ATTACH_LABEL = "Attach file or image"
 
-/** Test tag for the attachment item inside the options sheet. */
 const val ATTACH_TAG = "terminal-attach-button"
 
 internal const val CHOOSE_FILE_LABEL = "Choose file"
 internal const val CHOOSE_IMAGE_LABEL = "Choose image from gallery"
 internal const val TAKE_PHOTO_LABEL = "Take a photo now"
 
-/** The cache subfolder a freshly taken photo lands in before it uploads. */
 private const val PHOTOS_DIR = "terminal-attachments"
 
-/**
- * The three ways to hand a reference to the agent on the other side of the session:
- *
- * - Pick a file (`OpenMultipleDocuments`): any provider and any type; its grant is
- *   persistable, so it is claimed right away (see [takePersistableRead]).
- * - Pick an image (`PickMultipleVisualMedia`): the Photo Picker, which needs no
- *   storage permission.
- * - Take a photo now (`TakePicture`): the camera writes into a file we provide.
- *   Needs the runtime CAMERA permission, because declaring `CAMERA` in the
- *   manifest makes it enforced even for `ACTION_IMAGE_CAPTURE`.
- *
- * All accept multiple items (the camera one photo at a time, each queued at once).
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AttachmentSourceSheet(
@@ -76,10 +59,6 @@ fun AttachmentSourceSheet(
     }
 }
 
-/**
- * The content kept apart from the `ModalBottomSheet` wrapper so its rules can be
- * tested on the JVM without window animations (as with `TerminalOptionsContent`).
- */
 @Composable
 internal fun SourceSheetContent(
     onChoose: (List<LocalAttachment>) -> Unit,
@@ -92,8 +71,6 @@ internal fun SourceSheetContent(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
         if (uris.isNotEmpty()) {
-            // Claim here, inside the callback: the document grant is transient and
-            // the upload worker may run after this screen and the source app are gone.
             uris.forEach { takePersistableRead(context.contentResolver, it) }
             onChoose(uris.map { resolveAttachment(context, it) })
             onClose()
@@ -104,8 +81,6 @@ internal fun SourceSheetContent(
         ActivityResultContracts.PickMultipleVisualMedia(),
     ) { uris ->
         if (uris.isNotEmpty()) {
-            // Photo Picker grants cannot be persisted (it throws) and last only
-            // for this process, so copy into the cache now.
             onChoose(uris.map { copyToCache(context, it) })
             onClose()
         }
@@ -126,7 +101,6 @@ internal fun SourceSheetContent(
             )
             onClose()
         } else {
-            // Camera cancelled or wrote nothing: delete the empty file.
             file?.delete()
         }
     }
@@ -182,30 +156,16 @@ private fun newPhotoFile(context: Context): File {
     return File(dir, "photo-${System.currentTimeMillis()}.jpg")
 }
 
-/**
- * The camera is another app, so it needs a writable `content://` URI, never a
- * `file://` (`FileUriExposedException`). The module's `FileProvider` is scoped to
- * the [PHOTOS_DIR] cache subfolder.
- */
 private fun contentUriFor(context: Context, file: File): Uri =
     FileProvider.getUriForFile(context, "${context.packageName}.terminalattach.fileprovider", file)
-
-// The authority matches this module's AndroidManifest; the provider is
-// [AttachmentFileProvider] (see its doc for why it is a subclass).
 
 private fun takePersistableRead(contentResolver: ContentResolver, uri: Uri) {
     try {
         contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
     } catch (e: SecurityException) {
-        // Not every provider grants persistable access. Carry on with the
-        // transient grant; if it expires the upload fails visibly with a reason.
     }
 }
 
-/**
- * Copies the bytes into the app cache. Only needed for the Photo Picker, whose
- * grant is not persistable, so a deferred upload would find the `Uri` revoked.
- */
 private fun copyToCache(context: Context, uri: Uri): LocalAttachment {
     val metadata = resolveAttachment(context, uri)
     val dir = File(context.cacheDir, PHOTOS_DIR).apply { mkdirs() }
@@ -220,18 +180,12 @@ private fun copyToCache(context: Context, uri: Uri): LocalAttachment {
             sizeBytes = destination.length(),
         )
     } catch (e: java.io.IOException) {
-        // Fall back to the original Uri, which may still work.
         metadata
     } catch (e: SecurityException) {
         metadata
     }
 }
 
-/**
- * Name and size as the provider reports them. Either may be missing: the name
- * falls back to the `Uri`'s last segment and the size to `0`, shown as
- * indeterminate progress.
- */
 internal fun resolveAttachment(context: Context, uri: Uri): LocalAttachment {
     var name: String? = null
     var size = 0L
@@ -245,7 +199,6 @@ internal fun resolveAttachment(context: Context, uri: Uri): LocalAttachment {
             }
         }
     } catch (e: SecurityException) {
-        // Grant already revoked: use the fallback values.
     }
     return LocalAttachment(
         uri = uri.toString(),

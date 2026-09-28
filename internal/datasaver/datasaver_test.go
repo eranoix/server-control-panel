@@ -30,7 +30,6 @@ func TestBypassSanitize(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := m.Bypass()
-	// dedup + lowercase + strip "*." → bank.example.com, pay.example.com
 	if len(got) != 2 {
 		t.Fatalf("expected 2 clean hosts, got %v", got)
 	}
@@ -53,14 +52,10 @@ func TestSavedTotals(t *testing.T) {
 	}
 }
 
-// TestDefaultsDisabled locks the data-saver OFF by default. Being born on
-// routes the device's web traffic through a MITM that, without the CA installed on it, breaks
-// ALL HTTPS — it has already taken the work tunnel down. The default can never be true.
 func TestDefaultsDisabled(t *testing.T) {
 	if defaults.Enabled {
 		t.Fatal("defaults.Enabled must be false: data-saver cannot be born switched on (MITM breaks HTTPS without a CA)")
 	}
-	// LoadSettings with no file falls back to the default — it has to come back off.
 	m := New(t.TempDir(), "")
 	if m.LoadSettings().Enabled {
 		t.Fatal("LoadSettings with no settings.json must return Enabled=false")

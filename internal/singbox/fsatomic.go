@@ -10,12 +10,6 @@ import (
 
 func nowUnix() int64 { return time.Now().Unix() }
 
-// writeAtomic replaces path preserving owner+mode, mirroring
-// internal/gameservers.writeAtomic: unique temp in the same dir → chmod/chown
-// by descriptor → fsync → rename → dir fsync. The container reading
-// /opt/singbox/config.json runs as root; owner preservation keeps a future
-// non-root setup from silently breaking on the next restart. ref supplies
-// owner/mode when path does not exist yet.
 func writeAtomic(path string, content []byte, ref string) error {
 	uid, gid, mode, err := ownerMode(path, ref)
 	if err != nil {
@@ -43,7 +37,6 @@ func writeAtomic(path string, content []byte, ref string) error {
 		return fmt.Errorf("chmod %s: %w", tmp, err)
 	}
 	if err := f.Chown(uid, gid); err != nil {
-		// tolerate only if it already has the desired owner
 		if fi, serr := f.Stat(); serr == nil {
 			if st, ok := fi.Sys().(*syscall.Stat_t); !ok || int(st.Uid) != uid || int(st.Gid) != gid {
 				return fmt.Errorf("chown %s → %d:%d: %w", tmp, uid, gid, err)
@@ -71,8 +64,6 @@ func writeAtomic(path string, content []byte, ref string) error {
 	return d.Sync()
 }
 
-// ownerMode returns the owner+mode the file should end with: the existing
-// file's if present, else ref's (regular file or dir).
 func ownerMode(path, ref string) (uid, gid int, mode os.FileMode, err error) {
 	if fi, e := os.Stat(path); e == nil && fi.Mode().IsRegular() {
 		u, g, e2 := ownerOf(path)

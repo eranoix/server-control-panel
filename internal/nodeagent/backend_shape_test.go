@@ -10,22 +10,8 @@ import (
 	"testing"
 )
 
-// The rule as a PIN, not as a good intention.
-//
-// The rule: no parameter and no result of the Backend interface may be `path`,
-// `mode`, `uid`, `gid` or `os.FileMode`. A host path that crosses the boundary
-// is a path the client can CHOOSE — and the day the dashboard sends a path, the
-// agent stops being narrow without a single new route having appeared. It is
-// how the property gets lost with no signal at all.
-
-// forbiddenTerms matches by identifier name (parameter/result) and by the
-// written type.
 var forbiddenTerms = []string{"path", "mode", "uid", "gid", "filemode"}
 
-// scanBackendInterface returns the violations found in the given file.
-// Kept separate from the test so the NEGATIVE CONTROL can reuse exactly the
-// same scan over a legitimate fixture — an instrument that only knows how to
-// fail things is the instrument somebody turns off.
 func scanBackendInterface(t *testing.T, file string) (violations []string, methodCount int) {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -44,7 +30,6 @@ func scanBackendInterface(t *testing.T, file string) (violations []string, metho
 		return false
 	}
 
-	// typeText renders the type in comparable form (e.g. "os.FileMode").
 	var typeText func(ast.Expr) string
 	typeText = func(e ast.Expr) string {
 		switch v := e.(type) {
@@ -110,12 +95,6 @@ func TestBackendDoesNotLeakFileSemantics(t *testing.T) {
 	t.Logf("%d interface methods scanned, 0 violations", methodCount)
 }
 
-// TestBackendScanBitesAndControlsNegative — does the scan measure anything?
-//
-// Two synthetic fixtures: one with the violation (it must fail) and one with a
-// legitimate method (it must NOT fail). Without the second, a pin that failed
-// everything would pass in this file and would break the real interface the
-// first time anyone extended it.
 func TestBackendScanBitesAndControlsNegative(t *testing.T) {
 	dir := t.TempDir()
 

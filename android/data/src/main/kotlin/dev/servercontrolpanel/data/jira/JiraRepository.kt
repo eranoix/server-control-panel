@@ -13,27 +13,16 @@ import dev.servercontrolpanel.mobileapiclient.model.JiraMoveRequest
 import dev.servercontrolpanel.mobileapiclient.model.JiraProjectRequest
 import java.io.IOException
 
-// --- domain models ------------------------------------------------------------
-//
-// The `:feature-jira` module NEVER sees the generated types: it talks only to
-// what is declared here. Without that, renaming a field in the OpenAPI contract
-// would recompile the whole screen, and the screen's test would have to build
-// generated models just to exercise a card.
-
-/** A Jira person, reduced to what a card shows. */
 data class JiraPerson(
     val accountId: String,
     val name: String,
     val avatarUrl: String? = null,
 )
 
-/** A project in the picker's list. */
 data class JiraProject(val key: String, val name: String)
 
-/** A quick filter, with the label the server sent. */
 data class JiraFilter(val key: String, val label: String)
 
-/** An issue as it appears on a board card. */
 data class JiraCard(
     val key: String,
     val summary: String,
@@ -49,20 +38,12 @@ data class JiraCard(
     val due: String? = null,
 )
 
-/**
- * A column of the board.
- *
- * [label] is the column's identity throughout the interface: it is what goes
- * back to the server on a move call. The app never invents a column name and
- * never translates a status — the server is what knows what a column is.
- */
 data class JiraColumn(
     val label: String,
     val leftover: Boolean = false,
     val cards: List<JiraCard> = emptyList(),
 )
 
-/** The whole board, as one call returns it. */
 data class JiraBoard(
     val connected: Boolean,
     val site: String? = null,
@@ -74,11 +55,9 @@ data class JiraBoard(
     val jql: String? = null,
     val columns: List<JiraColumn> = emptyList(),
     val total: Int = 0,
-    /** A refusal from Jira (malformed JQL, expired token) WITHOUT the screen having been wiped. */
     val rejection: String? = null,
 )
 
-/** A comment already flattened for reading. */
 data class JiraComment(
     val id: String,
     val text: String,
@@ -86,15 +65,8 @@ data class JiraComment(
     val whenText: String,
 )
 
-/**
- * A possible destination, in the vocabulary of the board's COLUMNS.
- *
- * It is what feeds the card menu's "move to…" — the accessible way to move,
- * because a screen reader does not drag.
- */
 data class JiraDestination(val column: String, val status: String, val transition: String? = null)
 
-/** The other end of a link ("blocks", "is blocked by"). */
 data class JiraLink(
     val relation: String,
     val key: String,
@@ -102,7 +74,6 @@ data class JiraLink(
     val status: String? = null,
 )
 
-/** An open issue: fields, comments and where it can go. */
 data class JiraIssue(
     val key: String,
     val summary: String,
@@ -125,16 +96,12 @@ data class JiraIssue(
     val links: List<JiraLink> = emptyList(),
 )
 
-/** What a creation form offers instead of asking you to type. */
 data class JiraMeta(val types: List<String>, val priorities: List<String>)
 
-/** An issue that did not make it, with the reason. */
 data class BulkFailure(val key: String, val reason: String)
 
-/** The honest result of a bulk action. */
 data class BulkResult(val done: List<String>, val failures: List<BulkFailure>)
 
-/** What creating an issue needs. */
 data class NewIssue(
     val project: String,
     val type: String,
@@ -146,30 +113,12 @@ data class NewIssue(
     val due: String? = null,
 )
 
-/**
- * The outcome of an operation.
- *
- * [Rejected] is kept apart from [Error] on purpose, and the distinction is the
- * most important thing in this file: a refusal is Jira saying "that move does
- * not exist in this workflow" — the server is fine, the network is fine, and
- * trying again will give exactly the same result. An error is anything else,
- * and that one does call for another attempt. Conflating the two would have the
- * board offer "try again" for a move that will never be accepted.
- */
 sealed interface JiraResult<out T> {
     data class Ok<T>(val value: T) : JiraResult<T>
     data class Rejected(val reason: String) : JiraResult<Nothing>
     data class Error(val reason: String) : JiraResult<Nothing>
 }
 
-/**
- * The narrow slice of the repository the board screen depends on.
- *
- * An interface rather than the concrete class for the same reason as
- * [dev.servercontrolpanel.data.terminal.TerminalSessionsSource]: `:feature-jira` has no
- * visibility of the generated client, so its tests fake this instead of faking
- * OkHttp.
- */
 interface JiraSource {
     suspend fun board(
         project: String? = null,
@@ -193,12 +142,6 @@ interface JiraSource {
     suspend fun pinProject(project: String): JiraResult<Unit>
 }
 
-/**
- * The single entry point into the generated client for Jira.
- *
- * Every translation from a generated type to a domain type happens here — no
- * other module imports `dev.servercontrolpanel.mobileapiclient`.
- */
 class JiraRepository(
     private val api: JiraApi = JiraApi(),
 ) : JiraSource {
@@ -361,14 +304,6 @@ class JiraRepository(
         failures = r.failed.orEmpty().map { BulkFailure(it.key, it.reason) },
     )
 
-    /**
-     * Runs the call and translates whatever goes wrong.
-     *
-     * A 409 becomes [JiraResult.Rejected] carrying the server's own text,
-     * and that is why this wrapper exists: the 409's message is the only one
-     * that says WHERE you can go from there. Replacing it with "could not move"
-     * would throw away the information that turns a refusal into a next step.
-     */
     private suspend fun <T> guarded(
         onFailureText: String,
         tile: suspend () -> T,
@@ -378,9 +313,6 @@ class JiraRepository(
         val detail = errorDetail(e.message)
         when (e.statusCode) {
             409 -> JiraResult.Rejected(detail ?: onFailureText)
-            // A 400 is also the server's decision about the ACTION (a column
-            // that no longer exists, a missing field) — retrying changes
-            // nothing.
             400 -> JiraResult.Rejected(detail ?: onFailureText)
             401, 403 -> JiraResult.Error("Session expired. Sign in again.")
             else -> JiraResult.Error(detail ?: onFailureText)
@@ -394,16 +326,6 @@ class JiraRepository(
     }
 }
 
-/**
- * Extracts the `detail` from the error body the BFF returns (RFC 7807, via
- * huma).
- *
- * Done by hand, without deserializing: the generated client's exception message
- * is free text with the body embedded ("Client error : 409 {...}"), not a whole
- * valid JSON document — `Json.decodeFromString` would fail on the first word.
- * And a failure HERE would erase precisely the sentence that explains the
- * refusal.
- */
 internal fun errorDetail(message: String?): String? {
     if (message.isNullOrBlank()) return null
     val mark = "\"detail\":"
@@ -418,10 +340,6 @@ internal fun errorDetail(message: String?): String? {
         val c = message[j]
         when {
             c == '\\' && j + 1 < message.length -> {
-                // JSON escape sequences. `\uXXXX` is left out: the BFF does
-                // not emit them (Go serializes an accent as literal UTF-8), and
-                // decoding them here would mean writing half a parser for a
-                // case that does not occur.
                 when (val nextChar = message[j + 1]) {
                     'n' -> sb.append('\n')
                     't' -> sb.append('\t')

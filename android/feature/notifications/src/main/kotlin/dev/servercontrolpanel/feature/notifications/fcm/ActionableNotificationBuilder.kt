@@ -6,11 +6,6 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import dev.servercontrolpanel.feature.notifications.R
 
-/**
- * Extras on a tapped notification's content [Intent] so the nav host opens the target screen.
- * Only an opaque route and entity id travel here, never a token or capability flag; the target
- * screen re-authorises on load.
- */
 object NotificationDeepLink {
     const val EXTRA_ROUTE = "panel_notification_route"
     const val EXTRA_ENTITY_ID = "panel_notification_entity_id"
@@ -18,31 +13,20 @@ object NotificationDeepLink {
     const val ROUTE_ALERT = "alert"
 }
 
-/** Metric severities eligible for the inline Dismiss action; `critical` is deliberately excluded. */
 private val ACK_ELIGIBLE_SEVERITIES = setOf("info", "warning")
 
 private const val REQUEST_CODE_CONTENT = 100
 private const val REQUEST_CODE_VIEW_LOG = 200
 private const val REQUEST_CODE_DISMISS = 300
 
-/**
- * A whitelisted inline action. Never state-mutating (redeploy, restart): those need the
- * confirmation gate in `DeployTriggerScreen` and are never offered from a notification.
- */
 internal sealed interface InlineAction {
     val label: String
 
-    /** Opens the same target screen as the content tap; read-only, safe at any severity. */
     data class OpenScreen(override val label: String) : InlineAction
 
-    /** Cancels the local notification only, with no network call. */
     data class Dismiss(override val label: String) : InlineAction
 }
 
-/**
- * Turns an FCM data payload (keyed on `event_type`, `severity` and `job_id`, as sent by the
- * server's `buildPushPayload`) into a notification builder with at most one safe inline action.
- */
 object ActionableNotificationBuilder {
 
     fun build(context: Context, data: Map<String, String>): NotificationCompat.Builder {
@@ -70,7 +54,6 @@ object ActionableNotificationBuilder {
         return builder
     }
 
-    /** Id to post [build]'s notification under, so [InlineAction.Dismiss] cancels the right one. */
     fun notificationIdFor(eventType: String, jobId: String?): Int = (jobId ?: eventType).hashCode()
 
     internal fun defaultTitleFor(eventType: String): String = when {
@@ -91,10 +74,6 @@ object ActionableNotificationBuilder {
         }
     }
 
-    /**
-     * Inline action whitelist: `job.*` gets a read-only "View log"; `metric.*` gets "Dismiss"
-     * only for [ACK_ELIGIBLE_SEVERITIES]. Nothing here ever mutates server state.
-     */
     internal fun inlineActionFor(eventType: String, severity: String?): InlineAction? = when {
         eventType.startsWith("job.") -> InlineAction.OpenScreen("View log")
         eventType.startsWith("metric.") && severity in ACK_ELIGIBLE_SEVERITIES -> InlineAction.Dismiss("Dismiss")

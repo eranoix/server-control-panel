@@ -8,15 +8,7 @@ import (
 	"server-control-panel/internal/jira"
 )
 
-// ── parser ↔ contract conformance ────────────────────────────────────
-//
-// These guard the convergence loop against silent breakage: if a parser
-// and the locked output contract (aiprompts/defaults.go) ever drift, the
-// loop would stop converging. The canonical examples are model-output
-// samples that MUST conform to the contract.
-
 func TestContractParsesClean(t *testing.T) {
-	// Verify-side parsers against the canonical verify response.
 	if v := parseVerdict(aiprompts.CanonicalVerifyResponse); v != "APPROVED" {
 		t.Errorf("parseVerdict = %q, want APPROVED — verify contract drifted from verdictRe", v)
 	}
@@ -32,16 +24,12 @@ func TestContractParsesClean(t *testing.T) {
 	if s := parseSummary(aiprompts.CanonicalVerifyResponse); s == "" {
 		t.Error("parseSummary empty — '## 🗣 In short' header drifted from summaryRe")
 	}
-	// Audit-side parsers against the canonical audit response.
 	if title := parseSuggestedTitle(aiprompts.CanonicalAuditResponse); title == "" {
 		t.Error("parseSuggestedTitle empty — '## 📝 Suggested title' header drifted from titleLineRe")
 	}
 	if labels := parseSuggestedLabels(aiprompts.CanonicalAuditResponse); len(labels) == 0 {
 		t.Error("parseSuggestedLabels empty — '## 🏷 Labels' header drifted from labelLineRe")
 	}
-	// wrapRefinedPlan must locate the '## 🛠 Fix Plan' section in the
-	// audit response and splice — not fall back to the raw-dump path (which
-	// would drop the title block).
 	wrapped := wrapRefinedPlan(aiprompts.CanonicalAuditResponse, "REFINED-PLAN-XYZ", "APPROVED", 90, "some risks", "plain-language summary", verifyAcceptThreshold)
 	if !strings.Contains(wrapped, "REFINED-PLAN-XYZ") {
 		t.Error("wrapRefinedPlan dropped the refined plan")
@@ -49,7 +37,6 @@ func TestContractParsesClean(t *testing.T) {
 	if !strings.Contains(wrapped, "## 📝 Suggested title") {
 		t.Error("wrapRefinedPlan fell back to raw dump — planSectionRe drifted from auditContract")
 	}
-	// The plain-language summary must appear ABOVE the risks block.
 	if !strings.Contains(wrapped, "plain-language summary") {
 		t.Error("wrapRefinedPlan dropped the plain-language summary")
 	}
@@ -58,14 +45,7 @@ func TestContractParsesClean(t *testing.T) {
 	}
 }
 
-// TestWrapRefinedPlanStripsAuditEcho guards the dedup added when the audit
-// contract started emitting its own "## 🗣 In short" + "## 🎯 Confidence of
-// Success". On a verified run, formatVerificationHeader surfaces the
-// authoritative summary + certainty at the top, so wrapRefinedPlan must strip
-// the auditor's echo of both — otherwise the ticket shows two summaries and two
-// certainty numbers. Other audit sections (Suggested title, Labels) must survive.
 func TestWrapRefinedPlanStripsAuditEcho(t *testing.T) {
-	// Sanity: the canonical audit sample carries the two echo headers.
 	if !strings.Contains(aiprompts.CanonicalAuditResponse, "## 🗣 In short") ||
 		!strings.Contains(aiprompts.CanonicalAuditResponse, "## 🎯 Confidence of Success") {
 		t.Fatal("precondition: CanonicalAuditResponse should contain both echo headers")
@@ -79,22 +59,17 @@ func TestWrapRefinedPlanStripsAuditEcho(t *testing.T) {
 	if strings.Contains(wrapped, "## 🎯 Confidence of Success") {
 		t.Error("audit '## 🎯 Confidence of Success' echo not stripped — duplicates the verify certainty")
 	}
-	// The authoritative verify header + its plain-language summary must remain.
 	if !strings.Contains(wrapped, "## 🔬 Verification") {
 		t.Error("verify header missing from wrapped plan")
 	}
 	if !strings.Contains(wrapped, "VERIFY-SUMMARY") {
 		t.Error("verify summary dropped from wrapped plan")
 	}
-	// Non-echo audit sections must survive the strip.
 	if !strings.Contains(wrapped, "## 📝 Suggested title") || !strings.Contains(wrapped, "## 🏷 Labels") {
 		t.Error("stripAuditEcho removed sections other than the two echo blocks")
 	}
 }
 
-// TestStripAuditEchoNoEcho: a report WITHOUT the echo blocks is returned with
-// those sections simply absent and everything else intact (idempotent / safe on
-// the verify-failed fallback shape).
 func TestStripAuditEchoNoEcho(t *testing.T) {
 	in := "## 📝 Suggested title\nT\n\n## 🛠 Fix Plan\n1. x\n\n## 🏷 Labels\na, b\n"
 	if got := stripAuditEcho(in); got != in {
@@ -102,12 +77,6 @@ func TestStripAuditEchoNoEcho(t *testing.T) {
 	}
 }
 
-// TestCertaintyInlineRegression is the core structural-regression guard:
-// a response that keeps the marker but puts the number INLINE (same line as
-// the header) instead of on the line below must parse as 0 certainty. This
-// is exactly the "marker present but structure wrong" case that would make
-// the loop run to the budget on every analysis. The defense is that the
-// contract (which mandates the line-below layout) is NOT runtime-editable.
 func TestCertaintyInlineRegression(t *testing.T) {
 	inline := "## ✅ Verdict\nAPPROVED\n\n## 🎯 Confidence of Success 92\n\n## ⚠️ Risks\n- nothing\n"
 	if v := parseVerdict(inline); v != "APPROVED" {
@@ -119,9 +88,6 @@ func TestCertaintyInlineRegression(t *testing.T) {
 	}
 }
 
-// TestVerifyPreambleAssembly proves the assembled reviewer prompt carries
-// the locked contract headers, has the threshold substituted, and exposes
-// no unresolved placeholders.
 func TestVerifyPreambleAssembly(t *testing.T) {
 	reg := aiprompts.New(t.TempDir())
 	pre := reg.VerifyPreamble(85)
@@ -157,7 +123,6 @@ func TestParseSuggestedLabels(t *testing.T) {
 		{
 			"normalises spaces and case",
 			"## 🏷 Labels\nBack End, Bug Fix, ux/ui",
-			// "ux/ui" has a slash → rejected; the others normalise
 			[]string{"back-end", "bug-fix"},
 		},
 		{
@@ -223,12 +188,10 @@ func TestParseSuggestedTitle(t *testing.T) {
 }
 
 func TestMergeAIBlock(t *testing.T) {
-	// First run: appends block to existing description.
 	out := mergeAIBlock("original description", "analysis content")
 	if !contains(out, "original description") || !contains(out, "🤖 AI ANALYSIS") || !contains(out, "analysis content") {
 		t.Errorf("first run lost something: %q", out)
 	}
-	// Second run: replaces previous block, original survives.
 	out2 := mergeAIBlock(out, "new different analysis")
 	if !contains(out2, "original description") {
 		t.Error("re-run lost original description")
@@ -265,11 +228,6 @@ foo, bar`
 	}
 }
 
-// ── re-run: iteration awareness + certainty ratchet ───────────────────
-
-// extractAIBlock must return the inner plan (minus the generated-at stamp)
-// and be the exact complement of stripAIBlock: original survives in one,
-// the plan in the other, with no overlap.
 func TestExtractAIBlock(t *testing.T) {
 	desc := mergeAIBlock("user's original ticket", "## 🔬 Verification\n**Verdict:** APPROVED · **Confidence:** 82%\n\n## 🛠 Fix Plan\n1. step (a.go:1)")
 	block := extractAIBlock(desc)
@@ -285,7 +243,6 @@ func TestExtractAIBlock(t *testing.T) {
 	if !contains(block, "Fix Plan") {
 		t.Errorf("extractAIBlock dropped the plan body: %q", block)
 	}
-	// No prior block → empty.
 	if got := extractAIBlock("description without an AI block"); got != "" {
 		t.Errorf("extractAIBlock on plain text = %q, want empty", got)
 	}
@@ -298,7 +255,7 @@ func TestParsePriorCertainty(t *testing.T) {
 	}{
 		{"**Verdict:** APPROVED · **Confidence:** 82%", 82},
 		{"**confidence:** 7 %", 7},
-		{"**Confidence:** 140%", 100}, // clamped
+		{"**Confidence:** 140%", 100},
 		{"nothing here", 0},
 		{"", 0},
 	}
@@ -309,18 +266,16 @@ func TestParsePriorCertainty(t *testing.T) {
 	}
 }
 
-// ratchetThreshold: first run (prior 0) = floor; a prior at/above the floor
-// raises the bar a step; never exceeds the cap.
 func TestRatchetThreshold(t *testing.T) {
 	cases := []struct {
 		prior, want int
 	}{
-		{0, verifyAcceptThreshold},                                   // first run
-		{40, verifyAcceptThreshold},                                  // below floor → floor
-		{verifyAcceptThreshold, verifyAcceptThreshold + ratchetStep}, // at floor → step up
+		{0, verifyAcceptThreshold},
+		{40, verifyAcceptThreshold},
+		{verifyAcceptThreshold, verifyAcceptThreshold + ratchetStep},
 		{90, 94},
-		{96, ratchetCap},  // would be 100 → capped
-		{100, ratchetCap}, // already maxed → capped
+		{96, ratchetCap},
+		{100, ratchetCap},
 	}
 	for _, c := range cases {
 		if got := ratchetThreshold(c.prior); got != c.want {
@@ -329,8 +284,6 @@ func TestRatchetThreshold(t *testing.T) {
 	}
 }
 
-// buildRefinePrompt must carry the prior plan, its certainty, and the
-// "beat it" directive — and keep the original ticket separate from the plan.
 func TestBuildRefinePrompt(t *testing.T) {
 	d := &jira.IssueDetail{Issue: jira.Issue{Key: "TASK-99", Summary: "ticket title"}}
 	p := buildRefinePrompt(d, "clean original description", "## 🛠 Fix Plan\n1. old step", 78,

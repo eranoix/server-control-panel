@@ -1,34 +1,5 @@
 package api
 
-// Handlers for the "Games" page — rewritten to talk to the
-// `gameservers.Backend` of the node where each server lives, instead of to the
-// local Manager.
-//
-// # WHAT CHANGED, AND WHY IT MATTERS
-//
-// Before, each `case` called the Manager, which touched THIS machine's disk.
-// That worked because the dashboard and the game lived together. They stop
-// living together: the destination is now chosen by `Node.transport`, in a
-// single place (gamebackend.go), and the VPS's dashboard keeps working because
-// the non-agent transport falls through to the local back-end — which is the
-// same code as ever.
-//
-// # NO FILE SEMANTICS HERE
-//
-// This file knows nothing about paths, owners or modes. Where there used to be
-// `BackupPath` and `ExportWorld` returning a host path, there is now an opaque
-// `Handle` and a stream coming from the back-end. If any handler here ever needs
-// to build a path, the extraction failed, and the place to fix it is the
-// `Backend` — not here. There is a pin counting zero occurrences.
-//
-// Routing: a single /api/gameservers/ prefix with manual path parsing, in the
-// same style as the other groups (it avoids clashing with the "/api/" catch-all).
-//
-// RBAC: reading is open to any authenticated session; EVERY mutation requires
-// the primary account. The check stays at the same points — it lives in
-// `execOp`, with `isWrite: true`, and was not reimplemented in the agent:
-// session and permission belong to the dashboard and already existed.
-
 import (
 	"encoding/json"
 	"io"
@@ -41,24 +12,12 @@ import (
 	"server-control-panel/internal/httpx"
 )
 
-// maxGameWorldImportBytes is the upload ceiling for a world (.zip) to import
-// — 600 MiB of real content (the business limit checked just below, in
-// `cab.Size > 600<<20`) plus 1 MiB of slack for the multipart fields and
-// boundaries around the file. httpmw.MaxBody applies 25 MiB by default on
-// every route; without the RegisterLargeBody in init() below, a real world
-// (almost always well over 25 MiB) never came close to the 600 MB ceiling this
-// handler promises — the global MaxBytesReader cut the body off before
-// ParseMultipartForm finished reading, and the `cab.Size` check was never
-// reached.
 const maxGameWorldImportBytes = 600<<20 + 1<<20
 
 func init() {
 	httpmw.RegisterLargeBody(isGameWorldImportUpload, maxGameWorldImportBytes)
 }
 
-// isGameWorldImportUpload matches exactly POST /api/gameservers/<id>/worlds/import
-// — the only route in the gameservers family that receives a large file (the
-// rest are small JSON or downloads, with no request body).
 func isGameWorldImportUpload(r *http.Request) bool {
 	if r.Method != http.MethodPost {
 		return false
@@ -71,13 +30,6 @@ func isGameWorldImportUpload(r *http.Request) bool {
 	return len(parts) == 3 && parts[1] == "worlds" && parts[2] == "import"
 }
 
-// handleGameServers serves GET /api/gameservers (list + status of all of them).
-//
-// It walks the servers resolving EACH ONE's back-end: servers from different
-// nodes coexist on the same screen. An error on one does not take the others
-// down — it becomes that item's `err` field, exactly as `Statuses` already did.
-// A page that disappears entirely because one node went down is worse than a
-// page with one red line.
 func (r *Router) handleGameServers(w http.ResponseWriter, req *http.Request) {
 	if r.gameMgr == nil {
 		httpx.WriteErr(w, http.StatusServiceUnavailable, "game manager unavailable")
@@ -120,7 +72,6 @@ func (r *Router) handleGameServers(w http.ResponseWriter, req *http.Request) {
 	httpx.WriteJSON(w, map[string]interface{}{"servers": output})
 }
 
-// handleGameServerSub serves /api/gameservers/<id>/<resource>[/<action>].
 func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 	if r.gameMgr == nil {
 		httpx.WriteErr(w, http.StatusServiceUnavailable, "game manager unavailable")
@@ -138,9 +89,6 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		action = parts[2]
 	}
 
-	// The inventory is still the source for the SERVER (id, name, node). What
-	// changed is that it is no longer the source for its STATE — that comes from
-	// the node.
 	srv, ok := r.gameMgr.Get(id)
 	if !ok {
 		httpx.WriteErr(w, http.StatusNotFound, "server '"+id+"' not found")
@@ -149,9 +97,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 
 	switch resource {
 
-	// ── life cycle ───────────────────────────────────────────────────────────
-
-	case "action": // 27-case: `action`
+	case "action":
 		var body struct {
 			Action string `json:"action"`
 		}
@@ -171,10 +117,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		writeRaw(w, doc)
 
-	case "update": // now a verb of server.action
-		// Updating IS restarting (steamcmd runs when the container starts). The
-		// route still exists because the screen still calls it; what changed is
-		// that it is no longer an operation of the catalogue's own.
+	case "update":
 		doc, ok := r.execOp(w, req, srv, gameservers.OpServerAction,
 			map[string]interface{}{"server_id": srv.ID, "verb": string(gameservers.VerbUpdate)}, true)
 		if !ok {
@@ -182,7 +125,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		writeRaw(w, doc)
 
-	case "logs": // 27-case: `logs`
+	case "logs":
 		tail := req.URL.Query().Get("tail")
 		if tail == "" {
 			tail = "200"
@@ -194,12 +137,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		writeRaw(w, doc)
 
-	// ── fields of server.status (no longer routes of their own) ──────────────
-
-	case "connection", "build": // 27-case: `connection` e `build`
-		// The triage merged the two into `server.status`. The routes still answer
-		// so as not to break the old screen during the transition, but they serve
-		// the document's SECTION — not a lookup of their own.
+	case "connection", "build":
 		doc, ok := r.execOp(w, req, srv, gameservers.OpServerStatus,
 			map[string]interface{}{"server_id": srv.ID}, false)
 		if !ok {
@@ -212,9 +150,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		writeRaw(w, full[resource])
 
-	// ── settings sections (no longer routes of their own) ────────────────────
-
-	case "groups": // 27-case: `groups`
+	case "groups":
 		if req.Method == http.MethodGet {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
 				map[string]interface{}{"server_id": srv.ID}, false)
@@ -245,7 +181,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		writeRaw(w, doc)
 
-	case "bans": // 27-case: `bans`
+	case "bans":
 		if req.Method == http.MethodGet {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
 				map[string]interface{}{"server_id": srv.ID}, false)
@@ -274,9 +210,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		writeRaw(w, doc)
 
-	// ── configuration ────────────────────────────────────────────────────────
-
-	case "server": // `server` — server options + default group
+	case "server":
 		if req.Method == http.MethodGet {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
 				map[string]interface{}{"server_id": srv.ID}, false)
@@ -308,7 +242,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		writeRaw(w, doc)
 
-	case "settings": // 27-case: `settings`
+	case "settings":
 		if req.Method == http.MethodGet {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
 				map[string]interface{}{"server_id": srv.ID}, false)
@@ -343,16 +277,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		writeRaw(w, doc)
 
-	case "rawconfig": // 27-case: `rawconfig`
-		// ⚠️ A DELIBERATE NARROWING. Writing FREE TEXT no longer exists on this
-		// surface.
-		//
-		// The measured nuance, so that a review neither over- nor under-estimates
-		// the earlier risk: the path was NEVER controlled by the client (it comes
-		// from adapter.ConfigPath) and the content already went through unmarshal
-		// plus a userGroups requirement. What changes is that ARBITRARY content in
-		// a file the server executes as config is no longer possible — before
-		// there was a single semantic guard; now there is a field allowlist.
+	case "rawconfig":
 		if req.Method == http.MethodGet {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
 				map[string]interface{}{"server_id": srv.ID}, false)
@@ -391,7 +316,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		writeRaw(w, doc)
 
-	case "runtime": // 27-case: `runtime`
+	case "runtime":
 		if req.Method == http.MethodGet {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpRuntimeGet,
 				map[string]interface{}{"server_id": srv.ID}, false)
@@ -415,9 +340,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		writeRaw(w, doc)
 
-	// ── telemetry ────────────────────────────────────────────────────────────
-
-	case "history": // 27-case: `history`
+	case "history":
 		hours := 6
 		if v := req.URL.Query().Get("hours"); v != "" {
 			if n, err := strconv.Atoi(v); err == nil {
@@ -431,9 +354,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		writeRaw(w, doc)
 
-	// ── trainer ──────────────────────────────────────────────────────────────
-
-	case "trainer": // 27-case: `trainer`
+	case "trainer":
 		if req.Method == http.MethodGet {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpTrainerStatus,
 				map[string]interface{}{"server_id": srv.ID}, false)
@@ -463,14 +384,10 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		writeRaw(w, doc)
 
-	// ── worlds ───────────────────────────────────────────────────────────────
-
-	case "worlds": // `worlds` + 6 actions
+	case "worlds":
 		r.gameWorlds(w, req, srv, action)
 
-	// ── backups ──────────────────────────────────────────────────────────────
-
-	case "backups": // `backups` + 4 actions
+	case "backups":
 		r.gameBackups(w, req, srv, action)
 
 	default:
@@ -478,10 +395,9 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// gameWorlds covers the 7 `case`s of the world family.
 func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gameservers.Server, action string) {
 	switch action {
-	case "": // 27-case: `worlds` ""
+	case "":
 		doc, ok := r.execOp(w, req, srv, gameservers.OpWorldList,
 			map[string]interface{}{"server_id": srv.ID}, false)
 		if !ok {
@@ -489,7 +405,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 		}
 		writeRaw(w, doc)
 
-	case "switch": // 27-case: `worlds/switch`
+	case "switch":
 		var body struct {
 			World string `json:"world"`
 		}
@@ -504,10 +420,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 		}
 		writeRaw(w, doc)
 
-	case "export": // 27-case: `worlds/export`
-		// Here is the structural difference: the handler does NOT receive a path.
-		// It asks for the operation, gets an opaque Handle and tells the back-end
-		// to open it. The one holding the disk is the node, from start to finish.
+	case "export":
 		name := req.URL.Query().Get("world")
 		doc, back, dest, ok := r.execWithBackend(w, req, srv, gameservers.OpWorldExport,
 			map[string]interface{}{"server_id": srv.ID, "world": name}, false)
@@ -516,7 +429,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 		}
 		deliverArtifact(w, req, back, dest, doc, safeDownloadName(name, "world")+".zip")
 
-	case "import": // 27-case: `worlds/import`
+	case "import":
 		if _, ok := r.mustPrimary(w, req); !ok {
 			return
 		}
@@ -539,17 +452,12 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 			httpx.WriteErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		// The zip goes to the NODE and comes back as a Handle. The dashboard never
-		// writes the file to a disk of its own: if it did, the path would start
-		// crossing the boundary again on the next call.
 		h, err := back.Receive(req.Context(), file)
 		if err != nil {
 			code, msg := translateNodeError(err, dest.Name)
 			httpx.WriteErr(w, code, msg)
 			return
 		}
-		// The SAME back-end as the upload: the handle lives in its vault. Asking
-		// for a new back-end here would lose the zip that has just been uploaded.
 		env, _ := json.Marshal(map[string]interface{}{
 			"server_id": srv.ID, "name": req.FormValue("name"), "handle": string(h),
 		})
@@ -562,7 +470,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 		}
 		writeRaw(w, doc)
 
-	case "rename": // 27-case: `worlds/rename`
+	case "rename":
 		var body struct {
 			World string `json:"world"`
 			Name  string `json:"name"`
@@ -578,7 +486,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 		}
 		writeRaw(w, doc)
 
-	case "duplicate": // 27-case: `worlds/duplicate`
+	case "duplicate":
 		var body struct {
 			World string `json:"world"`
 			Name  string `json:"name"`
@@ -594,7 +502,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 		}
 		writeRaw(w, doc)
 
-	case "delete": // 27-case: `worlds/delete`
+	case "delete":
 		var body struct {
 			World string `json:"world"`
 		}
@@ -614,10 +522,9 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 	}
 }
 
-// gameBackups covers the 5 `case`s of the backup family.
 func (r *Router) gameBackups(w http.ResponseWriter, req *http.Request, srv gameservers.Server, action string) {
 	switch action {
-	case "": // 27-case: `backups` ""
+	case "":
 		doc, ok := r.execOp(w, req, srv, gameservers.OpBackupList,
 			map[string]interface{}{"server_id": srv.ID}, false)
 		if !ok {
@@ -625,7 +532,7 @@ func (r *Router) gameBackups(w http.ResponseWriter, req *http.Request, srv games
 		}
 		writeRaw(w, doc)
 
-	case "create": // 27-case: `backups/create`
+	case "create":
 		doc, ok := r.execOp(w, req, srv, gameservers.OpBackupCreate,
 			map[string]interface{}{"server_id": srv.ID}, true)
 		if !ok {
@@ -633,7 +540,7 @@ func (r *Router) gameBackups(w http.ResponseWriter, req *http.Request, srv games
 		}
 		writeRaw(w, doc)
 
-	case "restore": // 27-case: `backups/restore`
+	case "restore":
 		var body struct {
 			File string `json:"file"`
 		}
@@ -641,9 +548,6 @@ func (r *Router) gameBackups(w http.ResponseWriter, req *http.Request, srv games
 			httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
 			return
 		}
-		// The stop→restore→start sequence moved to the back-end, where the
-		// container is. It used to live here and made three round trips; now it is
-		// one single operation, and the network cannot interrupt it midway.
 		doc, ok := r.execOp(w, req, srv, gameservers.OpBackupRestore,
 			map[string]interface{}{"server_id": srv.ID, "file": body.File}, true)
 		if !ok {
@@ -651,7 +555,7 @@ func (r *Router) gameBackups(w http.ResponseWriter, req *http.Request, srv games
 		}
 		writeRaw(w, doc)
 
-	case "download": // 27-case: `backups/download`
+	case "download":
 		file := req.URL.Query().Get("file")
 		doc, back, dest, ok := r.execWithBackend(w, req, srv, gameservers.OpBackupDownload,
 			map[string]interface{}{"server_id": srv.ID, "file": file}, false)
@@ -665,10 +569,6 @@ func (r *Router) gameBackups(w http.ResponseWriter, req *http.Request, srv games
 	}
 }
 
-// deliverArtifact opens the Handle returned by an operation and streams the bytes.
-//
-// No path, no `http.ServeFile`: the artifact may be on another machine, and the
-// dashboard only knows how to ask for it by token.
 func deliverArtifact(
 	w http.ResponseWriter, req *http.Request,
 	back gameservers.Backend, dest gameservers.NodeTarget,
@@ -692,8 +592,6 @@ func deliverArtifact(
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+suggestedName+`"`)
 	if _, err := io.Copy(w, rc); err != nil {
-		// The header has already gone out: writing an error body would produce a
-		// corrupted file that LOOKS complete. Only the log records it.
 		return
 	}
 }

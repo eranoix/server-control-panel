@@ -14,11 +14,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * The system floating selection bar over the terminal. Only a device can prove that
- * Android actually grants a floating `ActionMode` to this view: `startActionMode` may
- * return `null`, and the bar would then silently not appear.
- */
 @RunWith(AndroidJUnit4::class)
 class TerminalActionModeTest {
 
@@ -32,7 +27,6 @@ class TerminalActionModeTest {
         lateinit var bar: TerminalActionMode
         composeTestRule.runOnUiThread {
             val host = TerminalInputView(composeTestRule.activity)
-            // A detached view never gets an `ActionMode`.
             val root = composeTestRule.activity.findViewById<ViewGroup>(android.R.id.content)
             root.addView(host)
             host.requestFocus()
@@ -75,7 +69,6 @@ class TerminalActionModeTest {
     fun showTwice_doesNotOpenSecondBar() = withBar { bar, _ ->
         composeTestRule.runOnUiThread {
             bar.show()
-            // A resized selection re-anchors the bar instead of stacking another.
             bar.show()
             bar.update()
         }
@@ -86,8 +79,6 @@ class TerminalActionModeTest {
 
     @Test
     fun hideFromInside_doesNotNotifyCloserBack() = withBar { bar, recorder ->
-        // Anti-recursion latch: the caller of `hide()` usually cleared the selection
-        // already, and notifying it back would loop.
         composeTestRule.runOnUiThread {
             bar.show()
             bar.hide()
@@ -107,9 +98,6 @@ class TerminalActionModeTest {
         assertEquals(0, recorder.closed)
     }
 
-    // `SelectionMenuTest` covers the item list on the JVM; these check that the items
-    // reach the real system `Menu` with Android's labels and dispatch the right action.
-
     @Test
     fun systemMenuGetsAllActions_withDeviceLabels() = withBar { bar, _ ->
         composeTestRule.runOnUiThread { bar.show() }
@@ -124,7 +112,6 @@ class TerminalActionModeTest {
                 ?: item.customTitle
             assertEquals("label of ${item.action}", expected, entry.title.toString())
             assertEquals("order of ${item.action}", item.order, entry.order)
-            // `FloatingToolbar` hides items that are not both visible and enabled.
             assertTrue("${item.action} must be visible", entry.isVisible)
             assertTrue("${item.action} must be enabled", entry.isEnabled)
         }
@@ -132,8 +119,6 @@ class TerminalActionModeTest {
 
     @Test
     fun pasteIsInMenuEvenWithNothingCopied() = withBar { bar, _ ->
-        // The clipboard is empty here; Paste must still be shown, and `PasteAction`
-        // reports "nothing copied" on click.
         composeTestRule.runOnUiThread { bar.show() }
         composeTestRule.waitForIdle()
 
@@ -146,7 +131,6 @@ class TerminalActionModeTest {
         composeTestRule.runOnUiThread { bar.show() }
         composeTestRule.waitForIdle()
 
-        // Select all is the only action that keeps the bar open, so it goes first.
         trigger(bar, SelectionAction.SELECT_ALL)
         assertEquals(1, recorder.selectedAll)
         assertTrue("select all changes the selection without ending the gesture", bar.isShowing())
@@ -167,7 +151,6 @@ class TerminalActionModeTest {
 
     private fun trigger(bar: TerminalActionMode, action: SelectionAction) {
         composeTestRule.runOnUiThread {
-            // Same path as a tap: Menu -> ActionMode.Callback.onActionItemClicked.
             checkNotNull(bar.menuShown())
                 .performIdentifierAction(Menu.FIRST + action.ordinal, 0)
         }

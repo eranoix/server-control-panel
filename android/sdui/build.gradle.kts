@@ -1,4 +1,3 @@
-// Compose renderer for the closed 7-component SDUI vocabulary. No generic layout engine.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
@@ -12,7 +11,6 @@ android {
         minSdk = libs.versions.minSdk.get().toInt()
     }
 
-    // PayloadPreviewScreen gates on BuildConfig.DEBUG so it renders nothing in release builds.
     buildFeatures {
         buildConfig = true
     }
@@ -32,7 +30,6 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.kotlinx.coroutines.core)
-    // Needed directly: :data declares serialization-json as `implementation`, not `api`.
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
@@ -45,7 +42,6 @@ dependencies {
     debugImplementation(libs.compose.ui.test.manifest)
 }
 
-// Tests read the same real SDUI fixtures as :core, never a copy.
 tasks.withType<Test> {
     val fixturesDir = rootDir.parentFile.resolve("contracts/sdui/fixtures")
     systemProperty("sdui.fixtures.dir", fixturesDir.absolutePath)

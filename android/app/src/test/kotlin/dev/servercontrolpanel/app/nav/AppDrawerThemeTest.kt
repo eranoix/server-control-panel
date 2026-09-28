@@ -21,11 +21,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The appearance selector (now in Settings): reachable, highlighted and with no clipped label.
- * Uses the same phone geometry as [AppDrawerTest], since three labels side by side are what
- * gets clipped on a real device.
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class, qualifiers = "w411dp-h891dp-xxhdpi")
 class AppDrawerThemeTest {
@@ -93,8 +88,6 @@ class AppDrawerThemeTest {
     fun `no selector label wraps onto two lines on the real screen`() {
         renderDrawer()
 
-        // ThemeModeSelectorWidthTest checks the component alone; this checks it with the
-        // real screen's padding and neighbours.
         ThemeMode.entries.forEach { mode ->
             val layout = composeRule.onNodeWithText(mode.label).textLayout()
             assertEquals("label \"${mode.label}\" wrapped onto more than one line", 1, layout.lineCount)
@@ -105,7 +98,6 @@ class AppDrawerThemeTest {
     fun `the appearance selector opens Settings, above the other settings`() {
         renderDrawer()
 
-        // Appearance comes first: it is changed most often and its effect is immediate.
         val selector = composeRule.onNodeWithText(THEME_SELECTOR_LABEL)
             .fetchSemanticsNode().positionInRoot.y
         val update = composeRule.onNodeWithText(CHECK_UPDATE_LABEL)

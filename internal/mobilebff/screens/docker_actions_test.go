@@ -12,11 +12,6 @@ import (
 	"server-control-panel/internal/mobilebff/sdui"
 )
 
-// fakeDockerActionsBackend is an in-memory stand-in for DockerDeps' mutating
-// closures, plus spy counters — mirrors fakeSchedulerBackend
-// (scheduler_actions_test.go) so tests can assert a mutation NEVER happened
-// (e.g. deps.Prune must not be reached when the confirmation gate or the
-// empty-kinds validation rejects the request first).
 type fakeDockerActionsBackend struct {
 	mu sync.Mutex
 
@@ -114,14 +109,6 @@ func (b *fakeDockerActionsBackend) auditLog() []dockerAuditRecord {
 	return out
 }
 
-// --- Test 2: non-destructive round trip ---------------------------------
-
-// TestDockerAction_ContainerLifecycle_ReturnsPatchOrInvalidate proves
-// start/stop/restart call the right closure exactly once and return a valid
-// ActionResult (Patch when the container is still listable, Invalidate
-// otherwise — deps.ListContainers here returns an empty list, so every
-// lifecycle call falls back to Invalidate, which is itself a correct,
-// deliberately exercised branch of handleDockerContainerLifecycle).
 func TestDockerAction_ContainerLifecycle_ReturnsPatchOrInvalidate(t *testing.T) {
 	backend := newFakeDockerActionsBackend()
 	deps := backend.deps()
@@ -157,8 +144,6 @@ func TestDockerAction_ContainerLifecycle_ReturnsPatchOrInvalidate(t *testing.T) 
 	}
 }
 
-// TestDockerAction_ContainerLifecycle_EmptyIDIsNotFound proves an empty id
-// never reaches the domain closure.
 func TestDockerAction_ContainerLifecycle_EmptyIDIsNotFound(t *testing.T) {
 	backend := newFakeDockerActionsBackend()
 	deps := backend.deps()
@@ -175,8 +160,6 @@ func TestDockerAction_ContainerLifecycle_EmptyIDIsNotFound(t *testing.T) {
 	}
 }
 
-// TestDockerAction_ComposeUp_ReadsIDAsStackName proves compose.up reads the
-// clicked row's "id" as the stack name and returns Invalidate.
 func TestDockerAction_ComposeUp_ReadsIDAsStackName(t *testing.T) {
 	backend := newFakeDockerActionsBackend()
 	deps := backend.deps()
@@ -199,10 +182,6 @@ func TestDockerAction_ComposeUp_ReadsIDAsStackName(t *testing.T) {
 	}
 }
 
-// --- Test 4: prune body validation ---------------------------------------
-
-// TestDockerAction_PruneRun_AllFalseKindsIsFieldError proves an all-false
-// body never reaches deps.Prune.
 func TestDockerAction_PruneRun_AllFalseKindsIsFieldError(t *testing.T) {
 	backend := newFakeDockerActionsBackend()
 	deps := backend.deps()
@@ -225,9 +204,6 @@ func TestDockerAction_PruneRun_AllFalseKindsIsFieldError(t *testing.T) {
 	}
 }
 
-// TestDockerAction_PruneRun_SelectedKindsOnly proves deps.Prune receives
-// exactly the true-valued kinds, in the documented order, and the result is
-// returned as Patch (the prune screen has no table to Invalidate).
 func TestDockerAction_PruneRun_SelectedKindsOnly(t *testing.T) {
 	backend := newFakeDockerActionsBackend()
 	deps := backend.deps()
@@ -265,14 +241,6 @@ func TestDockerAction_PruneRun_SelectedKindsOnly(t *testing.T) {
 	}
 }
 
-// --- Test 1 (destructive gate) + Test 3 (RBAC parity) --------------------
-
-// registerDockerActionsForTest registers the real docker.* actions in this
-// test binary's global sdui action registry EXACTLY once — RegisterAction
-// panics on a duplicate ActionID, and only the tests below need the real
-// registry (to exercise RunAction's confirmation/typed-confirmation gates
-// and the authorize step end to end); every other test in this file calls
-// the handler-producing functions directly, bypassing the registry.
 var (
 	registerDockerActionsTestOnce sync.Once
 	registerDockerActionsTestDeps *fakeDockerActionsBackend
@@ -286,12 +254,6 @@ func registerDockerActionsForTest() *fakeDockerActionsBackend {
 	return registerDockerActionsTestDeps
 }
 
-// TestDockerAction_DestructiveActionsRequireConfirmation proves
-// container.remove/image.remove/compose.down/prune.run are unreachable
-// without confirmation: an unconfirmed RunAction call returns a
-// ConfirmationFieldKey FieldErrors WITHOUT ever calling the domain closure.
-// prune.run additionally requires the exact typed string "PRUNE" even after
-// Confirmed:true.
 func TestDockerAction_DestructiveActionsRequireConfirmation(t *testing.T) {
 	backend := registerDockerActionsForTest()
 	admin, _ := testDockerViewers()
@@ -326,8 +288,6 @@ func TestDockerAction_DestructiveActionsRequireConfirmation(t *testing.T) {
 	}
 	_ = up
 
-	// prune.run: confirmed=true but wrong/missing typed confirmation is still
-	// rejected, with no call to deps.Prune.
 	_, err := sdui.RunAction(context.Background(), dockerActionPruneRun, admin, nil,
 		mustJSONBytes(t, dockerPruneInput{Containers: true}), sdui.Confirmation{Confirmed: true, Typed: "not-prune"})
 	var fe sdui.FieldErrors
@@ -338,7 +298,6 @@ func TestDockerAction_DestructiveActionsRequireConfirmation(t *testing.T) {
 		t.Errorf("Prune was called with the wrong text confirmation, want 0 calls")
 	}
 
-	// Now confirm properly and prove the handler actually runs.
 	result, err := sdui.RunAction(context.Background(), dockerActionPruneRun, admin, nil,
 		mustJSONBytes(t, dockerPruneInput{Containers: true}), sdui.Confirmation{Confirmed: true, Typed: "PRUNE"})
 	if err != nil {
@@ -352,11 +311,6 @@ func TestDockerAction_DestructiveActionsRequireConfirmation(t *testing.T) {
 	}
 }
 
-// TestDockerAction_NoVolumeOrNetworkRemoveIsRegistered proves this package
-// never registers a single-item delete for volumes/networks anywhere —
-// invoking a hypothetical "docker.volume.remove"/"docker.network.remove" id
-// gets the same ErrActionNotFound as any other unknown action id, because no
-// such id was ever passed to RegisterAction.
 func TestDockerAction_NoVolumeOrNetworkRemoveIsRegistered(t *testing.T) {
 	registerDockerActionsForTest()
 	admin, _ := testDockerViewers()
@@ -369,17 +323,10 @@ func TestDockerAction_NoVolumeOrNetworkRemoveIsRegistered(t *testing.T) {
 	}
 }
 
-// TestDockerAction_NonAdminDestructiveActionsNotFound proves a non-admin
-// invoking any destructive Docker action directly — even with a fully
-// confirmed request — gets sdui.ErrActionNotFound at RunAction's authorize
-// step, never reaching the confirmation gate or the handler.
 func TestDockerAction_NonAdminDestructiveActionsNotFound(t *testing.T) {
 	backend := registerDockerActionsForTest()
 	_, nonAdmin := testDockerViewers()
 
-	// backend is shared (sync.Once) across every test in this file that calls
-	// registerDockerActionsForTest, so counts are compared as a delta against
-	// this baseline, never an absolute value.
 	_, _, _, baseRemoveC, baseRemoveI, _, baseDown, basePrune := backend.counts()
 
 	cases := []struct {

@@ -8,25 +8,10 @@ import (
 	"strings"
 )
 
-// handlers_port.go — editor port forwarding. A dev process running in the
-// code-server terminal (e.g. `npm run dev` on 5173, `python -m http.server 8000`)
-// becomes reachable through a gated URL /_port/<n>/ that proxies to
-// 127.0.0.1:<n>. Primary-only (same gate as the editor — it is root access to the VPS).
-//
-// Known limitation (path-based, not subdomain): apps that emit ABSOLUTE URLs
-// (/asset) break under the sub-path — the robust alternative (one subdomain per
-// port) would require wildcard DNS+TLS. For a genuinely publishable preview,
-// use the Deploy tab (nginx vhost with a domain). WebSocket works (FlushInterval
-// -1 + the ReverseProxy's native upgrade).
-
 const portForwardPrefix = "/_port/"
 
-// selfPort is server-control-panel's own port — never proxy to it (loop).
 const selfPort = 8765
 
-// parsePortPath extracts the port and the rest of the path from /_port/<n>[/...].
-// ok=false when malformed. needSlash=true when the trailing slash is missing
-// (/_port/8000); the caller redirects so relative assets resolve.
 func parsePortPath(p string) (port int, rest string, needSlash, ok bool) {
 	s := strings.TrimPrefix(p, portForwardPrefix)
 	if s == p || s == "" {
@@ -52,11 +37,9 @@ func parsePortPath(p string) (port int, rest string, needSlash, ok bool) {
 }
 
 func forwardablePort(n int) bool {
-	// User ports only; never the control plane's own, nor <1024 (system/root).
 	return n >= 1024 && n <= 65535 && n != selfPort
 }
 
-// portForwardProxy serve /_port/<n>/... → 127.0.0.1:<n>. Gate primary-only.
 func (r *Router) portForwardProxy() http.Handler {
 	proxy := &httputil.ReverseProxy{
 		FlushInterval: -1,
@@ -68,7 +51,6 @@ func (r *Router) portForwardProxy() http.Handler {
 			req.URL.Scheme = "http"
 			req.URL.Host = "127.0.0.1:" + strconv.Itoa(port)
 			req.URL.Path = rest
-			// nginx terminates TLS; tell the upstream app.
 			if req.Header.Get("X-Forwarded-Proto") == "" {
 				req.Header.Set("X-Forwarded-Proto", "https")
 			}
@@ -94,14 +76,12 @@ func (r *Router) portForwardProxy() http.Handler {
 	})
 }
 
-// devPort is a port listening on the host.
 type devPort struct {
 	Port int    `json:"port"`
 	Addr string `json:"addr"`
 	Proc string `json:"proc"`
 }
 
-// GET /api/dev/ports → listening TCP ports (for the forwarding panel).
 func (r *Router) handleDevPorts(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -113,8 +93,6 @@ func (r *Router) handleDevPorts(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]any{"ports": ports, "prefix": portForwardPrefix})
 }
 
-// listListeningPorts runs `ss -ltnpH` and extracts the forwardable ports, deduped
-// by port. Silent failure → empty list.
 func listListeningPorts() []devPort {
 	out, err := exec.Command("ss", "-ltnpH").Output()
 	if err != nil {
@@ -127,15 +105,12 @@ func listListeningPorts() []devPort {
 		if len(f) < 4 {
 			continue
 		}
-		local := f[3] // ex.: 127.0.0.1:8000  ou  *:8000  ou  [::]:8000
+		local := f[3]
 		idx := strings.LastIndexByte(local, ':')
 		if idx < 0 {
 			continue
 		}
 		host := local[:idx]
-		// Loopback binds only: those are the dev servers started in the editor's
-		// terminal. Public ports (0.0.0.0/[::]) belong to containers and already have
-		// their own access — listing them would be pure noise. (Manual forwarding covers the rest.)
 		if host != "127.0.0.1" && host != "[::1]" && host != "::1" {
 			continue
 		}

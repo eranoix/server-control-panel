@@ -29,7 +29,6 @@ func TestPRURLFor(t *testing.T) {
 			t.Errorf("prURLFor(%q)=%q,%q want contains %q,%q", c.remote, u, prov, c.wantSub, c.wantProv)
 		}
 	}
-	// unknown provider → error
 	if _, _, err := prURLFor("git@example.com:a/b.git", "x"); err == nil {
 		t.Error("an unknown provider should error")
 	}
@@ -54,7 +53,6 @@ func TestHandlerTagCreateDelete(t *testing.T) {
 
 func TestHandlerCommitIdentitySelector(t *testing.T) {
 	dir := setupMergeRepo(t)
-	// repo with no expected identity → the commit uses the CHOSEN identity.
 	cfg := cfgWith(config.GitRepo{ID: "t", Path: dir, Name: "T", Policy: policyWrite})
 	h := Handler(cfg, nil, nil)
 
@@ -62,7 +60,6 @@ func TestHandlerCommitIdentitySelector(t *testing.T) {
 	writeFile(t, dir, "a.txt", "X\n")
 	do(h, "POST", "/stage?repo=t", `{"paths":["a.txt"]}`, "tester")
 
-	// commit choosing the "work" identity (seed)
 	w := do(h, "POST", "/commit?repo=t", `{"message":"via work","identity_id":"work"}`, "tester")
 	if w.Code != 200 {
 		t.Fatalf("commit: %d %s", w.Code, w.Body.String())
@@ -78,41 +75,32 @@ func TestHandlerIdentitiesAndCherryPick(t *testing.T) {
 	cfg := cfgWith(config.GitRepo{ID: "t", Path: dir, Name: "T", Policy: policyWrite, ExpName: "Tester", ExpEmail: "tester@local"})
 	h := Handler(cfg, nil, nil)
 
-	// /identities lists the seed
 	w := do(h, "GET", "/identities", "", "tester")
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "northwind.example") {
 		t.Errorf("/identities: %d %s", w.Code, w.Body.String())
 	}
 
-	// cherry-pick: take the hash of commit "C" (on the feat branch) onto main
 	out, _ := exec.Command("git", "-C", dir, "rev-parse", "feat").Output()
 	cHash := strings.TrimSpace(string(out))
-	// it is already merged, so the cherry-pick will fail (empty) — this only
-	// checks that the route answers with a clean 4xx, not 404/500.
 	w = do(h, "POST", "/cherry-pick?repo=t", `{"hash":"`+cHash+`"}`, "tester")
 	if w.Code == http.StatusNotFound || w.Code == http.StatusInternalServerError {
 		t.Errorf("cherry-pick broken route: %d %s", w.Code, w.Body.String())
 	}
 }
 
-// TestHandlerFileRejectsBinaryDirLarge makes sure /file refuses a binary, a
-// directory and a huge file (a cause of Monaco freezing) with 422.
 func TestHandlerFileRejectsBinaryDirLarge(t *testing.T) {
 	dir := setupMergeRepo(t)
 	cfg := cfgWith(config.GitRepo{ID: "t", Path: dir, Name: "T", Policy: policyWrite, ExpName: "Tester", ExpEmail: "tester@local"})
 	h := Handler(cfg, nil, nil)
 
-	// binary (with a NUL)
 	os.WriteFile(dir+"/bin.dat", []byte{0x7f, 0x45, 0x4c, 0x46, 0x00, 0x01, 0x02}, 0o644)
 	if w := do(h, "GET", "/file?repo=t&path=bin.dat", "", "tester"); w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("a binary should 422, got %d %s", w.Code, w.Body.String())
 	}
-	// directory
 	os.Mkdir(dir+"/sub", 0o755)
 	if w := do(h, "GET", "/file?repo=t&path=sub", "", "tester"); w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("a directory should 422, got %d", w.Code)
 	}
-	// normal text → 200
 	if w := do(h, "GET", "/file?repo=t&path=a.txt", "", "tester"); w.Code != 200 {
 		t.Errorf("text should 200, got %d %s", w.Code, w.Body.String())
 	}

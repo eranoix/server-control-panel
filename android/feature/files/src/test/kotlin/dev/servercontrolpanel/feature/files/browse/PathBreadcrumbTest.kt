@@ -3,10 +3,6 @@ package dev.servercontrolpanel.feature.files.browse
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/**
- * The breadcrumb always answers "where am I"; a step pointing at the wrong path sends the
- * next (possibly destructive) action to the wrong folder.
- */
 class PathBreadcrumbTest {
 
     @Test
@@ -29,7 +25,6 @@ class PathBreadcrumbTest {
         )
     }
 
-    /** A trailing slash is cosmetic in a path and must not become an empty step. */
     @Test
     fun `a trailing slash does not create a phantom step`() {
         assertEquals(
@@ -38,7 +33,6 @@ class PathBreadcrumbTest {
         )
     }
 
-    /** `//opt///data` is a valid path; empty segments must not become invisible steps. */
     @Test
     fun `repeated slashes do not produce invisible steps`() {
         val crumbs = pathCrumbs("//opt///data")

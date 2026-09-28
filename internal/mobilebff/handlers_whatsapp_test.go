@@ -15,9 +15,6 @@ import (
 	"server-control-panel/internal/whatsapp"
 )
 
-// fakeWhatsappSvc is a double of the whole *whatsapp.Service (not just the
-// Backend) — it tests exactly the boundary this package depends on
-// (whatsappSvc), without needing a real Manager/vault/WAHA container.
 type fakeWhatsappSvc struct {
 	mu sync.Mutex
 
@@ -56,8 +53,6 @@ type fakeWhatsappSvc struct {
 	lastSendFileArg sendFileCall
 }
 
-// sendFileCall captures the arguments of the last call to SendFileDedup, so the
-// upload tests can assert what actually reached the "service".
 type sendFileCall struct {
 	msgType, filename, mimeType, caption, quotedID, clientMsgID string
 	data                                                        []byte
@@ -141,9 +136,6 @@ func fakeResolver(svc *fakeWhatsappSvc) whatsappResolver {
 	}
 }
 
-// newWhatsappTestAPI assembles an isolated huma.API with only the WhatsApp
-// registrar, injecting the fake resolver — avoiding any dependence on the
-// global order/registration of all the other handlers_*.go packages.
 func newWhatsappTestAPI(svc *fakeWhatsappSvc) (huma.API, *http.ServeMux) {
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(mux, Prefix, huma.DefaultConfig("test", "0.0"))
@@ -240,13 +232,6 @@ func TestWhatsAppMessages_MapsFieldsAndBackfilling(t *testing.T) {
 	}
 }
 
-// TestWhatsAppSendMessage_ClientMsgIDIdempotent is the central proof of
-// send idempotency: two POSTs with the SAME client_msg_id, through the whole
-// HTTP layer (a real huma route, not a direct Go function call), result
-// in a single call to SendTextDedup — which in turn only calls
-// Client.SendText once. Here we prove the HTTP end of the chain; the end with
-// the real dedupe is already covered by TestSendTextDedup in
-// internal/whatsapp/service_export_test.go.
 func TestWhatsAppSendMessage_ClientMsgIDIdempotent(t *testing.T) {
 	svc := &fakeWhatsappSvc{sendID: "wamid-999"}
 	_, mux := newWhatsappTestAPI(svc)
@@ -276,13 +261,6 @@ func TestWhatsAppSendMessage_ClientMsgIDIdempotent(t *testing.T) {
 	if resp1.ID != "wamid-999" || resp2.ID != "wamid-999" {
 		t.Fatalf("ids = %q, %q, want both wamid-999", resp1.ID, resp2.ID)
 	}
-	// The boundary tested here is HTTP -> handler -> SendTextDedup: the fake
-	// counts how many times the HANDLER called SendTextDedup over the HTTP route.
-	// In this double, SendTextDedup itself does not deduplicate (the one that
-	// dedupes is the real *whatsapp.Service, proved in service_export_test.go) — what
-	// this assertion proves is that the HTTP handler does not introduce a SECOND send
-	// on a retry, and that the same client_msg_id reaches SendTextDedup intact
-	// in both calls.
 	svc.mu.Lock()
 	calls := svc.sendCalls
 	svc.mu.Unlock()

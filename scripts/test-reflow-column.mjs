@@ -1,24 +1,4 @@
 #!/usr/bin/env node
-// test-reflow-column.mjs — one column more or less must not destroy the
-// history of the terminal.
-//
-// The report, from a phone: "I cannot see the first options; it is cutting off,
-// repeating the text". The session was at 38x56.
-//
-// The cause is NOT a buffer limit — the whole chain was read and it does not
-// truncate: the server relays raw bytes in 8 KB blocks and BLOCKS under pressure
-// (pty.go), the client queue has no ceiling and flow control tells the server to
-// pause instead of dropping. What truncates is REFLOW.
-//
-// Changing `cols` makes xterm re-wrap the entire scrollback. An app that repaints
-// by cursor addressing — the Claude CLI: go up N lines, clear, redraw — counts
-// the PHYSICAL lines it wrote. After the rewrap that N is wrong: it clears the
-// wrong lines and draws over what is left. At 56 columns, ONE column is 1.8% of
-// the width: it fits in a scrollbar that appears, in the virtual keyboard, or in
-// the rounding of width per cell tipping over.
-//
-// This pin asserts nothing about the text of the code: it RUNS a real xterm,
-// provokes the damage, and then exercises the real guards of BOTH clients.
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -44,9 +24,6 @@ const shell = fs.readFileSync(path.join(WEB, 'vendor/panel/app/00-shell.js'), 'u
 const recovery = fs.readFileSync(path.join(WEB, 'recovery-term.html'), 'utf8');
 const index = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
 
-// ── extraction of the REAL functions ────────────────────────────────────────
-// Extracting (instead of reimplementing) is what stops the pin from passing
-// while the product regresses: delete the guard and there is nothing to extract.
 const mSafeFit = shell.match(/^ {4}_safeFit\(fit\)\{\n([\s\S]*?)^ {4}\},$/m);
 if (!mSafeFit) { no('could not find _safeFit in 00-shell.js — the panel guard is gone'); process.exit(1); }
 const panelSafeFitBody = mSafeFit[1];
@@ -55,7 +32,6 @@ const mRecoverySafeFit = recovery.match(/^function safeFit\(\) \{\n([\s\S]*?)^\}
 if (!mRecoverySafeFit) { no('could not find safeFit in recovery-term.html — the recovery guard is gone'); process.exit(1); }
 const recoverySafeFitBody = mRecoverySafeFit[1];
 
-// ── the page of the pin ─────────────────────────────────────────────────────
 const pageHtml = `<!doctype html><meta charset="utf-8">
 <link rel="stylesheet" href="/vendor/xterm/xterm.css">
 <style>html,body{margin:0;background:#000} #t{width:900px;height:600px}</style>
@@ -135,8 +111,6 @@ const srv = http.createServer((req, res) => {
 await new Promise(r => srv.listen(0, '127.0.0.1', r));
 const base = 'http://127.0.0.1:' + srv.address().port + '/';
 
-// Same browser resolution as the tabs pin: the playwright cache or the system
-// chrome. Skipping for lack of a browser would be faking coverage.
 function findBrowser() {
   const c = [];
   if (process.env.PANEL_CHROMIUM) c.push(process.env.PANEL_CHROMIUM);
@@ -154,8 +128,6 @@ const page = await browser.newPage();
 await page.goto(base);
 await page.waitForFunction('window.__ready === true', null, { timeout: 15000 });
 
-// ── 1. THE DAMAGE IS REAL ───────────────────────────────────────────────────
-// Without this the rest would be a guard against an undemonstrated problem.
 const noResize = await page.evaluate('window.__scenario(false)');
 const withResize = await page.evaluate('window.__scenario(true)');
 
@@ -167,9 +139,6 @@ withResize > noResize
   ? ok('reproduction: ONE column less between paint and repaint leaves ' + withResize + ' copies (was ' + noResize + ') — repeated text, exactly as reported')
   : no('reproduction: the ±1 column did not corrupt (' + withResize + ' copies) — the scenario does not exercise the reflow');
 
-// ── 2. THE PANEL GUARD, with the real xterm ─────────────────────────────────
-// The fit is stubbed because it is the thing that MEASURES — and measuring is
-// exactly what we are simulating. Terminal, reflow and column count are real.
 const guard = async (script) => page.evaluate(`(async () => {
   const t = window.__term;
   // DRAIN before starting. Each scenario arms 300ms timers inside the guard
@@ -228,7 +197,6 @@ lines.cols === 56 && lines.rows === 22
   ? ok('panel: the ROWS go through at once even with the column quarantined (virtual keyboard)')
   : no('panel: rows stuck along with the column (cols=' + lines.cols + ', rows=' + lines.rows + ') — the prompt stays hidden');
 
-// ── 3. THE RECOVERY GUARD — separate code on purpose ────────────────────────
 const rec = await page.evaluate(`(async () => {
   const t = window.__term;
   await new Promise(r => setTimeout(r, 400));   // drain the timers of the previous scenario
@@ -260,9 +228,6 @@ rec.large === 40
 await browser.close();
 srv.close();
 
-// ── 4. No path escapes the guard ────────────────────────────────────────────
-// The bug class only closes if EVERY fit goes through the guard. A new raw fit,
-// added months later, reopens the hole with nothing flagging it.
 {
   const fora = recovery.split('\n')
     .filter(l => /fitAddon\.fit\(\)/.test(l))
@@ -274,34 +239,21 @@ srv.close();
   const rawShell = shell.split('\n')
     .filter(l => /\bfit\.fit\(\)/.test(l))
     .filter(l => !/_safeFit/.test(l));
-  // The only legitimate fit.fit() calls are the ones INSIDE _safeFit.
   const inside = (panelSafeFitBody.match(/fit\.fit\(\)/g) || []).length;
   rawShell.length === inside
     ? ok('panel: all ' + inside + ' existing fit.fit() calls are inside _safeFit')
     : no('panel: there is a fit.fit() outside _safeFit (' + rawShell.length + ' in the file, ' + inside + ' in the guard)');
 }
 
-// ── 5. The usable width of the terminal (the desktop side of the same bug) ──
-// Comments stripped: these assertions talk about CSS, and a comment that QUOTES
-// the rule (e.g. the history of where it lived) must not pass for implementation
-// nor trigger the counter-test. That is exactly what happened when it was moved.
 const indexCss = index.replace(/\/\*[\s\S]*?\*\//g, '');
-// The protection is no longer a reserved gutter, it is the impossibility of a
-// scrollbar: on the terminal screen #content does not scroll, so no bar can
-// appear and steal a column. Same bug covered, at no width cost on any page.
 /#content\.is-noscroll\s*\{[^}]*overflow:\s*hidden/.test(indexCss)
   ? ok('desktop: #content.is-noscroll does not scroll — no bar can steal a column from xterm')
   : no('desktop: the #content.is-noscroll{overflow:hidden} rule is gone — the bar steals a column again');
 
-// The rule only counts if someone turns it on in the terminal screen. Without
-// this pair, the CSS above is orphaned and the guarantee vanishes silently.
 /is-noscroll/.test(indexCss) && /currentView\s*===\s*'terminal'\s*\?\s*'is-noscroll'/.test(indexCss)
   ? ok('desktop: <main> turns .is-noscroll on in the terminal screen')
   : no('desktop: <main> no longer turns .is-noscroll on — the rule is orphaned');
 
-// Counter-test: on html,body the reservation protects NO column at all (both have
-// overflow:hidden, they never scroll) and still eats 10px+10px of the width of
-// EVERY page — measured: window 1303 → body.clientWidth 1283. Back there = regression.
 /html,\s*body\s*\{[^}]*scrollbar-gutter:\s*stable/.test(indexCss)
   ? no('desktop: scrollbar-gutter is back on html,body — a dead 20px strip, and they do not scroll')
   : ok('desktop: html,body reserve no gutter (they never scroll; reserving there only eats width)');

@@ -2,12 +2,6 @@ package dev.servercontrolpanel.sdui.registry
 
 import java.io.File
 
-/**
- * Reads the real fixture corpus at `contracts/sdui/fixtures` (wired by
- * `:sdui`'s `build.gradle.kts` via the `sdui.fixtures.dir` system property,
- * the same mechanism `:core`'s tests use) — never a copy pasted into test
- * source, so a fixture edit is guaranteed to be seen here too.
- */
 internal object SduiFixtures {
     val directory: File by lazy {
         val path = System.getProperty("sdui.fixtures.dir")

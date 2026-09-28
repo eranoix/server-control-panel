@@ -12,19 +12,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/**
- * The real cycle on a device or emulator: apply the 0.1.5 -> 0.1.6 patch
- * (built by the same `hdiffz` the server runs) to the signed 0.1.5 APK and
- * assert the result's SHA-256 is identical to the signed 0.1.6 APK.
- *
- * The fixtures are not committed (about 66 MB) and this test FAILS without
- * them, deliberately, rather than skipping and leaving the suite green without
- * this proof. Generate them with:
- *
- * ```
- * android/patch-engine/tools/make-patch-fixtures.sh
- * ```
- */
 class ApkPatcherRealApkTest {
 
     private companion object {
@@ -33,18 +20,8 @@ class ApkPatcherRealApkTest {
         const val PATCH_ASSET = "patch-fixtures/update.hdiff"
         const val EXPECTED_ASSET = "patch-fixtures/expected.properties"
 
-        /**
-         * Ceiling on the PEAK native heap during the patch. Guards against
-         * raising `DEFAULT_CACHE_MEMORY_BYTES` past the old APK size, which
-         * with `_IS_NEED_CACHE_OLD_ALL=1` loads all of it into memory.
-         *
-         * Must be a sampled peak, since `hpatchz` frees everything before
-         * returning. 16 MiB leaves headroom over the measured 8.8 MB and still
-         * catches a jump to 33 MB.
-         */
         const val NATIVE_HEAP_PEAK_CEILING_BYTES = 16L * 1024 * 1024
 
-        /** Peak sampling interval; the whole patch takes about 100 ms on the emulator. */
         const val HEAP_SAMPLE_INTERVAL_MS = 2L
     }
 
@@ -52,8 +29,6 @@ class ApkPatcherRealApkTest {
 
     @Before
     fun setUp() {
-        // Create the directory BEFORE the fixture check, so a failed check is
-        // reported as-is instead of being masked by an error in `tearDown`.
         dir = File(
             InstrumentationRegistry.getInstrumentation().targetContext.cacheDir,
             "realapk-${System.nanoTime()}",
@@ -85,8 +60,6 @@ class ApkPatcherRealApkTest {
         val patch = PatchFixtures.copyOut(PATCH_ASSET, dir, "update.hdiff")
         val out = File(dir, "servercontrolpanel-0.1.6.apk")
 
-        // Sanity check on the fixture itself, so a corrupted asset is not
-        // blamed on the patcher.
         assertEquals(
             "base.apk came out of the asset different from what went in",
             expectedProps.getProperty("oldSha256"),
@@ -123,10 +96,6 @@ class ApkPatcherRealApkTest {
         )
     }
 
-    /**
-     * Samples `Debug.getNativeHeapAllocatedSize()` on a parallel thread to
-     * estimate the PEAK, since `hpatchz` frees everything before returning.
-     */
     private class HeapPeakSampler(private val baseline: Long) : Thread() {
         @Volatile private var running = true
 
@@ -163,8 +132,6 @@ class ApkPatcherRealApkTest {
         val base = PatchFixtures.copyOut(BASE_ASSET, dir, "base.apk")
         val patch = PatchFixtures.copyOut(PATCH_ASSET, dir, "update.hdiff")
 
-        // An "almost right" base (same size, a few bytes swapped): the most
-        // dangerous case, because the diff header still checks out.
         val wrongBase = File(dir, "wrong-base.apk").apply {
             val bytes = base.readBytes()
             for (i in bytes.indices step 1_000_000) bytes[i] = (bytes[i] + 1).toByte()

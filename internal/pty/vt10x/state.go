@@ -26,10 +26,8 @@ const (
 	cursorOrigin
 )
 
-// ModeFlag represents various terminal mode states.
 type ModeFlag uint32
 
-// Terminal modes
 const (
 	ModeWrap ModeFlag = 1 << iota
 	ModeInsert
@@ -53,10 +51,8 @@ const (
 	ModeMouseMask = ModeMouseButton | ModeMouseMotion | ModeMouseX10 | ModeMouseMany
 )
 
-// ChangeFlag represents possible state changes of the terminal.
 type ChangeFlag uint32
 
-// Terminal changes to occur in VT.ReadState
 const (
 	ChangedScreen ChangeFlag = 1 << iota
 	ChangedTitle
@@ -78,13 +74,9 @@ type Cursor struct {
 
 type parseState func(c rune)
 
-// State represents the terminal emulation state. Use Lock/Unlock
-// methods to synchronize data access with VT.
 type State struct {
 	DebugLogger *log.Logger
 
-	// server-control-panel PATCH: who receives the lines that leave through the top.
-	// See `panel.go` and the patch in [State.scrollUp].
 	onScrollOut func(lines [][]Glyph)
 
 	w             io.Writer
@@ -93,10 +85,10 @@ type State struct {
 	cols, rows    int
 	lines         []line
 	altLines      []line
-	dirty         []bool // line dirtiness
+	dirty         []bool
 	anydirty      bool
 	cur, curSaved Cursor
-	top, bottom   int // scroll limits
+	top, bottom   int
 	mode          ModeFlag
 	state         parseState
 	str           strEscape
@@ -134,19 +126,15 @@ func (t *State) unlock() {
 	t.mu.Unlock()
 }
 
-// Lock locks the state object's mutex.
 func (t *State) Lock() {
 	t.mu.Lock()
 }
 
-// Unlock resets change flags and unlocks the state object's mutex.
 func (t *State) Unlock() {
 	t.resetChanges()
 	t.mu.Unlock()
 }
 
-// Cell returns the glyph containing the character code, foreground color, and
-// background color at position (x, y) relative to the top left of the terminal.
 func (t *State) Cell(x, y int) Glyph {
 	cell := t.lines[y][x]
 	fg, ok := t.colorOverride[cell.FG]
@@ -160,39 +148,26 @@ func (t *State) Cell(x, y int) Glyph {
 	return cell
 }
 
-// Cursor returns the current position of the cursor.
 func (t *State) Cursor() Cursor {
 	return t.cur
 }
 
-// CursorVisible returns the visible state of the cursor.
 func (t *State) CursorVisible() bool {
 	return t.mode&ModeHide == 0
 }
 
-// Mode returns the current terminal mode.
 func (t *State) Mode() ModeFlag {
 	return t.mode
 }
 
-// Title returns the current title set via the tty.
 func (t *State) Title() string {
 	return t.title
 }
 
-/*
-// ChangeMask returns a bitfield of changes that have occured by VT.
-func (t *State) ChangeMask() ChangeFlag {
-	return t.changed
-}
-*/
-
-// Changed returns true if change has occured.
 func (t *State) Changed(change ChangeFlag) bool {
 	return t.changed&change != 0
 }
 
-// resetChanges resets the change mask and dirtiness.
 func (t *State) resetChanges() {
 	for i := range t.dirty {
 		t.dirty[i] = false
@@ -249,16 +224,15 @@ func (t *State) newline(firstCol bool) {
 	}
 }
 
-// table from st, which in turn is from rxvt :)
 var gfxCharTable = [62]rune{
-	'↑', '↓', '→', '←', '█', '▚', '☃', // A - G
-	0, 0, 0, 0, 0, 0, 0, 0, // H - O
-	0, 0, 0, 0, 0, 0, 0, 0, // P - W
-	0, 0, 0, 0, 0, 0, 0, ' ', // X - _
-	'◆', '▒', '␉', '␌', '␍', '␊', '°', '±', // ` - g
-	'␤', '␋', '┘', '┐', '┌', '└', '┼', '⎺', // h - o
-	'⎻', '─', '⎼', '⎽', '├', '┤', '┴', '┬', // p - w
-	'│', '≤', '≥', 'π', '≠', '£', '·', // x - ~
+	'↑', '↓', '→', '←', '█', '▚', '☃',
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, ' ',
+	'◆', '▒', '␉', '␌', '␍', '␊', '°', '±',
+	'␤', '␋', '┘', '┐', '┌', '└', '┼', '⎺',
+	'⎻', '─', '⎼', '⎽', '├', '┤', '┴', '┬',
+	'│', '≤', '≥', 'π', '≠', '£', '·',
 }
 
 func (t *State) setChar(c rune, attr *Glyph, x, y int) {
@@ -271,7 +245,6 @@ func (t *State) setChar(c rune, attr *Glyph, x, y int) {
 	t.dirty[y] = true
 	t.lines[y][x] = *attr
 	t.lines[y][x].Char = c
-	//if t.options.BrightBold && attr.Mode&attrBold != 0 && attr.FG < 8 {
 	if attr.Mode&attrBold != 0 && attr.FG < 8 {
 		t.lines[y][x].FG = attr.FG + 8
 	}
@@ -304,7 +277,6 @@ func (t *State) reset() {
 	t.moveTo(0, 0)
 }
 
-// TODO: definitely can improve allocs
 func (t *State) resize(cols, rows int) bool {
 	if cols == t.cols && rows == t.rows {
 		return false
@@ -475,22 +447,10 @@ func (t *State) scrollDown(orig, n int) {
 		t.dirty[i-n] = true
 	}
 
-	// TODO: selection scroll
 }
 
 func (t *State) scrollUp(orig, n int) {
 	n = clamp(n, 0, t.bottom-orig+1)
-	// ── server-control-panel PATCH ────────────────────────────────────────────────
-	// The lines that leave through the top are the session's HISTORY. The original
-	// emulator discards them — for it, scrollback is the problem of whoever draws.
-	// Here they are the product: they are the only record of what the person saw that does not
-	// carry the artifacts of a cold replay.
-	//
-	// The copy has to happen BEFORE the `clear` just below, which erases
-	// precisely those lines before reusing them at the bottom.
-	//
-	// It only counts when the scroll is of the whole screen (orig == 0): scrolling inside
-	// a region defined by a program is that program's scratch space, not history.
 	if t.onScrollOut != nil && orig == 0 && n > 0 && t.mode&ModeAltScreen == 0 {
 		leaving := make([][]Glyph, 0, n)
 		for i := orig; i < orig+n && i < len(t.lines); i++ {
@@ -508,7 +468,6 @@ func (t *State) scrollUp(orig, n int) {
 		t.dirty[i+n] = true
 	}
 
-	// TODO: selection scroll
 }
 
 func (t *State) modMode(set bool, bit ModeFlag) {
@@ -523,55 +482,53 @@ func (t *State) setMode(priv bool, set bool, args []int) {
 	if priv {
 		for _, a := range args {
 			switch a {
-			case 1: // DECCKM - cursor key
+			case 1:
 				t.modMode(set, ModeAppCursor)
-			case 5: // DECSCNM - reverse video
+			case 5:
 				mode := t.mode
 				t.modMode(set, ModeReverse)
 				if mode != t.mode {
-					// TODO: redraw
 				}
-			case 6: // DECOM - origin
+			case 6:
 				if set {
 					t.cur.State |= cursorOrigin
 				} else {
 					t.cur.State &^= cursorOrigin
 				}
 				t.moveAbsTo(0, 0)
-			case 7: // DECAWM - auto wrap
+			case 7:
 				t.modMode(set, ModeWrap)
-			// IGNORED:
-			case 0, // error
-				2,  // DECANM - ANSI/VT52
-				3,  // DECCOLM - column
-				4,  // DECSCLM - scroll
-				8,  // DECARM - auto repeat
-				18, // DECPFF - printer feed
-				19, // DECPEX - printer extent
-				42, // DECNRCM - national characters
-				12: // att610 - start blinking cursor
+			case 0,
+				2,
+				3,
+				4,
+				8,
+				18,
+				19,
+				42,
+				12:
 				break
-			case 25: // DECTCEM - text cursor enable mode
+			case 25:
 				t.modMode(!set, ModeHide)
-			case 9: // X10 mouse compatibility mode
+			case 9:
 				t.modMode(false, ModeMouseMask)
 				t.modMode(set, ModeMouseX10)
-			case 1000: // report button press
+			case 1000:
 				t.modMode(false, ModeMouseMask)
 				t.modMode(set, ModeMouseButton)
-			case 1002: // report motion on button press
+			case 1002:
 				t.modMode(false, ModeMouseMask)
 				t.modMode(set, ModeMouseMotion)
-			case 1003: // enable all mouse motions
+			case 1003:
 				t.modMode(false, ModeMouseMask)
 				t.modMode(set, ModeMouseMany)
-			case 1004: // send focus events to tty
+			case 1004:
 				t.modMode(set, ModeFocus)
-			case 1006: // extended reporting mode
+			case 1006:
 				t.modMode(set, ModeMouseSgr)
 			case 1034:
 				t.modMode(set, Mode8bit)
-			case 1049, // = 1047 and 1048
+			case 1049,
 				47, 1047:
 				alt := t.mode&ModeAltScreen != 0
 				if alt {
@@ -591,14 +548,8 @@ func (t *State) setMode(priv bool, set bool, args []int) {
 					t.restoreCursor()
 				}
 			case 1001:
-				// mouse highlight mode; can hang the terminal by design when
-				// implemented
 			case 1005:
-				// utf8 mouse mode; will confuse applications not supporting
-				// utf8 and luit
 			case 1015:
-				// urxvt mangled mouse mode; incompatible and can be mistaken
-				// for other control codes
 			default:
 				t.logf("unknown private set/reset mode %d\n", a)
 			}
@@ -606,15 +557,15 @@ func (t *State) setMode(priv bool, set bool, args []int) {
 	} else {
 		for _, a := range args {
 			switch a {
-			case 0: // Error (ignored)
-			case 2: // KAM - keyboard action
+			case 0:
+			case 2:
 				t.modMode(set, ModeKeyboardLock)
-			case 4: // IRM - insertion-replacement
+			case 4:
 				t.modMode(set, ModeInsert)
 				t.logln("insert mode not implemented")
-			case 12: // SRM - send/receive
+			case 12:
 				t.modMode(set, ModeEcho)
-			case 20: // LNM - linefeed/newline
+			case 20:
 				t.modMode(set, ModeCRLF)
 			case 34:
 				t.logln("right-to-left mode not implemented")
@@ -644,7 +595,7 @@ func (t *State) setAttr(attr []int) {
 			t.cur.Attr.Mode |= attrItalic
 		case 4:
 			t.cur.Attr.Mode |= attrUnderline
-		case 5, 6: // slow, rapid blink
+		case 5, 6:
 			t.cur.Attr.Mode |= attrBlink
 		case 7:
 			t.cur.Attr.Mode |= attrReverse

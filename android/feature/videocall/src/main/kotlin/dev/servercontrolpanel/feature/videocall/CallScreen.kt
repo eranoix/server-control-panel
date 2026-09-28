@@ -33,15 +33,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 
-/** Runtime permissions [CallScreen] requests before [CallViewModel.joinRoom] can proceed. */
 private val CALL_PERMISSIONS = arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)
 
-/**
- * The call screen: lobby, then own preview, one tile per remote peer and the control bar.
- * [CallViewModel] is scoped to this back-stack entry, so each room visit gets a fresh instance.
- *
- * No `imePadding()` or `consumeWindowInsets` here: `AppNavHost` already applies both once.
- */
 @Composable
 fun CallScreen(
     roomId: String,
@@ -54,18 +47,15 @@ fun CallScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) {
-        // openLobby re-checks every permission itself, so the grant map is ignored.
         viewModel.openLobby()
     }
 
-    // Open the lobby first: joining is public and irreversible.
     LaunchedEffect(roomId) {
         viewModel.openLobby()
     }
 
     val inWindow by FloatingWindow.inWindow.collectAsStateWithLifecycle()
 
-    // PiP auto-enter only during the call, never for one that has not started.
     AutoEnterFloatingWindow(enabled = state is CallUiState.InCall)
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -83,13 +73,11 @@ fun CallScreen(
                 onSwitchCamera = viewModel::onSwitchCamera,
                 onEnter = { viewModel.joinRoom(roomId) },
                 onGiveUp = {
-                    // Release the camera, or it stays on and the next call finds it busy.
                     viewModel.onLeave()
                     onLeaveCall()
                 },
             )
             is CallUiState.InCall -> if (inWindow) {
-                // In PiP (~200 dp) show only video and one status line; controls would not fit.
                 CallInWindow(state = current, eglBaseContext = viewModel.eglBaseContext)
             } else {
                 InCallContent(
@@ -108,7 +96,6 @@ fun CallScreen(
     }
 }
 
-/** Production [CallViewModel]; tests pass their own through [CallScreen]'s `viewModel` parameter. */
 @Composable
 private fun defaultCallViewModel(): CallViewModel {
     val context = LocalContext.current

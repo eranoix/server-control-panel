@@ -22,15 +22,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToLong
 
-/**
- * Compares Compose `TerminalCanvas` with `TerminalSurfaceGrid` on the same
- * 8MB+ synthetic stream, using SDK [FrameMetrics] (no benchmark library).
- *
- * Instrumented only: frame metrics need a real attached `Window`.
- *
- * Input is fed at frame pace ([CHUNKS_PER_FRAME] chunks per `postOnAnimation`);
- * a tight loop would block the main thread and produce a single huge frame.
- */
 @RunWith(AndroidJUnit4::class)
 class GridThroughputBenchmark {
 
@@ -68,8 +59,6 @@ class GridThroughputBenchmark {
             val listener = Window.OnFrameMetricsAvailableListener { _, frameMetrics, _ ->
                 synchronized(frameDurationsNanos) {
                     frameDurationsNanos += frameMetrics.getMetric(FrameMetrics.TOTAL_DURATION)
-                    // TOTAL_DURATION includes vsync waits (33 ms on a 30 Hz emulator);
-                    // DRAW_DURATION isolates the drawing cost being measured.
                     drawDurationsNanos += frameMetrics.getMetric(FrameMetrics.DRAW_DURATION)
                 }
             }
@@ -108,7 +97,6 @@ class GridThroughputBenchmark {
         }
 
         doneLatch.await(SETTLE_MILLIS + 30_000, TimeUnit.MILLISECONDS)
-        // No listener removal needed: close() destroys the Window, stopping delivery.
         scenario.close()
         metricsThread.quitSafely()
         engine.close()
@@ -119,10 +107,6 @@ class GridThroughputBenchmark {
         return computeStats(snapshot, draws, peakRssKb = maxOf(vmHwmBeforeKb, vmHwmAfterKb))
     }
 
-    /**
-     * Feeds [CHUNKS_PER_FRAME] chunks per `postOnAnimation`, yielding between
-     * batches so each frame is drawn and measured. [onFinished] runs after the last batch.
-     */
     private fun feedPaced(
         host: android.view.View,
         engine: TerminalEngine,
@@ -151,7 +135,6 @@ class GridThroughputBenchmark {
         return context.assets.open("throughput/throughput.vt").use { it.readBytes() }
     }
 
-    /** Peak resident set size in KB, from `VmHWM` in `/proc/self/status`. */
     private fun readVmHwmKb(): Long {
         return try {
             File("/proc/self/status").bufferedReader().use { reader: BufferedReader ->
@@ -215,14 +198,9 @@ class GridThroughputBenchmark {
     )
 
     private companion object {
-        /** 60Hz frame budget; a frame taking longer than this is counted as dropped. */
         const val FRAME_BUDGET_MILLIS = 16L
         const val SETTLE_MILLIS = 2_000L
 
-        /**
-         * 4 KB chunks per frame. 8 gives about 288 measured frames, enough for
-         * meaningful p95/p99, and 32 KB per frame exceeds any real command's output.
-         */
         const val CHUNKS_PER_FRAME = 8
     }
 }

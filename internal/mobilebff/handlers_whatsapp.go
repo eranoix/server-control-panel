@@ -13,46 +13,21 @@ import (
 	"server-control-panel/internal/whatsapp"
 )
 
-// registerWhatsapp registers WhatsApp's five screen routes — the app's only
-// way of touching WhatsApp: always through here, never /api/whatsapp/*
-// (that other surface belongs to the web panel and uses a cookie, not a
-// Bearer). No domain logic lives here: each handler resolves the
-// authenticated user's *whatsapp.Service (the same `ForUser(scope.User)` the
-// panel already uses) and calls one of the four wrappers in
-// internal/whatsapp/service_export.go directly — repeating here what that
-// file already does would be exactly the fork that took the previous mobile
-// surface down.
 func init() { Register("whatsapp", registerWhatsapp) }
 
-// whatsappSvc is the minimal slice of *whatsapp.Service that this file calls —
-// an interface, not the concrete type, so that tests can substitute a fake
-// without needing a real *whatsapp.Manager (which requires a vault, a WAHA
-// container and so on). *whatsapp.Service satisfies this through the methods
-// already exported in service_export.go.
 type whatsappSvc interface {
 	ListChats() []whatsapp.Chat
 	MessagesForDisplay(jid string, opts whatsapp.MessagesQuery) ([]whatsapp.Message, bool, error)
 	SendTextDedup(chatJID, text, quotedID, clientMsgID string) (string, error)
 	MarkRead(jid string) error
 	ServeAvatar(w http.ResponseWriter, r *http.Request, jid string)
-	// DownloadMediaForMessage, ServeMediaRel and SendFileDedup are the same
-	// wrappers from internal/whatsapp/service_export.go that the panel uses —
-	// see handlers_whatsapp_media.go.
 	DownloadMediaForMessage(chatJID, msgID string) (rel, mimeType, filename string, size int64, err error)
 	ServeMediaRel(w http.ResponseWriter, r *http.Request, rel string)
 	SendFileDedup(chatJID, msgType, filename, mimeType, caption, quotedID, clientMsgID string, data []byte) (string, error)
 }
 
-// whatsappResolver resolves the *whatsapp.Service of the current request's
-// authenticated user. A signature of its own (rather than coupling directly to
-// *whatsapp.Manager) so the test can inject a fake resolver without having to
-// build a real Manager.
 type whatsappResolver func(ctx context.Context) (whatsappSvc, error)
 
-// managerResolver adapts a real *whatsapp.Manager to whatsappResolver — the
-// same userFromReq -> scope.New -> ForUser chain internal/api/api.go already
-// uses (vc.WhatsAppSender, the panel's v2 avatar handler); no new identity
-// mechanism.
 func managerResolver(mgr *whatsapp.Manager) whatsappResolver {
 	return func(ctx context.Context) (whatsappSvc, error) {
 		if mgr == nil {
@@ -74,10 +49,6 @@ func managerResolver(mgr *whatsapp.Manager) whatsappResolver {
 	}
 }
 
-// ChatSummary is the projection of whatsapp.Chat for the app's conversation
-// list — the same fields the panel already shows (name, preview, unread,
-// avatar), renamed to keys stable for the mobile contract. No new field: it is
-// the same Store.ListChats() read the panel does.
 type ChatSummary struct {
 	Jid                string `json:"jid"`
 	Name               string `json:"name"`
@@ -104,9 +75,6 @@ type chatsOutput struct {
 	Body []ChatSummary
 }
 
-// MediaView projects whatsapp.Media for the app: instead of the local Path (a
-// server storage detail), it points at the media endpoint — this part only
-// draws the pointer, it does not serve the bytes.
 type MediaView struct {
 	Url      string `json:"url"`
 	MimeType string `json:"mime_type,omitempty"`
@@ -117,9 +85,6 @@ type MediaView struct {
 	Height   int    `json:"height,omitempty"`
 }
 
-// MessageView is the projection of whatsapp.Message for the app — the same
-// fields the panel already stores/displays, with JSON keys stable for the
-// mobile contract (the panel uses different ones for historical compatibility).
 type MessageView struct {
 	ID        string              `json:"id"`
 	ChatJID   string              `json:"chat_jid"`
@@ -199,8 +164,6 @@ type readInput struct {
 	JID string `path:"jid"`
 }
 
-// readOutput has no Body: huma answers 204 automatically (the same contract
-// /api/whatsapp/*'s handleMarkRead already uses — mark-read returns no body).
 type readOutput struct{}
 
 type avatarInput struct {
@@ -211,10 +174,6 @@ func registerWhatsapp(api huma.API, deps Deps) {
 	registerWhatsappWithResolver(api, managerResolver(deps.WhatsAppMgr))
 }
 
-// registerWhatsappWithResolver exists separately from registerWhatsapp so that
-// tests can inject a fake whatsappResolver (without a real *whatsapp.Manager,
-// which requires a vault + WAHA container) and still exercise the real huma
-// route registration — the same code tree that runs in production.
 func registerWhatsappWithResolver(api huma.API, resolve whatsappResolver) {
 	huma.Register(api, huma.Operation{
 		OperationID: "listWhatsAppChats",
@@ -290,10 +249,6 @@ func getMessagesHandler(resolve whatsappResolver) func(ctx context.Context, inpu
 		}
 		msgs, backfilling, err := svc.MessagesForDisplay(input.JID, whatsapp.MessagesQuery{Before: input.Before, Limit: input.Limit})
 		if err != nil {
-			// Never echo err.Error() to the mobile client: it may contain a file
-			// path (local store) or an internal detail of the service. The full
-			// error goes only to the server log — the same stance as
-			// handlers_screens.go/handlers_actions.go.
 			log.Printf("mobilebff: error reading messages from %q: %v", input.JID, err)
 			return nil, huma.Error500InternalServerError("internal error")
 		}
@@ -313,7 +268,6 @@ func sendMessageHandler(resolve whatsappResolver) func(ctx context.Context, inpu
 		}
 		id, err := svc.SendTextDedup(input.JID, input.Body.Text, input.Body.QuotedID, input.Body.ClientMsgID)
 		if err != nil {
-			// Never echo err.Error() to the client — same stance as above.
 			log.Printf("mobilebff: error sending a message to %q: %v", input.JID, err)
 			return nil, huma.Error502BadGateway("upstream error")
 		}
@@ -328,7 +282,6 @@ func markReadHandler(resolve whatsappResolver) func(ctx context.Context, input *
 			return nil, err
 		}
 		if err := svc.MarkRead(input.JID); err != nil {
-			// Never echo err.Error() to the client — same stance as above.
 			log.Printf("mobilebff: error marking %q as read: %v", input.JID, err)
 			return nil, huma.Error502BadGateway("upstream error")
 		}

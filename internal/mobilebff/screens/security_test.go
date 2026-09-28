@@ -9,9 +9,6 @@ import (
 	"server-control-panel/internal/mobilebff/sdui"
 )
 
-// testSecurityCfg/testSecurityViewers mirror testDockerCfg/testDockerViewers
-// — a real *config.Config through the real ViewerFrom/httpx.IsAdmin path,
-// never a Viewer{} literal.
 func testSecurityCfg() *config.Config {
 	return &config.Config{
 		SchemaVersion: config.CurrentSchemaVersion,
@@ -27,8 +24,6 @@ func testSecurityViewers() (admin, nonAdmin sdui.Viewer) {
 	cfg := testSecurityCfg()
 	return sdui.ViewerFrom(cfg, "sec-admin"), sdui.ViewerFrom(cfg, "sec-user")
 }
-
-// --- Test 1: structure --------------------------------------------------
 
 func TestSecurityUsersScreen_Structure(t *testing.T) {
 	env := buildSecurityUsersScreen()
@@ -245,11 +240,6 @@ func TestSecurityDataSaverScreen_Structure(t *testing.T) {
 	}
 }
 
-// --- Test 2: whole-screen omission (404-never-403) -----------------------
-
-// TestSecurityScreens_NonAdminGetsErrScreenNotFound proves every one of the
-// eight admin-only screens returns sdui.ErrScreenNotFound (never an emptied
-// envelope) for a non-admin viewer, while an admin viewer builds fine.
 func TestSecurityScreens_NonAdminGetsErrScreenNotFound(t *testing.T) {
 	admin, nonAdmin := testSecurityViewers()
 
@@ -280,13 +270,6 @@ func TestSecurityScreens_NonAdminGetsErrScreenNotFound(t *testing.T) {
 	}
 }
 
-// --- Test 3: secret redaction, on bytes -----------------------------------
-
-// TestSecuritySecretsScreen_NeverLeaksAValue proves the secrets screen's
-// marshalled envelope never contains a secret VALUE — only key names and
-// static placeholder text. SecretKeyRow (deps.go) has no Value field at all,
-// so this test also stands as a structural guard: if a future edit adds one
-// and threads a real value into the envelope, this test catches it on bytes.
 func TestSecuritySecretsScreen_NeverLeaksAValue(t *testing.T) {
 	const testSecretValue = "sk-live-super-secret-do-not-leak-9f3a"
 
@@ -302,21 +285,10 @@ func TestSecuritySecretsScreen_NeverLeaksAValue(t *testing.T) {
 		t.Errorf("security.secrets envelope does not contain the \"key\" column: %s", body)
 	}
 	if strings.Contains(string(body), "\"value\"") {
-		// A form field named "value" existing as an INPUT key is fine (the
-		// client submits into it); what must never appear is a submitted or
-		// echoed value. Guard here is the absence of the literal secret
-		// content, already checked above — this branch only documents the
-		// expectation for a future reader.
 		t.Logf("note: \"value\" appears as a form field key (expected — it's write-only)")
 	}
 }
 
-// --- Test 4: multi-admin CRUD surface ------------------------------------
-
-// TestSecurityUsersScreen_SupportsMultiAdminCRUD proves the users form
-// exposes a binary admin/non-admin field (so promoting/demoting a SECOND
-// admin is possible from the app) and the table is not filtered to hide
-// other admins.
 func TestSecurityUsersScreen_SupportsMultiAdminCRUD(t *testing.T) {
 	env := buildSecurityUsersScreen()
 
@@ -337,10 +309,6 @@ func TestSecurityUsersScreen_SupportsMultiAdminCRUD(t *testing.T) {
 		t.Errorf("user-form.admin.kind = %q, want \"bool\" (two-value vocabulary)", adminField.Kind)
 	}
 
-	// The table itself carries no per-role filtering: securityUserRow always
-	// emits every row ListUsers returns, admins included — proven at the row
-	// level in security_rows_test.go's wire-shape tests. Here we just assert
-	// the "role" column exists so an admin row is visibly distinguishable.
 	table, ok := findComponent(t, env, "users-table").(sdui.TableComponent)
 	if !ok {
 		t.Fatalf("users-table is not a TableComponent")
@@ -356,14 +324,6 @@ func TestSecurityUsersScreen_SupportsMultiAdminCRUD(t *testing.T) {
 	}
 }
 
-// --- Test 5: UFW spec pass-through, on bytes ------------------------------
-
-// TestSecurityUFWScreen_SpecFieldIsPassthroughNotStructural proves the
-// ufw-rule-form's spec field carries no structural validation of its own
-// (no regex/pattern/enum baked into the SDUI payload) — NetworkDeps.UFWApplyRule
-// forwards it verbatim via strings.Fields, exactly like handleUFWRule, and
-// handleSecurityUFWApply (security_actions.go) only checks non-emptiness for
-// actions that require a spec, never its internal token structure.
 func TestSecurityUFWScreen_SpecFieldIsPassthroughNotStructural(t *testing.T) {
 	env := buildSecurityUFWScreen()
 	form, ok := findComponent(t, env, "ufw-rule-form").(sdui.FormComponent)
@@ -386,11 +346,6 @@ func TestSecurityUFWScreen_SpecFieldIsPassthroughNotStructural(t *testing.T) {
 		t.Errorf("ufw-rule-form.spec has options = %v, want none — spec is not an enum, it is forwarded verbatim (forwarded verbatim, not parsed)", specField.Options)
 	}
 
-	// A multi-token spec (like a real ufw rule with a source/port clause)
-	// must not be rejected by anything at the SDUI layer itself — there is
-	// no pattern/regex field on FormField to violate, so this assertion is
-	// necessarily about ABSENCE of such a mechanism, proven on the marshalled
-	// bytes: no "pattern"/"regex" key anywhere in the envelope.
 	body, err := json.Marshal(env)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -402,13 +357,6 @@ func TestSecurityUFWScreen_SpecFieldIsPassthroughNotStructural(t *testing.T) {
 	}
 }
 
-// --- Test 6: no client-side logic ------------------------------------------
-
-// TestSecurityScreens_NoClientSideLogicKeys mirrors
-// TestDockerScreens_NoClientSideLogicKeys / TestSystemScreens_NoClientSideLogicKeys
-// exactly: none of the eight envelopes may carry a condition/visible_when/
-// expression key — every branching decision (admin-only, RBAC omission of an
-// action) happens server-side in Go, never encoded as client-evaluated logic.
 func TestSecurityScreens_NoClientSideLogicKeys(t *testing.T) {
 	envs := map[string]*sdui.Envelope{
 		"users":     buildSecurityUsersScreen(),

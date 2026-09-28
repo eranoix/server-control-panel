@@ -22,13 +22,11 @@ import (
 
 const testNow = 1800000000
 
-// fakeVault records every call in `seen`, which is what makes the ORDER of
-// revocation verifiable. Modelled on privateaiapi_test.go.
 type fakeVault struct {
 	data         map[string]string
 	seen         *[]string
 	deleteErr    error
-	resurrect    bool // simulates the concurrent write that resurrects a deleted vault key
+	resurrect    bool
 	deleteCalled bool
 }
 
@@ -52,9 +50,6 @@ func (c *fakeVault) Delete(k string) error {
 	return nil
 }
 
-// fakePVE is the stand-in hypervisor. `role` says which token opened it, so
-// the test can prove that revocation uses the ADMIN token and confirmation uses
-// the OPERATIONAL one.
 type fakePVE struct {
 	jobsBackup  []pve.BackupJob
 	series      []pve.RRDPoint
@@ -72,22 +67,15 @@ type fakePVE struct {
 	upid        string
 	nextID      int
 	description string
-	// usedToken stamps WHICH credential dialled out. Without it there is no way
-	// to prove that cloning uses the panel's and rebooting uses the node's — and
-	// using the wrong one gives no pretty error: it gives a 403 from the
-	// hypervisor, which arrives as "it failed".
-	usedToken  string
-	verbErr    error
-	waitErr    error
-	deleteErr  error
-	stillAlive bool // the operational token was NOT actually revoked
-	deadTokens map[string]bool
-	tokens     []pve.TokenInfo
-	listErr    error
+	usedToken   string
+	verbErr     error
+	waitErr     error
+	deleteErr   error
+	stillAlive  bool
+	deadTokens  map[string]bool
+	tokens      []pve.TokenInfo
+	listErr     error
 
-	// The routes behind the Proxmox tab. A single double for both handlers: two
-	// interfaces would be two truths about what the panel may do on the
-	// hypervisor.
 	status    pve.NodeStatus
 	statusErr error
 	tasks     []pve.Task
@@ -96,10 +84,6 @@ type fakePVE struct {
 	perms     map[string]map[string]int
 	snaps     []pve.Snapshot
 
-	// Console and rollback. `console` is the connection the double returns;
-	// `calledConsole` exists because several tests need to prove the hypervisor
-	// was NOT dialled — and an absent call leaves no mark in `seen`, by
-	// definition.
 	console       *fakeConsole
 	consoleErr    error
 	calledConsole bool
@@ -113,8 +97,6 @@ func (p *fakePVE) NodePower(ctx context.Context, node string, cmd pve.PowerComma
 	return "UPID:pve:node-power", nil
 }
 
-// Maintenance. The fake COUNTS the calls instead of executing them: that is how
-// a pin can assert "no clone was fired" without ever cloning anything for real.
 func (p *fakePVE) Reboot(ctx context.Context, node string, vmid int, typ string) (string, error) {
 	p.mark(fmt.Sprintf("pve.reboot:%s/%d", typ, vmid))
 	if p.verbErr != nil {
@@ -326,12 +308,10 @@ func (p *fakePVE) ListTokens(ctx context.Context, user string) ([]pve.TokenInfo,
 	return p.tokens, nil
 }
 
-// ClusterResources is the PROOF CALL for revocation: with the operational token
-// already revoked, it has to return 401.
 func (p *fakePVE) ClusterResources(ctx context.Context) ([]pve.Resource, error) {
 	p.mark("pve.confirm401")
 	if p.stillAlive {
-		return nil, nil // the token still works — revocation NOT proven
+		return nil, nil
 	}
 	return nil, &pve.Error{Kind: pve.KindNoCredential, Status: 401, Path: "/cluster/resources"}
 }
@@ -381,16 +361,10 @@ func testNode(id, name string, vmid int, observedAt int64) inventory.Node {
 	}
 }
 
-// ------------------------------------------------------------- os testes ----
-
-// 🔴 TestNodesList is the API-side pin: EVERY entry carries age_seconds and
-// observed_at. Without those two fields in the payload the browser goes back to
-// computing the age from ITS OWN clock — and this project spans two machines and
-// a tailnet, where the client's clock is not a controlled variable.
 func TestNodesList(t *testing.T) {
 	r, _ := newNodesRouter(t, []inventory.Node{
-		testNode("lxc/207", "apps", 207, testNow-10),  // fresco
-		testNode("qemu/208", "dev", 208, testNow-600), // old
+		testNode("lxc/207", "apps", 207, testNow-10),
+		testNode("qemu/208", "dev", 208, testNow-600),
 	})
 	r.nodeVaultFn = func() (nodeVault, error) {
 		return &fakeVault{data: map[string]string{
@@ -407,7 +381,6 @@ func TestNodesList(t *testing.T) {
 	if len(nodes) == 0 {
 		t.Fatal("response with no nodes")
 	}
-	// Check every entry: sampling only the first would let the second lie.
 	for i, raw := range nodes {
 		n, _ := raw.(map[string]any)
 		if _, ok := n["age_seconds"]; !ok {
@@ -443,9 +416,6 @@ func TestNodesList(t *testing.T) {
 	}
 }
 
-// 🔴 TestNodesVaultStates is the antidote to handlers_ai.go:186, which returns
-// `""` both for "vault unreachable" and for "key missing". Here the two produce
-// DIFFERENT strings — and the inventory stays readable in both.
 func TestNodesVaultStates(t *testing.T) {
 	t.Run("vault unreachable: the list STILL responds 200", func(t *testing.T) {
 		r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow-10)})
@@ -458,7 +428,6 @@ func TestNodesVaultStates(t *testing.T) {
 		if out["vault"] != vaultUnreachable {
 			t.Fatalf("vault = %v, want %q", out["vault"], vaultUnreachable)
 		}
-		// And we do NOT invent CredMissing just because we could not look.
 		n := out["nodes"].([]any)[0].(map[string]any)
 		cred := n["credential"].(map[string]any)
 		if cred["state"] == inventory.CredMissing {
@@ -501,8 +470,6 @@ func TestNodesVaultStates(t *testing.T) {
 	})
 }
 
-// TestNodesStoreNil: a missing subsystem answers 503, in the shape of
-// deployStoreOrNil — never a panic, never a lying empty list.
 func TestNodesStoreNil(t *testing.T) {
 	r := &Router{cfg: &config.Config{DataDir: t.TempDir(), Primary: "sam"}}
 	w, _ := callAPI(t, r, http.MethodGet, "/api/nodes", "")
@@ -511,8 +478,6 @@ func TestNodesStoreNil(t *testing.T) {
 	}
 }
 
-// 🔴 TestPowerWaitsUPID: the 200 from the PVE POST means "task created", never
-// "the VM came up". The response only leaves after WaitTask.
 func TestPowerWaitsUPID(t *testing.T) {
 	t.Run("success waits for the task", func(t *testing.T) {
 		var seen []string
@@ -556,12 +521,6 @@ func TestPowerWaitsUPID(t *testing.T) {
 	})
 }
 
-// 🔴 TestRevokeOrder is the central proof of the revocation ordering. The
-// sequence is compared by EQUALITY, not by "contains": any permutation fails.
-//
-// The order is not a matter of taste. Inverted, it produces the worst possible
-// state — a clean vault with the token still ALIVE on the hypervisor, an orphan
-// credential nobody can revoke any more because nobody knows it exists.
 func TestRevokeOrder(t *testing.T) {
 	var seen []string
 	r, st := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
@@ -584,8 +543,6 @@ func TestRevokeOrder(t *testing.T) {
 	}
 
 	want := []string{"pve.delete", "pve.confirm401", "vault.delete"}
-	// The recheck is a Get, which does not enter `seen` (only mutations do); its
-	// proof is the resurrection test below.
 	if fmt.Sprint(seen) != fmt.Sprint(want) {
 		t.Fatalf("SEQUENCE = %v, want EXACTLY %v", seen, want)
 	}
@@ -595,16 +552,12 @@ func TestRevokeOrder(t *testing.T) {
 	if fmt.Sprint(out["steps"]) != fmt.Sprint([]any{"pve.delete", "pve.confirm401", "vault.delete", "vault.recheck"}) {
 		t.Errorf("steps in the response = %v", out["steps"])
 	}
-	// The screen shows the real state IMMEDIATELY, without waiting for the next tick.
 	inv, _ := st.Snapshot()
 	if inv.Nodes[0].Credential.State != inventory.CredRevoked {
 		t.Errorf("state in the inventory = %q, want revoked", inv.Nodes[0].Credential.State)
 	}
 }
 
-// TestRevokeRequiresProof401: if the revoked token STILL answers, the revocation
-// did not happen — and the vault must not be touched. Without this step the
-// panel would say "revoked" on the strength of its own optimism.
 func TestRevokeRequiresProof401(t *testing.T) {
 	var seen []string
 	r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
@@ -629,9 +582,6 @@ func TestRevokeRequiresProof401(t *testing.T) {
 	}
 }
 
-// 🔴 TestRevokeResurrection covers the resurrection trap: internal/secrets does
-// a read-modify-write of the WHOLE map without flock, so a concurrent write can
-// bring the key back after the Delete. The recheck exists for that.
 func TestRevokeResurrection(t *testing.T) {
 	r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
 	vault := &fakeVault{resurrect: true, data: map[string]string{
@@ -650,8 +600,6 @@ func TestRevokeResurrection(t *testing.T) {
 	}
 }
 
-// TestRevokePVEFailureKeepsVault: if the DELETE on the hypervisor fails, the
-// vault is NOT touched — and the response says which step failed.
 func TestRevokePVEFailureKeepsVault(t *testing.T) {
 	r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
 	vault := &fakeVault{data: map[string]string{
@@ -675,9 +623,6 @@ func TestRevokePVEFailureKeepsVault(t *testing.T) {
 	}
 }
 
-// 🔴 TestRevokeIsolation is the screen-side half of the isolation rule: revoking
-// ONE node must not take the others down. Tokens are per node precisely so the
-// blast radius of a revocation is a single node.
 func TestRevokeIsolation(t *testing.T) {
 	r, _ := newNodesRouter(t, []inventory.Node{
 		testNode("lxc/207", "apps", 207, testNow),
@@ -712,7 +657,6 @@ func TestRevokeIsolation(t *testing.T) {
 	}
 }
 
-// TestNodeDetail: the detail view aggregates what points at THAT node, and nothing else.
 func TestNodeDetail(t *testing.T) {
 	r, st := newNodesRouter(t, []inventory.Node{
 		testNode("lxc/207", "apps", 207, testNow-10),
@@ -747,7 +691,6 @@ func TestNodeDetail(t *testing.T) {
 	}
 }
 
-// TestNodesMethods: the wrong verb on the right route is 405, not a silent 200.
 func TestNodesMethods(t *testing.T) {
 	r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
 	r.nodeVaultFn = func() (nodeVault, error) { return &fakeVault{data: map[string]string{}}, nil }
@@ -763,12 +706,6 @@ func TestNodesMethods(t *testing.T) {
 	}
 }
 
-// 🔴 TestPanelStartsWithoutHypervisor is the resilience criterion: a lab that will
-// not open because the hypervisor is down is the opposite of what it promises —
-// the panel is exactly where you go to LOOK when something has fallen over.
-//
-// With no data/pve/pve.json and no vault: the descriptor fails, the poller does
-// not come up, nothing panics, and /api/nodes keeps serving whatever is on disk.
 func TestPanelStartsWithoutHypervisor(t *testing.T) {
 	dir := t.TempDir()
 
@@ -780,9 +717,8 @@ func TestPanelStartsWithoutHypervisor(t *testing.T) {
 		{ID: "vps", Name: "vps", Transport: inventory.TransportSSH, Kind: inventory.NodeKindExternal},
 	})
 	r.pveConfig = nil
-	r.secrets = nil // vault unavailable
+	r.secrets = nil
 
-	// It must neither panic nor block.
 	r.startInventoryPoller(context.Background())
 	if r.inventoryPoller != nil {
 		t.Fatal("poller came up with neither descriptor nor vault")
@@ -800,9 +736,6 @@ func TestPanelStartsWithoutHypervisor(t *testing.T) {
 	}
 }
 
-// TestMalformedDescriptorDoesNotStart: a file that is PRESENT and unreadable is an
-// error (accepting it silently would let the operator believe they configured
-// something the panel then ignored).
 func TestMalformedDescriptorDoesNotStart(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "pve"), 0o755); err != nil {
@@ -817,9 +750,6 @@ func TestMalformedDescriptorDoesNotStart(t *testing.T) {
 	}
 }
 
-// TestCredentialSourceFillsNode starts from the raw node as the poller hands it
-// over: credentialState() reports CredMissing whenever TokenID is empty, so the
-// router must fill Node.Credential itself.
 func TestCredentialSourceFillsNode(t *testing.T) {
 	r, _ := newNodesRouter(t, nil)
 	r.nodeVaultFn = func() (nodeVault, error) {
@@ -838,7 +768,6 @@ func TestCredentialSourceFillsNode(t *testing.T) {
 		}}, nil
 	}
 
-	// RAW nodes, the way the poller assembles them: Credential zeroed.
 	nodes := []inventory.Node{
 		{ID: "lxc/204", Name: "lab", VMID: 204, Kind: inventory.NodeKindGuest, Transport: inventory.TransportPVEAPI},
 		{ID: "lxc/207", Name: "apps", VMID: 207, Kind: inventory.NodeKindGuest, Transport: inventory.TransportPVEAPI},
@@ -861,18 +790,13 @@ func TestCredentialSourceFillsNode(t *testing.T) {
 	if c.Expire != 1802645875 {
 		t.Errorf("expire = %d, want the hypervisor's — without it the staleness warning never fires", c.Expire)
 	}
-	// The host is observed through the AUDIT token; reporting CredMissing on it
-	// would be lying about a node the panel can see perfectly well.
 	if h, ok := creds["node/pve"]; !ok || h.TokenID != "panel@pve!audit" {
 		t.Errorf("host = %+v (ok=%v), want the audit credential", h, ok)
 	}
-	// A non-PVE transport has no per-node token.
 	if _, ok := creds["canary"]; ok {
 		t.Error("the canary (agent transport) received a PVE credential")
 	}
 
-	// 🔴 And the loop closes: with the source filled in, the VIEW has to say "ok".
-	// This is the assertion that would fail against today's production.
 	for i := range nodes {
 		if c, ok := creds[nodes[i].ID]; ok {
 			nodes[i].Credential = c
@@ -891,10 +815,6 @@ func TestCredentialSourceFillsNode(t *testing.T) {
 	}
 }
 
-// TestCredentialSourceDeadVaultDoesNotLie: an unreachable vault returns an ERROR,
-// not an empty map. An empty map would make the poller wipe everybody's
-// credential and the screen would announce that the whole lab had lost its
-// credentials — when what went down was the vault.
 func TestCredentialSourceDeadVaultDoesNotLie(t *testing.T) {
 	r, _ := newNodesRouter(t, nil)
 	r.nodeVaultFn = func() (nodeVault, error) { return nil, errors.New("vault is down") }
@@ -905,10 +825,6 @@ func TestCredentialSourceDeadVaultDoesNotLie(t *testing.T) {
 	}
 }
 
-// TestCredentialSourceWithoutExpireStillReportsToken: if the hypervisor does not
-// return the expiry dates (admin token missing, 403, network), the node still
-// has a credential — just without a date. Refusing everything here would turn
-// "I do not know the expiry" into "there is no credential".
 func TestCredentialSourceWithoutExpireStillReportsToken(t *testing.T) {
 	r, _ := newNodesRouter(t, nil)
 	r.nodeVaultFn = func() (nodeVault, error) {
@@ -931,10 +847,6 @@ func TestCredentialSourceWithoutExpireStillReportsToken(t *testing.T) {
 	}
 }
 
-// 🔴 TestHostDoesNotContradictItself: the host held `panel@pve!audit` in the
-// inventory while the screen said it had no credential, because the source and
-// the read picked the vault key by DIFFERENT paths. The symptom was one row
-// showing an expiry date and CredMissing at the same time.
 func TestHostDoesNotContradictItself(t *testing.T) {
 	host := inventory.Node{
 		ID: "node/pve", Name: "pve", Kind: inventory.NodeKindHost,
@@ -946,7 +858,6 @@ func TestHostDoesNotContradictItself(t *testing.T) {
 	}
 	r, _ := newNodesRouter(t, []inventory.Node{host})
 	r.nodeVaultFn = func() (nodeVault, error) {
-		// The vault holds the AUDIT key — and no "pve_token_node_pve" at all.
 		return &fakeVault{data: map[string]string{"pve_token_audit": "panel@pve!audit=s"}}, nil
 	}
 
@@ -959,11 +870,9 @@ func TestHostDoesNotContradictItself(t *testing.T) {
 	if cred["token_id"] == "" {
 		t.Error("the handler erased the host's token_id")
 	}
-	// The concrete contradiction: an expiry present with credential CredMissing.
 	if cred["expire"].(float64) > 0 && cred["state"] == inventory.CredMissing {
 		t.Error("contradictory line: shows an expiry date AND 'no credential'")
 	}
-	// And the source picks the SAME key as the read.
 	if got := credentialKey(host); got != pveSecretAudit {
 		t.Errorf("credentialKey(host) = %q, want %q", got, pveSecretAudit)
 	}

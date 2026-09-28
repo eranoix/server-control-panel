@@ -1,19 +1,4 @@
 #!/usr/bin/env bash
-# Vendors the PATCHER side of HDiffPatch (source, never a third-party binary)
-# at the commits pinned in toolchain.properties.
-#
-# Source rather than a prebuilt .aar/.so: this code runs on an APK that gets
-# INSTALLED, so an unaudited downloaded binary would be a supply-chain risk.
-# ndk-build compiles the sources as part of the Gradle build.
-#
-# Copies ONLY the files in vendor-files.txt, the real transitive #include
-# closure taken from the compiler's .d files (see --relist below).
-#
-# Usage:
-#   ./vendor-hdiffpatch.sh            # (re)vendor and rewrite the manifest
-#   ./vendor-hdiffpatch.sh --relist   # only print how to regenerate vendor-files.txt
-#
-# Idempotent: re-running with the same commits produces identical bytes.
 
 set -euo pipefail
 
@@ -48,9 +33,6 @@ fi
 
 mkdir -p "$SRC_DIR"
 
-# Each sibling repo is a shallow checkout of the EXACT commit, never a branch:
-# the diff format and plugin list change between versions, and a mismatch
-# only fails later, on the device.
 fetch_pinned() {
   local name="$1" repo="$2" commit="$3"
   local dst="$SRC_DIR/$name"
@@ -92,23 +74,14 @@ while IFS= read -r rel; do
   cp -p "$SRC_DIR/$rel" "$VENDOR_DIR/$rel"
 done < vendor-files.txt
 
-# The official Java binding, kept out of vendor-files.txt (that list is the C
-# #include closure). Copied verbatim: hpatch_jni.c exports
-# Java_com_github_sisong_HPatch_patch, so changing the class package would
-# break linking at runtime, not at compile time. build.gradle.kts adds this
-# directory as a java srcDir.
 JAVA_REL="HDiffPatch/builds/android_ndk_jni_mk/java"
 mkdir -p "$VENDOR_DIR/$JAVA_REL"
 cp -pR "$SRC_DIR/$JAVA_REL/." "$VENDOR_DIR/$JAVA_REL/"
 
-# Each sibling repo's license is vendored next to its code, so the app's
-# licenses screen can list everything shipped in the APK.
 cp -p "$SRC_DIR/HDiffPatch/LICENSE" "$VENDOR_DIR/HDiffPatch/LICENSE"
 cp -p "$SRC_DIR/zstd/LICENSE"       "$VENDOR_DIR/zstd/LICENSE"
 cp -p "$SRC_DIR/xxHash/LICENSE"     "$VENDOR_DIR/xxHash/LICENSE"
 cp -p "$SRC_DIR/lzma/DOC/lzma-sdk.txt" "$VENDOR_DIR/lzma/LICENSE-lzma-sdk.txt"
-# libmd5 has no separate license file: the zlib-like text (Aladdin
-# Enterprises / L. Peter Deutsch) is in the header of md5.h, already vendored.
 
 python3 - "$VENDOR_DIR" "$PROPS_FILE" <<'PY'
 import hashlib, json, os, subprocess, sys

@@ -5,10 +5,6 @@ import (
 	"sort"
 )
 
-// handlers_agents.go — unified view of the agent sessions (kanban + cost
-// dashboard). Joins the state (session-status.json, populated by the hooks + the
-// cost aggregator) with the cwd (session-cwd.json). Primary-only.
-
 type agentSessionView struct {
 	Name    string       `json:"name"`
 	State   string       `json:"state"`
@@ -19,7 +15,6 @@ type agentSessionView struct {
 	CC      string       `json:"cc_session,omitempty"`
 }
 
-// GET /api/agent/sessions
 func (r *Router) handleAgentSessions(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return

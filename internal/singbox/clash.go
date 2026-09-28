@@ -10,19 +10,12 @@ import (
 	"time"
 )
 
-// Summary is the aggregate live state of the tunnel from the Clash API.
-//
-// The official sing-box build exposes the Clash API but its /connections schema
-// does NOT attribute a connection to a VLESS user (no per-user field) — that
-// would need the V2Ray API (build tag with_v2ray_api). So we surface tunnel-wide
-// activity, not per-device liveness.
 type Summary struct {
 	ActiveConns int   `json:"active_conns"`
-	Up          int64 `json:"up"`   // cumulative upload bytes across active conns
-	Down        int64 `json:"down"` // cumulative download bytes across active conns
+	Up          int64 `json:"up"`
+	Down        int64 `json:"down"`
 }
 
-// ClashClient reads aggregate live state from sing-box's Clash API.
 type ClashClient struct {
 	BaseURL string
 	Secret  string
@@ -37,9 +30,6 @@ func NewClash(baseURL, secret string) *ClashClient {
 	}
 }
 
-// Aggregate returns the tunnel-wide active connection count and cumulative
-// traffic. Returns an error (so the caller can render without live data) when
-// the Clash API is unreachable.
 func (c *ClashClient) Aggregate(ctx context.Context) (*Summary, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/connections", nil)
 	if err != nil {

@@ -15,7 +15,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/** Fake [FilesRepository] that records writes, for exercising the ViewModel's state machine. */
 private class FakeFilesRepository(
     private val onRead: suspend (String) -> FileReadResult = { FileReadResult.Error("not stubbed") },
     private val onWrite: suspend (String, String, Long) -> FileWriteResult = { _, _, _ -> FileWriteResult.Error("not stubbed") },

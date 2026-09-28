@@ -2,23 +2,6 @@ package dev.servercontrolpanel.terminalengine
 
 import android.view.KeyEvent
 
-/**
- * Maps a hardware/IME-synthesized [KeyEvent] to the outbound terminal byte
- * sequence it represents. Pure keyCode + metaState table — no PTY, no
- * networking, no native calls.
- *
- * This table stays a pure Kotlin function so it keeps running under
- * Robolectric, where a bionic-ABI native library cannot load. The real
- * terminal-library key encoder lives behind [TerminalEngine.encodeKey]
- * instead, exercised only by the instrumented suite where the native
- * library is actually available; this object never calls into it.
- *
- * Ctrl+letter and the plain control keys are resolved from [KeyEvent.getKeyCode]
- * rather than [KeyEvent.getUnicodeChar], because those combinations must mean
- * the same byte on every physical keyboard layout. Alt+key and bare printable
- * keys fall back to the layout's own unicode mapping, since there is no
- * layout-independent notion of "the letter under this key" beyond that.
- */
 object KeyByteEncoder {
 
     enum class CursorMode { NORMAL, APPLICATION }
@@ -78,12 +61,6 @@ object KeyByteEncoder {
         else -> null
     }
 
-    /**
-     * Bare printable keys (letters, digits, punctuation) typed on a hardware
-     * keyboard with no IME composition involved. Duplication against a
-     * commitText-based IME path is guarded by the caller
-     * (TerminalInputConnection), not here.
-     */
     private fun printableFallback(event: KeyEvent): ByteArray? {
         val unicode = event.unicodeChar
         if (unicode == 0) return null

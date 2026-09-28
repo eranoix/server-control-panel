@@ -19,16 +19,6 @@ private const val ROUTE_CHAT_LIST = "chatList"
 private const val ROUTE_CONVERSATION = "conversation/{jid}"
 private const val ARG_JID = "jid"
 
-/**
- * The `Whatsapp` bottom-nav destination's own internal navigation: chat list
- * to conversation-by-jid, and back. This mirrors every other feature module
- * (a single composable per [dev.servercontrolpanel.app.nav.AppNavHost] destination,
- * with no separate top-level route) while still giving the chat list ->
- * conversation transition its own nested [NavHost] and back stack.
- *
- * Window insets are handled exactly once, in [dev.servercontrolpanel.app.nav.AppNavHost]'s
- * own [NavHost] modifier -- this nested host applies none of its own.
- */
 @Composable
 fun WhatsAppRoute(modifier: Modifier = Modifier) {
     val navController = rememberNavController()
@@ -55,14 +45,6 @@ fun WhatsAppRoute(modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * Builds a [ConversationViewModel] wired to a real [WhatsAppWsClient] over
- * `/ws/whatsapp`. [resolveWhatsAppWsUrl] returns null until some future
- * login/config screen sets an absolute base URL on the shared `ApiClient` --
- * today's actual default (a relative `/api/mobile/v1`) means the WS client
- * is constructed but never manages to open a real connection, exactly like
- * every other network call in the app right now.
- */
 private fun conversationViewModelFactory(jid: String) = viewModelFactory {
     initializer {
         val wsBaseUrl = resolveWhatsAppWsUrl().orEmpty()

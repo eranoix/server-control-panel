@@ -11,12 +11,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Drives [HardwareKeyHandler] with synthetic [KeyEvent]s carrying a
- * non-virtual `deviceId`, the same signal a real Bluetooth/USB keyboard's
- * events carry, to distinguish them from IME-synthesized ones (see the
- * handler's own doc comment).
- */
 @RunWith(RobolectricTestRunner::class)
 class HardwareKeyHandlerTest {
 

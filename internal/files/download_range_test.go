@@ -1,14 +1,5 @@
 package files
 
-// download_range_test.go — /api/files/download has to be resumable.
-//
-// Before this fix the handler assembled Content-Length by hand and did an
-// io.Copy: it answered 200 with the WHOLE file even in the face of a Range
-// header, so a dropped connection forced a restart from zero. On a bad link
-// with a large file that means never finishing. The tests below pin the
-// correct behavior (206/Content-Range/416) so that nobody reintroduces the
-// io.Copy thinking it is equivalent.
-
 import (
 	"bytes"
 	"fmt"
@@ -33,7 +24,7 @@ func requestDownload(t *testing.T, path string, header map[string]string) *httpt
 
 func testFile(t *testing.T) (string, []byte) {
 	t.Helper()
-	content := bytes.Repeat([]byte("0123456789"), 100) // 1000 bytes
+	content := bytes.Repeat([]byte("0123456789"), 100)
 	path := filepath.Join(t.TempDir(), "large.bin")
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatal(err)
@@ -60,7 +51,6 @@ func TestDownload_Range_206(t *testing.T) {
 	}
 }
 
-// TestDownload_ResumeFromMiddle is the real shape of resuming: "I already have N bytes".
 func TestDownload_ResumeFromMiddle(t *testing.T) {
 	path, content := testFile(t)
 	rec := requestDownload(t, path, map[string]string{"Range": "bytes=600-"})
@@ -72,10 +62,6 @@ func TestDownload_ResumeFromMiddle(t *testing.T) {
 	}
 }
 
-// TestDownload_NoRange_200Full — the regression that matters when
-// swapping io.Copy for ServeContent: the common case has to stay identical,
-// including the Content-Disposition that makes the browser download instead
-// of render.
 func TestDownload_NoRange_200Full(t *testing.T) {
 	path, content := testFile(t)
 	rec := requestDownload(t, path, nil)
@@ -105,19 +91,13 @@ func TestDownload_UnsatisfiableRange_416(t *testing.T) {
 	}
 }
 
-// TestDownload_ErrorsPreserved — ServeContent must not have swallowed the
-// gates that come before it (invalid path, directory, nonexistent).
 func TestDownload_ErrorsPreserved(t *testing.T) {
 	dir := t.TempDir()
 	cases := map[string]struct {
 		path   string
 		status int
 	}{
-		"relative": {"not/absolute", http.StatusBadRequest},
-		// The denylist (not a confined root) is this handler's gate: the file
-		// browser serves an arbitrary absolute path by design, so there is no
-		// "escaping the root" to test here — only that the high-value paths stay
-		// refused.
+		"relative":  {"not/absolute", http.StatusBadRequest},
 		"denylist":  {"/etc/shadow", http.StatusBadRequest},
 		"directory": {dir, http.StatusBadRequest},
 		"missing":   {filepath.Join(dir, "missing.bin"), http.StatusNotFound},

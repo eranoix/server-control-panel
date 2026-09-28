@@ -7,11 +7,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Drives [SelectionGestureController] through scripted drags and checks that every
- * [GridSelection] matches what [CellHitTester] reports for that pixel, never a value
- * derived from raw pixel deltas.
- */
 class SelectionGestureControllerTest {
 
     private val hitTester = CellHitTester(cellWidthPx = 20f, cellHeightPx = 30f, cols = 20, rows = 20)
@@ -78,7 +73,6 @@ class SelectionGestureControllerTest {
 
     @Test
     fun routeCanvasDrag_programDidNotAskForMouse_onlySelectionGetsGesture() {
-        // A `bash` prompt with no mouse tracking: mouse bytes would land as text.
         val toggle = TouchRouting { false }
         val selectionCalls = mutableListOf<Offset>()
         val mouseCalls = mutableListOf<Offset>()
@@ -109,8 +103,6 @@ class SelectionGestureControllerTest {
 
     @Test
     fun routeCanvasDrag_followingRemoteProgramIsNotNegotiable() {
-        // When the program asks for the mouse, the drag is always its own. Selecting
-        // inside e.g. `htop` still works through a long press, which is routed earlier.
         val routing = TouchRouting { true }
         val selectionCalls = mutableListOf<Offset>()
         val mouseCalls = mutableListOf<Offset>()

@@ -21,13 +21,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
-/**
- * Renders a [SduiComponent.Detail] as a label/value list built from
- * [SduiComponent.Detail.fields], read against the single resource
- * [SduiComponent.Detail.dataSource] returns. Values are shown exactly as the
- * server sent them — no client-side formatting, even when [SduiDetailField.kind]
- * hints at a type such as `datetime`.
- */
 @Composable
 fun DetailComponent(component: SduiComponent.Detail) {
     when (val state = rememberComponentDataState(component.dataSource).value) {

@@ -14,9 +14,6 @@ import (
 	"time"
 )
 
-// cmdVideocall dispatches `panelctl videocall <sub>`. Operates on files
-// directly (no HTTP to the panel) so it works even when server-control-panel is
-// down — the recovery story is "SSH in, run this command, get back online".
 func cmdVideocall(args []string) error {
 	if len(args) < 1 {
 		videocallUsage()
@@ -63,7 +60,6 @@ const (
 )
 
 func videocallInit(args []string) error {
-	// Flags: --host=, --port= (optional overrides; otherwise auto-detect).
 	flags := parseFlags(args)
 	publicHost := flags["host"]
 	if publicHost == "" {
@@ -89,9 +85,6 @@ func videocallInit(args []string) error {
 		return err
 	}
 
-	// Generate the HMAC secret only once. If /etc/panel/coturn.env already
-	// exists with a TURN_SECRET, we reuse it — re-running `init` shouldn't
-	// invalidate creds for an in-progress call.
 	envVals, _ := readEnvFile(vcEnvPath)
 	secret := envVals["TURN_SECRET"]
 	if secret == "" {
@@ -115,7 +108,6 @@ func videocallInit(args []string) error {
 	}
 	fmt.Printf("wrote %s\n", vcEnvPath)
 
-	// Render turnserver.conf from template.
 	tmplBytes, err := os.ReadFile(vcTmplPath)
 	if err != nil {
 		return fmt.Errorf("template %s: %w", vcTmplPath, err)
@@ -137,16 +129,11 @@ func videocallInit(args []string) error {
 	}
 	fmt.Printf("wrote %s\n", vcConfPath)
 
-	// Pull image up-front so the first `docker compose up` doesn't fail on a
-	// slow network at the wrong moment.
 	fmt.Println("pulling coturn image…")
 	if err := dockerCompose("pull"); err != nil {
 		fmt.Printf("WARN: docker compose pull: %v (will retry on up)\n", err)
 	}
 
-	// Install/refresh the systemd unit and bring the container up. We use a
-	// thin systemd unit that wraps `docker compose up -d` so panel-coturn
-	// behaves like every other server-control-panel managed service.
 	if err := writeSystemdUnit(); err != nil {
 		return err
 	}
@@ -160,7 +147,6 @@ func videocallInit(args []string) error {
 	}
 	fmt.Println("panel-coturn.service enabled and started")
 
-	// Friendly post-install hints.
 	fmt.Printf(`
 === Next steps ===
 
@@ -216,8 +202,6 @@ func videocallLogs(args []string) error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
-
-// --- helpers --------------------------------------------------------------
 
 func parseFlags(args []string) map[string]string {
 	out := map[string]string{}
@@ -280,10 +264,6 @@ func randHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
-// detectPublicIP tries several strategies in order: the default-route IP (if
-// it's globally routable), then a query to api.ipify.org. Returns the first
-// non-private answer. Times out fast — the user can always override with
-// --host=.
 func detectPublicIP() (string, error) {
 	if ip := defaultRouteIP(); ip != "" && !isPrivateIP(ip) {
 		return ip, nil
@@ -306,9 +286,6 @@ func detectPublicIP() (string, error) {
 }
 
 func defaultRouteIP() string {
-	// Trick: opening a UDP "connection" to a public IP forces the kernel to
-	// resolve the default route, exposing our outgoing interface IP. No
-	// packets are sent.
 	conn, err := net.Dial("udp", "1.1.1.1:80")
 	if err != nil {
 		return ""

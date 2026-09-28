@@ -9,15 +9,10 @@ import (
 	"server-control-panel/internal/deploy"
 )
 
-// AppDeployRunner runs a PaaS deploy through the queue — the path taken by the
-// UI and by rollback. The `git push` trigger does NOT come through here: the
-// hook calls the core deploy.Deploy directly (via panelctl), streaming to the
-// git client. Both paths share deploy.Deploy, so the behaviour is identical.
 type AppDeployRunner struct {
 	DataDir string
 }
 
-// AppDeployArgs is the payload of the app_deploy job.
 type AppDeployArgs struct {
 	App     string `json:"app"`
 	Ref     string `json:"ref,omitempty"`
@@ -28,8 +23,6 @@ type AppDeployArgs struct {
 
 func (AppDeployRunner) Kind() string { return "app_deploy" }
 
-// AuthorizedFor: a deploy touches containers/nginx/FS — primary only, the same
-// as the restart/backup runners.
 func (AppDeployRunner) AuthorizedFor(_ string, isPrimary bool) bool { return isPrimary }
 
 func (r AppDeployRunner) Run(ctx context.Context, args json.RawMessage, logW io.Writer, progress func(int), step func(string)) error {
@@ -61,8 +54,6 @@ func (r AppDeployRunner) Run(ctx context.Context, args json.RawMessage, logW io.
 	return nil
 }
 
-// DeployPreviewReapRunner tears down previews past their TTL. Scheduled (e.g.
-// hourly); idempotent and cheap when there is nothing to clean up.
 type DeployPreviewReapRunner struct {
 	DataDir string
 }

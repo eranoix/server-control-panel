@@ -30,20 +30,12 @@ import androidx.compose.ui.unit.dp
 import dev.servercontrolpanel.designsystem.ThemeMode
 import dev.servercontrolpanel.designsystem.ThemeModeSelector
 
-/** Test tag for the settings screen. */
 internal const val TAG_SETTINGS = "settings-screen"
 
-/** Label of the manual update check. The UI and the test read it from here. */
 internal const val CHECK_UPDATE_LABEL = "Check for updates"
 
-/** Description of the manual check icon, for screen readers. */
 internal const val CHECK_UPDATE_ICON_DESCRIPTION = "Check for app updates"
 
-/**
- * Device settings (appearance, updates, notifications, storage). Sign out stays in the drawer
- * footer so it is one tap away from any screen. The installed version is shown next to the
- * update check so its answer can be verified.
- */
 @Composable
 internal fun SettingsScreen(
     themeMode: ThemeMode,
@@ -64,7 +56,6 @@ internal fun SettingsScreen(
             .padding(vertical = 8.dp)
             .testTag(TAG_SETTINGS),
     ) {
-        // No section title: ThemeModeSelector already labels itself "Appearance".
         ThemeModeSelector(
             selected = themeMode,
             onSelect = onThemeModeChange,

@@ -18,7 +18,6 @@ class ResumePointTest {
         store.save("deploys")
 
         assertEquals("deploys", store.consume())
-        // The route describes a one-time return, not a preference.
         assertNull(store.consume())
     }
 
@@ -36,7 +35,7 @@ class ResumePointTest {
         val store = ResumePoint(app, now = { clock })
         store.save("whatsapp")
 
-        clock += 11 * 60 * 1000L // eleven minutes later
+        clock += 11 * 60 * 1000L
         assertNull("after the deadline the route is no longer valid", store.consume())
     }
 
@@ -46,7 +45,7 @@ class ResumePointTest {
         val store = ResumePoint(app, now = { clock })
         store.save("files")
 
-        clock += 30_000L // thirty seconds, about one install
+        clock += 30_000L
         assertEquals("files", store.consume())
     }
 

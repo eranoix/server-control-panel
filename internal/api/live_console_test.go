@@ -2,28 +2,6 @@
 
 package api
 
-// live_console_test.go — the LIVE proof of the remote console and of rollback,
-// against the home hypervisor.
-//
-// DOUBLE LOCK, same as live_proxmox_test.go: the `live` build tag AND the
-// LAB_PVC_LIVE=1 variable.
-//
-// 🔴 WHAT THIS TEST DOES NOT DO, AND WHY: it does NOT run a real rollback. A
-// rollback throws away everything written to the guest since the snapshot, and
-// CT 204 (`lab`) is a machine in use — there is no "dry-run rollback".
-// What it proves, without destroying anything, is the WHOLE path down to the
-// hypervisor: it asks for a rollback to a snapshot that DOES NOT EXIST and shows
-//
-//	(a) the ACL lets it through — PVE accepts it and creates the task;
-//	(b) PVE answers 200 anyway (the measured pitfall);
-//	(c) the dashboard does NOT pass that 200 along: WaitTask picks up the
-//	    exitstatus and the route answers 502 with the real reason.
-//
-// That is the proof that matters. A test that really rolled the guest back would
-// prove less and cost more.
-//
-//	run: LAB_PVC_LIVE=1 go test -tags=live -run TestLiveConsole ./internal/api/ -v
-
 import (
 	"encoding/json"
 	"net/http"
@@ -38,11 +16,6 @@ import (
 	"server-control-panel/internal/auth"
 )
 
-// consoleGuests are the targets of the measurement. There are FOUR of them,
-// of TWO kinds, on purpose: the defect that motivated this care was a
-// `vncproxy 204` failing on the host, and measuring on a single guest would have
-// declared the path good on a sample of size 1. `pbs` is in for the opposite
-// reason: it has NO token, and the test demands that the refusal be explained.
 var consoleGuests = []struct {
 	id       string
 	name     string
@@ -75,7 +48,6 @@ func TestLiveGuestConsole(t *testing.T) {
 	defer srv.Close()
 	base := "ws" + strings.TrimPrefix(srv.URL, "http")
 
-	// ── 1. a token in the URL is refused BEFORE anything else ─────────────
 	if _, resp, err := websocket.DefaultDialer.Dial(base+"?node=lxc/204&token=x", nil); err == nil {
 		t.Error("token in the URL was accepted")
 	} else if resp == nil || resp.StatusCode != 400 {
@@ -84,16 +56,12 @@ func TestLiveGuestConsole(t *testing.T) {
 		t.Log("token in the URL → 400, as the /ws/shell precedent requires")
 	}
 
-	// ── 2. live console, guest by guest ───────────────────────────────────
 	opened := 0
 	for _, g := range consoleGuests {
 		g := g
 		t.Run(g.name, func(t *testing.T) {
 			conn, resp, err := websocket.DefaultDialer.Dial(base+"?node="+g.id, nil)
 			if !g.hasToken {
-				// 🔴 CT 202 has no node token. The refusal has to NAME the key
-				// that is missing — a generic "error" sends the operator
-				// hunting for a defect where there is none.
 				if err == nil {
 					conn.Close()
 					t.Fatalf("%s opened a console without a node token", g.id)
@@ -114,8 +82,6 @@ func TestLiveGuestConsole(t *testing.T) {
 			}
 			defer conn.Close()
 
-			// The first text frame is the control one. `ready` proves the THREE
-			// steps went through on the hypervisor; `error` carries the real reason.
 			_ = conn.SetReadDeadline(time.Now().Add(20 * time.Second))
 			var ready map[string]any
 			for ready == nil {
@@ -139,14 +105,6 @@ func TestLiveGuestConsole(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			// Reader in a GOROUTINE, not a read with a deadline inside the loop.
-			//
-			// gorilla/websocket invalidates the connection after a read error:
-			// blow the deadline once and every later read fails. That rules out
-			// the obvious "wait a bit, retry, wait again" shape built on
-			// SetReadDeadline. A single reader pushing into a channel lets the
-			// outer loop decide how long to wait without ever hurting the
-			// connection.
 			ttyBytes := make(chan []byte, 64)
 			readErr := make(chan error, 1)
 			go func() {
@@ -165,23 +123,6 @@ func TestLiveGuestConsole(t *testing.T) {
 				}
 			}()
 
-			// 🔴 SYNCHRONIZE THE TTY BEFORE TYPING, AND KEEP INSISTING.
-			//
-			// This step was born of a real, MEASURED defect. The test used to
-			// send its marker with "\n", which SUBMITTED the line as a username
-			// and left the guest sitting at the PASSWORD prompt. A password does
-			// not echo: the next round typed the marker, got nothing back and
-			// blew the deadline. The test alternated green and red by the PARITY
-			// of its runs, and the red was never the console's — it was the
-			// test's own, poisoning its own next round.
-			//
-			// Insisting is mandatory, not paranoia: after failed attempts
-			// `login` EXITS and getty is reborn. In that window no process is
-			// reading the keyboard, so a single keystroke sent falls into the
-			// void and the silence outlasts any reasonable deadline. That is
-			// exactly what made the first version of this fix need TWO rounds to
-			// converge. Ctrl-U erases the half-typed line; Enter forces a fresh
-			// prompt; and if nobody answers, send it again.
 			var before strings.Builder
 			limit := time.Now().Add(60 * time.Second)
 			synced := false
@@ -204,7 +145,6 @@ func TestLiveGuestConsole(t *testing.T) {
 							break sync
 						}
 					case <-timeout:
-						// Silence: getty may be respawning. Insist.
 						continue sync
 					}
 				}
@@ -214,11 +154,6 @@ func TestLiveGuestConsole(t *testing.T) {
 					g.id, g.name, before.String())
 			}
 
-			// Type and wait for the answer to COME BACK. It is the whole loop:
-			// browser → dashboard → PVE → guest → PVE → dashboard → browser.
-			// WITHOUT "\n": a tty in canonical mode echoes character by character,
-			// so the echo proves the round trip without SUBMITTING anything —
-			// nothing runs in somebody else's shell and no login is left pending.
 			if err := conn.WriteJSON(map[string]any{"type": "input", "data": "echo " + mark}); err != nil {
 				t.Fatal(err)
 			}
@@ -238,10 +173,6 @@ func TestLiveGuestConsole(t *testing.T) {
 				}
 			}
 
-			// LEAVE THE TTY AS IT WAS FOUND: Ctrl-U erases the typed line.
-			// Without this the test leaves a trace on the OPERATOR's console —
-			// four guests sitting there with a fake username typed in — and it
-			// was that trace that broke the next round.
 			_ = conn.WriteJSON(map[string]any{"type": "input", "data": "\x15"})
 
 			opened++
@@ -257,21 +188,6 @@ func TestLiveGuestConsole(t *testing.T) {
 			"because `vncproxy 204` has already failed on this host and a sample of 1 would pass the path as good", opened)
 	}
 
-	// ── 3. the trail, at both ends, for every session ────────────────────
-	//
-	// 🔴 THE READ WAITS, AND THAT DOES NOT WEAKEN THE ASSERTION.
-	//
-	// The "closed" record is written when the websocket DROPS, on the server
-	// side, after this test has already moved on. Reading the trail once only
-	// states "both ends were recorded UP TO THIS INSTANT" — and the instant is
-	// arbitrary. While each session lasted 16 s the last write always arrived
-	// first; when the tty fix brought that down to 2.5 s, the test started
-	// failing on 3 closes out of 4. The defect had been in the assertion all
-	// along; speed merely revealed it.
-	//
-	// The property that matters is unchanged — every session records an open
-	// AND a close — only measured with a deadline instead of in a blink.
-	// The deadline is the difference between "it did not happen" and "it had not happened yet".
 	var opens, closes int
 	limit := time.Now().Add(10 * time.Second)
 	for {
@@ -298,8 +214,6 @@ func TestLiveGuestConsole(t *testing.T) {
 	}
 	t.Logf("trail: %d opens and %d closes recorded (the price of the exception to §7.3)", opens, closes)
 
-	// 🔴 And the secret is NOT in the trail. An audit log that keeps a
-	// credential is a password file under another name.
 	vaultValue, _ := r.vaultToken("pve_token_node_lab")
 	secret := vaultValue
 	if i := strings.Index(vaultValue, "="); i > 0 {
@@ -314,18 +228,6 @@ func TestLiveGuestConsole(t *testing.T) {
 	t.Logf("proof window: [t0=%s t1=%s]", t0.Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339))
 }
 
-// 🔴 TestLiveRollbackDoesNotRelayPVE200 is that PVE pitfall proved LIVE on the
-// most destructive route of the dashboard — without destroying anything.
-//
-// Measured with the node token:
-//
-//	POST /nodes/pve/lxc/204/snapshot/<nonexistent>/rollback → HTTP 200 + UPID
-//	task status → stopped, exitstatus "snapshot '…' does not exist"
-//	CT 204 stayed running, uptime intact
-//
-// If the dashboard passed that 200 along, the screen would say "restored" for a
-// rollback that never happened — and the operator would start believing the guest
-// is in an earlier state. The route has to answer 502 WITH the reason.
 func TestLiveRollbackDoesNotRelayPVE200(t *testing.T) {
 	if os.Getenv("LAB_PVC_LIVE") != "1" {
 		t.Skip("live proof turned off — run with LAB_PVC_LIVE=1")
@@ -333,8 +235,6 @@ func TestLiveRollbackDoesNotRelayPVE200(t *testing.T) {
 	r, cancel := liveRouter(t)
 	defer cancel()
 
-	// A name that is valid for PVE and nonexistent by construction: the rollback
-	// dies looking the snapshot up, before touching any disk.
 	const nonexistent = "pvc-live-probe-nonexistent"
 	w, out := pvxPOST(t, r, "/api/proxmox/snapshots/rollback?node=lxc/204&name="+nonexistent)
 	if w.Code != 502 {
@@ -346,7 +246,6 @@ func TestLiveRollbackDoesNotRelayPVE200(t *testing.T) {
 	t.Logf("rollback of a nonexistent snapshot → PVE accepted it (ACL passed) and the task failed;"+
 		"the panel returned 502 with the reason: %v", out["error"])
 
-	// And the guest is still up: nothing was restored, nothing was stopped.
 	wl, outl := pvxGET(t, r, "/api/proxmox/snapshots?node=lxc/204")
 	if wl.Code != 200 {
 		t.Fatalf("listing snapshots after the test = %d: %s", wl.Code, wl.Body)
@@ -354,8 +253,6 @@ func TestLiveRollbackDoesNotRelayPVE200(t *testing.T) {
 	snaps, _ := outl["snapshots"].([]any)
 	t.Logf("CT 204 intact: %d snapshot(s) — nothing was created, restored or deleted", len(snaps))
 
-	// 🔴 The suspend route still DOES NOT EXIST. `vzsuspend 204` fails in this
-	// host's CRIU, and a button that always errors trains people to ignore errors.
 	ws, _ := pvxPOST(t, r, "/api/proxmox/suspend?node=lxc/204")
 	if ws.Code != 404 {
 		t.Errorf("/api/proxmox/suspend = %d, want 404 — suspend is out until CRIU works", ws.Code)
@@ -372,11 +269,6 @@ func pvxPOST(t *testing.T, r *Router, path string) (*httptest.ResponseRecorder, 
 	return w, out
 }
 
-// ttyEchoes says whether the terminal is in a state that ECHOES what is typed.
-//
-// The login PASSWORD prompt is precisely what does NOT echo, and it was the one
-// swallowing the test's marker in silence until the deadline blew. A login prompt
-// and a shell prompt echo; anything else is treated as "not typeable yet".
 func ttyEchoes(s string) bool {
 	t := strings.TrimRight(s, " \r\n\x00")
 	return strings.HasSuffix(t, "login:") || strings.HasSuffix(t, "#") || strings.HasSuffix(t, "$")

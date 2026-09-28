@@ -1,19 +1,4 @@
 #!/usr/bin/env bash
-# android-keystore-drill.sh: rehearses the generate + encrypted backup + restore
-# + fingerprint check procedure from docs/android-signing-keystore.md without
-# touching any real key material.
-#
-# Everything runs in a throwaway temp dir (removed by an EXIT trap). The keystore
-# uses the SAME security parameters as section 3 of the runbook (RSA 4096,
-# 10000 days, PKCS12, alias servercontrolpanel); only -dname/-storepass:env/-keypass:env
-# are added so it runs without a TTY. Exits non-zero if the fingerprints differ,
-# a tool is missing, or any step fails.
-#
-# No password or key material is ever printed; only the SHA-256 fingerprint,
-# which is not secret.
-#
-# Usage: scripts/android-keystore-drill.sh
-# Requires: keytool, openssl.
 
 set -euo pipefail
 
@@ -31,8 +16,6 @@ trap 'rm -rf "$WORKDIR"' EXIT
 
 echo "== throwaway keystore drill, temp dir: $WORKDIR =="
 
-# Throwaway passwords go through the environment, never as literal shell
-# arguments (they would show up in history and ps aux).
 STORE_PASS="$(openssl rand -base64 24)"
 KEY_PASS="$(openssl rand -base64 24)"
 ENC_PASS="$(openssl rand -base64 24)"

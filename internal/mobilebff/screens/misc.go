@@ -1,30 +1,3 @@
-// Package screens: misc.go — the fan-out batch of four screens that share no
-// domain backend with each other and none with the six domains
-// already fanned out (Docker/System/Scheduler/Security/Network):
-//
-//   - ai.settings  — model tiering (internal/aimodel), NEVER secrets.
-//   - jira.issues  — Jira issues (internal/jira), without the kanban board.
-//     The board exists, but NOT here: it is native (`:feature-jira` +
-//     handlers_jira.go). This screen is what the apps that predate it
-//     see. See buildJiraIssuesConnectedScreen.
-//   - deploy.apps  — Heroku-style PaaS catalog (internal/deploy).
-//   - queue.jobs   — generic background job queue (internal/queue).
-//
-// Grouped in one file/one MiscDeps because each domain on its own is too
-// small to earn its own *Deps type — see MiscDeps' doc comment in deps.go.
-//
-// The single easiest mistake in this batch is confusing
-// deploy.apps/queue.jobs with the self-deploy
-// mechanism: internal/mobilebff/ops_deploy.go's `POST /ops/deploy` (which
-// triggers THIS process's own redeploy through the configured deploy command) and
-// ops_health.go's `GET /ops/status`. Those two files are a SIBLING,
-// non-overlapping mechanism. deploy.apps manages internal/deploy's PaaS app
-// catalog (arbitrary OTHER apps this VPS hosts); queue.jobs manages
-// internal/queue's generic job queue (which self-deploy also happens to use
-// as its transport, but queue.jobs never special-cases the self-deploy job
-// kind). Every builder/action below that touches these two domains carries
-// an explicit comment reiterating this boundary — do not remove it in a
-// future refactor.
 package screens
 
 import (
@@ -49,8 +22,6 @@ import (
 	"server-control-panel/internal/queue"
 )
 
-// Screen ids — also the golden fixture filename stems (ai.settings.*, etc,
-// see contracts/sdui/fixtures/screens/).
 const (
 	miscAISettingsScreenID = "ai.settings"
 	miscJiraIssuesScreenID = "jira.issues"
@@ -58,8 +29,6 @@ const (
 	miscQueueJobsScreenID  = "queue.jobs"
 )
 
-// Rows/detail/options endpoints — absolute paths (carry mobilebff.Prefix),
-// same convention as dockerContainersRowsEndpoint/systemHistoryRowsEndpoint.
 const (
 	miscJiraIssuesRowsEndpoint       = mobilebff.Prefix + "/jira/issues"
 	miscJiraIssueDetailEndpoint      = mobilebff.Prefix + "/jira/issue-detail"
@@ -68,23 +37,6 @@ const (
 	miscQueueJobsRowsEndpoint        = mobilebff.Prefix + "/queue/jobs"
 )
 
-// --- jira.issues: per-viewer selected-issue state --------------------------
-//
-// jiraSelectedIssueMu/jiraSelectedIssueByUser is the SECOND per-viewer,
-// server-side mutable BFF-adapter state in this package (the first is
-// system.go's systemMetricsWindowByUser — see that var's doc comment for
-// the full rationale, reproduced here for this screen's own gap): the
-// client vocabulary has no way for a TableComponent row tap to parametrize
-// a DetailComponent's FIXED data_source endpoint. jira.issue.select (a
-// non-destructive row action) writes the tapped issue's key here and
-// returns Invalidate for the detail/transition-form/comment-form
-// components, which then re-fetch their still-fixed URLs and see the newly
-// selected issue.
-//
-// Being package-level, this state is shared across every test in this
-// binary — tests that touch it MUST use a unique username per test (never
-// "golden-admin"/"golden-user"), exactly like systemMetricsWindowByUser's
-// own warning.
 var (
 	jiraSelectedIssueMu     sync.RWMutex
 	jiraSelectedIssueByUser = map[string]string{}
@@ -102,10 +54,6 @@ func setJiraSelectedIssue(username, key string) {
 	jiraSelectedIssueByUser[username] = key
 }
 
-// RegisterMisc wires the four screens fanned out by this file, their
-// actions and their rows/detail/options endpoints. Called explicitly by
-// internal/api/api.go, mirroring RegisterDocker/RegisterSystem/
-// RegisterSecurity/RegisterNetwork.
 func RegisterMisc(deps MiscDeps) {
 	sdui.Register(miscAISettingsScreenID, func(_ context.Context, v sdui.Viewer) (*sdui.Envelope, error) {
 		return buildAISettingsScreenForViewer(v, deps)
@@ -120,16 +68,6 @@ func RegisterMisc(deps MiscDeps) {
 		return buildQueueJobsScreen(v), nil
 	})
 
-	// Catalog entries. The four screens in this file fall into different
-	// groups on purpose: queue and deploy are things that HAPPEN on the
-	// machine (Automation), while AI and Jira are OUTSIDE services the panel
-	// talks to (Integrations).
-	//
-	// jira.issues is alwaysVisible despite looking sensitive: its visibility
-	// axis is not role, it is per-user CREDENTIAL
-	// (MiscDeps.JiraStatus(v.Username)) — buildJiraIssuesScreen does not even
-	// consult IsAdmin. A non-admin opens the screen and sees the "connect"
-	// state, which is legitimate content, not a leak.
 	sdui.RegisterCatalog(miscQueueJobsScreenID, sdui.GroupAutomation, "Job queue", alwaysVisible)
 	sdui.RegisterCatalog(miscDeployAppsScreenID, sdui.GroupAutomation, "App deploys", adminOnly)
 	sdui.RegisterCatalog(miscAISettingsScreenID, sdui.GroupIntegrations, "AI models", adminOnly)
@@ -223,37 +161,16 @@ func RegisterMisc(deps MiscDeps) {
 			})
 	})
 
-	// Forbidden-for-non-admin ledger.
-	//
-	// ai.settings is whole-screen admin-only (ErrScreenNotFound above), so
-	// there is no non-admin envelope to omit anything FROM — the defensive
-	// registration below only covers the case where the golden harness
-	// still probes ai.settings.save's action id directly, same posture as
-	// dockerPruneScreenID's own registration.
 	sdui.RegisterForbiddenForNonAdmin(miscAISettingsScreenID, func() []string {
 		return []string{miscActionAISettingsSave}
 	})
-	// deploy.apps is likewise whole-screen admin-only (every
-	// handlers_deploy.go route is r.mustPrimary-gated — see
-	// buildDeployAppsScreenForViewer): same defensive-registration posture.
 	sdui.RegisterForbiddenForNonAdmin(miscDeployAppsScreenID, func() []string {
 		return []string{miscActionDeployAppCreate, miscActionDeployAppRedeploy, miscActionDeployAppDelete}
 	})
-	// queue.jobs has no admin-only ROLE gate (any authenticated user sees
-	// their own jobs), but retry/cancel of a job you don't own is still
-	// unreachable — RunAction's authorize gate is binary (Viewer, not
-	// per-resource), so this ledger cannot express "forbidden for the
-	// non-owner"; the real per-job ownership check lives inside
-	// misc_actions.go's handlers instead (see MiscDeps.GetQueueJob's doc
-	// comment). Registered here anyway, matching every other screen's
-	// convention of a non-nil entry, with an empty set: nothing is
-	// forbidden BY ROLE for queue.jobs' actions themselves.
 	sdui.RegisterForbiddenForNonAdmin(miscQueueJobsScreenID, func() []string {
 		return nil
 	})
 }
-
-// --- ai.settings ------------------------------------------------------------
 
 func buildAISettingsScreenForViewer(v sdui.Viewer, deps MiscDeps) (*sdui.Envelope, error) {
 	if !v.IsAdmin() {
@@ -262,11 +179,6 @@ func buildAISettingsScreenForViewer(v sdui.Viewer, deps MiscDeps) (*sdui.Envelop
 	return buildAISettingsScreen(deps), nil
 }
 
-// aiModelOptionValue maps a persisted "" (inherits the process default) to
-// the wire value "inherit" a select field can carry — internal/aimodel's
-// own normalize() already treats "inherit" as an alias for "" on the way
-// back in (aimodel.Allowed("inherit") == true), so this is a display
-// convenience, never a new validation rule.
 func aiModelOptionValue(m string) string {
 	if m == "" {
 		return "inherit"
@@ -295,13 +207,6 @@ func buildAISettingsScreen(deps MiscDeps) *sdui.Envelope {
 	return &sdui.Envelope{Screen: screen}
 }
 
-// --- jira.issues -------------------------------------------------------------
-
-// buildJiraIssuesScreen is per-viewer (not whole-screen admin-gated): Jira
-// access is a per-user vault credential, not an admin/non-admin role split
-// (see deps.go's JiraConnect doc comment) — every authenticated viewer
-// sees the SAME screen shape, gated instead on whether THEY personally have
-// connected Jira (JiraStatus), never on IsAdmin().
 func buildJiraIssuesScreen(v sdui.Viewer, deps MiscDeps) *sdui.Envelope {
 	connected, _ := deps.JiraStatus(v.Username)
 	if !connected {
@@ -329,23 +234,6 @@ func buildJiraConnectScreen() *sdui.Envelope {
 	return &sdui.Envelope{Screen: screen}
 }
 
-// buildJiraIssuesConnectedScreen deliberately contains no board/kanban/
-// column-typed component anywhere — it is a table (list) + detail + two
-// small forms (transition, comment), the same closed vocabulary every other
-// screen in this package uses.
-//
-// WHAT CHANGED, and why this screen IS STILL here. The previous comment said
-// the kanban board would stay "permanently desktop-only". It did not:
-// the app got a NATIVE board (`:feature-jira`, served by
-// internal/mobilebff/handlers_jira.go), because a board with drag-and-drop
-// is not describable by the closed 7-type vocabulary — and the sdui package
-// comment says exactly that this is the sign of a native module.
-//
-// This screen was not removed, and the reason is the installed base: every
-// version of the app that predates the native board reaches Jira ONLY
-// through here. Deleting it from the server would take Jira away from every
-// device that has not updated yet — there is one server and many installed
-// apps. It is the backward degradation, not the intended experience.
 func buildJiraIssuesConnectedScreen() *sdui.Envelope {
 	table := sdui.TableComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeTable, ID: "issues-table"},
@@ -402,14 +290,6 @@ func buildJiraIssuesConnectedScreen() *sdui.Envelope {
 	return &sdui.Envelope{Screen: screen}
 }
 
-// --- deploy.apps -------------------------------------------------------------
-
-// buildDeployAppsScreenForViewer is whole-screen admin-only, mirroring
-// handlers_deploy.go's own posture EXACTLY: every route in that file is
-// r.mustPrimary-gated, with no partial/non-admin view at all. This manages
-// internal/deploy's PaaS app catalog — creating/redeploying/deleting an
-// arbitrary OTHER app this VPS hosts — never the self-deployment trigger
-// Phase 6's ops_deploy.go exposes for THIS process's own binary.
 func buildDeployAppsScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	if !v.IsAdmin() {
 		return nil, sdui.ErrScreenNotFound
@@ -460,16 +340,6 @@ func buildDeployAppsScreen() *sdui.Envelope {
 	return &sdui.Envelope{Screen: screen}
 }
 
-// --- queue.jobs ---------------------------------------------------------------
-
-// buildQueueJobsScreen is per-viewer (not whole-screen admin-gated), mirroring
-// handleQueue's own posture: any authenticated user sees the screen, but the
-// rows endpoint scopes to their own jobs unless admin (see RegisterMisc's
-// queue.jobs.rows closure). This manages internal/queue's GENERIC job
-// catalogue — the self-deploy job internal/queue also happens to carry
-// (kind "app_deploy" from deploy.apps, or the panel's own self-deploy kind)
-// shows up here like any other job, with no special-casing: queue.jobs never
-// duplicates ops_health.go's GET /ops/status self-deploy status surface.
 func buildQueueJobsScreen(_ sdui.Viewer) *sdui.Envelope {
 	table := sdui.TableComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeTable, ID: "queue-jobs-table"},
@@ -502,11 +372,6 @@ func buildQueueJobsScreen(_ sdui.Viewer) *sdui.Envelope {
 	return &sdui.Envelope{Screen: screen}
 }
 
-// --- row/detail shaping helpers -----------------------------------------------
-
-// jiraIssueRow mirrors the server-side preformatting rule every other
-// screen in this package follows (system.go's formatSystemTimestamp, etc):
-// the client never formats a raw struct, only plain strings.
 func jiraIssueRow(is jira.Issue) map[string]any {
 	assignee := ""
 	if is.Assignee != nil {
@@ -567,28 +432,14 @@ func queueJobRow(j *queue.Job) map[string]any {
 	}
 }
 
-// miscTimestampFormat mirrors dockerTimestampFormat/systemTimestampFormat —
-// every timestamp in these four screens is rendered server-side, never a
-// raw epoch.
 const miscTimestampFormat = "2006-01-02 15:04 UTC"
 
-// formatMiscTimestamp mirrors formatSystemTimestamp (system.go): zero epoch
-// renders as empty, never "1970-01-01".
 func formatMiscTimestamp(epoch int64) string {
 	if epoch == 0 {
 		return ""
 	}
 	return time.Unix(epoch, 0).UTC().Format(miscTimestampFormat)
 }
-
-// --- rows/detail endpoint plumbing --------------------------------------------
-//
-// registerMiscRows/serveMiscRows and registerMiscDetail/serveMiscDetail
-// mirror registerSystemRows/serveSystemRows and registerSecurityDetail/
-// serveSecurityDetail byte-for-byte: authenticate, resolve Viewer, call
-// fetch, wrap as {"rows":[...]}/{"detail":{...}} — duplicated here per this
-// package's one-helper-per-file convention (see docker.go/system.go/
-// security.go, each of which has its own copy of this exact shape).
 
 func registerMiscRows(api huma.API, opID, path, summary string, cfg *config.Config, fetch func(context.Context, sdui.Viewer) ([]map[string]any, error)) {
 	huma.Register(api, huma.Operation{

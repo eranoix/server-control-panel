@@ -16,7 +16,6 @@ import (
 	"server-control-panel/internal/scheduler"
 )
 
-// apiFakeEnq counts enqueues without spinning a real worker pool.
 type apiFakeEnq struct{ n int }
 
 func (f *apiFakeEnq) Enqueue(kind string, _ json.RawMessage, owner, source string) (string, error) {
@@ -24,8 +23,6 @@ func (f *apiFakeEnq) Enqueue(kind string, _ json.RawMessage, owner, source strin
 	return "q1", nil
 }
 
-// stubRunner stands in for runners we don't want to pull heavy deps for
-// (e.g. jiraai). Kind + AuthorizedFor are all the catalogue/authz path reads.
 type stubRunner struct {
 	kind  string
 	authz bool
@@ -73,8 +70,6 @@ func newSchedTestRouter(t *testing.T) *Router {
 	reg(queue.WatchdogRunner{DataDir: dir})
 	reg(queue.SessionBackupRunner{Backup: r.runSessionBackupJob})
 	reg(queue.AgentRoutineRunner{Spawn: r.runAgentRoutineJob})
-	// Mirror the real jira_ai_analysis runner: authorized for everyone, but
-	// marked non-schedulable in the descriptor table → must be excluded.
 	reg(stubRunner{kind: "jira_ai_analysis", authz: true})
 
 	sc, err := scheduler.New(filepath.Join(dir, "scheduler", "jobs.json"), &apiFakeEnq{})
@@ -119,7 +114,6 @@ func catalogKinds(t *testing.T, r *Router, user string) []string {
 	return ks
 }
 
-// Primary sees every schedulable kind, sorted, with jira_ai_analysis excluded.
 func TestSchedulerCatalogPrimarySeesAllSchedulable(t *testing.T) {
 	r := newSchedTestRouter(t)
 	got := catalogKinds(t, r, "sam")
@@ -140,9 +134,6 @@ func TestSchedulerCatalogPrimarySeesAllSchedulable(t *testing.T) {
 	}
 }
 
-// Non-primary sees only the open kinds (docker_pull, docker_compose_pull and
-// session_backup — the last one scoped to the user's own sessions), sorted;
-// jira_ai_analysis is authorized but non-schedulable so it's excluded.
 func TestSchedulerCatalogNonPrimaryFiltered(t *testing.T) {
 	r := newSchedTestRouter(t)
 	got := catalogKinds(t, r, "jordan")
@@ -157,9 +148,6 @@ func TestSchedulerCatalogNonPrimaryFiltered(t *testing.T) {
 	}
 }
 
-// Anti-drift: every registered runner kind must have an EXPLICIT descriptor
-// (not the fallback). A new runner added without a descriptor fails here, so it
-// can never silently surface in the UI with a blank form.
 func TestSchedulerCatalogAntiDrift(t *testing.T) {
 	r := newSchedTestRouter(t)
 	for kind := range r.queueRunners {
@@ -169,7 +157,6 @@ func TestSchedulerCatalogAntiDrift(t *testing.T) {
 	}
 }
 
-// POST create with a primary-only kind as a non-primary user → 403.
 func TestSchedulerCreateDeniedForPrimaryKind(t *testing.T) {
 	r := newSchedTestRouter(t)
 	rec := httptest.NewRecorder()
@@ -180,7 +167,6 @@ func TestSchedulerCreateDeniedForPrimaryKind(t *testing.T) {
 	}
 }
 
-// POST create with an open kind as a non-primary user → 200.
 func TestSchedulerCreateAllowedForOpenKind(t *testing.T) {
 	r := newSchedTestRouter(t)
 	rec := httptest.NewRecorder()
@@ -191,9 +177,6 @@ func TestSchedulerCreateAllowedForOpenKind(t *testing.T) {
 	}
 }
 
-// session_backup is schedulable by any user, but the server ALWAYS pins the
-// args' owner to the requester — a non-primary cannot forge "owner" to back up
-// another account's sessions. Guarantees injectSchedOwner on create.
 func TestSchedulerSessionBackupOwnerForcedServerSide(t *testing.T) {
 	r := newSchedTestRouter(t)
 	rec := httptest.NewRecorder()
@@ -218,10 +201,6 @@ func TestSchedulerSessionBackupOwnerForcedServerSide(t *testing.T) {
 	}
 }
 
-// run-now on an orphaned job (primary-only kind, owned by a non-primary user
-// because it predates the create gate) → 403. The owner check at handler :94
-// passes (owner == requester), so this proves the kind-revalidation closes the
-// run-now door.
 func TestSchedulerRunNowOrphanDenied(t *testing.T) {
 	r := newSchedTestRouter(t)
 	orphan, err := r.scheduler.Save(scheduler.Job{
@@ -238,7 +217,6 @@ func TestSchedulerRunNowOrphanDenied(t *testing.T) {
 	}
 }
 
-// Regression guard: primary run-now of a primary-only kind still works.
 func TestSchedulerRunNowPrimaryWorks(t *testing.T) {
 	r := newSchedTestRouter(t)
 	j, err := r.scheduler.Save(scheduler.Job{

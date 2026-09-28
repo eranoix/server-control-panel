@@ -1,18 +1,5 @@
 package api
 
-// handlers_ai.go — Claude (OAuth-only).
-//
-// Covers:
-//   - handleClaude (overview)
-//   - handleClaudeSessionFork + handleClaudeSessionRestart
-//
-// The app was consolidated to Claude-only: the private-ai-api bridge and Venice
-// proxies, the AI Toolkit preflight and the mode toggle were all removed.
-// The private-ai-api service is still on the host (used by other projects), it is
-// simply no longer exposed by the UI.
-//
-// Extracted from api.go. Still *Router because it uses audit/auth/cfg.
-
 import (
 	"context"
 	"encoding/json"
@@ -30,8 +17,6 @@ import (
 	ptysvc "server-control-panel/internal/pty"
 )
 
-// ---------- Claude/Config/Exec ----------
-
 func (r *Router) handleClaude(w http.ResponseWriter, req *http.Request) {
 	o, err := claude.Collect(r.cfg.ClaudeHome)
 	if err != nil {
@@ -41,20 +26,10 @@ func (r *Router) handleClaude(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, o)
 }
 
-// interactiveModel resolves the model of an interactive claude panel. Interactive
-// panels do NOT go through tiering: an explicit per-session choice (reqModel —
-// e.g. the fork's model selector) wins; otherwise it returns "" = NO --model,
-// inheriting the model the operator predefined in Claude Code's settings.json
-// (Opus / full window). The tier applies only to parallel agents and to the other
-// AI functions (suggest, jira_ai). The spawner revalidates reqModel against the
-// allowlist (anti-injection).
 func (r *Router) interactiveModel(reqModel string) string {
 	return strings.TrimSpace(reqModel)
 }
 
-// handleClaudeSessionFork spawns a new detached session running
-// `claude --resume <uuid>` so the user can continue an existing conversation
-// in a fresh process.
 func (r *Router) handleClaudeSessionFork(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		writeErr(w, 405, "method not allowed")
@@ -68,7 +43,7 @@ func (r *Router) handleClaudeSessionFork(w http.ResponseWriter, req *http.Reques
 	var body struct {
 		SessionName string `json:"session_name"`
 		ResumeUUID  string `json:"resume_uuid"`
-		Model       string `json:"model"` // optional tier; "" = configured default
+		Model       string `json:"model"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeErr(w, 400, "bad json")
@@ -86,9 +61,6 @@ func (r *Router) handleClaudeSessionFork(w http.ResponseWriter, req *http.Reques
 	writeJSON(w, map[string]any{"ok": true, "session": created})
 }
 
-// handleClaudeSessionRestart kills a session and recreates it running
-// `claude --continue`. The conversation history is restored from the JSONL.
-// Any websocket attached to the old session will drop and must reattach.
 func (r *Router) handleClaudeSessionRestart(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		writeErr(w, 405, "method not allowed")
@@ -101,7 +73,7 @@ func (r *Router) handleClaudeSessionRestart(w http.ResponseWriter, req *http.Req
 	}
 	var body struct {
 		SessionName string `json:"session_name"`
-		Model       string `json:"model"` // optional tier; "" = configured default
+		Model       string `json:"model"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.SessionName == "" {
 		writeErr(w, 400, "session_name required")
@@ -115,24 +87,8 @@ func (r *Router) handleClaudeSessionRestart(w http.ResponseWriter, req *http.Req
 	writeJSON(w, map[string]any{"ok": true, "session": body.SessionName})
 }
 
-// ---------- private-ai-api · token management (Claude AI → Tokens) ----------
-//
-// The /api/private-ai/ proxy was removed from the UI; these handlers reintroduce
-// it only for token management (admin API). The service is still on the host
-// (127.0.0.1:8787). PANEL proxies server-side with the ADMIN_TOKEN — the token
-// never reaches the browser. Access: any logged-in user (auth.UserFrom).
-// Mutations are audited.
-//
-// Source of the admin token (in order): (1) an optional override in the global
-// secrets vault under the key private_ai_admin_token; (2) ADMIN_TOKEN read from
-// private-ai-api's own EnvironmentFile (cfg.PrivateAIAdminTokenFile,
-// default /etc/private-ai-api/env) — the source of truth, without duplicating the secret.
-
 const privateAIAdminTokenSecret = "private_ai_admin_token"
 
-// privateAIClient builds an admin API client using the URL from the config and
-// the resolved admin token. Returns ok=false when no token is found —
-// the caller answers 503 with a clear warning.
 func (r *Router) privateAIClient() (*privateaiapi.Client, bool) {
 	token := r.privateAIAdminToken()
 	if strings.TrimSpace(token) == "" {
@@ -141,8 +97,6 @@ func (r *Router) privateAIClient() (*privateaiapi.Client, bool) {
 	return privateaiapi.New(r.cfg.PrivateAIURL, token), true
 }
 
-// privateAIAdminToken resolves the admin token: the global vault override first,
-// otherwise it reads ADMIN_TOKEN from private-ai-api's EnvironmentFile.
 func (r *Router) privateAIAdminToken() string {
 	if r.secrets != nil {
 		if v, ok := r.secrets.Get(privateAIAdminTokenSecret); ok && strings.TrimSpace(v) != "" {
@@ -157,9 +111,6 @@ func (r *Router) privateAIAdminToken() string {
 	return ""
 }
 
-// readEnvFileVar extracts the value of KEY=value from a file in dotenv/systemd
-// EnvironmentFile format. Ignores comments and whitespace; strips single or
-// double quotes around the value. Returns "" if absent or unreadable.
 func readEnvFileVar(path, key string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -185,17 +136,12 @@ func readEnvFileVar(path, key string) string {
 	return ""
 }
 
-// writePrivateAIResult relays the admin API's raw response (status + body)
-// to the client, keeping the upstream status.
 func writePrivateAIResult(w http.ResponseWriter, res *privateaiapi.Result) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(res.Status)
 	_, _ = w.Write(res.Body)
 }
 
-// handlePrivateAITokens — GET lists the keys, POST creates a new one.
-// POST forwards the body (name + optional limits) and returns the upstream's
-// plaintext (shown exactly once in the UI).
 func (r *Router) handlePrivateAITokens(w http.ResponseWriter, req *http.Request) {
 	user := auth.UserFrom(req)
 	if user == "" {
@@ -242,10 +188,6 @@ func (r *Router) handlePrivateAITokens(w http.ResponseWriter, req *http.Request)
 	}
 }
 
-// handlePrivateAITokenAction — per-id actions under /api/private-ai/tokens/.
-//
-//	POST  /api/private-ai/tokens/<id>/revoke  → revokes
-//	PATCH /api/private-ai/tokens/<id>         → edits limits
 func (r *Router) handlePrivateAITokenAction(w http.ResponseWriter, req *http.Request) {
 	user := auth.UserFrom(req)
 	if user == "" {
@@ -300,7 +242,6 @@ func (r *Router) handlePrivateAITokenAction(w http.ResponseWriter, req *http.Req
 	}
 }
 
-// handlePrivateAIStatus serves the status panel (OAuth, system, 24h usage).
 func (r *Router) handlePrivateAIStatus(w http.ResponseWriter, req *http.Request) {
 	if auth.UserFrom(req) == "" {
 		writeErr(w, 401, "unauthorized")
@@ -320,7 +261,6 @@ func (r *Router) handlePrivateAIStatus(w http.ResponseWriter, req *http.Request)
 	writeJSON(w, cli.Status(ctx))
 }
 
-// decodeJSONObject reads a (size-limited) JSON object body into a map.
 func decodeJSONObject(req *http.Request) (map[string]any, error) {
 	var payload map[string]any
 	dec := json.NewDecoder(io.LimitReader(req.Body, 1<<20))

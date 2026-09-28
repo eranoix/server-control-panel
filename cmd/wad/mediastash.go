@@ -1,18 +1,5 @@
 package main
 
-// mediastash.go — persisting media keys across daemon restarts.
-//
-// The download keys of every media message (the CDN's directPath + mediaKey,
-// which whatsmeow uses to decrypt) live only in the in-memory stash
-// (session.msgs), which is WIPED on every daemon restart — and every deploy
-// restarts the daemon. Since media download is MANUAL (the user clicks
-// "Download" possibly hours/days and several deploys after receiving it), an
-// ephemeral stash makes that click 404 forever as soon as the daemon restarts.
-// To make the manual download durable, we persist the message proto (which
-// carries the keys) to disk per media message, and reload it on demand when the
-// in-memory stash misses. The keys are tiny; only messages WITH media are
-// persisted, and the directory is pruned to the N newest files.
-
 import (
 	"encoding/base64"
 	"encoding/json"
@@ -25,21 +12,14 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// mediaStashMax caps how many protos stay on disk; the prune keeps the newest
-// by mtime. Media on WhatsApp's CDN expires within weeks, so old keys become
-// dead weight anyway.
 const mediaStashMax = 8000
 
-// pruneEvery fires an (asynchronous) prune every N persists, so a long-lived
-// daemon does not blow past the cap while waiting for the boot-time prune.
 const pruneEvery = 1000
 
 func (s *session) mediaStashDir() string {
 	return filepath.Join(filepath.Dir(s.dbPath), "mediastash")
 }
 
-// stashFileID sanitises a WhatsApp message ID into a safe file name. WhatsApp
-// IDs are usually [0-9A-F], but we defend against any character.
 func stashFileID(id string) string {
 	var b strings.Builder
 	for _, r := range id {
@@ -60,12 +40,9 @@ func stashFileID(id string) string {
 type persistedStash struct {
 	Sender string `json:"sender"`
 	FromMe bool   `json:"fromMe"`
-	Msg    string `json:"msg"` // base64(proto.Marshal(*waE2E.Message))
+	Msg    string `json:"msg"`
 }
 
-// hasDownloadableMedia reports whether m carries media whatsmeow can download
-// (mirrors downloadMedia's type switch, over the message already unwrapped from
-// view-once).
 func hasDownloadableMedia(m *waE2E.Message) bool {
 	if m == nil {
 		return false
@@ -76,8 +53,6 @@ func hasDownloadableMedia(m *waE2E.Message) bool {
 		u.GetStickerMessage() != nil
 }
 
-// mediaMimeOf returns the mimetype of m's downloadable media (or "" if there is
-// none). Used in history sync so the server picks the right extension/Content-Type.
 func mediaMimeOf(m *waE2E.Message) string {
 	if m == nil {
 		return ""
@@ -98,9 +73,6 @@ func mediaMimeOf(m *waE2E.Message) string {
 	return ""
 }
 
-// persistStashedMedia writes a media message's download keys to disk so a later
-// "Download" works even after a daemon restart. Best-effort: any error is
-// swallowed (the in-memory stash still serves this session).
 func (s *session) persistStashedMedia(id, sender string, fromMe bool, m *waE2E.Message) {
 	raw, err := proto.Marshal(m)
 	if err != nil {
@@ -120,11 +92,9 @@ func (s *session) persistStashedMedia(id, sender string, fromMe bool, m *waE2E.M
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return
 	}
-	_ = os.Rename(tmp, full) // atomic swap
+	_ = os.Rename(tmp, full)
 }
 
-// loadPersistedStash reads a persisted media message back from disk. Returns
-// nil on any miss/error.
 func (s *session) loadPersistedStash(id string) *stashedMsg {
 	full := filepath.Join(s.mediaStashDir(), stashFileID(id)+".json")
 	data, err := os.ReadFile(full)
@@ -146,8 +116,6 @@ func (s *session) loadPersistedStash(id string) *stashedMsg {
 	return &stashedMsg{msg: &m, sender: rec.Sender, fromMe: rec.FromMe}
 }
 
-// pruneMediaStash keeps only the mediaStashMax newest files (by mtime),
-// deleting the rest. Bounds growth on disk. Best-effort.
 func (s *session) pruneMediaStash() {
 	dir := s.mediaStashDir()
 	entries, err := os.ReadDir(dir)
@@ -175,7 +143,7 @@ func (s *session) pruneMediaStash() {
 	if len(files) <= mediaStashMax {
 		return
 	}
-	sort.Slice(files, func(i, j int) bool { return files[i].mod > files[j].mod }) // newest first
+	sort.Slice(files, func(i, j int) bool { return files[i].mod > files[j].mod })
 	for _, f := range files[mediaStashMax:] {
 		_ = os.Remove(filepath.Join(dir, f.name))
 	}

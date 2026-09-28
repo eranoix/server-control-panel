@@ -8,27 +8,12 @@ import (
 	"server-control-panel/internal/gameservers"
 )
 
-// Agent is the agent's state. Only what is needed to serve the catalogue.
-//
-// NO HANDLER BELOW CONTAINS FILE LOGIC, and that is not a saving in typing: if
-// one did, the later extraction would be born already undone — the logic would
-// have two owners and one day the two would diverge. Here the handlers only
-// validate the shape of the document and delegate to the Backend.
 type Agent struct {
-	// No is the node's name, for diagnostics and for /metrics.
 	No string
 
-	// Back is what actually executes. In the agent it is the LOCAL back-end;
-	// in a test it is a double. The Agent does not know the difference — it is
-	// the same design trainer.go already uses, validated in production.
 	Back gameservers.Backend
 }
 
-// delegate is the common body: all 23 handlers are the same sentence.
-//
-// Having ONE delegation function, instead of 23 look-alike bodies, is what
-// keeps a handler from picking up logic of its own by accident — there is
-// nowhere to put it.
 func (a *Agent) delegate(ctx context.Context, op gameservers.OpName, body json.RawMessage) (any, error) {
 	if a.Back == nil {
 		return nil, fmt.Errorf("agent with no back-end configured")

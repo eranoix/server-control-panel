@@ -1,22 +1,5 @@
 package api
 
-// leak_watcher.go — the tunnel's LEAK sentinel.
-//
-// The concrete fear of anyone routing their phone through home: believing the
-// traffic leaves through the house when, thanks to the gateway going down or a
-// silent fallback, it has started leaving through the VPS itself. "It looks
-// protected" is worse than knowing it has failed. This sentinel runs on the VPS
-// and, on every cycle, proves through the house's SOCKS what the real egress IP
-// is — and compares it with the VPS's IP.
-//
-// It alerts ON THE EDGE (like hypervisor_watcher): only the transition produces
-// an event, and it waits N cycles before believing it (networks wobble). Two
-// symptoms:
-//   - the house egress unreachable for N cycles → the gateway is down / the
-//     route is broken.
-//   - the house egress leaving via the SAME IP as the VPS → A LEAK: what should
-//     be going through the house is going through the VPS.
-
 import (
 	"context"
 	"encoding/json"
@@ -36,11 +19,11 @@ import (
 
 const (
 	leakInterval   = 5 * time.Minute
-	leakFailBefore = 3 // consecutive cycles before trusting the outage
+	leakFailBefore = 3
 	leakDedup      = "tunnel:leak"
-	TypeTunnelLeak = "tunnel.leak"      // home traffic leaving through the VPS
-	TypeTunnelDown = "tunnel.home_down" // home exit unreachable
-	TypeTunnelOK   = "tunnel.recovered" // back to normal
+	TypeTunnelLeak = "tunnel.leak"
+	TypeTunnelDown = "tunnel.home_down"
+	TypeTunnelOK   = "tunnel.recovered"
 )
 
 type leakSentinel struct {
@@ -52,16 +35,14 @@ type leakSentinel struct {
 }
 
 func (r *Router) startLeakWatcher(ctx context.Context) {
-	// This only makes sense if the tunnel is configured on this host.
 	if r.cfg.SingboxConfigPath == "" {
 		return
 	}
 	if _, err := os.Stat(r.cfg.SingboxConfigPath); err != nil {
-		return // no tunnel here — nothing to watch
+		return
 	}
 	s := &leakSentinel{}
 	go func() {
-		// the first tick after a short delay (lets the boot settle)
 		t := time.NewTimer(30 * time.Second)
 		defer t.Stop()
 		for {
@@ -70,10 +51,6 @@ func (r *Router) startLeakWatcher(ctx context.Context) {
 				return
 			case <-t.C:
 			}
-			// Armour: a panic in the tick (network, parse, notify) must NEVER
-			// take the control plane down. A goroutine that panics kills the whole
-			// process — this watchman is surveillance, it cannot become the cause
-			// of the outage. Recover, log, and carry on next cycle.
 			func() {
 				defer func() {
 					if rec := recover(); rec != nil {
@@ -88,11 +65,7 @@ func (r *Router) startLeakWatcher(ctx context.Context) {
 	log.Printf("leak-watcher: watching the home-egress every %s", leakInterval)
 }
 
-// tick proves the house's egress IP and compares it with the VPS's.
 func (s *leakSentinel) tick(r *Router) {
-	// With no notification channel there is nothing for this watchman to do —
-	// and calling r.notify.Dispatch with r.notify nil would be a nil deref that
-	// takes the process down (the same guard as hypervisor_watcher.go). Exit.
 	if r.notify == nil {
 		return
 	}
@@ -115,7 +88,6 @@ func (s *leakSentinel) tick(r *Router) {
 		}
 		return
 	}
-	// an answer arrived → reset the down counter
 	if s.homeDown {
 		s.homeDown = false
 		r.notify.Dispatch(notify.Event{
@@ -126,7 +98,6 @@ func (s *leakSentinel) tick(r *Router) {
 	}
 	s.fails = 0
 
-	// LEAK: the house leaving via the same IP as the VPS.
 	leakNow := vpsIP != "" && homeIP == vpsIP
 	if leakNow && !s.leaking {
 		s.leaking = true
@@ -146,7 +117,6 @@ func (s *leakSentinel) tick(r *Router) {
 	}
 }
 
-// ensureVPSIP discovers (once) the VPS's public IP through a direct egress.
 func (s *leakSentinel) ensureVPSIP() string {
 	s.mu.Lock()
 	ip := s.vpsIP
@@ -163,7 +133,6 @@ func (s *leakSentinel) ensureVPSIP() string {
 	return ip
 }
 
-// homeEgressIP dials the house's SOCKS (read from the config) and fetches the egress IP.
 func (s *leakSentinel) homeEgressIP(r *Router) (string, error) {
 	host, port, user, pass, err := readHomeSOCKS(r.cfg.SingboxConfigPath)
 	if err != nil {
@@ -190,7 +159,6 @@ func (s *leakSentinel) homeEgressIP(r *Router) (string, error) {
 	return ip, nil
 }
 
-// fetchIP gets the egress IP through a transport (direct or via a proxy).
 func fetchIP(tr http.RoundTripper) string {
 	cli := &http.Client{Timeout: 10 * time.Second, Transport: tr}
 	resp, err := cli.Get("http://api.ipify.org")
@@ -209,7 +177,6 @@ func fetchIP(tr http.RoundTripper) string {
 	return ip
 }
 
-// readHomeSOCKS extracts server/port/user/pass from the home socks outbound in the config.
 func readHomeSOCKS(configPath string) (host, port, user, pass string, err error) {
 	raw, err := os.ReadFile(configPath)
 	if err != nil {

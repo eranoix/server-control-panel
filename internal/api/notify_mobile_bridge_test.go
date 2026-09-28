@@ -1,12 +1,5 @@
 package api
 
-// notify_mobile_bridge_test.go proves the mobile bridge's real payoff:
-// dispatching a notify.Event through the SAME Router.notify a job/
-// metric/rule fires reaches a live /ws/mobile-events subscriber on the
-// "notify.inbox" channel — not just the in-app inbox poll. Uses the real
-// NewRouter (newSmokeRouter) end-to-end: notify.Router -> InAppChannel sink
-// -> bridgeNotifyInboxToHub -> mobilebff.Hub -> websocket frame.
-
 import (
 	"encoding/json"
 	"net/http/httptest"
@@ -29,8 +22,6 @@ func TestNotifyDispatch_ReachesMobileEventsWSInboxChannel(t *testing.T) {
 		t.Fatalf("newSmokeRouter: r.mobileHub is nil, want a live Hub")
 	}
 
-	// Wire a rule that routes every event to the in-app channel — the same
-	// channel initNotify's AddChannelImpl wraps with bridgeNotifyInboxToHub.
 	ch, err := r.notify.UpsertChannel(notify.ChannelDef{Name: "inbox", Type: notify.TypeInApp, Enabled: true})
 	if err != nil {
 		t.Fatalf("UpsertChannel: %v", err)
@@ -50,9 +41,6 @@ func TestNotifyDispatch_ReachesMobileEventsWSInboxChannel(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Subscribe to notify.inbox; the server's "subscribed" ack is the sync
-	// point proving the subscription is registered before Dispatch below
-	// (mirrors internal/mobilebff/events_ws_test.go's own pattern).
 	if err := conn.WriteJSON(map[string]string{"op": "subscribe", "channel": "notify.inbox"}); err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}

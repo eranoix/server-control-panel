@@ -8,9 +8,6 @@ import (
 	"testing"
 )
 
-// useStubDeployCommand points DeployCommandEnv at a script that prints
-// three deterministic lines and exits with exitCode, so no test here ever
-// runs a real deploy.
 func useStubDeployCommand(t *testing.T, exitCode int) {
 	t.Helper()
 	script := "#!/bin/sh\necho stub-line-1\necho stub-line-2\necho stub-line-3\nexit " + strconv.Itoa(exitCode) + "\n"

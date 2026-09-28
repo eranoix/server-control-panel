@@ -6,8 +6,6 @@ import org.junit.Test
 
 class TransferStateStoreTest {
 
-    // Minimal fake -- exercises only the get/edit/apply surface TransferStateStore
-    // actually calls, unlike TransferGarbageCollectorTest's fuller fake.
     private class MinimalFakeSharedPreferences : SharedPreferences {
         val values = mutableMapOf<String, Any?>()
         override fun getAll(): MutableMap<String, *> = values.toMutableMap()
@@ -38,10 +36,6 @@ class TransferStateStoreTest {
     @Test
     fun allTrackedWorkNames_recoversWorkNamesThatThemselvesContainColons() {
         val store = TransferStateStore(MinimalFakeSharedPreferences())
-        // Download work names embed a server path, which may contain colons
-        // (e.g. a Windows-style drive-letter path relayed through a mixed
-        // deployment) -- and upload work names embed "destDir/filename" with
-        // no colon at all. Both must round-trip through allTrackedWorkNames.
         store.saveDownloadUri("download:/srv/a:b.bin", "content://media/1")
         store.saveUploadSession("upload:/dest/file.bin", "session-1")
 
@@ -59,8 +53,6 @@ class TransferStateStoreTest {
     @Test
     fun allTrackedWorkNames_oneEntryPerWorkName_evenWithMultipleKeys() {
         val store = TransferStateStore(MinimalFakeSharedPreferences())
-        // saveUploadSession writes both KEY_SESSION_ID and KEY_BYTES_UPLOADED
-        // for the same work name -- must not be double-counted.
         store.saveUploadSession("upload:/dest/file.bin", "session-1")
         store.saveUploadProgress("upload:/dest/file.bin", 200L)
 

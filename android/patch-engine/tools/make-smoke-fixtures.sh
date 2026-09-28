@@ -1,16 +1,4 @@
 #!/usr/bin/env bash
-# Regenerates the SMALL fixture pair in src/androidTest/assets/hdiff/:
-# smoke-old.bin (256 KiB) and smoke.hdiff (about 8 KiB), the only committed
-# test binaries in this module.
-#
-# Unlike the real-APK fixtures (tools/make-patch-fixtures.sh), this pair ships
-# with the clone, so `connectedAndroidTest` on a clean checkout still proves
-# the .so loads, the JNI signature matches, the patch applies and the SHA-256
-# check rejects what it must.
-#
-# The PRNG seed is fixed, so output is byte-identical unless hdiffz changes.
-#
-# Usage: ./tools/make-smoke-fixtures.sh   (from any directory)
 
 set -euo pipefail
 
@@ -64,9 +52,6 @@ open(os.path.join(out, "smoke-old.bin"), "wb").write(bytes(old))
 open(os.path.join(out, "smoke-new.bin"), "wb").write(bytes(new))
 PY
 
-# -s-4m: low-memory stream mode, the same profile the device uses.
-# -c-zstd-21-24: what the server generates, so the test exercises the
-# decompressor actually linked into the .so.
 "$HDIFFZ" -s-4m -c-zstd-21-24 -f \
   "$WORK_DIR/smoke-old.bin" "$WORK_DIR/smoke-new.bin" "$WORK_DIR/smoke.hdiff" >/dev/null
 

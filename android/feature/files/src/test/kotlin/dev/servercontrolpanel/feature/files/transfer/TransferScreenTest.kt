@@ -14,10 +14,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders [TransferScreen] under Robolectric. Only the empty state is covered: transfer rows
- * come only from real `WorkInfo` updates, which have no test seam.
- */
 @RunWith(RobolectricTestRunner::class)
 class TransferScreenTest {
 
@@ -34,14 +30,12 @@ class TransferScreenTest {
     @Test
     fun `with no transfers in flight, the screen renders nothing instead of an empty card`() {
         val application = ApplicationProvider.getApplicationContext<android.app.Application>()
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm = TransferViewModel(application)
         composeRule.setContent {
             TransferScreen(viewModel = vm)
         }
         composeRule.waitForIdle()
 
-        // TransferScreen returns early on an empty map, so nothing should be composed.
         val tree = composeRule.onRoot().printToString()
         assertFalse(tree.contains("Transfer in progress"))
         assertFalse(tree.contains("Cancel"))

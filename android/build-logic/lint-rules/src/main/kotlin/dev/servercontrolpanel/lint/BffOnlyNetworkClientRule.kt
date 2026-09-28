@@ -14,8 +14,6 @@ import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameOrNull
 import org.jetbrains.kotlin.types.KotlinType
 
-// Same list as BffOnlyNetworkPlugin, kept independent on purpose: this rule
-// checks resolved types, so source-text tricks that bypass the plugin still match.
 private val FORBIDDEN_TYPE_PACKAGES = listOf("okhttp3.", "retrofit2.")
 
 private val EXEMPT_PATH_SEGMENTS = listOf(
@@ -23,10 +21,6 @@ private val EXEMPT_PATH_SEGMENTS = listOf(
     "/data/src/",
 )
 
-/**
- * True when the file belongs to a module allowed to use OkHttp/Retrofit. Defense in
- * depth: detekt is normally not applied to those modules at all.
- */
 private fun isExemptFile(path: String): Boolean {
     val normalized = path.replace('\\', '/')
     return EXEMPT_PATH_SEGMENTS.any { normalized.contains(it) }
@@ -40,11 +34,6 @@ private fun KotlinType.isForbiddenNetworkType(): Boolean {
     return FORBIDDEN_TYPE_PACKAGES.any { fqName.startsWith(it) }
 }
 
-/**
- * Flags any expression or type reference that resolves to an OkHttp/Retrofit type
- * outside the BFF modules, catching what the lexical gate in :build-logic:convention
- * cannot see (fully qualified references, types reached without an import).
- */
 @RequiresTypeResolution
 class BffOnlyNetworkClientRule(config: Config) : Rule(config) {
 

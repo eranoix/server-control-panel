@@ -1,12 +1,5 @@
 package api
 
-// mobile_login_test.go — proves that Router.MobileLogin/MobileRefresh apply
-// EXACTLY the same MFA policy as handleLogin (verifyLoginMFA) — it reuses the
-// SAME newLoginTestRouter/fakeGoTrue from handlers_auth_test.go, the SAME cases
-// (no MFA, MFA required without a code, correct code, wrong code), only through
-// the mobile path — and it proves the rotation/reuse of the mobile refresh
-// token.
-
 import (
 	"net/http/httptest"
 	"testing"
@@ -14,8 +7,6 @@ import (
 	"server-control-panel/internal/mobilebff"
 )
 
-// TestMobileLogin_PasswordOK_NoMFA mirrors TestHandleLogin_PasswordOK_NoMFA:
-// correct password, no enrolled factor -> tokens issued directly.
 func TestMobileLogin_PasswordOK_NoMFA(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "sam@test.local", password: testPassword})
@@ -37,7 +28,6 @@ func TestMobileLogin_PasswordOK_NoMFA(t *testing.T) {
 	}
 }
 
-// TestMobileLogin_PasswordWrong mirrors TestHandleLogin_PasswordWrong.
 func TestMobileLogin_PasswordWrong(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "sam@test.local", password: testPassword})
@@ -50,11 +40,6 @@ func TestMobileLogin_PasswordWrong(t *testing.T) {
 	}
 }
 
-// TestMobileLogin_MFARequired_NoCode mirrors
-// TestHandleLogin_MFARequired_NoTrustedDevice_NoCode: the SAME MFA policy as
-// the desktop, applied to the mobile path — the app has no trusted-device
-// cookie, so it ALWAYS lands on this branch when a factor is enrolled and no
-// code was sent.
 func TestMobileLogin_MFARequired_NoCode(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{
@@ -76,7 +61,6 @@ func TestMobileLogin_MFARequired_NoCode(t *testing.T) {
 	}
 }
 
-// TestMobileLogin_MFACorrectCode mirrors TestHandleLogin_MFACorrectCode.
 func TestMobileLogin_MFACorrectCode(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{
@@ -95,8 +79,6 @@ func TestMobileLogin_MFACorrectCode(t *testing.T) {
 	}
 }
 
-// TestMobileLogin_MFAWrongCode_NoValidBackup mirrors
-// TestHandleLogin_MFAWrongCode_NoValidBackup.
 func TestMobileLogin_MFAWrongCode_NoValidBackup(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{
@@ -112,10 +94,6 @@ func TestMobileLogin_MFAWrongCode_NoValidBackup(t *testing.T) {
 	}
 }
 
-// TestMobileRefresh_RotatesAndInvalidatesOldToken proves the rotation rule: the
-// refresh token returned by the login rotates successfully ONCE; reusing the
-// OLD token afterwards (replay) always fails with ErrMobileRefreshInvalid —
-// it never "almost works" on a second attempt.
 func TestMobileRefresh_RotatesAndInvalidatesOldToken(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "sam@test.local", password: testPassword})
@@ -138,19 +116,14 @@ func TestMobileRefresh_RotatesAndInvalidatesOldToken(t *testing.T) {
 		t.Fatal("refresh_token did not rotate — returned the same token")
 	}
 
-	// Replay of the ORIGINAL refresh_token (already rotated) — it must always fail.
 	if _, err := r.MobileRefresh(login.RefreshToken); err != mobilebff.ErrMobileRefreshInvalid {
 		t.Fatalf("replay of the old token: err = %v, expected ErrMobileRefreshInvalid", err)
 	}
-	// Again, to prove it does not "unlock" on a second attempt.
 	if _, err := r.MobileRefresh(login.RefreshToken); err != mobilebff.ErrMobileRefreshInvalid {
 		t.Fatalf("second replay: err = %v, expected ErrMobileRefreshInvalid", err)
 	}
 }
 
-// TestMobileRefresh_UnknownToken_Invalid proves that a refresh_token that was
-// never issued fails the SAME way as one already rotated — without telling the
-// two cases apart for the caller (which avoids a token/user enumeration oracle).
 func TestMobileRefresh_UnknownToken_Invalid(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "sam@test.local", password: testPassword})

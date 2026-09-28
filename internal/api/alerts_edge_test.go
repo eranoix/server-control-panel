@@ -11,22 +11,16 @@ import (
 	"server-control-panel/internal/metrics"
 )
 
-// snapCPU builds a fresh (non-stale) snapshot carrying a sys.cpu value.
 func snapCPU(v float64) metrics.Snapshot {
 	return metrics.Snapshot{T: time.Now().Unix(), Values: map[string]float64{"sys.cpu": v}}
 }
 
-// newEdgeRouter wires the minimum Router for the recordFires→persist production
-// path: a config with a tmp DataDir and a fresh alert Engine. notify stays nil
-// (Dispatch is skipped), which is fine — this exercises ring + persistence.
 func newEdgeRouter(t *testing.T) (*Router, string) {
 	t.Helper()
 	dir := t.TempDir()
 	return &Router{cfg: &config.Config{DataDir: dir}, alerts: metrics.NewEngine()}, dir
 }
 
-// recordFires must persist the engine state on a transition so the new
-// ActiveSince lands in alert_rules.json (the deploy-survival vector).
 func TestRecordFiresPersistsOnTransition(t *testing.T) {
 	r, dir := newEdgeRouter(t)
 	if err := r.alerts.AddRule(metrics.Rule{Name: "cpu", Metric: "sys.cpu", Op: ">", Threshold: 80, Duration: 0}); err != nil {
@@ -51,21 +45,18 @@ func TestRecordFiresPersistsOnTransition(t *testing.T) {
 	}
 }
 
-// End-to-end deploy survival through the PRODUCTION path: fire + persist via
-// recordFires, then a fresh Engine.Load (simulating a restart) must NOT
-// re-notify while the metric is still above the threshold.
 func TestNoRefireAcrossReloadProductionPath(t *testing.T) {
 	r, dir := newEdgeRouter(t)
 	if err := r.alerts.AddRule(metrics.Rule{Name: "cpu", Metric: "sys.cpu", Op: ">", Threshold: 80, Duration: 0}); err != nil {
 		t.Fatal(err)
 	}
-	r.recordFires(r.alerts.Evaluate(snapCPU(95))) // crossing + persist
+	r.recordFires(r.alerts.Evaluate(snapCPU(95)))
 
 	reloaded := metrics.NewEngine()
 	if err := reloaded.Load(filepath.Join(dir, "alert_rules.json")); err != nil {
 		t.Fatal(err)
 	}
-	fires := reloaded.Evaluate(snapCPU(96)) // still above after "restart"
+	fires := reloaded.Evaluate(snapCPU(96))
 	for _, f := range fires {
 		if !f.Resolved {
 			t.Fatalf("re-notified after reload while still firing: %+v", fires)
@@ -76,8 +67,6 @@ func TestNoRefireAcrossReloadProductionPath(t *testing.T) {
 	}
 }
 
-// The ring receives crossings only; a resolved fire reaches the notify spine but
-// not the legacy "Recent fires" ring (which means crossings).
 func TestRecordFiresRingExcludesResolved(t *testing.T) {
 	r, _ := newEdgeRouter(t)
 	r.recordFires([]metrics.Fire{

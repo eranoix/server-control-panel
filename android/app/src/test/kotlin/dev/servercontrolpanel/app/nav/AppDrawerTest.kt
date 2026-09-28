@@ -19,11 +19,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The navigation drawer, actually rendered, to catch labels that wrap or clip and a footer
- * pushed off screen. Uses a real phone geometry (`qualifiers`) because the height decides
- * whether the footer fits.
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class, qualifiers = "w411dp-h891dp-xxhdpi")
 class AppDrawerTest {
@@ -48,7 +43,6 @@ class AppDrawerTest {
         composeRule.waitForIdle()
     }
 
-    /** The computed text layout, the only source that knows whether a label wrapped or clipped. */
     private fun SemanticsNodeInteraction.textLayout(): TextLayoutResult {
         val results = mutableListOf<TextLayoutResult>()
         val action = fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult]
@@ -93,12 +87,9 @@ class AppDrawerTest {
         descriptions.forEach { description ->
             composeRule.onNodeWithContentDescription(description).assertExists()
         }
-        // Repeated descriptions would make the screen reader announce two
-        // different items with the same name.
         assertEquals(descriptions.size, descriptions.toSet().size)
     }
 
-    /** The drawer lists the web panel's parent pages and only those, so there is one taxonomy. */
     @Test
     fun `the drawer has exactly the panel's parents in web order`() {
         renderDrawer()
@@ -144,10 +135,6 @@ class AppDrawerTest {
         assertEquals(AppDestination.Apps, selected)
     }
 
-    /**
-     * The footer stays anchored: signing out must not depend on discovering that the drawer
-     * scrolls, and new destinations must not push it off screen.
-     */
     @Test
     fun `sign out is visible without scrolling and is clickable`() {
         var signedOut = false
@@ -167,7 +154,6 @@ class AppDrawerTest {
         assertTrue(signedOut)
     }
 
-    /** Appearance and the update check live in Settings: device settings are not work destinations. */
     @Test
     fun `appearance and check for updates are not in the drawer`() {
         renderDrawer()
@@ -184,10 +170,6 @@ class AppDrawerTest {
         )
     }
 
-    /**
-     * A parent matches its own grid, never its child screens, so the drawer and the header
-     * never disagree.
-     */
     @Test
     fun `a parent does not match a child's route`() {
         assertTrue(AppDestination.Docker.matches(parentRoute("docker")))
@@ -195,7 +177,6 @@ class AppDrawerTest {
         assertFalse(AppDestination.Operations.matches(ROUTE_JIRA))
     }
 
-    /** A duplicate route would leave two items highlighted at the same time. */
     @Test
     fun `no route repeats across destinations`() {
         val routes = AppDestination.entries.map { it.route }

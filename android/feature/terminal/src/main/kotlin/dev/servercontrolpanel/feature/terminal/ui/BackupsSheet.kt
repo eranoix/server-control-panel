@@ -53,13 +53,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * The session backups sheet. A sheet rather than a screen: a backup is an
- * operation on the session list, which stays visible behind it.
- *
- * Backups are grouped by session; each version shows date, origin, size and a
- * one-line summary, which is what tells two backups from the same afternoon apart.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BackupsSheet(viewModel: SessionListViewModel, onClose: () -> Unit) {
@@ -67,11 +60,8 @@ fun BackupsSheet(viewModel: SessionListViewModel, onClose: () -> Unit) {
     val busySession by viewModel.busySession.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var confirmingDelete by remember { mutableStateOf<VersionToDelete?>(null) }
-    // Open groups; all closed by default so the sheet first answers "which session?".
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
 
-    // Load when the sheet opens, not in the ViewModel's `init`: listing backups
-    // reads all the user's files and should not run every time the screen appears.
     LaunchedEffect(Unit) { viewModel.loadBackups() }
 
     ModalBottomSheet(onDismissRequest = onClose, sheetState = sheetState) {
@@ -146,8 +136,6 @@ fun BackupsSheet(viewModel: SessionListViewModel, onClose: () -> Unit) {
             onDismissRequest = { confirmingDelete = null },
             title = { Text(text = "Delete this version?") },
             text = {
-                // Name the session and date: only this session's version is
-                // deleted, and other sessions in the same backup are kept.
                 Text(
                     text = buildString {
                         append("\"${target.session}\" from ${readableDate(target.version.createdAt)}.")
@@ -176,14 +164,8 @@ fun BackupsSheet(viewModel: SessionListViewModel, onClose: () -> Unit) {
     }
 }
 
-/** What the confirmation needs to know: which session, from which version. */
 private data class VersionToDelete(val session: String, val version: BackupVersion)
 
-/**
- * One group: the session, and its versions once expanded. Closed by default,
- * since the date matters only after the session is chosen. The header count
- * ("3 versions, latest 09/09 08:40") tells whether expanding is worth it.
- */
 @Composable
 private fun SessionGroup(
     group: BackupGroup,
@@ -225,8 +207,6 @@ private fun SessionGroup(
             }
 
             if (!isOpen && group.summary.isNotBlank()) {
-                // The collapsed summary identifies sessions with unhelpful names;
-                // hidden once expanded, where the versions take over.
                 Text(
                     text = group.summary,
                     style = MaterialTheme.typography.bodySmall,
@@ -253,7 +233,6 @@ private fun SessionGroup(
     }
 }
 
-/** One version: date, origin, and what can be done with it. */
 @Composable
 private fun VersionRow(
     version: BackupVersion,
@@ -265,8 +244,6 @@ private fun VersionRow(
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
         Text(text = readableDate(version.createdAt), style = MaterialTheme.typography.bodyMedium)
         Text(
-            // The size is the whole file's; say so when it holds several
-            // sessions, or it would look like this session's size.
             text = buildString {
                 append(readableOrigin(version.origin))
                 append(" · ")
@@ -291,8 +268,6 @@ private fun VersionRow(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             TextButton(onClick = onRestore, enabled = !busy) { Text(text = "Restore") }
-            // Only offered when there is more than one session; otherwise it
-            // would duplicate the button next to it.
             if (version.sessionsInBackup > 1) {
                 TextButton(onClick = onRestoreAll, enabled = !busy) {
                     Text(text = "All ${version.sessionsInBackup}")
@@ -360,7 +335,6 @@ private fun BackupCard(
                 }
             }
 
-            // Tapping a chip restores only that session, the common case.
             SessionChips(
                 names = backup.sessions.map { it.name },
                 onTap = { if (!busy) onRestoreSession(it) },
@@ -386,19 +360,11 @@ private fun BackupCard(
     }
 }
 
-/**
- * Short date and time, without the year: backups live for days (pruning keeps
- * ten) and the width is needed for session names.
- */
 private fun readableDate(seconds: Long): String {
     if (seconds <= 0L) return "—"
     return SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(Date(seconds * 1000))
 }
 
-/**
- * The origin in words. It changes expectations: automatic backups are pruned,
- * manual ones belong to the user, scheduled ones have their own retention.
- */
 private fun readableOrigin(origin: String?): String = when (origin) {
     "manual" -> "manual"
     "auto" -> "automatic"

@@ -10,9 +10,6 @@ import (
 	"server-control-panel/internal/sessions"
 )
 
-// newTestSessionsStore opens a real Store (on a temporary disk path) — Revoke
-// is stateful, and the behaviour under test (revoke ONE jti, not the rest) is
-// only convincing against the real Store, not a fake.
 func newTestSessionsStore(t *testing.T) *sessions.Store {
 	t.Helper()
 	store, err := sessions.Open(filepath.Join(t.TempDir(), "sessions.json"))
@@ -23,11 +20,6 @@ func newTestSessionsStore(t *testing.T) *sessions.Store {
 	return store
 }
 
-// TestMobileLogout_RevokesOnlyCallingSession is the required proof: logging
-// out device A NEVER drops device B's session for the same user, nor another
-// user's session — only the jti that arrived in the call itself. It goes
-// through the real auth.Service.Middleware (rather than injecting user/jti by
-// hand) so the test exercises the actual production path.
 func TestMobileLogout_RevokesOnlyCallingSession(t *testing.T) {
 	svc := auth.New("test-secret", []auth.Credential{{Username: "sam", PasswordHash: "x"}})
 	store := newTestSessionsStore(t)
@@ -69,8 +61,6 @@ func TestMobileLogout_RevokesOnlyCallingSession(t *testing.T) {
 		t.Errorf("another user's jti was revoked by mistake")
 	}
 
-	// tokenA must no longer authenticate on ANY protected route (not just on
-	// the mobile BFF) — it is the same Store the web panel uses.
 	req2 := httptest.NewRequest(http.MethodGet, "/api/mobile/v1/me", nil)
 	req2.Header.Set("Authorization", "Bearer "+tokenA)
 	rec2 := httptest.NewRecorder()
@@ -79,7 +69,6 @@ func TestMobileLogout_RevokesOnlyCallingSession(t *testing.T) {
 		t.Errorf("revoked token still authenticates: status = %d, body = %s", rec2.Code, rec2.Body.String())
 	}
 
-	// tokenB stays good.
 	req3 := httptest.NewRequest(http.MethodGet, "/api/mobile/v1/me", nil)
 	req3.Header.Set("Authorization", "Bearer "+tokenB)
 	rec3 := httptest.NewRecorder()
@@ -88,12 +77,9 @@ func TestMobileLogout_RevokesOnlyCallingSession(t *testing.T) {
 		t.Errorf("token B (another device) should still authenticate: status = %d, body = %s", rec3.Code, rec3.Body.String())
 	}
 
-	_ = tokenOther // only there to populate the store; no HTTP call of its own
+	_ = tokenOther
 }
 
-// TestMobileLogout_IdempotentOnAlreadyRevokedSession — logging out twice (or
-// logging out after a revocation through some other path, e.g. "revoke all
-// sessions" in the web panel) must not break: it answers 200, never 500.
 func TestMobileLogout_IdempotentOnAlreadyRevokedSession(t *testing.T) {
 	svc := auth.New("test-secret", []auth.Credential{{Username: "sam", PasswordHash: "x"}})
 	store := newTestSessionsStore(t)
@@ -103,16 +89,11 @@ func TestMobileLogout_IdempotentOnAlreadyRevokedSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	store.Revoke(jti) // simulates a prior revocation (e.g. "revoke all" in the panel)
+	store.Revoke(jti)
 
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Sessions: store})
 
-	// A token that is already revoked never even reaches the handler
-	// (auth.Middleware stops it first) — the real idempotency proof is
-	// revoking twice WITHOUT the Middleware in between, straight against the
-	// Store, which is what the web panel's handleRevokeMobileSession/
-	// handleLogout already do today without first checking "was it revoked?".
 	store.Revoke(jti)
 	if !store.HasTombstone(jti) {
 		t.Errorf("session should remain revoked after a duplicate Revoke")
@@ -121,9 +102,6 @@ func TestMobileLogout_IdempotentOnAlreadyRevokedSession(t *testing.T) {
 	_ = mux
 }
 
-// TestMobileLogout_NoSessionsStoreDegradesTo200 — cmd/mobile-openapi-gen
-// builds Deps{} without Sessions (see the Deps.Sessions docstring in
-// registry.go); the endpoint must not panic on a nil store.
 func TestMobileLogout_NoSessionsStoreDegradesTo200(t *testing.T) {
 	svc := auth.New("test-secret", []auth.Credential{{Username: "sam", PasswordHash: "x"}})
 
@@ -133,7 +111,7 @@ func TestMobileLogout_NoSessionsStoreDegradesTo200(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	Mount(mux, Deps{}) // Sessions nil on purpose
+	Mount(mux, Deps{})
 	protected := svc.Middleware(mux)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/mobile/v1/auth/logout", nil)

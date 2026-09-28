@@ -11,12 +11,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/**
- * [rasterizeFrame] must be a pure function of the grid contents. The surface is
- * cleared every pass, so skipping "unchanged" lines erases them; a per-line cache is
- * only valid with a buffer kept between frames, which neither Compose's `Canvas` nor
- * `SurfaceView.lockCanvas` provides.
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -26,7 +20,6 @@ class FrameRasterizerTest {
     private val cols = 20
     private val rows = 6
 
-    /** Distinct text on every row. */
     private fun cellAt(x: Int, y: Int): CellSnapshot.Cell {
         val text = "row $y of the terminal"
         val ch = if (x < text.length) text[x] else ' '
@@ -72,7 +65,6 @@ class FrameRasterizerTest {
         Bitmap.Config.ARGB_8888,
     )
 
-    /** Every row appears in the frame, not just the one that changed last. */
     @Test
     fun everyRowIsPaintedInASingleFrame() {
         val bitmap = newBitmap()
@@ -87,7 +79,6 @@ class FrameRasterizerTest {
         }
     }
 
-    /** Redrawing the same content must produce the same frame; a cache between frames would blank the second pass. */
     @Test
     fun redrawingTheSameContentProducesAnIdenticalFrame() {
         val first = newBitmap()

@@ -1,25 +1,5 @@
 package mobilebff
 
-// auth_login.go — password login and session refresh for the native Android
-// app. Registered through RegisterPublic (registry_public.go): both routes
-// sit OUTSIDE auth.Middleware, because the phone still has no session at all
-// when it logs in, or when it needs to trade in an expiring refresh token.
-//
-// CENTRAL GUARANTEE: /auth/login reuses the SAME second-factor check as the
-// desktop panel (verifyLoginMFA, behind PasskeyBackend.MobileLogin) — never
-// a second copy of the MFA policy. The second factor is EXACTLY the desktop
-// one: Supabase MFA (TOTP through GoTrue) or a single-use backup code; there
-// is no separate local TOTP for mobile. When the factor is enrolled and no
-// code was sent, the answer is {"totp_required": true} — the same non-error
-// branch handleLogin takes — and the app must ask for the code and call
-// again.
-//
-// /auth/refresh rotates unconditionally: the token that was sent stops
-// working in THIS very call, success or not — it never lingers as "almost
-// valid" on a second attempt. Deliberately without any password/MFA check:
-// it has to be light enough for the app to call it proactively, before the
-// access token expires.
-
 import (
 	"context"
 	"net/http"

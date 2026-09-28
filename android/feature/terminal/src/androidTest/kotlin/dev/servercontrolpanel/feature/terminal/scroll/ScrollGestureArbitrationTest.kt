@@ -23,14 +23,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** A comfortable margin over the device/emulator `longPressTimeoutMillis`. */
 private const val LONG_PRESS_SLACK_MS = 700L
 
-/**
- * Arbitration between scroll, tap, long press and drag, driven by real touch through
- * Compose (`pointerInput` does not run on the JVM). The modifier chain matches
- * `TerminalRoute` in the same order, since the innermost modifier sees events first.
- */
 @RunWith(AndroidJUnit4::class)
 class ScrollGestureArbitrationTest {
 
@@ -71,7 +65,6 @@ class ScrollGestureArbitrationTest {
         }
     }
 
-    /** A fast vertical drag scrolls without raising the keyboard or starting a selection. */
     @Test
     fun fastVerticalDrag_scrolls_withoutOpeningKeyboardOrSelecting() {
         val grid = Grid()
@@ -98,7 +91,6 @@ class ScrollGestureArbitrationTest {
         )
     }
 
-    /** Long press and drag still selects; scrolling backs off once the long press wins. */
     @Test
     fun longPressAndDrag_stillSelects_withoutScrolling() {
         val grid = Grid()
@@ -108,8 +100,6 @@ class ScrollGestureArbitrationTest {
             down(center)
             advanceEventTime(LONG_PRESS_SLACK_MS)
         }
-        // The long-press timer runs on the test's virtual clock; `advanceEventTime`
-        // only stamps the MotionEvent, so the clock must be advanced too.
         composeTestRule.mainClock.advanceTimeBy(LONG_PRESS_SLACK_MS)
 
         composeTestRule.onRoot().performTouchInput {
@@ -129,7 +119,6 @@ class ScrollGestureArbitrationTest {
         )
     }
 
-    /** A short tap is still a tap (it raises the keyboard). */
     @Test
     fun shortTap_staysATap_withoutScrolling() {
         val grid = Grid()
@@ -146,7 +135,6 @@ class ScrollGestureArbitrationTest {
         assertNull(grid.selection.selection)
     }
 
-    /** Scrolling does not consume horizontal drags, leaving them to other handlers. */
     @Test
     fun horizontalDrag_isNotClaimedByScroll() {
         val grid = Grid()
@@ -167,7 +155,6 @@ class ScrollGestureArbitrationTest {
         )
     }
 
-    /** The gesture reports its end, which resets the pixel accumulator. */
     @Test
     fun verticalDrag_endsGestureOnFingerUp() {
         val grid = Grid()
@@ -180,7 +167,6 @@ class ScrollGestureArbitrationTest {
             up()
         }
         composeTestRule.waitForIdle()
-        // Inertia can prolong the gesture; advance the clock until it ends.
         composeTestRule.mainClock.advanceTimeBy(3_000L)
         composeTestRule.waitForIdle()
 

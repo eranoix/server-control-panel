@@ -20,16 +20,6 @@ import dev.servercontrolpanel.core.model.WhatsAppMessage
 import dev.servercontrolpanel.feature.whatsapp.ConversationUiState
 import dev.servercontrolpanel.feature.whatsapp.MediaUploadState
 
-/**
- * Replaces [dev.servercontrolpanel.feature.whatsapp.media.MediaMessageRow] for a
- * media bubble that hasn't reconciled as sent yet -- shown for as long as
- * `message.clientMsgId` has an entry in [ConversationUiState.Content.uploads].
- * A still-image preview reads straight off the local `file://` path
- * ([WhatsAppMessage.media]'s `url`) via Coil's `File` model, since there is
- * no server URL yet to fetch; video/audio/document show a filename row
- * instead of attempting an ExoPlayer/DocumentOpener round-trip against a
- * local file this plan doesn't wire up a preview path for.
- */
 @Composable
 fun UploadProgressBubble(
     message: WhatsAppMessage,

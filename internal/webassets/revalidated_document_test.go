@@ -8,11 +8,6 @@ import (
 	"time"
 )
 
-// The SPA document has to be REVALIDATABLE, not forbidden from caching. Both
-// properties have to hold at once: never serve a stale front-end (hence no-cache
-// + the build ETag, not max-age) and not re-download ~260 KB on every reload
-// when nothing changed (hence 304, not no-store). A cheap reload is what makes
-// the tab usable on a bad link.
 func indexServer() http.Handler {
 	return IndexInjector(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "index should not fall through to next", http.StatusNotFound)
@@ -71,14 +66,6 @@ func TestIndexResendsBodyWhenETagIsFromAnotherBuild(t *testing.T) {
 	}
 }
 
-// Brotli: the first load is the one that hurts on a bad link, and it is
-// dominated by this document. The measured gain is 22% over gzip — but it only
-// counts if the compressed body really is smaller, if the client that does NOT
-// ask for br still gets the original, and if the ETag distinguishes the two
-// variants (otherwise a cache returns a 304 for a body the client cannot read).
-// requestWithBrotli insists until the background compression is ready. It fails the
-// test if it never arrives — a brotli that never warms up is an optimization
-// that does not exist, and passing like that would hide it.
 func requestWithBrotli(t *testing.T) *httptest.ResponseRecorder {
 	t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
@@ -98,9 +85,6 @@ func requestWithBrotli(t *testing.T) *httptest.ResponseRecorder {
 }
 
 func TestIndexServesBrotliWhenClientAccepts(t *testing.T) {
-	// The compression runs off the request path (otherwise the first load after
-	// each deploy would pay ~2.3 s), so the test waits for the warm-up instead of
-	// assuming the first response already comes compressed.
 	withBr := requestWithBrotli(t)
 
 	noBr := httptest.NewRecorder()
@@ -135,7 +119,6 @@ func TestIndexBrotliRevalidatesAgainstItsOwnETag(t *testing.T) {
 		t.Fatalf("br revalidation → %d, wanted 304", rec2.Code)
 	}
 
-	// And the br variant's ETag must NOT be worth a 304 to a client asking for gzip.
 	crossed := httptest.NewRequest("GET", "/", nil)
 	crossed.Header.Set("If-None-Match", etag)
 	rec3 := httptest.NewRecorder()

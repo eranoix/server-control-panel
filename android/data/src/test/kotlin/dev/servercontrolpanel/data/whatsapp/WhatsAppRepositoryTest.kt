@@ -39,7 +39,6 @@ class WhatsAppRepositoryTest {
         return WhatsAppRepository(api)
     }
 
-    /** Large enough for OkHttp to write it across several flushes, so progress and a mid-transfer disconnect are observable. */
     private fun mediaFile(sizeBytes: Int = 64 * 1024): File =
         tempFolder.newFile("attachment.jpg").apply { writeBytes(ByteArray(sizeBytes) { it.toByte() }) }
 
@@ -180,7 +179,6 @@ class WhatsAppRepositoryTest {
 
     @Test
     fun `sendMessage maps a network failure to Error, never throwing`() = runTest {
-        // Port 1 refuses immediately, avoiding the hang of a shut-down MockWebServer.
         val unreachable = WhatsAppRepository(WhatsappApi(basePath = "http://127.0.0.1:1"))
 
         val result = unreachable.sendMessage(jid = "a@s.whatsapp.net", clientMsgId = "c1", text = "hi")
@@ -235,7 +233,6 @@ class WhatsAppRepositoryTest {
 
     @Test
     fun `client_msg_id survives a media upload retry unchanged after a mid-transfer disconnect`() = runTest {
-        // The server drops the connection mid-body, like a flaky mobile network.
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_DURING_REQUEST_BODY))
         server.enqueue(
             MockResponse()

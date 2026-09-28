@@ -32,11 +32,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/**
- * Mirrors `HomeUiState`'s established Loading/Success/Empty/Error shape. Rooms come from
- * [VideocallRoomsSource] (`:data`) — `:feature-videocall` never references the generated mobile
- * API client or its model types directly.
- */
 sealed interface RoomLobbyUiState {
     data object Loading : RoomLobbyUiState
     data class Success(val rooms: List<VideocallRoom>) : RoomLobbyUiState
@@ -66,14 +61,6 @@ class RoomLobbyViewModel(
     }
 }
 
-/**
- * The real content of the Call destination: lists the video-call rooms and
- * navigates to [CallScreen] on tap — which today opens in the green room, not
- * straight into the call.
- *
- * (The reference to the old `ComingSoonScreen` went out along with the file
- * itself, which nothing was using any more.)
- */
 @Composable
 fun RoomLobbyScreen(
     onRoomSelected: (roomId: String) -> Unit,

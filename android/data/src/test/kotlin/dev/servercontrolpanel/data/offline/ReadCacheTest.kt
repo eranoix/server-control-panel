@@ -13,10 +13,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/**
- * Proves the offline read cache actually serves responses, since HTTP cache misconfiguration fails
- * silently. The server is really shut down mid-test to produce the same `IOException` as no network.
- */
 class ReadCacheTest {
 
     private lateinit var server: MockWebServer
@@ -49,7 +45,6 @@ class ReadCacheTest {
         server.enqueue(MockResponse().setBody("""{"cpu":21}"""))
         get("/ops/status").use { assertEquals("""{"cpu":21}""", it.body?.string()) }
 
-        // The server really goes away.
         server.shutdown()
 
         get("/ops/status").use { response ->
@@ -59,7 +54,6 @@ class ReadCacheTest {
         }
     }
 
-    /** A route never fetched gets OkHttp's 504 "Unsatisfiable Request", which the caller maps to the usual error. */
     @Test
     fun `an unseen route without network returns 504, not a made-up body`() {
         server.shutdown()
@@ -69,7 +63,6 @@ class ReadCacheTest {
         }
     }
 
-    /** The server's `no-store` always wins. */
     @Test
     fun `server no-store is honoured and nothing is stored`() {
         server.enqueue(
@@ -84,7 +77,6 @@ class ReadCacheTest {
         }
     }
 
-    /** With network, always revalidate: these screens show live state. */
     @Test
     fun `with network the response is always fresh, never cached`() {
         server.enqueue(MockResponse().setBody("""{"cpu":21}"""))

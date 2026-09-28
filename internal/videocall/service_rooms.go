@@ -1,14 +1,5 @@
 package videocall
 
-// service_rooms.go — Room CRUD + membership
-//
-// CreateRoom/DeleteRoom/RenameRoom, AddMember/RemoveMember,
-// evictUserFromRoom (removal helper with cleanup), Room/RoomForUser
-// (lookups), IsRoomOwner, CanJoin (entry gate),
-// ListForUser (rooms visible to the user).
-//
-// Extracted from service.go (keeps the same *Service receiver).
-
 import (
 	"errors"
 	"sort"
@@ -16,8 +7,6 @@ import (
 	"time"
 )
 
-// CreateRoom inserts a new room owned by `user`. Name is sanitized but not
-// validated for uniqueness — collisions are fine, the ID is the real key.
 func (s *Service) CreateRoom(user, name string) (*Room, error) {
 	if user == "" {
 		return nil, errors.New("owner required")
@@ -36,8 +25,6 @@ func (s *Service) CreateRoom(user, name string) (*Room, error) {
 	return r, nil
 }
 
-// DeleteRoom removes a room. Only the owner can delete it. Active peers in
-// the room get evicted via Hub.Leave so their connections close gracefully.
 func (s *Service) DeleteRoom(user, roomID string) error {
 	s.mu.Lock()
 	r, ok := s.rooms[roomID]
@@ -58,12 +45,7 @@ func (s *Service) DeleteRoom(user, roomID string) error {
 	return nil
 }
 
-// RenameRoom changes a room's name. Owner-only. It keeps the ID and everything
-// else — only the display label changes. It validates the name with the same
-// sanitizer used in CreateRoom.
 func (s *Service) RenameRoom(owner, roomID, newName string) error {
-	// CreateRoom accepts an empty name (it defaults to "Room"); here in rename
-	// we want to be stricter — empty = error, to avoid an accident.
 	if strings.TrimSpace(newName) == "" {
 		return errors.New("invalid name")
 	}
@@ -82,8 +64,6 @@ func (s *Service) RenameRoom(owner, roomID, newName string) error {
 	return nil
 }
 
-// AddMember grants `member` permanent access to `roomID`. Only owner can.
-// Idempotent — adding the same username twice is a no-op.
 func (s *Service) AddMember(owner, roomID, member string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -104,10 +84,6 @@ func (s *Service) AddMember(owner, roomID, member string) error {
 	return nil
 }
 
-// RemoveMember revokes a member's access. Active peer connections of that
-// user in the room are evicted via Hub.Leave so they disconnect immediately.
-// Only the owner can remove members; the owner cannot remove themselves
-// (use DeleteRoom for that).
 func (s *Service) RemoveMember(owner, roomID, member string) error {
 	s.mu.Lock()
 	r, ok := s.rooms[roomID]
@@ -137,16 +113,12 @@ func (s *Service) RemoveMember(owner, roomID, member string) error {
 		s.dirty = true
 	}
 	s.mu.Unlock()
-	// Evict any active connections of `member` in this room. Walk Hub state
-	// AFTER releasing the room lock to avoid lock ordering surprises.
 	if removed {
 		s.evictUserFromRoom(roomID, member)
 	}
 	return nil
 }
 
-// evictUserFromRoom kicks every active peer in `roomID` whose User == user.
-// Used by RemoveMember.
 func (s *Service) evictUserFromRoom(roomID, user string) {
 	for _, id := range s.Hub.PeersInRoom(roomID) {
 		if u, ok := s.Hub.PeerUser(id); ok && u == user {
@@ -155,8 +127,6 @@ func (s *Service) evictUserFromRoom(roomID, user string) {
 	}
 }
 
-// Room returns a copy of the room record (so callers can't mutate state
-// without going through AddMember/DeleteRoom).
 func (s *Service) Room(roomID string) (Room, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -167,9 +137,6 @@ func (s *Service) Room(roomID string) (Room, bool) {
 	return *r, true
 }
 
-// RoomForUser is the tenant-safe variant of Room. It returns the room only if
-// user is owner or member; otherwise (Room{}, false), identical to "not found".
-// GET-by-ID handlers MUST use this — Room() leaks existence to strangers.
 func (s *Service) RoomForUser(user, roomID string) (Room, bool) {
 	r, ok := s.Room(roomID)
 	if !ok {
@@ -181,10 +148,6 @@ func (s *Service) RoomForUser(user, roomID string) (Room, bool) {
 	return Room{}, false
 }
 
-// IsRoomOwner reports whether `user` owns the room `roomID`. Used by the
-// signaling layer to authorize moderation actions (mute/kick). Guests arriving
-// via PIN or invite are NEVER owner; even if they were later invited as a
-// regular member through the UI, ownership is checked at the moment of the action.
 func (s *Service) IsRoomOwner(roomID, user string) bool {
 	if user == "" {
 		return false
@@ -196,9 +159,6 @@ func (s *Service) IsRoomOwner(roomID, user string) bool {
 	return r.Owner == user
 }
 
-// CanJoin reports whether `user` is allowed in `roomID` based on the durable
-// ACL (owner or member). Magic-link invite tokens are handled separately by
-// the HTTP /api/videocall/join handler — they short-circuit this check.
 func (s *Service) CanJoin(user, roomID string) bool {
 	r, ok := s.Room(roomID)
 	if !ok {
@@ -215,9 +175,6 @@ func (s *Service) CanJoin(user, roomID string) bool {
 	return false
 }
 
-// ListForUser returns rooms the user owns OR is a member of, newest first.
-// Secondary sort on ID keeps the order stable when CreatedAt collides (two
-// rooms created in the same second).
 func (s *Service) ListForUser(user string) []Room {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

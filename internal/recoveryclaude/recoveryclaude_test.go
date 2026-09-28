@@ -8,8 +8,6 @@ import (
 	"testing"
 )
 
-// The path the "Start the container" button walks: materialize the embedded
-// assets and run the manager from there, exercising the real path.
 func TestMaterializeDeliversExecutableManager(t *testing.T) {
 	dir := t.TempDir()
 	script, err := Materialize(dir)
@@ -25,9 +23,6 @@ func TestMaterializeDeliversExecutableManager(t *testing.T) {
 		t.Errorf("the manager has no execute bit (%v) — the exec would fail", info.Mode().Perm())
 	}
 
-	// Docker's build context is the materialized directory, so the Dockerfile
-	// and the scripts it copies have to come out TOGETHER. With one missing, the
-	// `build` would break only when it mattered.
 	for _, name := range []string{"Dockerfile", "entrypoint.sh", "welcome.sh", "manage.sh"} {
 		if _, err := os.Stat(filepath.Join(dir, "recovery-claude", name)); err != nil {
 			t.Errorf("%s was not materialized: %v", name, err)
@@ -35,23 +30,17 @@ func TestMaterializeDeliversExecutableManager(t *testing.T) {
 	}
 }
 
-// The container's independence is an ABSENCE (there is no ANTHROPIC_BASE_URL),
-// and absences disappear without anyone noticing. Here it is asserted over the
-// content the BINARY carries — not over the repository file, which may diverge
-// from what was actually embedded.
 func TestEmbeddedPayloadDoesNotSetBaseURL(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Materialize(dir); err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
-	// Only DEFINING/INJECTING the variable breaks the independence. Mentioning
-	// it is fine: the manager's own `doctor` cites it to verify it is absent.
 	injected := []string{
-		`ENV ANTHROPIC_BASE_URL`,    // Dockerfile
-		`export ANTHROPIC_BASE_URL`, // shell
-		`-e ANTHROPIC_BASE_URL`,     // docker run
-		`"ANTHROPIC_BASE_URL"`,      // generated settings.json
-		`ANTHROPIC_BASE_URL=http`,   // direct assignment
+		`ENV ANTHROPIC_BASE_URL`,
+		`export ANTHROPIC_BASE_URL`,
+		`-e ANTHROPIC_BASE_URL`,
+		`"ANTHROPIC_BASE_URL"`,
+		`ANTHROPIC_BASE_URL=http`,
 	}
 	for _, name := range []string{"Dockerfile", "entrypoint.sh", "manage.sh"} {
 		b, err := os.ReadFile(filepath.Join(dir, "recovery-claude", name))
@@ -61,7 +50,7 @@ func TestEmbeddedPayloadDoesNotSetBaseURL(t *testing.T) {
 		for _, line := range strings.Split(string(b), "\n") {
 			cut := strings.TrimSpace(line)
 			if strings.HasPrefix(cut, "#") {
-				continue // a comment explaining the absence is welcome
+				continue
 			}
 			for _, fallback := range injected {
 				if strings.Contains(cut, fallback) {
@@ -72,8 +61,6 @@ func TestEmbeddedPayloadDoesNotSetBaseURL(t *testing.T) {
 	}
 }
 
-// Always rewriting (instead of skipping when it already exists) is what stops
-// an old deploy's version from surviving on disk after a fix.
 func TestMaterializeOverwritesOldVersion(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Materialize(dir); err != nil {
@@ -92,8 +79,6 @@ func TestMaterializeOverwritesOldVersion(t *testing.T) {
 	}
 }
 
-// A real execution: the materialized manager has to RUN and talk to Docker.
-// Without Docker (CI) it skips — faking coverage would be worse than none.
 func TestMaterializedManagerActuallyRuns(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker missing in this environment")

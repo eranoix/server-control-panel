@@ -1,20 +1,5 @@
 package api
 
-// passkey_test.go — proof, against a real *Router (not a fake), of the security
-// properties of passkey.go that depend on the Router's real configuration and on
-// the real *webauthn.WebAuthn instance:
-//
-//  1. The ceremony's RPID/RPOrigins come from Config.PublicHostname — the SAME
-//     field /.well-known/assetlinks.json uses to announce the Android App Link
-//     (handlers_wellknown.go). A value that diverged between the two would
-//     silently break either the App Link or every passkey ceremony; this test
-//     pins that both read exactly the same field.
-//  2. Without Config.PublicHostname, passkeys go inert (graceful
-//     degradation) — never a guessed RPID (e.g. "localhost").
-//  3. Enumeration resistance: FinishPasskeyLogin collapses any malformed
-//     input — unknown userHandle or unreadable payload — into the SAME
-//     sentinel error, never revealing which of the two happened.
-
 import (
 	"errors"
 	"os"
@@ -25,8 +10,6 @@ import (
 	"server-control-panel/internal/mobilebff"
 )
 
-// newPasskeyRouter mirrors newSmokeRouter (smoke_test.go) but with
-// PublicHostname filled in, so that initPasskey() is really exercised.
 func newPasskeyRouter(t *testing.T, hostname string) *Router {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "panel-passkey-")
@@ -61,11 +44,6 @@ func newPasskeyRouter(t *testing.T, hostname string) *Router {
 	return r
 }
 
-// TestPasskeyRPIDSourcedFromPublicHostname proves that the Relying Party's
-// RPID/RPOrigins come exactly from Config.PublicHostname — the same field read
-// by handlers_wellknown.go for /.well-known/assetlinks.json. If this test and
-// the assetlinks one ever read DIFFERENT fields of Config, App Link and passkey
-// drift out of sync silently.
 func TestPasskeyRPIDSourcedFromPublicHostname(t *testing.T) {
 	const hostname = "panel.example.com"
 	r := newPasskeyRouter(t, hostname)
@@ -85,10 +63,6 @@ func TestPasskeyRPIDSourcedFromPublicHostname(t *testing.T) {
 	}
 }
 
-// TestPasskeyUnavailableWithoutPublicHostname proves the graceful degradation:
-// without PublicHostname there is no safe RPID to guess, so passkeys go inert —
-// never "localhost", never a wildcard value. All four PasskeyBackend operations
-// return ErrPasskeyUnavailable.
 func TestPasskeyUnavailableWithoutPublicHostname(t *testing.T) {
 	r := newPasskeyRouter(t, "")
 
@@ -110,14 +84,6 @@ func TestPasskeyUnavailableWithoutPublicHostname(t *testing.T) {
 	}
 }
 
-// TestPasskeyLoginFinish_EnumerationResistance proves that FinishPasskeyLogin
-// collapses distinct inputs — unreadable JSON, well-formed JSON without the
-// expected WebAuthn fields, and a real session continuation token — into the
-// SAME sentinel error (ErrPasskeyInvalidCredential), never a different error
-// that would give away which of them "almost" worked. It is that
-// indistinguishability, and not any secret in the payload itself, that stops an
-// attacker using the endpoint's response to find out whether a user/credential
-// exists.
 func TestPasskeyLoginFinish_EnumerationResistance(t *testing.T) {
 	r := newPasskeyRouter(t, "panel.example.com")
 	if r.webauthnRP == nil {
@@ -131,11 +97,6 @@ func TestPasskeyLoginFinish_EnumerationResistance(t *testing.T) {
 		"userHandle of a nonexistent user":         []byte(`{"id":"YWJj","rawId":"YWJj","type":"public-key","response":{"clientDataJSON":"e30=","authenticatorData":"AA==","signature":"AA==","userHandle":"dXN1YXJpby1mYW50YXNtYQ=="}}`),
 	}
 
-	// Each payload needs its OWN continuation token — the login token is
-	// single-use (VerifyWebAuthnLoginSessionToken consumes the jti during the
-	// verification itself, before any cryptographic validation; see
-	// TestPasskeyLoginFinish_ReplayContinuationTokenFails). Reusing the same
-	// token across payloads would test replay, not enumeration.
 	var gotErrs []error
 	for name, payload := range payloads {
 		_, cont, err := r.BeginPasskeyLogin()
@@ -152,9 +113,6 @@ func TestPasskeyLoginFinish_EnumerationResistance(t *testing.T) {
 		gotErrs = append(gotErrs, err)
 	}
 
-	// Every error message the caller observes must be identical — not merely
-	// satisfy errors.Is, but be equal byte for byte, since mapPasskeyError
-	// (mobilebff) uses err.Error() in the HTTP response.
 	first := gotErrs[0].Error()
 	for i, e := range gotErrs {
 		if e.Error() != first {
@@ -163,16 +121,6 @@ func TestPasskeyLoginFinish_EnumerationResistance(t *testing.T) {
 	}
 }
 
-// TestPasskeyLoginFinish_ReplayContinuationTokenFails proves that the login
-// ceremony's continuation token is single-use: reusing it on a second call
-// (even with an equally invalid payload) still fails — but for an invalid
-// TOKEN, not for a credential, so it should never land on
-// ErrPasskeyUnavailable/nil. Strict replay of the cryptographic challenge
-// itself is covered by TestWebAuthnLoginSessionToken_RoundTripAndReplay
-// (internal/auth/webauthn_tokens_test.go); here we prove that the Router
-// really does consume VerifyWebAuthnLoginSessionToken once — calling
-// FinishPasskeyLogin twice with the SAME continuation token does not reopen
-// the same challenge session.
 func TestPasskeyLoginFinish_ReplayContinuationTokenFails(t *testing.T) {
 	r := newPasskeyRouter(t, "panel.example.com")
 	_, cont, err := r.BeginPasskeyLogin()
@@ -186,10 +134,6 @@ func TestPasskeyLoginFinish_ReplayContinuationTokenFails(t *testing.T) {
 		t.Fatal("first call should fail (payload without a valid signature), but must not silently succeed with a nil error")
 	}
 
-	// The continuation token was already consumed by VerifyWebAuthnLoginSessionToken
-	// inside the first call (even though it failed afterwards, in the
-	// cryptographic validation) — reusing it must keep failing, never "unlock" the
-	// ceremony on a second attempt.
 	if _, err := r.FinishPasskeyLogin(cont, payload, "10.0.0.1", "ua"); err == nil {
 		t.Fatal("replay of the continuation token should fail")
 	}

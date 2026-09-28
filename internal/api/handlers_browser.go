@@ -1,19 +1,5 @@
 package api
 
-// handlers_browser.go — the web browser (Ultraviolet/Wisp) + the persistent
-// browser + per-session bandwidth tracking.
-//
-// Covers:
-//   - browserProxy (reverse proxy to Ultraviolet+Wisp on :8090)
-//   - browserPersistentProxy + browserInstancesPath / For + browserInstance
-//     + lookupBrowserInstancePort + handleBrowserInstances / Action
-//     + isSafeInstanceName + browserState / Resize + browserInstanceEnvPath
-//     / ComposePath + readVNCResolutionFromEnv + writeBrowserEnv
-//     + dockerComposeRecreate + waitBrowserHealthy
-//   - handleSessionBandwidth / Reset (usage per jti via httpmw.BWSnapshot)
-//
-// Extracted from api.go.
-
 import (
 	"context"
 	"encoding/json"
@@ -32,9 +18,6 @@ import (
 	"server-control-panel/internal/httpmw"
 )
 
-// browserProxy reverse-proxies /browser/* to the local Ultraviolet+Wisp Node
-// service on 127.0.0.1:8090, stripping the /browser prefix. It transparently
-// supports the WebSocket upgrade used by the Wisp transport.
 func browserProxy() http.Handler {
 	target, _ := url.Parse("http://127.0.0.1:8090")
 	proxy := httputil.NewSingleHostReverseProxy(target)
@@ -52,23 +35,8 @@ func browserProxy() http.Handler {
 	return proxy
 }
 
-// browserPersistentProxy reverse-proxies /browser-persistent/<instance>/* to
-// the noVNC server of the matching instance. The port is discovered through
-// <DataDir>/users/<user>/browser-instances.json (per-user after the v1→v2
-// migration). It keeps compatibility: /browser-persistent/* with no instance
-// name goes to "default".
-//
-// Each instance runs on its own port (default=6901, the next ones from 6902...)
-// and has its own volume → cookies and sessions isolated per service (whatsapp,
-// gmail, and so on).
-//
-// FlushInterval=-1 keeps the framebuffer WebSocket (binary) unbuffered.
-//
-// A critical HTTP handler — do not remove it without updating the tests in api_browser_test.go.
 func (r *Router) browserPersistentProxy() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		// Expected path: /browser-persistent/<instance>/... or /browser-persistent/...
-		// (no instance = default).
 		rest := strings.TrimPrefix(req.URL.Path, "/browser-persistent")
 		rest = strings.TrimPrefix(rest, "/")
 		instance := "default"
@@ -78,10 +46,6 @@ func (r *Router) browserPersistentProxy() http.Handler {
 		} else {
 			parts := strings.SplitN(rest, "/", 2)
 			candidate := parts[0]
-			// FIX security: validate the name BEFORE lookupBrowserInstancePort —
-			// otherwise path-traversal characters in the name slipped past the
-			// lookup (which only looks for a literal match, but the segment still
-			// became part of upstreamPath). We now reject early.
 			if isSafeInstanceName(candidate) {
 				if port := r.lookupBrowserInstancePort(req, candidate); port > 0 {
 					instance = candidate
@@ -94,12 +58,9 @@ func (r *Router) browserPersistentProxy() http.Handler {
 					upstreamPath = "/" + rest
 				}
 			} else {
-				// Unsafe candidate: treat it as a path of the default instance.
-				// Block paths with `..` in the final upstream path.
 				upstreamPath = "/" + rest
 			}
 		}
-		// Final sanity check on upstreamPath. If it contains `..`, reject.
 		if strings.Contains(upstreamPath, "..") {
 			http.Error(w, "invalid path", http.StatusBadRequest)
 			return
@@ -117,15 +78,7 @@ func (r *Router) browserPersistentProxy() http.Handler {
 			rq.URL.Path = upstreamPath
 			base(rq)
 		}
-		// Isolation headers — defence in depth against a malicious site browsed
-		// inside Vivaldi (the iframe) trying to attack the parent.
-		// COOP=same-origin: the window can only exchange postMessage same-origin.
-		// COEP=require-corp: subresources must declare CORP — this blocks leaks.
-		// The parent does not use SharedArrayBuffer so we need not keep the
-		// iframe cross-origin-isolated, but COOP prevents Spectre-style attacks
-		// that need window references between windows.
 		proxy.ModifyResponse = func(resp *http.Response) error {
-			// Only override when upstream did not set it — avoids clashing with noVNC.
 			h := resp.Header
 			if h.Get("Cross-Origin-Resource-Policy") == "" {
 				h.Set("Cross-Origin-Resource-Policy", "same-origin")
@@ -145,9 +98,6 @@ func (r *Router) browserPersistentProxy() http.Handler {
 	})
 }
 
-// browserInstancesPath returns the per-user file path, or "" when the request
-// is not authenticated (in production that only happens if somebody removes
-// auth.Middleware from the route; the caller treats "" as "no instances").
 func (r *Router) browserInstancesPath(req *http.Request) string {
 	user := auth.UserFrom(req)
 	if user == "" {
@@ -156,8 +106,6 @@ func (r *Router) browserInstancesPath(req *http.Request) string {
 	return filepath.Join(r.cfg.DataDir, "users", user, "browser-instances.json")
 }
 
-// browserInstancesFor loads the instances declared by the request's user. It
-// reads the file on every call (it is small and rarely touched).
 func (r *Router) browserInstancesFor(req *http.Request) []browserInstance {
 	path := r.browserInstancesPath(req)
 	if path == "" {
@@ -176,8 +124,6 @@ func (r *Router) browserInstancesFor(req *http.Request) []browserInstance {
 	return cfg.Instances
 }
 
-// lookupBrowserInstancePort returns an instance's port by name, within the
-// scope of the request's user. Returns 0 when it does not exist.
 func (r *Router) lookupBrowserInstancePort(req *http.Request, name string) int {
 	for _, inst := range r.browserInstancesFor(req) {
 		if inst.Name == name {
@@ -199,13 +145,6 @@ func (r *Router) handleBrowserInstances(w http.ResponseWriter, req *http.Request
 	writeJSON(w, map[string]any{"instances": sanitizeList(insts, "Name")})
 }
 
-// handleBrowserInstanceAction dispatches the browser instance's sub-endpoints:
-//   - GET  /api/browser-instances/{name}/state  → current resolution + running
-//   - POST /api/browser-instances/{name}/resize → sets VNC_RESOLUTION, recreates it
-//
-// Expected layout on disk: /opt/browser-instances/{name}/docker-compose.yml.
-// The docker-compose.yml must reference ${VNC_RESOLUTION:-1920x1080} (otherwise
-// the value in .env is ignored).
 func (r *Router) handleBrowserInstanceAction(w http.ResponseWriter, req *http.Request) {
 	rest := strings.TrimPrefix(req.URL.Path, "/api/browser-instances/")
 	parts := strings.SplitN(rest, "/", 2)
@@ -253,7 +192,6 @@ func isSafeInstanceName(s string) bool {
 	return true
 }
 
-// browserComposeDir is the canonical location of the per-instance compose files.
 const browserComposeDir = "/opt/browser-instances"
 
 func browserInstanceEnvPath(name string) string {
@@ -264,8 +202,6 @@ func browserInstanceComposePath(name string) string {
 	return filepath.Join(browserComposeDir, name, "docker-compose.yml")
 }
 
-// readVNCResolutionFromEnv reads VNC_RESOLUTION from the instance's .env.
-// Returns "" when the file does not exist or the key is absent.
 func readVNCResolutionFromEnv(name string) string {
 	data, err := os.ReadFile(browserInstanceEnvPath(name))
 	if err != nil {
@@ -284,13 +220,11 @@ func readVNCResolutionFromEnv(name string) string {
 func (r *Router) browserState(w http.ResponseWriter, req *http.Request, name string) {
 	res := readVNCResolutionFromEnv(name)
 	if res == "" {
-		// .env missing, or without the key: assume the default declared in the docker-compose.
 		res = "1920x1080"
 	}
 	port := r.lookupBrowserInstancePort(req, name)
 	running := false
 	if port > 0 {
-		// Quick probe (200ms) — success means noVNC is serving.
 		client := &http.Client{Timeout: 400 * time.Millisecond}
 		resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/", port))
 		if err == nil {
@@ -318,13 +252,11 @@ func (r *Router) browserResize(w http.ResponseWriter, req *http.Request, name st
 		writeErr(w, 400, "resolution out of range (W:240-3840, H:320-2160)")
 		return
 	}
-	// Vivaldi/Xvnc needs multiples of 2 — round to an even number.
 	body.Width &^= 1
 	body.Height &^= 1
 	newRes := fmt.Sprintf("%dx%d", body.Width, body.Height)
 	current := readVNCResolutionFromEnv(name)
 	if current == newRes {
-		// No change: just answer with the current state.
 		writeJSON(w, map[string]any{
 			"ok":         true,
 			"resolution": newRes,
@@ -351,8 +283,6 @@ func (r *Router) browserResize(w http.ResponseWriter, req *http.Request, name st
 	})
 }
 
-// writeBrowserEnv atomically writes VNC_RESOLUTION=<res> into .env, preserving
-// the other keys that are already there.
 func writeBrowserEnv(name, res string) error {
 	dir := filepath.Join(browserComposeDir, name)
 	if _, err := os.Stat(dir); err != nil {

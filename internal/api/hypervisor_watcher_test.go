@@ -10,9 +10,6 @@ import (
 	"server-control-panel/internal/pve"
 )
 
-// sentinelRouter builds a Router with an event collector in place of the
-// notification router. NO test here sends a real message: what is asserted is
-// WHICH event would go out, and when.
 func sentinelRouter(t *testing.T) (*Router, *[]notify.Event) {
 	t.Helper()
 	var seen []notify.Event
@@ -26,9 +23,6 @@ func badInv() inventory.Inventory {
 	return inventory.Inventory{LastPollError: "pve /api2/json/cluster/resources?type=vm: unreachable: dial tcp 198.51.100.20:8006: i/o timeout"}
 }
 
-// 🔴 TestSentinelDoesNotTrustFirstTick — a tick that fails is routine: the
-// network wobbles, the hypervisor gets busy. Alerting on the first one is the
-// permanent-red disease by another road.
 func TestSentinelDoesNotTrustFirstTick(t *testing.T) {
 	r, evs := sentinelRouter(t)
 	r.checkReachability(badInv(), 1000)
@@ -45,9 +39,6 @@ func TestSentinelDoesNotTrustFirstTick(t *testing.T) {
 	}
 }
 
-// TestSentinelAlertsOnEdge: while the problem lasts, silence. An alarm
-// that fires every cycle is not an alarm: it is a running tap, and it trains
-// people to ignore it.
 func TestSentinelAlertsOnEdge(t *testing.T) {
 	r, evs := sentinelRouter(t)
 	for i := 0; i < 20; i++ {
@@ -58,7 +49,6 @@ func TestSentinelAlertsOnEdge(t *testing.T) {
 	}
 }
 
-// And the recovery is news too, exactly once.
 func TestSentinelAnnouncesRecoveryOnce(t *testing.T) {
 	r, evs := sentinelRouter(t)
 	for i := 0; i < 5; i++ {
@@ -78,8 +68,6 @@ func TestSentinelAnnouncesRecoveryOnce(t *testing.T) {
 	}
 }
 
-// A transient failure that clears BEFORE the threshold produces no event at all
-// — neither a down nor a recovery. Alerting here would count a wobble as an incident.
 func TestTransientFailureEmitsNothing(t *testing.T) {
 	r, evs := sentinelRouter(t)
 	r.checkReachability(badInv(), 1000)
@@ -90,10 +78,6 @@ func TestTransientFailureEmitsNothing(t *testing.T) {
 	}
 }
 
-// 🔴 TestMessageSaysWhatWhereAndWhy — the operator's request, turned into a pin:
-// "if it is going to raise an alert it has to say what is happening, where and
-// why". A vague message is what he already had, and it is what made the channel
-// lose its credibility.
 func TestMessageSaysWhatWhereAndWhy(t *testing.T) {
 	r, evs := sentinelRouter(t)
 	r.pveConfig = &testPVECfg
@@ -109,11 +93,9 @@ func TestMessageSaysWhatWhereAndWhy(t *testing.T) {
 			t.Errorf("the message is missing %q:\n%s", required, b)
 		}
 	}
-	// WHERE has to be CONCRETE, not "the server".
 	if !strings.Contains(b, "hypervisor.local") {
 		t.Errorf("the WHERE does not name the target:\n%s", b)
 	}
-	// And the poller's real error goes in — it is the clue the operator has.
 	if !strings.Contains(b, "i/o timeout") {
 		t.Errorf("the message does not carry the real error:\n%s", b)
 	}
@@ -122,13 +104,10 @@ func TestMessageSaysWhatWhereAndWhy(t *testing.T) {
 	}
 }
 
-// 🔴 TestUnreadableInventoryIsNotHomeOutage — failing to read OUR OWN
-// inventory is a defect of the VPS, not news about the house. Confusing the two
-// would send the operator to look in the wrong place at three in the morning.
 func TestUnreadableInventoryIsNotHomeOutage(t *testing.T) {
 	r, evs := sentinelRouter(t)
 	r.inventoryStore = nil
-	r.tickSentinel() // with no store there is no verdict
+	r.tickSentinel()
 	if len(*evs) != 0 {
 		t.Fatalf("missing inventory turned into an outage of the house: %v", typesOf(*evs))
 	}
@@ -142,6 +121,4 @@ func typesOf(evs []notify.Event) []string {
 	return out
 }
 
-// testPVECfg gives the pin a CONCRETE target to demand in the message: a
-// "WHERE" that says "the server" is no where at all.
 var testPVECfg = pve.Config{BaseURL: "https://hypervisor.local:8006"}

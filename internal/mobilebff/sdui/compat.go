@@ -5,39 +5,6 @@ import (
 	"fmt"
 )
 
-// Compat and FixtureRenderable exist to answer, mechanically, the question
-// the compatibility gate demands: "does this server change break an Android
-// app that is already installed on somebody's phone?"
-//
-// The ASYMMETRY that makes the rules below correct — and that a future reader
-// will get wrong unless they read this comment before touching anything here:
-//
-//	frozen  = what an ALREADY PUBLISHED app knows how to interpret (frozen at
-//	          the moment that build was shipped to F-Droid).
-//	current = what the server is able to emit TODAY.
-//
-// Compatibility means "everything the old app requires, the new server still
-// guarantees". Hence:
-//   - ADDITIONS are safe: a new component type, a new field, a new enum
-//     value — the old app simply ignores what it does not know (that is the
-//     whole point of the tolerant client).
-//   - REMOVALS and WEAKENINGS are not: a field the old app requires
-//     disappearing, turning optional, changing type, or an enum value the old
-//     app has already seen disappearing from the current enum — all of that
-//     is a change the old app cannot absorb, because it will never run again
-//     the code that would decide how to react to that change.
-//
-// Swapping frozen and current in the calls below produces a gate that passes
-// on exactly the changes it exists to catch — silently, because every
-// "removal" seen backwards looks like an "addition". The compatibility tests
-// (the additive cases) in compat_test.go fail loudly if the direction is
-// inverted.
-
-// Severity classifies a Break: "breaking" fails the build (Compat and
-// FixtureRenderable return it for every change an already published app does
-// not survive); "note" is merely informative — recorded for visibility (e.g.
-// a new mandatory field on the server, which does not break the old app
-// because it never knew that field existed) but never fails the gate.
 type Severity string
 
 const (
@@ -45,12 +12,9 @@ const (
 	SeverityNote     Severity = "note"
 )
 
-// Break is a struct, not a string, so that cmd/sdui-compat can group and
-// count without parsing messages — a CI failure names exactly what broke:
-// which type/object, which field, what kind of break.
 type Break struct {
 	Kind          string
-	ComponentType string // component type, object name, or "action_descriptor"
+	ComponentType string
 	Field         string
 	Detail        string
 	Severity      Severity
@@ -63,13 +27,6 @@ func (b Break) String() string {
 	return fmt.Sprintf("[%s] %s: %s", b.Severity, b.ComponentType, b.Detail)
 }
 
-// Compat compares a frozen manifest (what an already published app knows how
-// to interpret) against the current contract (what the server emits today)
-// and returns every divergence — covering the 7 component types, every
-// referenced supporting object (DataSource, TableColumn, FormField, ...) and
-// the ActionDescriptor. A type/object removed from the current contract is by
-// itself enough to fail (there are no fields left to compare); otherwise the
-// fields on both sides are compared one by one by compareFields.
 func Compat(frozen, current Contract) []Break {
 	var breaks []Break
 
@@ -106,9 +63,6 @@ func Compat(frozen, current Contract) []Break {
 	return breaks
 }
 
-// compareFields compares the fields of a single component type/object between
-// frozen and current, labelling every Break with label (the name of the
-// type/object/"action_descriptor" the fields belong to).
 func compareFields(label string, frozenFields, currentFields map[string]FieldContract) []Break {
 	var breaks []Break
 
@@ -179,11 +133,6 @@ func compareFields(label string, frozenFields, currentFields map[string]FieldCon
 			continue
 		}
 		if cfc.Required {
-			// COMPATIBLE for the old app (it never knew this field existed, and the
-			// tolerant parser ignores unknown keys) — but informative, because a new
-			// field marked mandatory in Go is usually a sign that something on the
-			// server side started depending on it without accounting for older
-			// clients.
 			breaks = append(breaks, Break{
 				Kind:          "field_added_required",
 				ComponentType: label,
@@ -197,11 +146,6 @@ func compareFields(label string, frozenFields, currentFields map[string]FieldCon
 	return breaks
 }
 
-// fixtureCompatScreen is the minimum shape needed to walk a fixture's
-// components without depending on UnmarshalScreen — identical to
-// contract_test.go's fixtureScreen, deliberately duplicated here because this
-// function runs in production (via cmd/sdui-compat), not only in tests, and
-// must not import private symbols from a _test.go file.
 type fixtureCompatScreen struct {
 	SDUIVersion *int                     `json:"sdui_version"`
 	Screen      *fixtureCompatScreenBody `json:"screen"`
@@ -212,16 +156,6 @@ type fixtureCompatScreenBody struct {
 	Components []map[string]interface{} `json:"components"`
 }
 
-// FixtureRenderable checks whether a fixture payload — the exact byte shape
-// the server would emit today for some screen — is still renderable by a
-// client whose manifest is frozen in frozen. This covers a hole Compat does
-// not: Compat compares the VOCABULARY (which fields each component type has);
-// FixtureRenderable compares a real PAYLOAD against that frozen vocabulary,
-// catching a screen Builder that stopped emitting a mandatory field without
-// the vocabulary itself having changed.
-//
-// A fixture with no "sdui_version" (e.g. validation-error.json) is not a
-// screen and returns nil — outside this function's scope.
 func FixtureRenderable(fixture []byte, frozen Contract) []Break {
 	var top map[string]interface{}
 	if err := json.Unmarshal(fixture, &top); err != nil {
@@ -259,8 +193,6 @@ func FixtureRenderable(fixture []byte, frozen Contract) []Break {
 					Detail:        fmt.Sprintf("component %d has type=%q, absent from the frozen manifest, with critical=true — the already published app would show an \"update the app\" card in this position today", i, typ),
 				})
 			}
-			// critical=false/absent: COMPATIBLE — the old app ignores the unknown
-			// component and renders the rest, by design.
 			continue
 		}
 

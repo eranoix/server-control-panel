@@ -12,14 +12,11 @@ import (
 	"testing"
 )
 
-// vaultPath returns a throwaway vault file inside the test's temp dir.
 func vaultPath(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "secrets.vault")
 }
 
-// readFileFormat decodes the on-disk envelope so tests can assert about the
-// salt/nonce without going through the decrypt path.
 func readFileFormat(t *testing.T, path string) fileFormat {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -33,10 +30,6 @@ func readFileFormat(t *testing.T, path string) fileFormat {
 	return ff
 }
 
-// writeLegacyVault writes a vault the way server-control-panel < 2026-06-09 did:
-// plaintext is a plain map[string]string, salt derived deterministically
-// from the passphrase, and NO `salt` field in the JSON. This is the exact
-// shape Open() must keep reading.
 func writeLegacyVault(t *testing.T, path, passphrase string, data map[string]string) {
 	t.Helper()
 	pp := []byte(passphrase)
@@ -63,7 +56,6 @@ func writeLegacyVault(t *testing.T, path, passphrase string, data map[string]str
 	}
 	ct := gcm.Seal(nil, nonce, pt, nil)
 	ff := fileFormat{
-		// Salt intentionally empty: marks this as a legacy vault.
 		Nonce:      hex.EncodeToString(nonce),
 		Ciphertext: hex.EncodeToString(ct),
 	}
@@ -89,7 +81,6 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("Get = (%q,%v), want (s3cr3t,true)", v, ok)
 	}
 
-	// Reopen from disk: data must survive a process restart.
 	s2, err := Open(path, "correct horse battery staple")
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
@@ -98,7 +89,6 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("after reopen Get = (%q,%v), want (s3cr3t,true)", v, ok)
 	}
 
-	// Delete removes it and persists.
 	if err := s2.Delete("api_key"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -128,15 +118,11 @@ func TestWrongPassphraseFails(t *testing.T) {
 	}
 }
 
-// TestLegacyVaultMigratesSalt is the cross-binary guarantee: a vault written
-// by an old binary (plain map, no salt field) must decrypt, and the first
-// save() must transparently mint a random salt without losing data.
 func TestLegacyVaultMigratesSalt(t *testing.T) {
 	path := vaultPath(t)
 	const pp = "legacy-pass"
 	writeLegacyVault(t, path, pp, map[string]string{"a": "1", "b": "2"})
 
-	// Legacy file has no salt field.
 	if ff := readFileFormat(t, path); ff.Salt != "" {
 		t.Fatalf("precondition: legacy vault should have empty salt, got %q", ff.Salt)
 	}
@@ -152,7 +138,6 @@ func TestLegacyVaultMigratesSalt(t *testing.T) {
 		t.Fatalf("legacy Get a = %q, want 1", v)
 	}
 
-	// First write migrates: a random salt must now be persisted.
 	if err := s.Set("c", "3"); err != nil {
 		t.Fatalf("Set (triggers migration): %v", err)
 	}
@@ -160,7 +145,6 @@ func TestLegacyVaultMigratesSalt(t *testing.T) {
 		t.Fatal("after save, salt field still empty — migration did not run")
 	}
 
-	// All values (old + new) survive, and reopen works with the new salt.
 	s2, err := Open(path, pp)
 	if err != nil {
 		t.Fatalf("reopen post-migration: %v", err)
@@ -172,8 +156,6 @@ func TestLegacyVaultMigratesSalt(t *testing.T) {
 	}
 }
 
-// TestSaveUsesFreshNonce guards GCM semantic security: writing the same
-// plaintext twice must not produce an identical ciphertext/nonce.
 func TestSaveUsesFreshNonce(t *testing.T) {
 	path := vaultPath(t)
 	s, err := Open(path, "pp")
@@ -196,7 +178,6 @@ func TestSaveUsesFreshNonce(t *testing.T) {
 	if first.Ciphertext == second.Ciphertext {
 		t.Fatal("ciphertext identical across saves of same plaintext")
 	}
-	// Salt is stable for a non-legacy vault (only nonce rolls).
 	if first.Salt != second.Salt {
 		t.Fatalf("salt changed unexpectedly across plain saves: %q -> %q", first.Salt, second.Salt)
 	}
@@ -219,11 +200,9 @@ func TestRotatePreservesValues(t *testing.T) {
 		t.Fatalf("Rotate: %v", err)
 	}
 
-	// Old passphrase must no longer open the vault.
 	if _, err := Open(path, "old-pass"); err == nil {
 		t.Fatal("old passphrase still opens vault after Rotate")
 	}
-	// New passphrase opens it with every value intact.
 	s2, err := Open(path, "new-pass")
 	if err != nil {
 		t.Fatalf("Open with new pass: %v", err)
@@ -241,7 +220,7 @@ func TestLargeValueRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	big := strings.Repeat("A", 256*1024) // 256 KiB, e.g. a PEM bundle
+	big := strings.Repeat("A", 256*1024)
 	if err := s.Set("cert", big); err != nil {
 		t.Fatalf("Set big: %v", err)
 	}
@@ -254,12 +233,6 @@ func TestLargeValueRoundTrips(t *testing.T) {
 	}
 }
 
-// 🔴 TestReloadIfChanged pins a defect MEASURED in production: Get() reads an
-// in-memory map loaded once at Open, so a secret written by ANOTHER
-// process (`panelctl secrets set`, a credential-applying tool) stayed
-// invisible to the panel until the next restart. The revocation drill
-// recreated a node's token and the panel kept saying "revoked" with the key already
-// back in the vault and on the hypervisor.
 func TestReloadIfChanged(t *testing.T) {
 	path := vaultPath(t)
 	const pp = "test-password"
@@ -272,12 +245,10 @@ func TestReloadIfChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// No external change: nothing to do, and NO re-read (scrypt is expensive).
 	if changed, err := panel.ReloadIfChanged(); err != nil || changed {
 		t.Fatalf("ReloadIfChanged with no change = (%v, %v), want (false, nil)", changed, err)
 	}
 
-	// Another process writes to the SAME file.
 	other, err := Open(path, pp)
 	if err != nil {
 		t.Fatal(err)
@@ -286,7 +257,6 @@ func TestReloadIfChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The defect: without a reload, the panel cannot see it.
 	if _, ok := panel.Get("external"); ok {
 		t.Fatal("the test does not reproduce the defect — the key showed up with no reload")
 	}
@@ -301,15 +271,11 @@ func TestReloadIfChanged(t *testing.T) {
 	if v, ok := panel.Get("external"); !ok || v != "from-outside" {
 		t.Fatalf("after the reload: (%q, %v), want the external key", v, ok)
 	}
-	// And what was already there is not lost.
 	if v, ok := panel.Get("k"); !ok || v != "v1" {
 		t.Fatalf("the reload lost the local key: (%q, %v)", v, ok)
 	}
 }
 
-// TestReloadIfChangedSkipsOwnWrite: our own write changes the
-// mtime; if that counted as an external change, every Set would pay a scrypt on the
-// next tick, for no gain at all.
 func TestReloadIfChangedSkipsOwnWrite(t *testing.T) {
 	path := vaultPath(t)
 	s, err := Open(path, "p")

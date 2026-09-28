@@ -16,11 +16,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders [NotificationPreferencesScreen] under Robolectric across every
- * [NotificationPreferencesUiState]. The revert-on-error toggle flow runs through the real
- * [NotificationPreferencesViewModel] with a fake [NotifyPreferencesSource].
- */
 @RunWith(RobolectricTestRunner::class)
 class NotificationPreferencesScreenTest {
 
@@ -48,7 +43,6 @@ class NotificationPreferencesScreenTest {
         composeRule.onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)).assertExists()
     }
 
-    /** A top-level destination uses the shell's header; its own bar would stack headers and add a dead Back. */
     @Test
     fun `the screen has no header or back button of its own`() {
         composeRule.setContent {

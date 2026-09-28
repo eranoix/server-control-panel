@@ -6,18 +6,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/**
- * Draggable selection handles, as in Android text fields. All geometry comes from the
- * same [CellHitTester] that maps touches to cells, so there is one rounding convention.
- */
 class SelectionHandlesTest {
 
     private val hitTester = CellHitTester(cellWidthPx = 20f, cellHeightPx = 40f, cols = 10, rows = 5)
 
     @Test
     fun anchors_hangFromBottomEdgesOfFirstAndLastCell() {
-        // Android convention: the start handle hangs from the bottom-left of the first
-        // cell, the end handle from the bottom-right of the last.
         val selection = GridSelection(startRow = 1, startCol = 2, endRow = 1, endCol = 4)
 
         val anchors = handleAnchors(selection, hitTester)
@@ -28,8 +22,6 @@ class SelectionHandlesTest {
 
     @Test
     fun anchors_doNotSwapSidesWhenDraggedBackToFront() {
-        // An inverted (right-to-left) selection must not make the handles swap sides
-        // mid-gesture.
         val forward = GridSelection(startRow = 0, startCol = 1, endRow = 0, endCol = 5)
         val backward = GridSelection(startRow = 0, startCol = 5, endRow = 0, endCol = 1)
 
@@ -55,7 +47,6 @@ class SelectionHandlesTest {
 
     @Test
     fun withBothInReach_nearestWins() {
-        // Single-cell selection: both anchors are 20 px apart, inside one 48 dp target.
         val selection = GridSelection(0, 0, 0, 0)
         val anchors = handleAnchors(selection, hitTester)
 
@@ -69,7 +60,6 @@ class SelectionHandlesTest {
         val controller = SelectionGestureController({ hitTester }, holder)
         controller.setSelection(GridSelection(0, 1, 0, 3))
 
-        // Drop the end on the cell (row 2, column 7).
         controller.dragHandle(SelectionHandle.END, Offset(150f, 100f))
 
         assertEquals(GridSelection(0, 1, 2, 7), holder.selection)
@@ -92,12 +82,10 @@ class SelectionHandlesTest {
         val controller = SelectionGestureController({ hitTester }, holder)
         controller.setSelection(GridSelection(0, 2, 0, 5))
 
-        // Dragging the start handle past the end is a legitimate gesture.
         controller.dragHandle(SelectionHandle.START, Offset(170f, 10f))
 
         val crossed = holder.selection!!
         assertEquals(GridSelection(0, 8, 0, 5), crossed)
-        // Crossed in the data, but ordered for measuring and drawing.
         assertEquals(Rect(100f, 0f, 180f, 40f), selectionBounds(crossed, hitTester))
     }
 
@@ -113,7 +101,6 @@ class SelectionHandlesTest {
 
     @Test
     fun selectionRectIsWhatFloatingBarUsesToPosition() {
-        // Without this rect the system would position the bar using the whole view.
         val selection = GridSelection(startRow = 1, startCol = 2, endRow = 1, endCol = 4)
 
         assertEquals(Rect(40f, 40f, 100f, 80f), selectionBounds(selection, hitTester))
@@ -133,7 +120,6 @@ class SelectionHandlesTest {
 
     @Test
     fun selectionChangeNotifiesBarDrawer() {
-        // The system floating bar does not observe the holder, so it must be notified.
         val notices = mutableListOf<GridSelection?>()
         val holder = GridSelectionHolder()
         val controller = SelectionGestureController({ hitTester }, holder) { notices += it }
@@ -148,7 +134,6 @@ class SelectionHandlesTest {
 
     @Test
     fun clearingMissingSelection_doesNotNotifyAgain() {
-        // Closing the bar clears the selection and vice versa; this guard prevents a loop.
         val notices = mutableListOf<GridSelection?>()
         val holder = GridSelectionHolder()
         val controller = SelectionGestureController({ hitTester }, holder) { notices += it }

@@ -1,17 +1,4 @@
 #!/usr/bin/env node
-// test-recovery-term.mjs — the RECOVERY terminal must not be the more fragile
-// of the two.
-//
-// It is the screen you use when everything else is broken — and it was exactly
-// the most primitive client in the project: it did not reconnect (one network
-// blink killed the session until someone reloaded), it silently discarded
-// anything typed without a socket, it wrote to xterm once per message without
-// ever asking for a pause (heavy output blows the buffer and the emulator DROPS
-// bytes) and it had no heartbeat at all.
-//
-// The test loads the REAL script of the page, with the DOM and the WebSocket
-// stubbed, and exercises the behaviour. Checking text would not be enough: what
-// matters here is what happens when the connection drops.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -27,7 +14,6 @@ console.log('=== test-recovery-term ===');
 
 if (!script || script.length < 3000) { no('could not extract the page script'); process.exit(1); }
 
-// ── stubs ───────────────────────────────────────────────────────────────────
 const written = [];
 let lineUnderCursor = 'root@vps:/opt#';
 let bufferType = 'normal';
@@ -68,9 +54,6 @@ const ctx = {
   WebSocket: FakeWS,
   TextEncoder,
   document: {
-    // Elements are memoised: the test needs to READ BACK what the page wrote
-    // (the notice banner, for instance), and a fresh object on every call
-    // would lose that.
     getElementById: (id) => (elements[id] ||= { id, textContent: '', style: {}, dataset: {}, hidden: true }),
     addEventListener: (ev, f) => { (listeners[ev] ||= []).push(f); },
     cookie: 'panel_recovery_user=sam',
@@ -88,9 +71,6 @@ const ctx = {
 ctx.window.addEventListener = ctx.window.addEventListener.bind(ctx.window);
 
 const names = Object.keys(ctx);
-// The client became a FACTORY (the page has two terminals: the host shell and
-// Claude, on an independent connection). The harness instantiates one and
-// exercises it — testing the factory tests both, which is why it exists.
 try {
   new Function(...names, script + '\n;this.__create = createTerminal;').call(ctx, ...names.map((n) => ctx[n]));
 } catch (e) {
@@ -105,11 +85,9 @@ const st = inst.st, send = inst.send;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const output = () => written.join('');
 
-// ── 1. connects on its own when the page loads ──────────────────────────────
 sockets.length === 1 ? ok('opens the connection when the page loads') : no('no connection was opened at all');
 sockets[0].open();
 
-// ── 2. binary input, no per-keystroke envelope ──────────────────────────────
 {
   written.length = 0;
   term._data('ls');
@@ -119,7 +97,6 @@ sockets[0].open();
     : no('it did not send binary: ' + JSON.stringify(String(b)));
 }
 
-// ── 3. the outage: reconnects AND does not swallow what was typed ───────────
 {
   sockets[0].kill(1006);
   written.length = 0;
@@ -137,7 +114,6 @@ sockets[0].open();
     : no('did NOT reconnect — the recovery session dies on one network blink');
 }
 
-// ── 4. on return, erase the guess and flush the queue in order ──────────────
 {
   const s2 = sockets[sockets.length - 1];
   written.length = 0;
@@ -148,7 +124,6 @@ sockets[0].open();
     : no('reconnect did not clear/flush: output=' + JSON.stringify(output()) + ' sent=' + sent);
 }
 
-// ── 5. a password is never echoed locally ───────────────────────────────────
 {
   const s = sockets[sockets.length - 1];
   s.kill(1006);
@@ -162,7 +137,6 @@ sockets[0].open();
   await wait(700);
 }
 
-// ── 6. backpressure: without it, heavy output corrupts the screen ───────────
 {
   const s = sockets[sockets.length - 1];
   s.open();
@@ -175,7 +149,6 @@ sockets[0].open();
     : no('it never asks for a pause — the xterm buffer blows and it DROPS bytes');
 }
 
-// ── 7. an expired session is not a dropped network ──────────────────────────
 {
   const s = sockets[sockets.length - 1];
   probeResponse = { status: 0, type: 'opaqueredirect' };
@@ -184,16 +157,12 @@ sockets[0].open();
   await wait(500);
   const before = sockets.length;
   const hadProbe = probes > 0;
-  sockets[sockets.length - 1].kill(1006);   // the 2nd attempt fires the probe
+  sockets[sockets.length - 1].kill(1006);
   await wait(800);
   (hadProbe || probes > 0)
     ? ok('after failing again, it ASKS whether the session is still valid (HEAD)')
     : no('it never asks — it would loop reconnecting forever with an expired session');
   await wait(300);
-  // The notice goes to the page BANNER, NOT inside the terminal. Writing to
-  // xterm dirtied the scrollback of the conversation with Claude — and a notice
-  // about the page does not belong to the content of the session, which is still
-  // alive on the server. The test asserts the new place, and a clean terminal.
   const banner = elements['banner'] || {};
   (String(banner.textContent || '').includes('expired') && banner.hidden === false)
     ? ok('an expired session is spelled out in the page banner')

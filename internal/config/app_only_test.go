@@ -1,14 +1,5 @@
 package config
 
-// app_only_test.go — the app-only marker has to SURVIVE the write/read cycle
-// of config.json.
-//
-// This is the most likely failure mode of the feature: Go rewrites the whole
-// config.json from the struct (Save → json.Marshal), so a field the struct
-// does not know about silently disappears on the next save (a password
-// change, MFA, user CRUD) and the gate opens by itself — no error, no log,
-// nobody the wiser until someone walks into the panel.
-
 import (
 	"encoding/json"
 	"os"
@@ -17,8 +8,6 @@ import (
 	"testing"
 )
 
-// TestAppOnly_SurvivesSaveLoadCycle writes a config with the marker on,
-// reloads it from disk and requires IsAppOnly to still be true.
 func TestAppOnly_SurvivesSaveLoadCycle(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
@@ -48,14 +37,10 @@ func TestAppOnly_SurvivesSaveLoadCycle(t *testing.T) {
 	if reloaded.IsAppOnly("sam") {
 		t.Fatalf("an account without the flag came back from disk flagged")
 	}
-	// Neighbours preserved — the marker must not have trampled another field.
 	if !reloaded.IsAdmin("tester") {
 		t.Fatalf("the admin flag was lost along with it")
 	}
 
-	// Second cycle: a Save of the ALREADY reloaded config (which is what
-	// happens in production on every password/MFA change) must not lose the
-	// marker either.
 	path2 := filepath.Join(dir, "config2.json")
 	if err := Save(reloaded, path2); err != nil {
 		t.Fatalf("Save 2: %v", err)
@@ -70,9 +55,6 @@ func TestAppOnly_SurvivesSaveLoadCycle(t *testing.T) {
 	}
 }
 
-// TestAppOnly_OmitEmptyKeepsConfigClean proves that anyone not using the
-// feature does not get the field in the file — the config of a normal
-// install stays the same.
 func TestAppOnly_OmitEmptyKeepsConfigClean(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
@@ -94,8 +76,6 @@ func TestAppOnly_OmitEmptyKeepsConfigClean(t *testing.T) {
 		t.Fatalf("app_only field written for an account without the flag:\n%s", raw)
 	}
 
-	// And the name of the field in the JSON is the contract with the
-	// production config.json (which is hand-edited) — pin it here.
 	marked := &Config{Users: []User{{Username: "tester", AppOnly: true}}}
 	b, err := json.Marshal(marked)
 	if err != nil {

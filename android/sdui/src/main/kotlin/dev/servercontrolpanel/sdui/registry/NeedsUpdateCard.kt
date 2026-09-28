@@ -12,18 +12,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-/**
- * Shown in place of a critical [dev.servercontrolpanel.core.sdui.SduiComponent.Unknown]
- * — a component type the server considered essential to this screen, but this
- * build of the app does not recognize. Never rendered for a non-critical
- * unknown, which is skipped entirely instead (see [RenderComponent]).
- *
- * [onUpdateClick] is now WIRED UP: the app shell installs
- * [dev.servercontrolpanel.sdui.registry.LocalUpdateRequest] with the same path the
- * update banner uses, so tapping this card asks for the update that would make
- * it disappear. The default is still a no-op, so that a preview (or a test) can
- * compose the card without needing a coordinator.
- */
 @Composable
 fun NeedsUpdateCard(
     unknownType: String,

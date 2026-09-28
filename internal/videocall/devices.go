@@ -13,32 +13,16 @@ import (
 	"server-control-panel/internal/auth"
 )
 
-// RingDevice is one device the user is known on (one panel installation:
-// "MacBook — Chrome", "Windows — Edge") carrying ITS OWN ringing policy.
-//
-// The second half of the problem: ringing was always a blind fan-out —
-// PresenceHub.NotifyUsers wakes ALL of the user's presence connections, and
-// presence opens at app boot on any page. Result: Windows and the Mac rang
-// together, even when the user only wanted to answer on one of them
-// ("devices I never chose to connect on").
-//
-// Instead of an enum of modes (all / only this one / selected), which always
-// makes "this one" ambiguous from the point of view of whoever configured it,
-// the policy is PER DEVICE: each device has Ring (on/off) and MuteUntil
-// (temporary silence). "Only this one" is simply switching the others off, and
-// the panel lists the known devices in a dropdown — no identifier to type.
 type RingDevice struct {
 	User      string `json:"user"`
 	DeviceID  string `json:"device_id"`
 	Label     string `json:"label"`
 	Ring      bool   `json:"ring"`
-	MuteUntil int64  `json:"mute_until,omitempty"` // unix; 0 = no silence
+	MuteUntil int64  `json:"mute_until,omitempty"`
 	LastSeen  int64  `json:"last_seen"`
 	CreatedAt int64  `json:"created_at"`
 }
 
-// Muted answers whether the device is silenced RIGHT NOW (by toggle or by
-// temporary silence).
 func (d *RingDevice) Muted(now int64) bool {
 	if d == nil {
 		return false
@@ -50,17 +34,13 @@ func (d *RingDevice) Muted(now int64) bool {
 }
 
 const (
-	// maxDevicesPerUser bounds the file's growth. A device is a unit-level
-	// thing; 50 is already generous and the oldest surplus gets pruned.
 	maxDevicesPerUser = 50
-	// deviceStaleDays: a device not seen for that long drops off the list (the
-	// user should not be picking a ringer on a machine they no longer even use).
-	deviceStaleDays = 120
+	deviceStaleDays   = 120
 )
 
 type deviceStore struct {
 	mu      sync.RWMutex
-	devices map[string]*RingDevice // user + "\x00" + deviceID
+	devices map[string]*RingDevice
 	path    string
 }
 
@@ -82,7 +62,7 @@ func (s *deviceStore) load() error {
 	}
 	var arr []*RingDevice
 	if err := json.Unmarshal(b, &arr); err != nil {
-		return nil // tolerant, same as rooms/subs
+		return nil
 	}
 	cutoff := time.Now().Unix() - int64(deviceStaleDays)*86400
 	s.mu.Lock()
@@ -115,9 +95,6 @@ func (s *deviceStore) save() error {
 	return atomicWriteJSON(s.path, arr, 0o600)
 }
 
-// Seen records/updates the device the moment it opens its presence connection.
-// A new device is born ringing (Ring: true) — the default is to keep alerting;
-// silencing is an explicit choice by the user.
 func (s *deviceStore) Seen(user, deviceID, label string) {
 	if s == nil || user == "" || deviceID == "" {
 		return
@@ -139,8 +116,6 @@ func (s *deviceStore) Seen(user, deviceID, label string) {
 	_ = s.save()
 }
 
-// pruneLocked keeps at most maxDevicesPerUser per user, discarding the ones
-// seen longest ago. The caller holds s.mu (write).
 func (s *deviceStore) pruneLocked(user string) {
 	var mine []*RingDevice
 	for _, d := range s.devices {
@@ -157,11 +132,6 @@ func (s *deviceStore) pruneLocked(user string) {
 	}
 }
 
-// ShouldRing decides whether THIS presence connection should ring.
-//
-// An unknown device (an old client that sends no device_id, or the first
-// connection before Seen) DOES ring: graceful degradation — the policy can never
-// turn "I configured nothing" into "I missed the call".
 func (s *deviceStore) ShouldRing(user, deviceID string, now int64) bool {
 	if s == nil || user == "" || deviceID == "" {
 		return true
@@ -175,7 +145,6 @@ func (s *deviceStore) ShouldRing(user, deviceID string, now int64) bool {
 	return !d.Muted(now)
 }
 
-// List returns the user's devices, most recent first.
 func (s *deviceStore) List(user string) []RingDevice {
 	if s == nil {
 		return nil
@@ -192,7 +161,6 @@ func (s *deviceStore) List(user string) []RingDevice {
 	return out
 }
 
-// Set applies the policy chosen in the panel. A nil `ring` means leave it alone.
 func (s *deviceStore) Set(user, deviceID string, ring *bool, muteUntil *int64, label string) bool {
 	if s == nil || user == "" || deviceID == "" {
 		return false
@@ -206,7 +174,7 @@ func (s *deviceStore) Set(user, deviceID string, ring *bool, muteUntil *int64, l
 	if ring != nil {
 		d.Ring = *ring
 		if *ring {
-			d.MuteUntil = 0 // switching it back on cancels a pending temporary silence
+			d.MuteUntil = 0
 		}
 	}
 	if muteUntil != nil {
@@ -220,8 +188,6 @@ func (s *deviceStore) Set(user, deviceID string, ring *bool, muteUntil *int64, l
 	return true
 }
 
-// Forget removes the device from the list (it leaves the dropdown; it rings
-// again if it reappears, because a new device is born with Ring=true).
 func (s *deviceStore) Forget(user, deviceID string) bool {
 	if s == nil {
 		return false
@@ -239,8 +205,6 @@ func (s *deviceStore) Forget(user, deviceID string) bool {
 	return ok
 }
 
-// sanitizeDeviceID accepts only the safe alphabet of an opaque identifier, with
-// a length ceiling — the value comes from the WS query string.
 func sanitizeDeviceID(s string) string {
 	if len(s) > 64 {
 		s = s[:64]
@@ -255,9 +219,6 @@ func sanitizeDeviceID(s string) string {
 	return string(out)
 }
 
-// sanitizeDeviceLabel cleans the human-readable label ("MacBook — Chrome"). It
-// truncates by runes (cutting UTF-8 in half would break the panel's JSON) and
-// kills control chars.
 func sanitizeDeviceLabel(s string) string {
 	runes := []rune(strings.TrimSpace(s))
 	if len(runes) > 60 {
@@ -273,16 +234,6 @@ func sanitizeDeviceLabel(s string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// ---- HTTP --------------------------------------------------------------
-
-// HandleDevices serves GET (list the devices that ring) and POST (change the
-// policy of one of them). It is the backend of the ringer picker in the
-// videocall settings.
-//
-//	GET  /api/videocall/devices  → {"devices":[...], "now":unix}
-//	POST /api/videocall/devices  {"device_id":"...","ring":true}
-//	                             {"device_id":"...","mute_hours":8}
-//	                             {"device_id":"...","forget":true}
 func (s *Service) HandleDevices(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFrom(r)
 	if user == "" {
@@ -331,7 +282,7 @@ func (s *Service) HandleDevices(w http.ResponseWriter, r *http.Request) {
 			if h < 0 {
 				h = 0
 			}
-			if h > 720 { // 30 days — sanity ceiling
+			if h > 720 {
 				h = 720
 			}
 			var v int64

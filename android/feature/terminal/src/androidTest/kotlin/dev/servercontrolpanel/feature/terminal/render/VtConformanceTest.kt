@@ -18,25 +18,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** The renderer colours are 0xRRGGBB; the canvas/golden are opaque. */
 private const val OPAQUE_ALPHA = 0xff shl 24
 
-/**
- * Instrumented -- requires the real native engine (see
- * `TerminalEngineTest`'s header comment: Robolectric cannot load a
- * bionic-ABI `.so` on a host JVM, so this needs a device/emulator) plus a
- * real `android.graphics` implementation for the pixel-level test. This
- * could not be run during this task's execution (no emulator/device was
- * attached); see the plan report for exactly what that leaves unverified.
- *
- * Drives [TerminalEngine] with each `.vt` byte-stream fixture under
- * `assets/vt/` (11 fixtures covering SGR16/256/truecolor, text attributes,
- * double-width glyphs, combining characters, autowrap, resize/reflow,
- * scroll regions/erases, alt-screen, and a mixed real-world-style sample),
- * asserting the resulting [CellSnapshot] against the fixture's
- * `.expected.json` at cell level, plus one pixel-level golden-PNG
- * assertion for the double-width fixture.
- */
 class VtConformanceTest {
 
     private val assets get() = InstrumentationRegistry.getInstrumentation().context.assets
@@ -142,18 +125,6 @@ class VtConformanceTest {
         }
     }
 
-    /**
-     * Pixel-level proof for the double-width risk called out in the plan:
-     * renders fixture 05-wide's final grid state through the exact same
-     * [buildRowDrawOps] + [rasterizeRow] path [TerminalCanvas] uses in
-     * production (structural/solid-block mode -- see [rasterizeRow]'s KDoc
-     * for exactly why real anti-aliased glyph shapes are not part of this
-     * golden) and compares every pixel against the checked-in
-     * `05-wide.golden.png`: the wide glyph's block must span exactly two
-     * cells with no gap, the spacer_tail column must show no separate
-     * block of its own, and the spacer_head column must render as pure
-     * background (nothing bled in from the glyph that wrapped away).
-     */
     @Test
     fun wideGlyph_pixelLevelMatchesGoldenPng_noDoubleDrawOrClip() {
         val cellWidthPx = 16f
@@ -177,16 +148,6 @@ class VtConformanceTest {
             Bitmap.Config.ARGB_8888,
         )
         val canvas = Canvas(bitmap)
-        // [TerminalCanvas] paints the default background over the WHOLE area before
-        // rasterizing the rows (`drawRect(colorOf(defaultBg), Offset.Zero, size)`), and
-        // that is why [rasterizeRow] only draws a background when the cell differs from
-        // the default — deliberately, so as not to repaint what is already there. This
-        // harness has to reproduce that first step, otherwise the default-background
-        // cells keep the contents of the freshly created bitmap (ARGB_8888 starts fully
-        // transparent, 0x00000000) instead of the golden's opaque black. It was exactly
-        // this missing step that the first real run flagged at pixel(80,0), the
-        // spacer_head column: expected 0xFF000000, got 0. The golden is right; it was
-        // the harness that did not reproduce the full production pipeline.
         canvas.drawColor(OPAQUE_ALPHA or defaultBg)
         val glyphAtlas = GlyphAtlas(cellWidthPx.toInt(), cellHeightPx.toInt())
         for (y in 0 until rows) {

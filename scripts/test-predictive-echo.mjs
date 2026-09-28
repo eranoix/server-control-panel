@@ -1,17 +1,4 @@
 #!/usr/bin/env node
-// test-predictive-echo.mjs — the local echo guess is not allowed to lie.
-//
-// The idea behind predictive echo is simple and the implementation is where the
-// risk lives: painting on screen something the server has not confirmed yet. The
-// guarantee that makes it safe is a single one — the screen returns to the
-// server's truth before any byte of it is applied — and the rest are the
-// boundaries where guessing would be dishonest (full-screen app, password,
-// good network, edge of the line).
-//
-// As in test-pane-outbox, the functions are extracted FROM THE REAL FILE: a copy
-// of the logic in here would start drifting from the product with nobody seeing it.
-//
-// Usage: node scripts/test-predictive-echo.mjs
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -42,7 +29,6 @@ const app = {
   _looksLikePasswordLine: extract('_looksLikePasswordLine', ['pane']),
 };
 
-// Fake terminal with a cursor and a single line — all the prediction consults.
 function newPane({ line = '$ ', cursorX = 2, type: type = 'normal', eco = 300, cols = 80 } = {}) {
   const written = [];
   const pane = {
@@ -60,7 +46,6 @@ function newPane({ line = '$ ', cursorX = 2, type: type = 'normal', eco = 300, c
 }
 const output = (p) => p.written.join('');
 
-// ── 1. where the guess is honest ────────────────────────────────────────────
 {
   const p = newPane();
   app._predictEcho.call(app, p, 'l');
@@ -69,7 +54,6 @@ const output = (p) => p.written.join('');
     : no('did not predict on a slow network: ' + JSON.stringify(output(p)));
 }
 
-// ── 2. the boundaries: each one, on its own, cancels the guess ──────────────
 {
   const cases = [
     ['alternate screen (vim/htop repaints the whole screen)', newPane({ type: 'alternate' })],
@@ -100,7 +84,6 @@ const output = (p) => p.written.join('');
   output(forced) !== '' ? ok('"always" mode predicts even on a good network') : no('"always" mode did not predict');
 }
 
-// ── 3. the central guarantee: the guess is erased whole ─────────────────────
 {
   const p = newPane();
   for (const c of ['l','s']) app._predictEcho.call(app, p, c);
@@ -111,20 +94,17 @@ const output = (p) => p.written.join('');
     : no('wrong erase: ' + JSON.stringify(output(p)));
 }
 
-// ── 4. confirmation by cursor (the way mosh does it) ────────────────────────
 {
-  // Typed "ls -la"; the server echoed only "ls" (the cursor moved 2 columns).
   const p = newPane({ cursorX: 2 });
   for (const c of 'ls -la') app._predictEcho.call(app, p, c);
   p.written.length = 0;
-  p.term.buffer.active.cursorX = 4;          // the server confirmed 2 characters
+  p.term.buffer.active.cursorX = 4;
   app._repredictEcho.call(app, p);
   (p._pred.txt === ' -la' && output(p) === '\x1b[2m -la\x1b[22m')
     ? ok('only the unconfirmed part is repainted (the tail does not blink every frame)')
     : no('wrong reconciliation: txt=' + JSON.stringify(p._pred.txt) + ' output=' + JSON.stringify(output(p)));
 }
 {
-  // The server confirmed everything → no guess is left over.
   const p = newPane({ cursorX: 2 });
   for (const c of 'ls') app._predictEcho.call(app, p, c);
   p.written.length = 0;
@@ -135,7 +115,6 @@ const output = (p) => p.written.join('');
     : no('a guess survived a full confirmation');
 }
 {
-  // The server changed line (Enter, scroll, repaint): the anchor is dead.
   const p = newPane({ cursorX: 2 });
   for (const c of 'abc') app._predictEcho.call(app, p, c);
   p.written.length = 0;
@@ -146,7 +125,6 @@ const output = (p) => p.written.join('');
     : no('the guess survived a line change');
 }
 {
-  // A full-screen app took over between the guess and the confirmation.
   const p = newPane({ cursorX: 2 });
   app._predictEcho.call(app, p, 'x');
   p.written.length = 0;
@@ -157,9 +135,6 @@ const output = (p) => p.written.join('');
     : no('repainted on top of a TUI');
 }
 
-// ── 5. the order in the render flow (what keeps nothing overlapping) ────────
-// Erasing MUST happen before the batch write and repainting AFTER it — inverted,
-// the guess would sit underneath the server output.
 {
   const i = src.indexOf('self._erasePrediction(state)');
   const j = src.indexOf('self._repredictEcho(state)');

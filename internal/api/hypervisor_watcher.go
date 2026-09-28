@@ -13,60 +13,20 @@ import (
 	"server-control-panel/internal/notify"
 )
 
-// hypervisor_watcher.go — the sentinel that speaks WHEN THE HOUSE GOES DOWN.
-//
-// ────────────────────────────────────────────────────────────────────────────
-// 🔴 WHY IT HAS TO LIVE HERE, AND NOT ON THE HYPERVISOR
-//
-// The home host once became unreachable and NOBODY was told. The alarm path that
-// existed lived INSIDE it (postfix → proxmox-mail-forward → ntfy); with the host
-// down, it could not speak about itself. On the same day, a routine mail from
-// the host produced a useless alert.
-//
-// In other words: the channel emitted noise and fell silent on the real event.
-// This sentinel exists to close exactly that hole — it runs on the VPS, which is
-// the only point in the system able to say "the house is gone" while the house
-// is gone.
-//
-// 🔴 IT ALERTS ON THE EDGE, NEVER ON THE LEVEL
-//
-// An alarm that fires every cycle for as long as the problem lasts is not an
-// alarm: it is an open tap, and it trains people to ignore it. Here only the
-// TRANSITION produces an event — it went down, and it came back. While the state
-// does not change, silence.
-//
-// 🔴 AND IT WAITS N CYCLES BEFORE BELIEVING IT
-//
-// One failed tick is routine: the network wobbles, the hypervisor gets busy.
-// Alerting on the first is the same disease as permanent red, by another route.
-// The default is 3 consecutive cycles — minutes, not seconds.
-// ────────────────────────────────────────────────────────────────────────────
-
 const (
-	// TypeHypervisorUnreachable and TypeHypervisorRecovered are types of their OWN,
-	// not `metric.threshold`: whoever writes a rule on screen needs to tell "the
-	// house went down" from "a metric crossed a threshold". Mixing them would
-	// make the house's rule inherit the routing of any gauge.
 	TypeHypervisorUnreachable = "hypervisor.unreachable"
 	TypeHypervisorRecovered   = "hypervisor.recovered"
 
-	// dedupHypervisor keeps both ends under the SAME dedup identity: a "went
-	// down" followed by a "came back" is a single story, and the router needs to
-	// be able to treat it as such.
 	dedupHypervisor = "hypervisor:reach"
 )
 
 type hypervisorSentinel struct {
 	mu        sync.Mutex
-	failures  int   // consecutive ticks with the hypervisor unreachable
-	down      bool  // have we already announced the outage?
-	sinceUnix int64 // when the first failure of the run happened
+	failures  int
+	down      bool
+	sinceUnix int64
 }
 
-// ticksToBelieve is how many consecutive ticks have to fail before the
-// sentinel believes it. Configurable because the test needs 1 and production
-// needs 3 — and a `time.Sleep` in the test would mean waiting on the clock,
-// which is exactly what is forbidden here.
 func (r *Router) ticksToBelieve() int {
 	if v := os.Getenv("PANEL_SENTINEL_CYCLES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -87,8 +47,6 @@ func (r *Router) sentinelInterval() time.Duration {
 
 func (r *Router) startHypervisorWatcher(ctx context.Context) {
 	if r.inventoryStore == nil {
-		// With no inventory there is nothing to watch, and a sentinel watching the
-		// void would alert "it went down" forever.
 		return
 	}
 	go func() {
@@ -110,33 +68,18 @@ func (r *Router) startHypervisorWatcher(ctx context.Context) {
 	}()
 }
 
-// tickSentinel reads the inventory and decides whether there is news. It does
-// NOT talk to the hypervisor: the poller does that, and having two channels
-// asking the same question would create two truths about whether the house is
-// reachable.
 func (r *Router) tickSentinel() {
-	// 🔴 THE GUARD LIVES HERE, and not only at start-up.
-	//
-	// `startHypervisorWatcher` already refuses to start without an inventory, but
-	// a guard that exists only at the starting point is a guard the next call
-	// forgets — and the price here is a panic inside a background goroutine,
-	// which takes the watch down exactly when it should be standing. The test
-	// caught this.
 	if r.inventoryStore == nil {
 		return
 	}
 	inv, err := r.inventoryStore.Snapshot()
 	if err != nil {
-		// Being unable to read our own inventory is not news ABOUT THE HOUSE.
-		// Alerting here would say "the house went down" about a disk fault on the VPS.
 		log.Printf("hypervisor sentinel: inventory unreadable (%v) — no verdict", err)
 		return
 	}
 	r.checkReachability(inv, time.Now().Unix())
 }
 
-// checkReachability is the pure logic, separated from the clock and from the disk so
-// it can be proven in both directions without waiting for anything.
 func (r *Router) checkReachability(inv inventory.Inventory, now int64) {
 	if r.sentinel == nil {
 		r.sentinel = &hypervisorSentinel{}
@@ -145,8 +88,6 @@ func (r *Router) checkReachability(inv inventory.Inventory, now int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// The poller stamps the ATTEMPT even when it fails (the second clock), and
-	// records the reason in LastPollError. Empty = the last cycle worked.
 	failed := inv.LastPollError != ""
 
 	if !failed {
@@ -180,8 +121,6 @@ func (r *Router) checkReachability(inv inventory.Inventory, now int64) {
 		s.sinceUnix = now
 	}
 	if s.down || s.failures < r.ticksToBelieve() {
-		// Already announced, or not yet worth believing. Silence in both cases:
-		// repeating while the problem lasts is what trains people to ignore it.
 		return
 	}
 	s.down = true
@@ -213,13 +152,7 @@ func (r *Router) checkReachability(inv inventory.Inventory, now int64) {
 	})
 }
 
-// dispatchSentinel is the sentinel's ONLY exit point. `sentinelSink` exists so
-// a test can assert WHICH event would go out without building a whole
-// notification router — and, above all, without sending a real message to
-// anybody's phone while the suite runs.
 func (r *Router) dispatchSentinel(ev notify.Event) {
-	// ALWAYS record it, even with no router: an alarm that found no channel is
-	// still news, and the log is the last place where it survives.
 	log.Printf("hypervisor sentinel: %s — %s", ev.Type, ev.Title)
 	if r.sentinelSink != nil {
 		r.sentinelSink(ev)
@@ -245,9 +178,6 @@ func (r *Router) primaryUser() string {
 	return ""
 }
 
-// firstErrorLine cuts the poller's error down to its first line and to a
-// readable length: the message goes to WhatsApp, and a whole network stack
-// trace there is text nobody reads.
 func firstErrorLine(e string) string {
 	for i := 0; i < len(e); i++ {
 		if e[i] == '\n' {
@@ -265,7 +195,6 @@ func firstErrorLine(e string) string {
 	return e
 }
 
-// humanDuration avoids "1h0m0s" in a message somebody reads on a phone.
 func humanDuration(d time.Duration) string {
 	if d < time.Minute {
 		return fmt.Sprintf("%d s", int(d.Seconds()))

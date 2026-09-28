@@ -1,9 +1,5 @@
 package androidupdate
 
-// manifest_test.go — Load() is the boundary where a file on disk becomes the
-// allowlist that authorizes the server to open files by a name coming off the
-// network. The tests below cover what it has to REFUSE, besides the happy path.
-
 import (
 	"encoding/json"
 	"errors"
@@ -81,10 +77,6 @@ func TestLoad_HappyPath(t *testing.T) {
 	}
 }
 
-// TestLoad_RejectsUnsafeOrInconsistentManifest covers, in a single place,
-// everything that would make the allowlist unsafe or untruthful. Each case is a
-// manifest the server must NEVER accept — refusing the whole file is safer than
-// filtering out the bad entry and serving the rest.
 func TestLoad_RejectsUnsafeOrInconsistentManifest(t *testing.T) {
 	cases := map[string]func(m *Manifest){
 		"unknown schema":              func(m *Manifest) { m.SchemaVersion = 99 },
@@ -123,8 +115,6 @@ func TestLoad_MalformedManifest(t *testing.T) {
 	}
 }
 
-// TestArtifactByFile_OnlyWhatIsInManifest — the comparison is exact string
-// matching against the catalogue, never interpretation of the path.
 func TestArtifactByFile_OnlyWhatIsInManifest(t *testing.T) {
 	m, err := Load(writeManifest(t, validManifest()))
 	if err != nil {

@@ -14,7 +14,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 
-/** Fake [WhatsAppRepository] for exercising the ViewModel's state machine. */
 private class FakeWhatsAppRepository(
     private val onChats: suspend () -> ChatsResult = { ChatsResult.Empty },
 ) : WhatsAppRepository() {

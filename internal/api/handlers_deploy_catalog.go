@@ -10,9 +10,6 @@ import (
 	"server-control-panel/internal/deploy"
 )
 
-// handlers_deploy_catalog.go — one-click service catalogue.
-
-// GET /api/deploy/catalog → available templates.
 func (r *Router) handleDeployCatalog(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -20,9 +17,6 @@ func (r *Router) handleDeployCatalog(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]any{"templates": deploy.Catalog()})
 }
 
-// POST /api/deploy/catalog/create {template_id, name, port?, domain?, env{}}
-// Creates the app + seeds the template's compose (fast), then ENQUEUES the deploy
-// (build) so it streams into the log. Answers {app, job, deploy_id}.
 func (r *Router) handleDeployCatalogCreate(w http.ResponseWriter, req *http.Request) {
 	user, ok := r.mustPrimary(w, req)
 	if !ok {

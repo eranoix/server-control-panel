@@ -13,9 +13,6 @@ import (
 	"server-control-panel/internal/queue"
 )
 
-// testMiscCfg/testMiscViewers mirror testDockerCfg/testDockerViewers — a real
-// *config.Config through the real ViewerFrom/httpx.IsAdmin path, never a
-// Viewer{} literal.
 func testMiscCfg() *config.Config {
 	return &config.Config{
 		SchemaVersion: config.CurrentSchemaVersion,
@@ -32,10 +29,6 @@ func testMiscViewers() (admin, nonAdmin sdui.Viewer) {
 	return sdui.ViewerFrom(cfg, "misc-admin"), sdui.ViewerFrom(cfg, "misc-user")
 }
 
-// testMiscDeps returns a MiscDeps sufficient to build every screen — no
-// mutating closure here is exercised by misc_test.go (that's
-// misc_actions_test.go's job); this only needs the read-side closures the
-// four builders call directly.
 func testMiscDeps() MiscDeps {
 	return MiscDeps{
 		AIModelsConfig: func() (config.AIModels, map[string]string) {
@@ -47,9 +40,6 @@ func testMiscDeps() MiscDeps {
 	}
 }
 
-// testMiscDepsJiraConnected is testMiscDeps with JiraStatus reporting the
-// given user as connected — used by the setup-gating test to prove the
-// connected shape.
 func testMiscDepsJiraConnected(connectedUser string) MiscDeps {
 	d := testMiscDeps()
 	d.JiraStatus = func(user string) (bool, string) {
@@ -58,12 +48,6 @@ func testMiscDepsJiraConnected(connectedUser string) MiscDeps {
 	return d
 }
 
-// --- Test 1: structure ----------------------------------------------------
-
-// TestAISettingsScreen_Structure proves exactly one form (ai-settings-form)
-// with the two model-tier select fields, submit_action pointed at
-// ai.settings.save — and, separately, that a non-admin viewer gets
-// ErrScreenNotFound (whole-screen admin-only, mirrors handleAIModelsConfig).
 func TestAISettingsScreen_Structure(t *testing.T) {
 	admin, nonAdmin := testMiscViewers()
 	deps := testMiscDeps()
@@ -96,11 +80,6 @@ func TestAISettingsScreen_Structure(t *testing.T) {
 	}
 }
 
-// TestDeployAppsScreen_Structure proves exactly one table (deploy-apps-table,
-// row_actions redeploy+delete), one form (deploy-app-create-form) and one
-// confirm_destructive (deploy-app-delete-confirm, action_id deploy.app.delete)
-// — and that a non-admin gets ErrScreenNotFound (whole-screen admin-only,
-// mirrors handlers_deploy.go's blanket r.mustPrimary gate).
 func TestDeployAppsScreen_Structure(t *testing.T) {
 	admin, nonAdmin := testMiscViewers()
 
@@ -137,11 +116,6 @@ func TestDeployAppsScreen_Structure(t *testing.T) {
 	}
 }
 
-// TestQueueJobsScreen_Structure proves exactly one table (queue-jobs-table,
-// row_actions retry+cancel) and one confirm_destructive (queue-job-cancel-confirm,
-// action_id queue.job.cancel) — no admin gate at the screen level (any
-// authenticated viewer builds successfully; per-owner scoping happens at the
-// rows endpoint/action-handler level, not here).
 func TestQueueJobsScreen_Structure(t *testing.T) {
 	admin, nonAdmin := testMiscViewers()
 
@@ -170,13 +144,6 @@ func TestQueueJobsScreen_Structure(t *testing.T) {
 	}
 }
 
-// --- Test 2: Jira setup gating ---------------------------------------------
-
-// TestJiraIssuesScreen_SetupGating proves a not-connected viewer sees ONLY
-// jira-connect-form (no table, no detail, no other form), while a connected
-// viewer sees the full table+detail+transition-form+comment-form shape —
-// and that this gate is per-user credential (JiraStatus), never IsAdmin: a
-// non-admin connected viewer gets the full shape too.
 func TestJiraIssuesScreen_SetupGating(t *testing.T) {
 	_, nonAdmin := testMiscViewers()
 
@@ -192,7 +159,7 @@ func TestJiraIssuesScreen_SetupGating(t *testing.T) {
 	connected := testMiscDepsJiraConnected(nonAdmin.Username)
 	env2 := buildJiraIssuesScreen(nonAdmin, connected)
 	for _, id := range []string{"issues-table", "issue-detail", "issue-transition-form", "issue-comment-form"} {
-		findComponent(t, env2, id) // t.Fatalf inside if missing
+		findComponent(t, env2, id)
 	}
 	for _, forbidden := range []string{"jira-connect-form"} {
 		for _, c := range env2.Screen.Components {
@@ -203,12 +170,6 @@ func TestJiraIssuesScreen_SetupGating(t *testing.T) {
 	}
 }
 
-// --- Test 3: RBAC omission on bytes -----------------------------------------
-
-// TestDeployAppsScreen_RBACOmissionOnBytes proves a non-admin never even gets
-// a deploy.apps envelope AT ALL (whole-screen ErrScreenNotFound) — the
-// stronger form of RBAC omission compared to Docker's per-row-action
-// omission, since deploy.apps has no non-admin view whatsoever.
 func TestDeployAppsScreen_RBACOmissionOnBytes(t *testing.T) {
 	admin, nonAdmin := testMiscViewers()
 
@@ -229,12 +190,6 @@ func TestDeployAppsScreen_RBACOmissionOnBytes(t *testing.T) {
 	}
 }
 
-// TestQueueJobsScreen_NonVacuityOnBytes proves non-destructive retry stays
-// visible for every viewer's envelope even though cancel is destructive — the
-// non-vacuity half of the RBAC-on-bytes proof, applied here to queue.jobs
-// (which has no role-based omission of its own, per RegisterMisc's ledger
-// comment — the interesting boundary is ownership, covered in
-// misc_actions_test.go, not a role split at the screen level).
 func TestQueueJobsScreen_NonVacuityOnBytes(t *testing.T) {
 	admin, nonAdmin := testMiscViewers()
 	for name, v := range map[string]sdui.Viewer{"admin": admin, "nonadmin": nonAdmin} {
@@ -250,12 +205,6 @@ func TestQueueJobsScreen_NonVacuityOnBytes(t *testing.T) {
 	}
 }
 
-// --- Test 4: no client-side logic + preformatted values ---------------------
-
-// TestMiscScreens_NoClientSideLogicKeys mirrors
-// TestDockerScreens_NoClientSideLogicKeys exactly: no component payload in
-// this batch may carry a client-evaluated condition/expression/visibility key,
-// and no "permission..." key may exist beyond permission_hint.
 func TestMiscScreens_NoClientSideLogicKeys(t *testing.T) {
 	admin, nonAdmin := testMiscViewers()
 	aiEnv, err := buildAISettingsScreenForViewer(admin, testMiscDeps())
@@ -303,8 +252,6 @@ func TestMiscScreens_NoClientSideLogicKeys(t *testing.T) {
 	}
 }
 
-// TestFormatMiscTimestamp_ZeroIsEmpty proves the zero-epoch convention this
-// package's row-shaping helpers rely on.
 func TestFormatMiscTimestamp_ZeroIsEmpty(t *testing.T) {
 	if got := formatMiscTimestamp(0); got != "" {
 		t.Errorf("formatMiscTimestamp(0) = %q, want \"\"", got)
@@ -314,11 +261,6 @@ func TestFormatMiscTimestamp_ZeroIsEmpty(t *testing.T) {
 	}
 }
 
-// TestMiscRowShapingFuncs_NeverEmitRawNumbers proves every row-shaping
-// function in this file always produces display-ready strings, never a raw
-// number/epoch/struct — mirrors
-// TestDockerRowShapingFuncs_NeverEmitRawNumbers's synthetic-domain-value
-// pattern.
 func TestMiscRowShapingFuncs_NeverEmitRawNumbers(t *testing.T) {
 	issueRow := jiraIssueRow(jira.Issue{
 		Key: "PROJ-1", Summary: "something", Status: jira.Status{Name: "Open"},
@@ -356,26 +298,12 @@ func TestMiscRowShapingFuncs_NeverEmitRawNumbers(t *testing.T) {
 	}
 }
 
-// --- Test 5: vocabulary boundary — no board/kanban/column in jira.issues ---
-
-// TestJiraIssuesScreen_NeverEmitsBoardVocabulary is the explicit,
-// PLAN.md-mandated boundary test: no component anywhere in jira.issues'
-// payload (connected OR not-connected) may have a type/id/label containing
-// "board", "kanban" or "column" — the kanban board stays desktop-only
-// PERMANENTLY (see misc.go's package doc comment and
-// buildJiraIssuesConnectedScreen's own doc comment).
 func TestJiraIssuesScreen_NeverEmitsBoardVocabulary(t *testing.T) {
 	_, nonAdmin := testMiscViewers()
 
 	notConnected := buildJiraIssuesScreen(nonAdmin, testMiscDeps())
 	connected := buildJiraIssuesScreen(nonAdmin, testMiscDepsJiraConnected(nonAdmin.Username))
 
-	// Word-boundary match, not a raw substring: TableComponent's own
-	// "columns" JSON key (its list of TableColumn — an entirely legitimate,
-	// unrelated field every table in this package emits) would otherwise
-	// false-positive on a bare Contains(..., "column"). \bcolumn\b matches a
-	// standalone "column" (a board's column) but not "columns" (a table's
-	// column list) since "s" continues the word.
 	forbiddenRe := regexp.MustCompile(`(?i)\b(board|kanban|column)\b`)
 	for name, env := range map[string]*sdui.Envelope{"not-connected": notConnected, "connected": connected} {
 		body, err := json.Marshal(env)

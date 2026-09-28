@@ -76,8 +76,6 @@ class SduiDataRepositoryTest {
 
         val result = repositoryFor().fetch(SduiDataSource(endpoint = "/api/mobile/v1/notify/inbox"))
 
-        // An empty array is still Success at this layer -- ComponentDataSource
-        // (in :sdui) is what decides an empty list means the Empty UI state.
         assertTrue(result is SduiDataResult.Success)
     }
 

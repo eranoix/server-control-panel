@@ -26,19 +26,6 @@ import coil.ImageLoader
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 
-/**
- * The full-screen image viewer -- opened when [MediaMessageRow] handles a
- * tap on an `image`-type bubble. Pinch-to-zoom follows Compose's standard
- * `Modifier.transformable`/`graphicsLayer` recipe (no third-party zoom
- * library): a [rememberTransformableState] tracks scale/offset deltas from
- * multi-touch gestures, applied to the `Image` via `graphicsLayer`. Tapping
- * anywhere outside an active zoom/pan gesture calls [onClose].
- *
- * NOTE: pinch/zoom/pan interaction and whether the image actually decodes
- * and paints on a real screen cannot be exercised without a device or
- * emulator (none available in this environment) -- see the human
- * verification script.
- */
 @Composable
 fun ImageViewerScreen(
     url: String,

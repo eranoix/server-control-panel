@@ -1,7 +1,3 @@
-// trusted_devices_test.go — tests for the trusted-devices store.
-// Covers: Mint→IsTrusted=true, tampered secret→false, expiry→false+GC,
-// Revoke→false, RevokeAll→file gone, absent file→(false,nil), empty
-// secret→(false,nil) without touching disk.
 package auth
 
 import (
@@ -19,7 +15,7 @@ func TestTrustedDevices_MintAndIsTrusted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	if len(secret) != 64 { // 32 bytes hex
+	if len(secret) != 64 {
 		t.Fatalf("expected 64-char hex secret, got %d chars", len(secret))
 	}
 	ok, err := store.IsTrusted(secret)
@@ -27,7 +23,6 @@ func TestTrustedDevices_MintAndIsTrusted(t *testing.T) {
 		t.Fatalf("expected trusted, got ok=%v err=%v", ok, err)
 	}
 
-	// LastSeen must have been updated (the entry exists and is unique).
 	devs, err := store.List()
 	if err != nil {
 		t.Fatalf("list: %v", err)
@@ -47,7 +42,6 @@ func TestTrustedDevices_TamperedSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	// Flip one char of the secret → different hash → not trusted.
 	tampered := "0" + secret[1:]
 	if tampered == secret {
 		tampered = "1" + secret[1:]
@@ -60,7 +54,6 @@ func TestTrustedDevices_TamperedSecret(t *testing.T) {
 
 func TestTrustedDevices_EmptySecretNoDisk(t *testing.T) {
 	dir := t.TempDir()
-	// Nonexistent path; an empty secret must not even attempt a read.
 	store := NewTrustedDevicesStore(TrustedDevicesPath(dir, "sam"))
 	ok, err := store.IsTrusted("")
 	if err != nil || ok {
@@ -86,9 +79,8 @@ func TestTrustedDevices_ExpiredIsPrunedAndDistrusted(t *testing.T) {
 	path := TrustedDevicesPath(dir, "sam")
 	store := NewTrustedDevicesStore(path)
 
-	secret := "a1b2c3d4e5f6" // any old test secret
+	secret := "a1b2c3d4e5f6"
 	now := time.Now().Unix()
-	// Manually write an ALREADY expired entry (ExpiresAt in the past).
 	file := &TrustedDevicesFile{
 		SchemaVersion: 1,
 		User:          "sam",
@@ -108,7 +100,6 @@ func TestTrustedDevices_ExpiredIsPrunedAndDistrusted(t *testing.T) {
 	if err != nil || ok {
 		t.Fatalf("expired: expected NOT trusted, got ok=%v err=%v", ok, err)
 	}
-	// The GC must have pruned the expired entry → the file is gone (left empty).
 	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 		t.Fatalf("expected file pruned after GC, stat err=%v", statErr)
 	}
@@ -122,7 +113,6 @@ func TestTrustedDevices_RevokeAndRevokeAll(t *testing.T) {
 	s1, _ := store.Mint("sam", "dev1", "")
 	s2, _ := store.Mint("sam", "dev2", "")
 
-	// Revoke s1 → s1 untrusted, s2 still trusted.
 	if err := store.Revoke(s1); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
@@ -133,7 +123,6 @@ func TestTrustedDevices_RevokeAndRevokeAll(t *testing.T) {
 		t.Fatal("s2 should still be trusted")
 	}
 
-	// RevokeAll → file gone, s2 untrusted.
 	if err := store.RevokeAll(); err != nil {
 		t.Fatalf("revoke all: %v", err)
 	}

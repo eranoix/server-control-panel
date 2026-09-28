@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-// newTestClient spins up a fake admin API and returns a Client pointed at it.
 func newTestClient(t *testing.T, h http.HandlerFunc) *Client {
 	t.Helper()
 	srv := httptest.NewServer(h)
@@ -105,7 +104,7 @@ func TestStatusFansInAndDegradesGracefully(t *testing.T) {
 			w.WriteHeader(200)
 			_, _ = w.Write([]byte(`{"version":"0.2.0"}`))
 		case strings.HasPrefix(r.URL.Path, "/admin/api/stats"):
-			w.WriteHeader(500) // simulate a failing sub-call
+			w.WriteHeader(500)
 		default:
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}

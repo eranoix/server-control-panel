@@ -7,11 +7,6 @@ import (
 	"server-control-panel/internal/mobilebff/sdui"
 )
 
-// Action ids the six Docker screens reference from their tables' row_actions
-// and the prune form's submit_action. There is deliberately no
-// docker.volume.remove or docker.network.remove: internal/docker has no
-// single-item delete for either anywhere (see deps.go's DockerDeps doc
-// comment and docker.go's buildDockerVolumesScreen/buildDockerNetworksScreen).
 const (
 	dockerActionContainerStart   = "docker.container.start"
 	dockerActionContainerStop    = "docker.container.stop"
@@ -26,18 +21,8 @@ const (
 	dockerActionPruneRun = "docker.prune.run"
 )
 
-// dockerAdminViewer is the RegisterAction authorize gate for every
-// destructive Docker action: container.remove, image.remove,
-// compose.down, prune.run. A non-admin invocation — even one that bypasses
-// the missing UI affordance by calling the endpoint directly — gets
-// ErrActionNotFound at RunAction's step 2, before the handler ever runs; see
-// actionregistry.go's RunAction doc comment for why that is the same error
-// as "action does not exist" rather than a 403.
 func dockerAdminViewer(v sdui.Viewer) bool { return v.IsAdmin() }
 
-// registerDockerActions registers the eight Docker mutations: three
-// non-destructive container lifecycle actions plus remove, image remove,
-// compose up/down, and prune. Called once by RegisterDocker (docker.go).
 func registerDockerActions(deps DockerDeps) {
 	sdui.RegisterAction(
 		sdui.ActionDescriptor{
@@ -76,10 +61,6 @@ func registerDockerActions(deps DockerDeps) {
 			Endpoint:    "/api/mobile/v1/actions/" + dockerActionContainerRemove,
 			Permission:  "admin",
 			Destructive: true,
-			// RequireTypedConfirmation deliberately empty: a container is
-			// recreatable from its image/compose, the same reasoning as
-			// scheduler.job.delete — Destructive:true on its own is already
-			// proportionate.
 		},
 		dockerAdminViewer,
 		handleDockerContainerRemove(deps),
@@ -133,13 +114,6 @@ func registerDockerActions(deps DockerDeps) {
 	)
 }
 
-// findDockerContainerRow re-lists containers and returns the row for id —
-// used to build a Patch response after a lifecycle mutation.
-// docker.Client/DockerDeps has no single-container fetch keyed by id (only
-// the bulk list any table row already comes from), so the safest way to
-// return the CURRENT state after start/stop/restart is the same list call
-// the table itself uses, filtered down to one row — never re-deriving
-// container state from the request that triggered the mutation.
 func findDockerContainerRow(ctx context.Context, deps DockerDeps, id string) (map[string]any, bool) {
 	list, err := deps.ListContainers(ctx)
 	if err != nil {
@@ -153,11 +127,6 @@ func findDockerContainerRow(ctx context.Context, deps DockerDeps, id string) (ma
 	return nil, false
 }
 
-// handleDockerContainerLifecycle implements the shared shape of
-// start/stop/restart: call the domain closure, audit, then return a Patch
-// with the container's new row state (falling back to Invalidate the whole
-// table if the container disappeared or the re-list failed, which is still
-// a correct client instruction — just a coarser one).
 func handleDockerContainerLifecycle(deps DockerDeps, call func(ctx context.Context, id string) error, auditAction string) sdui.ActionHandler {
 	return func(ctx context.Context, v sdui.Viewer, params map[string]string, _ json.RawMessage) (sdui.ActionResult, error) {
 		id := params["id"]
@@ -177,19 +146,10 @@ func handleDockerContainerLifecycle(deps DockerDeps, call func(ctx context.Conte
 	}
 }
 
-// dockerRemoveInput is the body docker.container.remove/docker.image.remove
-// decode from ActionHandler's input — Force mirrors handlers_docker.go's
-// ?force=1 query parameter for the same two operations, kept as the same
-// client-controllable knob the web panel already exposes to any
-// authenticated user, restricted here to admin by the action's authorize
-// gate.
 type dockerRemoveInput struct {
 	Force bool `json:"force"`
 }
 
-// handleDockerContainerRemove implements docker.container.remove. Destructive
-// confirmation itself is enforced by sdui.RunAction before this handler ever
-// runs (see actionregistry.go).
 func handleDockerContainerRemove(deps DockerDeps) sdui.ActionHandler {
 	return func(ctx context.Context, v sdui.Viewer, params map[string]string, input json.RawMessage) (sdui.ActionResult, error) {
 		id := params["id"]
@@ -212,7 +172,6 @@ func handleDockerContainerRemove(deps DockerDeps) sdui.ActionHandler {
 	}
 }
 
-// handleDockerImageRemove implements docker.image.remove.
 func handleDockerImageRemove(deps DockerDeps) sdui.ActionHandler {
 	return func(ctx context.Context, v sdui.Viewer, params map[string]string, input json.RawMessage) (sdui.ActionResult, error) {
 		id := params["id"]
@@ -235,10 +194,6 @@ func handleDockerImageRemove(deps DockerDeps) sdui.ActionHandler {
 	}
 }
 
-// handleDockerComposeUp implements docker.compose.up. params["id"] is the
-// compose project/stack name — every row action in this package reads the
-// clicked row's "id" field (see dockerComposeRow), never a
-// screen-specific param key.
 func handleDockerComposeUp(deps DockerDeps) sdui.ActionHandler {
 	return func(ctx context.Context, v sdui.Viewer, params map[string]string, _ json.RawMessage) (sdui.ActionResult, error) {
 		stack := params["id"]
@@ -255,9 +210,6 @@ func handleDockerComposeUp(deps DockerDeps) sdui.ActionHandler {
 	}
 }
 
-// handleDockerComposeDown implements docker.compose.down. Destructive
-// confirmation itself is enforced by sdui.RunAction before this handler ever
-// runs.
 func handleDockerComposeDown(deps DockerDeps) sdui.ActionHandler {
 	return func(ctx context.Context, v sdui.Viewer, params map[string]string, _ json.RawMessage) (sdui.ActionResult, error) {
 		stack := params["id"]
@@ -274,8 +226,6 @@ func handleDockerComposeDown(deps DockerDeps) sdui.ActionHandler {
 	}
 }
 
-// dockerPruneInput is the body docker.prune.run decodes from ActionHandler's
-// input — one bool per prune-form field (docker.go's buildDockerPruneScreen).
 type dockerPruneInput struct {
 	Containers bool `json:"containers"`
 	Images     bool `json:"images"`
@@ -283,13 +233,6 @@ type dockerPruneInput struct {
 	BuildCache bool `json:"build_cache"`
 }
 
-// handleDockerPruneRun implements docker.prune.run — the plan's designated
-// "early destructive proof": Destructive:true plus RequireTypedConfirmation
-// (docker_actions.go's RegisterAction call) means deps.Prune is unreachable
-// without BOTH a confirmed round trip AND the typed "PRUNE" string (see
-// actionregistry.go's RunAction steps 3-4). This handler adds its own
-// content validation on top: an empty kind selection is a form-level error,
-// never a call to deps.Prune with an implicit "everything".
 func handleDockerPruneRun(deps DockerDeps) sdui.ActionHandler {
 	return func(ctx context.Context, v sdui.Viewer, _ map[string]string, input json.RawMessage) (sdui.ActionResult, error) {
 		var in dockerPruneInput
@@ -327,9 +270,6 @@ func handleDockerPruneRun(deps DockerDeps) sdui.ActionHandler {
 	}
 }
 
-// joinDockerKinds renders the selected prune kinds as one audit target
-// string (e.g. "containers,images") without pulling in the "strings"
-// package for a single call site.
 func joinDockerKinds(kinds []string) string {
 	out := ""
 	for i, k := range kinds {

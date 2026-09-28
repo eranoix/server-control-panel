@@ -9,18 +9,9 @@ import org.junit.runner.RunWith
 import org.junit.Test
 import androidx.test.ext.junit.runners.AndroidJUnit4
 
-/**
- * Mouse and paste encoding against the real libghostty-vt. Only the remote
- * program decides whether a mouse event has a recipient (DECSET 1000/1002/1003);
- * without one, mouse bytes reach the shell as text.
- *
- * Runs on the device because only the real VT emulator knows which modes the
- * program enabled; a hand-written table would only agree with itself.
- */
 @RunWith(AndroidJUnit4::class)
 class MousePasteEncodingTest {
 
-    /** 20x40 px per cell, an 80x24 grid: round numbers keep the cell arithmetic obvious. */
     private val geometry = MouseGeometry(
         cellWidthPx = 20,
         cellHeightPx = 40,
@@ -32,7 +23,6 @@ class MousePasteEncodingTest {
 
     private fun TerminalEngine.feed(vt: String) = write(vt.toByteArray(Charsets.US_ASCII))
 
-    /** Centre of cell (col, row), never the edge, so rounding does not matter. */
     private fun center(col: Int, row: Int): Pair<Float, Float> =
         (col * 20f + 10f) to (row * 40f + 20f)
 
@@ -40,7 +30,6 @@ class MousePasteEncodingTest {
     fun trackingOff_tapEmitsNoBytes() {
         val engine = engine()
         try {
-            // A freshly created terminal is the `bash` prompt: nobody asked for mouse.
             assertFalse("bash at a plain prompt does not request the mouse", engine.modes().mouseTracking)
 
             val (x, y) = center(col = 27, row = 14)
@@ -58,8 +47,6 @@ class MousePasteEncodingTest {
     fun sgrTrackingOn_emitsCorrectSgrSequence() {
         val engine = engine()
         try {
-            // What an `htop`/`vim` writes when it turns the mouse on: click
-            // tracking (1000) with SGR encoding (1006).
             engine.feed("\u001b[?1000h\u001b[?1006h")
             assertTrue("the program enabled tracking", engine.modes().mouseTracking)
 
@@ -67,7 +54,6 @@ class MousePasteEncodingTest {
             val press = engine.encodeMouse(MouseAction.PRESS, MouseButton.LEFT, x, y, geometry, anyButtonPressed = true)
             val release = engine.encodeMouse(MouseAction.RELEASE, MouseButton.LEFT, x, y, geometry)
 
-            // SGR: CSI < Cb ; Cx ; Cy M (press) / m (release), 1-based coordinates.
             assertArrayEquals("\u001b[<0;5;10M".toByteArray(Charsets.US_ASCII), press)
             assertArrayEquals("\u001b[<0;5;10m".toByteArray(Charsets.US_ASCII), release)
         } finally {
@@ -83,7 +69,6 @@ class MousePasteEncodingTest {
             val (x, y) = center(col = 1, row = 1)
             assertTrue(engine.encodeMouse(MouseAction.PRESS, MouseButton.LEFT, x, y, geometry, anyButtonPressed = true) != null)
 
-            // Leaving `htop` restores the mode; the app must re-read the state.
             engine.feed("\u001b[?1000l")
 
             assertFalse(engine.modes().mouseTracking)
@@ -100,13 +85,11 @@ class MousePasteEncodingTest {
     fun x10Format_doesNotEmitSgr() {
         val engine = engine()
         try {
-            // Tracking WITHOUT 1006: the program wants the old X10 format, not SGR.
             engine.feed("\u001b[?1000h")
 
             val (x, y) = center(col = 4, row = 9)
             val press = engine.encodeMouse(MouseAction.PRESS, MouseButton.LEFT, x, y, geometry, anyButtonPressed = true)
 
-            // X10: CSI M Cb Cx Cy, with 32 added to each byte and 1-based coordinates.
             val expected = byteArrayOf(
                 0x1b, '['.code.toByte(), 'M'.code.toByte(),
                 (32 + 0).toByte(), (32 + 5).toByte(), (32 + 10).toByte(),
@@ -121,7 +104,6 @@ class MousePasteEncodingTest {
     fun moveDuringDrag_reportsCellUnderFinger() {
         val engine = engine()
         try {
-            // 1002 = drag tracking, as `vim` enables to follow a held button.
             engine.feed("\u001b[?1002h\u001b[?1006h")
             val (x, y) = center(col = 3, row = 3)
 
@@ -133,8 +115,6 @@ class MousePasteEncodingTest {
                 MouseAction.MOTION, MouseButton.LEFT, x + 20f, y, geometry, anyButtonPressed = true,
             )
 
-            // 1-based coordinates; bit 5 (adding 32 to the button code) marks
-            // "movement with the button held down".
             assertArrayEquals("\u001b[<32;4;4M".toByteArray(Charsets.US_ASCII), sameCell)
             assertArrayEquals("\u001b[<32;5;4M".toByteArray(Charsets.US_ASCII), otherCell)
         } finally {
@@ -144,10 +124,6 @@ class MousePasteEncodingTest {
 
     @Test
     fun encoderDoesNotDedupMovesInMode1002() {
-        // Even with `TRACK_LAST_CELL` on, the library reports two moves in the
-        // SAME cell in button tracking mode, which is why dedup lives in
-        // `MouseReportGestureController`. If this starts failing, that layer
-        // can go.
         val engine = engine()
         try {
             engine.feed("\u001b[?1002h\u001b[?1006h")
@@ -209,8 +185,6 @@ class MousePasteEncodingTest {
         try {
             engine.feed("\u001b[?2004h")
 
-            // The classic paste attack: an embedded ESC[201~ would end the paste
-            // early and the shell would run the rest as a COMMAND.
             val text = String(engine.encodePaste("harmless\u001b[201~rm -rf /"), Charsets.UTF_8)
 
             assertTrue("the wrapper starts and ends where it should", text.startsWith("\u001b[200~"))

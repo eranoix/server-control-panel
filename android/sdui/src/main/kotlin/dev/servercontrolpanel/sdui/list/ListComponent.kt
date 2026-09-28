@@ -23,14 +23,8 @@ import kotlinx.serialization.json.jsonPrimitive
 
 private const val TAG = "SduiListComponent"
 
-/** The closed set of card layouts a [SduiComponent.ListComponent] can request. */
 private val KNOWN_ITEM_TEMPLATES = setOf("notification_card", "default")
 
-/**
- * Renders a [SduiComponent.ListComponent] as a column of cards using its
- * [SduiComponent.ListComponent.itemTemplate]. An unknown template falls back to
- * `default` and is logged, so the fallback is never silent.
- */
 @Composable
 fun ListComponent(component: SduiComponent.ListComponent) {
     when (val state = rememberComponentDataState(component.rowsSource).value) {
@@ -39,8 +33,6 @@ fun ListComponent(component: SduiComponent.ListComponent) {
         is ComponentDataState.Empty -> EmptyBlock()
         is ComponentDataState.Data -> {
             val template = resolveTemplate(component.itemTemplate)
-            // Never LazyColumn: this sits inside SduiScreen's LazyColumn, and a
-            // nested vertical scroll crashes with an infinite-height IllegalStateException.
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 state.rows.forEach { row ->
                     when (template) {

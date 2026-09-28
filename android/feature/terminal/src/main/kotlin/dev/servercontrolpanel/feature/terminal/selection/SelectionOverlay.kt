@@ -30,18 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 
-/**
- * The handles' touch radius: 24 dp gives the 48 dp minimum target; the drawn
- * handle is smaller.
- */
 private val HANDLE_TOUCH_RADIUS = 24.dp
 
-/**
- * The system's own handle drawables (`android.R.attr.textSelectHandleLeft`/`Right`,
- * as `TextView` uses), so they match the device theme, including OEM themes.
- */
-// `ResourceType`: the array is built from platform attributes, as
-// `android.widget.Editor` does; no generated `styleable` exists for them.
 @SuppressLint("ResourceType")
 private class SystemHandles(context: Context) {
     val left: Drawable?
@@ -67,15 +57,6 @@ private class SystemHandles(context: Context) {
     }
 }
 
-/**
- * The selection highlight and the two draggable handles, laid over the grid.
- *
- * The highlight is drawn over the glyphs in the theme's translucent
- * `textColorHighlight` rather than underneath, to keep the grid rasteriser (the
- * hot path) untouched. Handles follow AOSP's `getHorizontalOffset()`: the tip
- * sits on the anchor, offset by three quarters of the width for the start handle
- * and one quarter for the end one.
- */
 @Composable
 fun SelectionOverlay(
     selectionState: State<GridSelection?>,
@@ -88,14 +69,10 @@ fun SelectionOverlay(
     val handles = remember(context) { SystemHandles(context) }
     val radiusPx = with(LocalDensity.current) { HANDLE_TOUCH_RADIUS.toPx() }
 
-    // The magnifier copies the window surface, so the host must be the Compose
-    // root that contains the drawn grid, not this layer.
     val composeRoot = LocalView.current
     val magnifier = remember(composeRoot) { HandleMagnifier(composeRoot) }
     DisposableEffect(magnifier) { onDispose { magnifier.discard() } }
 
-    // Gesture coordinates are local to this layer; the magnifier needs root
-    // coordinates, which differ when the grid does not start at the top.
     var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
     Canvas(
@@ -105,15 +82,11 @@ fun SelectionOverlay(
             .onGloballyPositioned { coordinates = it }
             .pointerInput(hitTesterProvider, radiusPx) {
                 awaitEachGesture {
-                    // Do not require "unconsumed": see the touch first and consume
-                    // only once it is on a handle, or grid touches would be stolen.
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val selection = selectionState.value ?: return@awaitEachGesture
                     val anchors = handleAnchors(selection, hitTesterProvider())
                     val handle = handleAt(down.position, anchors, radiusPx) ?: return@awaitEachGesture
 
-                    // The gesture is ours: consuming every event makes the grid's
-                    // tap and long-press drag recognisers give up.
                     down.consume()
                     while (true) {
                         val event = awaitPointerEvent()
@@ -179,11 +152,6 @@ private fun DrawScope.drawHandles(
     }
 }
 
-/**
- * Puts the magnifier over the cell being chosen, with Y at the cell centre (as in
- * `TextView`) so it does not tremble and shows a whole line. Does nothing until
- * [coordinates] are measured.
- */
 private fun showMagnifier(
     magnifier: HandleMagnifier,
     coordinates: LayoutCoordinates?,

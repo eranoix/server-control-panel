@@ -18,13 +18,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * [ActionRunner] is the single mutation path: every branch
- * of `POST /api/mobile/v1/actions/{action_id}` in plan 07-06's
- * `<interfaces>` contract is exercised here against a fake [ActionInvoker],
- * never a real network call — the 422 body is the one exception, read from
- * the real fixture corpus at `contracts/sdui/fixtures`, never inlined.
- */
 class ActionRunnerTest {
 
     @Test
@@ -47,7 +40,6 @@ class ActionRunnerTest {
 
         assertEquals(ActionOutcome.Patched, outcome)
         assertEquals("running", (screenState.rowsFor("jobs").single()["status"] as JsonPrimitive).content)
-        // No refetch triggered by the patch -- the fetch counter from loadAll() above is unchanged.
         assertEquals(1, fetcher.callCountFor("jobs"))
     }
 

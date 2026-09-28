@@ -1,10 +1,5 @@
 package auth
 
-// mobile_sessions_test.go — proves the guarantees of MobileRefreshStore:
-// Mint/Rotate/Revoke do a correct round trip, a
-// swapped (rotated) token is IMMEDIATELY invalid — never "almost
-// works" on a second attempt — and Revoke/RevokeAll really do revoke.
-
 import (
 	"path/filepath"
 	"testing"
@@ -37,9 +32,6 @@ func TestMobileSession_MintRotateRoundTrip(t *testing.T) {
 	}
 }
 
-// TestMobileSession_RotatedAwaySecretInvalid proves it: once rotated, the OLD
-// token never works again — not for a second Rotate, and not by repeating the
-// same attempt.
 func TestMobileSession_RotatedAwaySecretInvalid(t *testing.T) {
 	dir := t.TempDir()
 	store := NewMobileRefreshStore(filepath.Join(dir, "mobile-sessions-sam.json"))
@@ -52,7 +44,6 @@ func TestMobileSession_RotatedAwaySecretInvalid(t *testing.T) {
 		t.Fatalf("first Rotate should have succeeded: ok=%v err=%v", ok, err)
 	}
 
-	// Replaying the old (already rotated) token — must always fail.
 	if _, _, ok, err := store.Rotate(oldTok); err != nil {
 		t.Fatalf("Rotate of the old token should not be an IO error: %v", err)
 	} else if ok {

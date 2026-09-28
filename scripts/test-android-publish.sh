@@ -1,18 +1,7 @@
 #!/usr/bin/env bash
-# test-android-publish.sh: covers the three behaviours of
-# scripts/android-publish.sh with fully throwaway material (a keystore created
-# and deleted in this run, never the project's real keystore).
-#
-# Test 1: fingerprint mismatch -> the script refuses, nothing is published.
-# Test 2: fingerprint matches + index bundle present -> publishes the APK and
-#         the index; index-v2.json references the exact APK name.
-# Test 3: no temporary file with key material survives either exit path, and
-#         the script never touches data/secrets.vault (the repokey must not be
-#         reachable from it, see docs/android-fdroid-repo.md).
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# The git half (push, tag, GitHub Release) is not part of what this covers.
 export SKIP_GIT_RELEASE=1
 SCRIPT="$ROOT/scripts/android-publish.sh"
 APKSIGNER_BIN="$(command -v apksigner || true)"
@@ -42,8 +31,6 @@ echo "=== test-android-publish ==="
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/panel-android-publish.XXXXXX")" || exit 2
 trap 'case "$TMP" in "${TMPDIR:-/tmp}"/panel-android-publish.*) rm -rf "$TMP";; esac' EXIT
 
-# Fixtures: a real throwaway keystore (same parameters as the drill in
-# docs/android-signing-keystore.md, but with a short validity).
 export STOREPASS_OK="$(openssl rand -base64 24)"
 export STOREPASS_BAD="$(openssl rand -base64 24)"
 
@@ -55,8 +42,6 @@ make_signed_apk() {
     -storepass:env "$storepass_var" -keypass:env "$storepass_var" \
     -dname "CN=throwaway-test" >/dev/null 2>&1
 
-  # A real APK with a valid binary AndroidManifest.xml (via aapt2 link): without
-  # it apksigner cannot determine minSdkVersion and refuses to verify.
   local manifest="$workdir/AndroidManifest.xml"
   cat > "$manifest" <<'EOF'
 <?xml version="1.0" encoding="utf-8"?>
@@ -90,8 +75,6 @@ if [ -z "$FP_OK_RAW" ] || [ -z "$FP_BAD_RAW" ] || [ "$FP_OK_RAW" = "$FP_BAD_RAW"
   exit 2
 fi
 
-# Keystore doc fixture: records only the "OK" fingerprint as the reference,
-# in keytool's colon upper-case format.
 FP_OK_COLON="$(echo "$FP_OK_RAW" | fold -w2 | paste -sd: | tr '[:lower:]' '[:upper:]')"
 KEYSTORE_DOC="$TMP/android-signing-keystore.md"
 cat > "$KEYSTORE_DOC" <<EOF
@@ -146,8 +129,6 @@ else
 fi
 
 echo "--- Test 3: no key material survives, the script never touches the vault ---"
-# Checks for a real INVOCATION, not the explanatory comments (which mention
-# data/secrets.vault to say it is NOT used).
 if grep -qE "panelctl secrets get|fdroid_repo_keystore_b64|fdroid_repo_keystore_pass" "$SCRIPT"; then
   no "android-publish.sh invokes the vault/repokey and must not (docs/android-fdroid-repo.md §1-2)"
 else

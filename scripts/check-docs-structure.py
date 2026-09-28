@@ -22,8 +22,8 @@ class DocStructure(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.stack = []
-        self.pages = []          # (id, open_line, close_line)
-        self.leaks = []          # loose content directly in the container
+        self.pages = []
+        self.leaks = []
         self.unclosed = []
 
     def handle_starttag(self, tag, attrs):

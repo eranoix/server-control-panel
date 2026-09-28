@@ -1,18 +1,4 @@
 #!/usr/bin/env bash
-# scripts/whatsapp/install.sh — installs the WAHA WhatsApp gateway for
-# server-control-panel. Idempotent (re-runs are safe).
-#
-# What it does:
-#   1. Creates /var/lib/panel-whatsapp/{sessions,media,files} (mode 0700)
-#   2. Lays down /opt/panel-whatsapp/{docker-compose.yml,.env}
-#   3. Generates random WAHA_API_KEY + WAHA_HMAC_SECRET (preserved on re-run)
-#   4. Mirrors the secrets into the server-control-panel secrets vault so the Go
-#      service picks them up on next restart
-#   5. Installs the systemd unit /etc/systemd/system/panel-whatsapp.service
-#   6. Enables (but does NOT auto-start — user clicks "Connect" in the UI)
-#
-# After this script: restart server-control-panel so it reads the vault, then go to
-# /whatsapp in the panel and click "Connect".
 
 set -euo pipefail
 
@@ -78,10 +64,6 @@ chmod 0600 "$ENV_FILE"
 ok "$ENV_FILE (mode 0600)"
 
 bold "→ Mirroring secrets into server-control-panel vault"
-# We can't decrypt the vault from a shell script (AES-GCM under JWT secret).
-# The Go service writes a sidecar manifest at $PANEL_DATA/whatsapp/secrets.put
-# which the next server-control-panel startup ingests. Failsafe: also accept manual
-# entry via the panel's Secrets UI.
 mkdir -p "$PANEL_DATA/whatsapp"
 chmod 0700 "$PANEL_DATA/whatsapp"
 cat > "$PANEL_DATA/whatsapp/secrets.put" <<EOF
@@ -91,14 +73,9 @@ chmod 0600 "$PANEL_DATA/whatsapp/secrets.put"
 ok "$PANEL_DATA/whatsapp/secrets.put (consumed on next restart)"
 
 bold "→ systemd units"
-# Legacy single-tenant unit (v1), disabled after MigrateV1ToV2.
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
-# Templated unit (v2 multi-tenant): panel-whatsapp@<user> instances are enabled
-# by Manager.Provision when each user is created.
 install -m 0644 "$UNIT_TMPL_SRC" "$UNIT_TMPL_DST"
 systemctl daemon-reload
-# Only enables the legacy unit if SchemaVersion < 2 (or there is no config).
-# After the migration this unit stays disabled.
 if [ ! -f "$PANEL_DATA/config.json" ] || ! grep -q '"schema_version": 2' "$PANEL_DATA/config.json" 2>/dev/null; then
   systemctl enable panel-whatsapp.service >/dev/null 2>&1 || true
   ok "$UNIT_DST enabled (legacy v1, pre-migration)"

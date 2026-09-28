@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# test-tunnel-datasaver.sh: INTEGRATION test of the real data-saver path.
-#
-# Proves, with a REAL sing-box and VLESS client (like Hiddify), that:
-#   1. a proxy outbound BY NAME (datasaver-*) with a DNS that does not know
-#      container names fails (NXDOMAIN, dead traffic);
-#   2. an outbound BY IP works: 200 + egress IP + image recompressed to WebP;
-#   3. the FULL path works: VLESS client → sing-box → auth_user → proxy → egress.
-#
-# Requires docker and the datasaver-vps container running. Never touches the
-# production tunnel (throwaway instances on their own ports). Exit 0 = all green.
 set -u
 NET=n8n_default
 IMG=ghcr.io/sagernet/sing-box:latest
@@ -22,13 +12,11 @@ trap cleanup EXIT
 ok(){   echo "  ✅ $1"; }
 bad(){  echo "  ❌ $1"; FAIL=1; }
 
-# Static IP of the compression proxy (VPS egress: hermetic path, no home bridge)
 DSIP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAMConfig.IPv4Address}}{{end}}' datasaver-vps 2>/dev/null)"
 [ -z "$DSIP" ] && DSIP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' datasaver-vps 2>/dev/null)"
 if [ -z "$DSIP" ]; then echo "datasaver-vps is not running: start /opt/datasaver first"; exit 2; fi
 echo "datasaver-vps IP = $DSIP"
 
-# --- 1) NXDOMAIN REPRO: proxy by NAME + public DNS (cannot resolve docker names)
 cat > "$TMP/repro.json" <<EOF
 { "log":{"level":"error"},
   "dns":{"servers":[{"type":"udp","tag":"pub","server":"1.1.1.1"}],"final":"pub"},
@@ -42,7 +30,6 @@ sleep 2
 code=$(docker run --rm --network "$NET" "$CURL" -s --max-time 12 -x http://t-sb-repro:18888 http://api.ipify.org -o /dev/null -w '%{http_code}' 2>/dev/null)
 if [ "$code" != "200" ]; then ok "repro: an unresolvable outbound by name fails (http=$code), the bug is reproducible"; else bad "repro: should have failed, got http=$code"; fi
 
-# --- 2) FIX: proxy by IP reaches the internet and compresses
 cat > "$TMP/fix.json" <<EOF
 { "log":{"level":"error"},
   "dns":{"servers":[{"type":"udp","tag":"pub","server":"1.1.1.1"}],"final":"pub"},
@@ -58,7 +45,6 @@ if echo "$ip" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then ok "fix: proxy
 read ct bytes < <(docker run --rm --network "$NET" "$CURL" -s -k --max-time 30 -x http://t-sb-fix:18889 -o /dev/null -w '%{content_type} %{size_download}' "$JPG" 2>/dev/null)
 if [ "$ct" = "image/webp" ] && [ "${bytes:-0}" -gt 0 ] && [ "${bytes:-0}" -lt 36287 ]; then ok "fix: JPEG recompressed to WebP ($bytes B < 36287 B original)"; else bad "fix: no compression (type=$ct bytes=$bytes)"; fi
 
-# --- 3) FULL PATH: VLESS client → server → auth_user → proxy(IP)
 U="11111111-2222-3333-4444-555555555555"
 cat > "$TMP/srv.json" <<EOF
 { "log":{"level":"error"},

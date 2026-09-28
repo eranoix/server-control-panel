@@ -12,26 +12,11 @@ import (
 	"server-control-panel/internal/whatsapp"
 )
 
-// Handler serves POST /_internal/alert.
-//
-// Flow: loopback check → parse Alertmanager payload → check config (enabled,
-// min_severity, from_user, chat_jid) → resolve the user's Service via
-// whatsapp.Manager → send via Client.SendText.
-//
-// Errors answered:
-//   - 405 method not allowed (non-POST)
-//   - 403 forbidden (non-loopback origin)
-//   - 400 bad payload (invalid JSON)
-//   - 204 no content (empty or filtered out)
-//   - 503 service unavailable (missing config or WhatsApp unavailable)
-//   - 502 bad gateway (failed to send via WAHA)
-//   - 200 ok (message dispatched)
 type Handler struct {
 	wamgr *whatsapp.Manager
 	cfg   *config.Alerting
 }
 
-// NewHandler builds an http.HandlerFunc. wamgr and cfg must not be nil.
 func NewHandler(wamgr *whatsapp.Manager, cfg *config.Alerting) http.HandlerFunc {
 	h := &Handler{wamgr: wamgr, cfg: cfg}
 	return h.ServeHTTP
@@ -108,10 +93,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// isLoopback accepts 127.0.0.1, ::1, and any other IsLoopback() address.
-// The server always listens on loopback (cfg.Listen), so this is
-// defence in depth — if a misconfiguration exposed the port, the handler still
-// refuses non-loopback requests.
 func isLoopback(remoteAddr string) bool {
 	host, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {

@@ -12,11 +12,6 @@ import android.util.Log
 private const val TAG = "PanelConnectionService"
 private const val ROOM_URI_SCHEME = "panel-room"
 
-/**
- * Self-managed `ConnectionService` (`MANAGE_OWN_CALLS`). Registered via [PhoneAccountRegistrar], it
- * makes Telecom treat our calls as real calls (lock-screen UI, ringtone, DND bypass, Bluetooth).
- * Exporting it is safe because `BIND_TELECOM_CONNECTION_SERVICE` is enforced by the system.
- */
 class PanelConnectionService : ConnectionService() {
 
     override fun onCreateIncomingConnection(
@@ -40,15 +35,9 @@ class PanelConnectionService : ConnectionService() {
         connectionManagerPhoneAccount: PhoneAccountHandle?,
         request: ConnectionRequest?,
     ) {
-        // Telecom refused to ring (e.g. a cellular call is active on some OEMs, or the account was
-        // revoked after registration). Nothing to tear down; this device just misses the ring.
         Log.w(TAG, "Telecom refused the incoming connection, call did not ring")
     }
 
-    /**
-     * Only for `ConnectionService` completeness: the app never calls `placeCall`, since outgoing
-     * calls join directly through `CallViewModel.joinRoom`.
-     */
     override fun onCreateOutgoingConnection(
         connectionManagerPhoneAccount: PhoneAccountHandle?,
         request: ConnectionRequest,

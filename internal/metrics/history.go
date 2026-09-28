@@ -2,7 +2,6 @@ package metrics
 
 import "sync"
 
-// Point is a single sample of system metrics at time T (unix seconds).
 type Point struct {
 	T       int64
 	CPU     float64
@@ -14,18 +13,14 @@ type Point struct {
 	DiskPct float64
 }
 
-// Ring is a fixed-capacity in-memory ring buffer of Points, safe for
-// concurrent use.
 type Ring struct {
 	mu   sync.RWMutex
 	buf  []Point
 	cap  int
-	head int // next write index
+	head int
 	size int
 }
 
-// NewRing constructs a Ring with the given capacity. If capacity is <= 0 it
-// defaults to 1440 (2 hours at a 5s sample interval).
 func NewRing(capacity int) *Ring {
 	if capacity <= 0 {
 		capacity = 1440
@@ -36,7 +31,6 @@ func NewRing(capacity int) *Ring {
 	}
 }
 
-// Push appends p to the ring, overwriting the oldest entry when full.
 func (r *Ring) Push(p Point) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -47,7 +41,6 @@ func (r *Ring) Push(p Point) {
 	}
 }
 
-// Snapshot returns a copy of the points ordered from oldest to newest.
 func (r *Ring) Snapshot() []Point {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -65,14 +58,12 @@ func (r *Ring) Snapshot() []Point {
 	return out
 }
 
-// Len returns the number of points currently stored.
 func (r *Ring) Len() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.size
 }
 
-// Last returns the most recently pushed point, or false if the ring is empty.
 func (r *Ring) Last() (Point, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

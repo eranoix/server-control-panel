@@ -12,10 +12,6 @@ import (
 	"server-control-panel/internal/secrets"
 )
 
-// setupLegacyDataDir creates a v1-style layout in a fresh tmpdir and
-// returns the path. Mimics the real production state: top-level admin
-// user, sam in Users[], shared whatsapp/ tree, browser-instances,
-// a videocall room owned by admin.
 func setupLegacyDataDir(t *testing.T) (dataDir, configPath string) {
 	t.Helper()
 	dataDir = t.TempDir()
@@ -92,10 +88,6 @@ func openVault(t *testing.T, dataDir string) *secrets.Store {
 	return v
 }
 
-// TestMigrateV1ToV2_HappyPath drives a full v1→v2 over a realistic layout
-// and asserts every observable change: schema bump, admin removal,
-// per-user dirs created, whatsapp store moved, vault re-keyed, videocall
-// rooms re-Owner'd, browser-instances moved.
 func TestMigrateV1ToV2_HappyPath(t *testing.T) {
 	dataDir, configPath := setupLegacyDataDir(t)
 	cfg := loadCfg(t, configPath)
@@ -157,7 +149,6 @@ func TestMigrateV1ToV2_HappyPath(t *testing.T) {
 		t.Fatalf("browser-instances not moved: %v", err)
 	}
 
-	// Vault re-keyed.
 	if v, ok := vault.Get("sam:waha_api_key"); !ok || v != "secret-A" {
 		t.Fatalf("vault sam:waha_api_key = %q ok=%v, want secret-A", v, ok)
 	}
@@ -171,7 +162,6 @@ func TestMigrateV1ToV2_HappyPath(t *testing.T) {
 		t.Fatalf("JWT_SECRET should remain global, got %q ok=%v", v, ok)
 	}
 
-	// Videocall rooms re-Owner'd.
 	roomsRaw, _ := os.ReadFile(filepath.Join(dataDir, "videocalls", "rooms.json"))
 	var rooms []map[string]any
 	if err := json.Unmarshal(roomsRaw, &rooms); err != nil {
@@ -183,7 +173,6 @@ func TestMigrateV1ToV2_HappyPath(t *testing.T) {
 		}
 	}
 
-	// Backup exists.
 	entries, _ := os.ReadDir(filepath.Dir(dataDir))
 	hasBak := false
 	for _, e := range entries {
@@ -196,8 +185,6 @@ func TestMigrateV1ToV2_HappyPath(t *testing.T) {
 	}
 }
 
-// TestMigrateV1ToV2_Idempotent runs the migration twice. Second call must
-// be a cheap no-op (no second backup, no errors).
 func TestMigrateV1ToV2_Idempotent(t *testing.T) {
 	dataDir, configPath := setupLegacyDataDir(t)
 	cfg := loadCfg(t, configPath)
@@ -235,8 +222,6 @@ func TestMigrateV1ToV2_Idempotent(t *testing.T) {
 	}
 }
 
-// TestMigrateV1ToV2_AbortOnMissingPrimary refuses to migrate when the
-// chosen primary doesn't exist. No side-effects on disk.
 func TestMigrateV1ToV2_AbortOnMissingPrimary(t *testing.T) {
 	dataDir, configPath := setupLegacyDataDir(t)
 	cfg := loadCfg(t, configPath)
@@ -257,9 +242,6 @@ func TestMigrateV1ToV2_AbortOnMissingPrimary(t *testing.T) {
 	}
 }
 
-// TestMigrateV1ToV2_ConcurrentLock launches two migrations in parallel;
-// exactly one must succeed and the other must see ErrConcurrentMigration
-// (or no-op because the first finished first). Either way, no corruption.
 func TestMigrateV1ToV2_ConcurrentLock(t *testing.T) {
 	dataDir, configPath := setupLegacyDataDir(t)
 	vault := openVault(t, dataDir)
@@ -279,11 +261,6 @@ func TestMigrateV1ToV2_ConcurrentLock(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Outcomes admitted by spec:
-	//   - one nil, one nil (winner migrated; loser saw v2 on re-read).
-	//   - one nil, one ErrConcurrentMigration (loser lost the lock race).
-	// Anything else (both fail, both succeed with concurrent rewrites)
-	// is a defect.
 	succeeded := 0
 	for _, e := range errs {
 		if e == nil {
@@ -305,8 +282,6 @@ func TestMigrateV1ToV2_ConcurrentLock(t *testing.T) {
 	}
 }
 
-// TestMigrateV1ToV2_AuditAppended verifies the migration.v2 event lands
-// in the audit log when one is wired up.
 func TestMigrateV1ToV2_AuditAppended(t *testing.T) {
 	dataDir, configPath := setupLegacyDataDir(t)
 	cfg := loadCfg(t, configPath)

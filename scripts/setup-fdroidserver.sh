@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# setup-fdroidserver.sh: installs fdroidserver in an isolated venv under
-# .tools/fdroidserver-env without touching any other Python environment.
-# Idempotent: safe to run again at any time.
-#
-# This script does NOT generate the F-Droid repository signing key: that key is
-# generated OFFLINE on the operator's machine, like the APK signing key (see
-# docs/android-fdroid-repo.md, section 1). This only provisions the tool.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."

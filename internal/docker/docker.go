@@ -127,10 +127,8 @@ func (c *Client) DiskUsage(ctx context.Context) (interface{}, error) {
 	return c.c.DiskUsage(ctx, types.DiskUsageOptions{})
 }
 
-// Raw returns the underlying client for advanced ops like exec.
 func (c *Client) Raw() *client.Client { return c.c }
 
-// stripDockerStreamHeaders removes 8-byte docker multiplexed stream headers.
 func stripDockerStreamHeaders(b []byte) string {
 	var out []byte
 	for i := 0; i+8 <= len(b); {

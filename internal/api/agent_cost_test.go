@@ -5,11 +5,6 @@ import (
 	"testing"
 )
 
-// TestPriceForModelOpus5 pins the price of Opus 5 and, above all, that it is
-// matched EXPLICITLY in the table instead of falling through to
-// defaultModelPrice. The default returns the same numbers today, so a missing
-// match is invisible in the value — it only shows up the day the default
-// changes. That is why the test checks the table.
 func TestPriceForModelOpus5(t *testing.T) {
 	want := modelPrice{5, 25, 6.25, 10, 0.50}
 	for _, model := range []string{"claude-opus-5[1m]", "claude-opus-5", "opus-5"} {
@@ -28,35 +23,25 @@ func TestPriceForModelOpus5(t *testing.T) {
 	}
 }
 
-// TestPriceForModelOpus5NotLegacy makes sure the table's order does not let
-// Opus 5 match a legacy row. "opus-5" does not contain "opus-4"/"opus-3", but
-// the table matches by substring and reordering is easy — this test is the net.
 func TestPriceForModelOpus5NotLegacy(t *testing.T) {
 	if got := priceForModel("claude-opus-5[1m]"); got.in == 15 {
 		t.Errorf("Opus 5 matched a legacy price (%+v); table out of order", got)
 	}
 }
 
-// TestCostForModelOpus5Empirical reproduces the REAL bill measured on a one-shot
-// call to Opus 5: in=2, out=4, cache_creation=78592 all on the 1h TTL, and the
-// API returned total_cost_usd 0.78603. This is the anchor test — with the 5m
-// rate (6.25) the result came out at 0.49, ~1.6× below the bill.
 func TestCostForModelOpus5Empirical(t *testing.T) {
 	got := costForModel("claude-opus-5[1m]", AgentTokens{
 		In: 2, Out: 4, CacheCreation: 78592, CacheCreation1h: 78592,
 	})
-	const want = 0.78603 // the literal value returned by the API
+	const want = 0.78603
 	if diff := got - want; diff > 1e-9 || diff < -1e-9 {
 		t.Errorf("costForModel = %v, want %v (the actual API invoice)", got, want)
 	}
 }
 
-// TestCostForModelCacheTTLSplit covers the three TTL regimes on a single model:
-// all 5m, all 1h, and half and half. The "all 5m" case pins compatibility with
-// old transcripts (no breakdown → CacheCreation1h zero).
 func TestCostForModelCacheTTLSplit(t *testing.T) {
 	const cc = 100000
-	base := 0.0 // no in/out, to isolate the cache-write effect
+	base := 0.0
 	cases := []struct {
 		name string
 		cc1h int64
@@ -74,12 +59,9 @@ func TestCostForModelCacheTTLSplit(t *testing.T) {
 	}
 }
 
-// TestCostForModelCacheTTLClamp makes sure a corrupted record (1h greater than
-// the total) neither charges a negative amount on the 5m side nor blows the bill
-// up: the excess is clamped to the total, never added on top.
 func TestCostForModelCacheTTLClamp(t *testing.T) {
 	got := costForModel("claude-opus-5", AgentTokens{CacheCreation: 1000, CacheCreation1h: 999999})
-	want := 1000.0 / 1e6 * 10 // everything treated as 1h, capped at the total
+	want := 1000.0 / 1e6 * 10
 	if diff := got - want; diff > 1e-9 || diff < -1e-9 {
 		t.Errorf("clamp failed: got %v, want %v", got, want)
 	}
@@ -88,10 +70,6 @@ func TestCostForModelCacheTTLClamp(t *testing.T) {
 	}
 }
 
-// TestCcUsageCache1hParsing validates the parsing of real JSONL — the exact
-// format observed in a real transcript — including the line WITHOUT the
-// cache_creation object (an old transcript), which must return zero instead of
-// blowing up.
 func TestCcUsageCache1hParsing(t *testing.T) {
 	cases := []struct {
 		name string
@@ -115,9 +93,6 @@ func TestCcUsageCache1hParsing(t *testing.T) {
 	}
 }
 
-// TestPriceForModelOpus55 pins the Opus 5.5 price and, crucially, that it does
-// not fall into the Opus 5 row: the table matches by substring and
-// "claude-opus-5-5" contains "opus-5", so the newer row must come first.
 func TestPriceForModelOpus55(t *testing.T) {
 	want := modelPrice{4, 20, 5, 8, 0.20}
 	for _, model := range []string{"claude-opus-5-5[1m]", "claude-opus-5-5", "opus-5-5"} {
@@ -142,14 +117,11 @@ func TestPriceForModelOpus55(t *testing.T) {
 	}
 }
 
-// TestCostForModelOpus55Empirical reproduces a real billed call: in=2, out=4,
-// cache_creation=58850 all with a 1h TTL, for which the API returned costUSD
-// 0.470888 (the Opus 5 rates would give 0.589088).
 func TestCostForModelOpus55Empirical(t *testing.T) {
 	got := costForModel("claude-opus-5-5[1m]", AgentTokens{
 		In: 2, Out: 4, CacheCreation: 58850, CacheCreation1h: 58850,
 	})
-	const want = 0.470888 // literal value returned by the API
+	const want = 0.470888
 	if diff := got - want; diff > 1e-9 || diff < -1e-9 {
 		t.Errorf("costForModel = %v, want %v (the actual API invoice)", got, want)
 	}

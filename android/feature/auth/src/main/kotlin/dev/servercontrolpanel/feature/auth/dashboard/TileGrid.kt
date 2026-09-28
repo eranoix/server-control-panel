@@ -32,16 +32,6 @@ import androidx.compose.ui.unit.dp
 import dev.servercontrolpanel.data.dashboard.Severity
 import dev.servercontrolpanel.designsystem.panelStatusColors
 
-/**
- * The dashboard grid of chosen tiles.
- *
- * Fixed two columns (not adaptive) so numbers stay readable at arm's length;
- * wide tiles take a full row.
- *
- * Not a lazy grid: it sits inside Home's `LazyColumn`, where a nested lazy grid
- * gets infinite height and crashes. With at most [ChosenTiles.MAX] tiles,
- * composing them all is cheap.
- */
 @Composable
 internal fun TileGrid(
     tiles: List<DashboardTile>,
@@ -70,7 +60,6 @@ internal fun TileGrid(
                         )
                     }
                 }
-                // Pad a lone narrow tile so it does not stretch to full width.
                 if (line.size == 1 && !line.first().wide) {
                     Box(modifier = Modifier.weight(1f))
                 }
@@ -80,10 +69,6 @@ internal fun TileGrid(
     }
 }
 
-/**
- * Splits tiles into rows of two. A wide tile closes the current row and takes
- * its own, keeping columns aligned.
- */
 internal fun gridRows(tiles: List<DashboardTile>): List<List<DashboardTile>> {
     val lines = mutableListOf<List<DashboardTile>>()
     var current = mutableListOf<DashboardTile>()
@@ -106,9 +91,6 @@ internal fun gridRows(tiles: List<DashboardTile>): List<List<DashboardTile>> {
     return lines
 }
 
-/**
- * One tile, colored with the shared `panelStatusColors` (never a local palette).
- */
 @Composable
 private fun Tile(
     tile: DashboardTile,
@@ -117,8 +99,6 @@ private fun Tile(
     onRemove: () -> Unit,
 ) {
     val statusColors = panelStatusColors
-    // Use container and content from the same pair; mixing in other theme
-    // colors breaks the guaranteed contrast.
     val par = when (tile.severity) {
         Severity.OK -> statusColors.ok
         Severity.WARNING -> statusColors.warning
@@ -130,13 +110,11 @@ private fun Tile(
         colors = CardDefaults.cardColors(containerColor = background, contentColor = ink),
         modifier = Modifier
             .fillMaxWidth()
-            // Minimum, not fixed, height so two-line text can grow.
             .heightIn(min = 92.dp)
             .clickable(enabled = !editing, onClick = onTap),
     ) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // No content description: the label beside it is what gets announced.
                 Icon(
                     imageVector = tileIcon(tile.id),
                     contentDescription = null,
@@ -153,7 +131,6 @@ private fun Tile(
                     modifier = Modifier.weight(1f),
                 )
                 if (editing) {
-                    // A word, not an X, to make clear it removes the tile, not the resource.
                     TextButton(onClick = onRemove, contentPadding = androidx.compose.foundation.layout.PaddingValues(4.dp)) {
                         Text(text = "Remove", style = MaterialTheme.typography.labelSmall)
                     }
@@ -192,10 +169,6 @@ private fun AddTile(onRequestCatalog: () -> Unit) {
     }
 }
 
-/**
- * The tile catalog from the server. Tiles already on the dashboard stay listed
- * but disabled, so items never seem to vanish.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TileCatalog(

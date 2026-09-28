@@ -1,14 +1,5 @@
 package api
 
-// maxbody_override_test.go proves, with real HTTP bodies, that the panel's
-// upload routes that need more than the global 25 MiB cap
-// (httpmw.MaxBody) can read larger bodies — game world import
-// (600 MiB) and Jira attachment (32 MiB) — via httpmw.RegisterLargeBody
-// registered in init() in each family's files. Before that
-// RegisterLargeBody, the global MaxBytesReader cut the body off at 25 MiB
-// BEFORE each handler's ParseMultipartForm ran, and neither of the two
-// ever reached the cap it promised.
-
 import (
 	"bytes"
 	"io"
@@ -41,7 +32,7 @@ func TestIsGameWorldImportUpload_MatchesOnlyImportRoute(t *testing.T) {
 }
 
 func TestGameWorldImportUpload_BodyOver25MiB_NotCappedByGlobalMaxBody(t *testing.T) {
-	body := bytes.Repeat([]byte("w"), 40<<20) // 40 MiB: above 25 MiB, well below 600 MiB
+	body := bytes.Repeat([]byte("w"), 40<<20)
 	var gotN int64
 	var gotErr error
 	handler := httpmw.MaxBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +73,7 @@ func TestIsJiraAttachmentUpload_MatchesOnlyAttachmentRoute(t *testing.T) {
 }
 
 func TestJiraAttachmentUpload_BodyOver25MiB_NotCappedByGlobalMaxBody(t *testing.T) {
-	body := bytes.Repeat([]byte("j"), 30<<20) // 30 MiB: above 25 MiB, below the 32 MiB cap
+	body := bytes.Repeat([]byte("j"), 30<<20)
 	var gotN int64
 	var gotErr error
 	handler := httpmw.MaxBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

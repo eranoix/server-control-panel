@@ -15,86 +15,16 @@ import (
 	"server-control-panel/internal/astcheck"
 )
 
-// The SECOND PIN of the narrowness criterion: the agent's narrowness, verified
-// by AST.
-//
-// WHY THIS PIN EXISTS, when there is already a textual invariant
-//
-// The textual invariant uses `grep -cF` — a FIXED string. `POST /exec` does not
-// match `POST /run`, does not match `RunCommand`, and does not match a new
-// operation calling `trainerRun` with a variable verb. The textual pin on its
-// own is trivially worked around by anyone who wants to; it exists to give the
-// operator a readable line that names the rule. What really protects is this.
-//
-// Three properties, because free execution can come back in three different
-// forms:
-//
-//	P1a  ROUTES     the set of routes is an EXACT allowlist. A new route is
-//	                precisely what has to go through human review; a pin that
-//	                only looked at signatures would let `POST /run` in.
-//	P1b  SIGNATURE  `(ctx, json.RawMessage) (any, error)` has nowhere to take
-//	                argv. Demanding a method expression in the map closes the
-//	                "closure that captures req.Argv" variant.
-//	P2   ARGV       in exec.Command* and in the DECLARED wrappers, every
-//	                argument resolves to a literal. Stance INVERTED relative to
-//	                the earlier scan: there the unresolvable was ignored, here
-//	                it IS the danger.
-//
-// RESIDUAL RISK THAT STILL STANDS — declared, not hidden behind the green
-//
-// Inherited from internal/pve/shellout_test.go, and still valid:
-//
-//   - a literal coming from ANOTHER file or package. Resolution is
-//     intra-function; `bin := pkg.Constant` does not resolve and, with
-//     RequireLiteralArgv, FAILS — which is conservative, but produces a false
-//     positive on legitimate code that centralises binary names in a package
-//     constant. If that shows up, the fix is to declare the wrapper, not to
-//     relax the rule.
-//   - a name assembled by CONCATENATION or `fmt.Sprintf`. Does not resolve, and
-//     fails under RequireLiteralArgv — same note as above.
-//   - TYPE ANALYSIS (go/types) would close the rest: it would resolve constants
-//     across packages and would tell a `string` from a `[]byte` without a
-//     name-based heuristic. It was CONSIDERED AND REFUSED as disproportionate:
-//     it would mean loading the whole package with go/packages, which puts a
-//     build dependency in the gate's path and makes the pin sensitive to
-//     somebody else's compile error. This house's stance is to declare the
-//     risk; hiding it behind a green is what is not done here.
-
-// allowedRoutes is the EXACT allowlist. An extra route fails (new surface
-// without review); a MISSING route fails too — a vanished route is a surface
-// regression, not an improvement, and a pin that only looked at "extra" would
-// not see /healthz disappear and the health gate stop meaning anything.
 var allowedRoutes = []string{
 	"GET /healthz",
 	"GET /metrics",
 	"POST /v1/op/{op}",
-	// Added deliberately. A file stream does not fit in a JSON document: without
-	// this route the Handle from world.export and backup.download does not open
-	// over the network, and the round-trip the acceptance criterion demands has
-	// no way to happen. It does NOT widen the execution surface — what it accepts
-	// is an opaque vault token, never a path (see internal/gameservers/handles.go).
 	"GET /v1/artifact/{handle}",
-	// The inbound side. Same justification as the read route: what crosses is
-	// anonymous bytes, and what comes back is an opaque token — no name and no
-	// path.
 	"POST /v1/artifact",
 }
 
-// watchedWrappers are the IN-HOUSE functions that run a process without going
-// through exec.Command at the call site. `trainerRun(ctx, stdin, args
-// ...string)` from internal/gameservers/trainer.go is the measured case: a new
-// op calling `trainerRun(ctx, body, req.Verb)` would slip past a naive detector.
 var watchedWrappers = []string{"trainerRun"}
 
-// declaredRoutes extracts the patterns passed to mux.Handle/HandleFunc.
-//
-// It also returns whether any multiplexer was recognised in the file. Whoever
-// analyses the REAL server demands that one was — an empty map from detector
-// blindness is indistinguishable from an empty map from having no route at all,
-// and the second case would approve a server with no /healthz. A fixture that
-// declares no route (M5, which is a legitimate operation) legitimately has no
-// mux, and for it the absence is the expected result — which is why the
-// decision belongs to the caller, not here.
 func declaredRoutes(t *testing.T, file string) (map[string]int, bool) {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -102,23 +32,7 @@ func declaredRoutes(t *testing.T, file string) (map[string]int, bool) {
 	if err != nil {
 		t.Fatalf("parse of %s: %v", file, err)
 	}
-	// ⚠️ A REAL FALSE POSITIVE, found by running this pin against production
-	// code — the same class as the two the earlier mutation round found.
-	//
-	// Matching by the selector's NAME makes `gameservers.Handle(x)` — a TYPE
-	// CONVERSION to the opaque Handle — read as a route declaration, and the pin
-	// failed with "<non-literal pattern>". A false positive is what makes somebody
-	// turn the pin off, so the fix goes in the detector, not in the code.
-	//
-	// The fix: first find out WHICH identifiers are multiplexers (assigned from
-	// `http.NewServeMux()` in this file) and only then accept
-	// `Handle`/`HandleFunc` on them. The question stops being "is the method
-	// called Handle?" and becomes "is the receiver a mux?", exact without go/types.
 	muxes := map[string]bool{}
-	// (a) by DECLARED TYPE — a parameter, field or var of type *http.ServeMux.
-	//     It is the exact path, and it is what recognises
-	//     `func mount(mux *http.ServeMux)` in the mutation fixtures, where the
-	//     mux is never constructed in the file.
 	isServeMux := func(e ast.Expr) bool {
 		star, ok := e.(*ast.StarExpr)
 		if !ok {
@@ -141,11 +55,11 @@ func declaredRoutes(t *testing.T, file string) (map[string]int, bool) {
 	}
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch v := n.(type) {
-		case *ast.Field: // parameters, results and struct fields
+		case *ast.Field:
 			note(v.Names, v.Type)
-		case *ast.ValueSpec: // var mux *http.ServeMux
+		case *ast.ValueSpec:
 			note(v.Names, v.Type)
-		case *ast.AssignStmt: // (b) by CONSTRUCTION: mux := http.NewServeMux()
+		case *ast.AssignStmt:
 			for i, rhs := range v.Rhs {
 				ch, ok := rhs.(*ast.CallExpr)
 				if !ok {
@@ -179,12 +93,10 @@ func declaredRoutes(t *testing.T, file string) (map[string]int, bool) {
 		}
 		recept, ok := sel.X.(*ast.Ident)
 		if !ok || !muxes[recept.Name] {
-			return true // not a route: a type conversion or a same-named method
+			return true
 		}
 		lit, ok := call.Args[0].(*ast.BasicLit)
 		if !ok || lit.Kind != token.STRING {
-			// A route pattern that is not a literal is suspect in itself: an
-			// allowlist of routes assembled at run time cannot be audited.
 			foundRoutes["<non-literal pattern>"] = fset.Position(call.Pos()).Line
 			return true
 		}
@@ -200,9 +112,6 @@ func TestNoFreeExecRoutes(t *testing.T) {
 	file := filepath.Join(repoRoot(t), "internal", "nodeagent", "server.go")
 	foundRoutes, hasMux := declaredRoutes(t, file)
 	if !hasMux {
-		// Scanning nothing is never approving (the same principle as
-		// astcheck.Scan): with no mux recognised the detector is blind and the
-		// allowlist would approve everything.
 		t.Fatalf("no *http.ServeMux recognized in %s — the route detector would be blind", file)
 	}
 	if len(foundRoutes) == 0 {
@@ -246,9 +155,6 @@ func TestNoFreeExecSignature(t *testing.T) {
 			t.Errorf("Handler stopped being a function type")
 			return false
 		}
-		// The canonical signature: (*Agent, context.Context, json.RawMessage) -> (any, error).
-		// What is explicitly forbidden is any []string parameter (argv) or a
-		// second loose string (a command).
 		var params []string
 		for _, p := range ft.Params.List {
 			text := typeString(p.Type)
@@ -274,11 +180,6 @@ func TestNoFreeExecSignature(t *testing.T) {
 		t.Fatal("type Handler not found in registry.go — the guard measured nothing")
 	}
 
-	// Every Handler value in the registry is a method expression, never a
-	// literal. (The detailed check lives in TestHandlersAreMethodExpressions;
-	// the same thing is asserted here from this pin's point of view, because it
-	// is one of the three properties of the criterion and a reader of the
-	// criterion has to find it here.)
 	var literals []string
 	ast.Inspect(f, func(n ast.Node) bool {
 		kv, ok := n.(*ast.KeyValueExpr)
@@ -314,7 +215,6 @@ func typeString(e ast.Expr) string {
 	return "?"
 }
 
-// TestNoFreeExecArgvLiteral runs the argv scanner over the REAL code.
 func TestNoFreeExecArgvLiteral(t *testing.T) {
 	root := repoRoot(t)
 	res, err := astcheck.Scan(astcheck.Config{
@@ -332,9 +232,6 @@ func TestNoFreeExecArgvLiteral(t *testing.T) {
 	t.Logf("%d files scanned in nodeagent+gameservers, %d findings", res.Scanned, len(res.Findings))
 }
 
-// TestNoFreeExecScannedSomething — a pin that scans nothing goes green by absence.
-// It is the lesson written into the earlier precedent, here as a separate
-// assertion so that it does not depend on anyone remembering to check.
 func TestNoFreeExecScannedSomething(t *testing.T) {
 	root := repoRoot(t)
 	res, err := astcheck.Scan(astcheck.Config{
@@ -348,15 +245,11 @@ func TestNoFreeExecScannedSomething(t *testing.T) {
 	if res.Scanned <= 0 {
 		t.Fatalf("Scanned=%d: the scan opened no file at all", res.Scanned)
 	}
-	// A concrete floor: the two packages add up to more than ten files today. If
-	// it drops below that, either the path broke or the scope shrank without
-	// anybody having decided so.
 	if res.Scanned < 10 {
 		t.Errorf("Scanned=%d, below the floor of 10: the scope of the scan shrank with no decision behind it", res.Scanned)
 	}
 }
 
-// sortedNames helps keep messages deterministic.
 func sortedNames(m map[string]int) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
@@ -366,19 +259,8 @@ func sortedNames(m map[string]int) []string {
 	return out
 }
 
-// TEST OF THE TEST — the five mutations.
-//
-// Four that MUST bite and one that must NOT. Without the fifth, a pin that
-// fails everything would pass for "it works", and the next step from there is
-// turning the guard off. This house has already found that defect four times.
-//
-// Each case asserts the LINE, not just the count: a detector that fails the
-// right file for the wrong reason will fail the wrong file at the next
-// refactor. A finding with no line is a guess.
-
 func fixture(name string) string { return filepath.Join("testdata", name) }
 
-// requireFindingOnLine asserts count AND position.
 func requireFindingOnLine(t *testing.T, findings []astcheck.Finding, line int) {
 	t.Helper()
 	if len(findings) != 1 {
@@ -390,7 +272,6 @@ func requireFindingOnLine(t *testing.T, findings []astcheck.Finding, line int) {
 	}
 }
 
-// M1 — a literal free-execution route. Detected by P1a.
 func TestPinBitesM1(t *testing.T) {
 	routes, _ := declaredRoutes(t, filepath.Join(fixture("m1-route-exec"), "case.go"))
 	allowed := map[string]bool{}
@@ -411,8 +292,6 @@ func TestPinBitesM1(t *testing.T) {
 	}
 }
 
-// M2 — the route is NOT called /exec and argv comes in through the signature.
-// It is the proof that the AST pin is what protects: a textual grep would pass.
 func TestPinBitesM2(t *testing.T) {
 	file := filepath.Join(fixture("m2-route-argv"), "case.go")
 
@@ -428,8 +307,6 @@ func TestPinBitesM2(t *testing.T) {
 		t.Fatal("the allowlist contains POST /run — the fixture stopped being a mutation")
 	}
 
-	// The textual half: a grep for "exec" would find NOTHING here. Asserting
-	// that is what turns "the AST pin is better" into a measured fact.
 	source, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
@@ -440,8 +317,6 @@ func TestPinBitesM2(t *testing.T) {
 	t.Log("M2: a route outside the allowlist was detected, and the fixture does not contain the string /exec — a textual grep would have let it through")
 }
 
-// M3 — the in-house wrapper with the verb coming from the body. It closes the
-// residual risk inherited from the earlier scan.
 func TestPinBitesM3(t *testing.T) {
 	res, err := astcheck.Scan(astcheck.Config{
 		Root:               fixture("m3-wrapper-verb"),
@@ -457,7 +332,6 @@ func TestPinBitesM3(t *testing.T) {
 	}
 }
 
-// M4 — a loose literal key in the registry.
 func TestPinBitesM4(t *testing.T) {
 	file := filepath.Join(fixture("m4-literal-key"), "case.go")
 	fset := token.NewFileSet()
@@ -465,8 +339,6 @@ func TestPinBitesM4(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A key in the registry's composite literal that is a BasicLit and not a
-	// declared constant: the operation exists and never went through review.
 	var literals []string
 	ast.Inspect(f, func(n ast.Node) bool {
 		vs, ok := n.(*ast.ValueSpec)
@@ -504,18 +376,6 @@ func TestPinBitesM4(t *testing.T) {
 	t.Logf("literal keys detected: %v — in the real registry they do not exist, they are all constants", literals)
 }
 
-// M5 — THE MAIN NEGATIVE CONTROL: a new, legitimate operation. Zero findings.
-//
-// ⚠️ If some catalogue test freezes the number of operations, this case will
-// fail for the WRONG reason. In that scenario the fix is to correct that test
-// (an absolute count is a defect this house already knows), NEVER to relax M5.
-// TestPinSparesTypeConversion is the negative control for the false
-// positive found by running this pin against the real server.
-//
-// The boundary it fixes: `algo.Handle(x)` is a route only when `algo` is an
-// *http.ServeMux. Without this fixture, a future fix that went back to matching
-// by name would pass every other test — M1 and M2 would go on failing as they
-// should, and nobody would see the false positive until it failed a deploy.
 func TestPinSparesTypeConversion(t *testing.T) {
 	file := filepath.Join(fixture("fp1-handle-conversion"), "case.go")
 	routes, hasMux := declaredRoutes(t, file)
@@ -551,7 +411,6 @@ func TestPinSparesM5(t *testing.T) {
 	}
 }
 
-// TestPinSparesLegitimate — the controls inherited from the precedent.
 func TestPinSparesLegitimate(t *testing.T) {
 	res, err := astcheck.Scan(astcheck.Config{
 		Root:               fixture("neg-legit"),
@@ -569,12 +428,6 @@ func TestPinSparesLegitimate(t *testing.T) {
 	}
 }
 
-// TestPinBitesPackageVar — the BOUNDARY of constant resolution.
-//
-// The scanner now resolves package-level `const` (otherwise `trainerBin` would
-// become a false positive). This case fixes the limit: a package-level `var` is
-// REASSIGNABLE at run time and must NOT be treated as a literal — treating it
-// so would open the very hole the pin exists to close.
 func TestPinBitesPackageVar(t *testing.T) {
 	res, err := astcheck.Scan(astcheck.Config{
 		Root:               fixture("neg-package-var"),

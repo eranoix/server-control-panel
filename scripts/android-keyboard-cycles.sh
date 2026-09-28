@@ -1,7 +1,4 @@
 #!/bin/bash
-# Opens and closes the keyboard N times OVER THE GRID, checking the IME state at
-# every step. The check matters: BACK with the keyboard already closed navigates
-# back, and the test would then measure navigation instead of the keyboard.
 A=/opt/android-sdk/platform-tools/adb
 N=${1:-5}
 

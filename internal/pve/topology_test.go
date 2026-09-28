@@ -27,8 +27,6 @@ func TestVdevType(t *testing.T) {
 		{"raidz3-0", "raidz3", true},
 		{"cache", "special", false},
 		{"logs", "special", false},
-		// 🔴 Unknown does NOT become redundant. The error in the other direction makes
-		// the operator trust a mirror that does not exist.
 		{"new-thing-99", "stripe", false},
 		{"/dev/sda", "stripe", false},
 	}

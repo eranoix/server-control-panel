@@ -1,21 +1,8 @@
-// 10-git.js — Server Control Panel’s visual Git client.
-//
-// A rich reimplementation inspired by Git Graph (mhutchie): a graph with
-// avatars, tags, stashes and remote branches; context menus (commit/branch/tag/
-// stash); action dialogs (branch, tag, merge, rebase, reset, cherry-pick,
-// revert, stash, PR); fetch/pull/push; search; and an IDENTITY/ACCOUNT PICKER
-// for the commit author.
-//
-// Coupling: window.PanelGitModule() is spread into the app() component (see
-// 00-shell.js), so `this` is the component — this.api/showToast/_ensureMonaco
-// /_langForPath/$nextTick work natively. The graph LAYOUT (lanes/edges) comes
-// from the server; here we only draw it.
 (function () {
   'use strict';
 
   var ROWH = 30, LANEW = 16, PADX = 14, DOTR = 4.5;
   var LANE_COLORS = ['#60a5fa', '#f59e0b', '#34d399', '#f472b6', '#a78bfa', '#22d3ee', '#fb7185', '#a3e635', '#e879f9', '#2dd4bf'];
-  // selectable graph palettes
   var PALETTES = {
     vivid: LANE_COLORS,
     github: ['#58a6ff', '#3fb950', '#a371f7', '#f85149', '#d29922', '#79c0ff', '#56d364', '#bc8cff', '#ff7b72', '#e3b341'],
@@ -24,7 +11,6 @@
   };
   var AVA_COLORS = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
-  // simple deterministic hash (djb2) for a per-e-mail avatar colour.
   function hashStr(s) {
     var h = 5381;
     for (var i = 0; i < (s || '').length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
@@ -36,7 +22,6 @@
     return (p[0][0] + p[p.length - 1][0]).toUpperCase();
   }
 
-  // Official GitHub Octicons (16px, paths verbatim from @primer/octicons).
   var OCTICONS = {
     'git-pull-request': 'M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z',
     'git-merge': 'M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z',
@@ -63,17 +48,17 @@
         repos: [], repo: '', repoInfo: null,
         loading: false, busy: false, error: '',
         graph: null, status: null, branches: [], tags: [], stashes: [], remotes: [], identities: [],
-        identityId: '',                 // account/author chosen for commits
+        identityId: '',
         selected: '', commitDetail: null,
-        view: 'changes',                // 'commit' | 'changes' | 'branches' | 'tags' | 'stashes'
+        view: 'changes',
         commitMessage: '', newBranch: '',
         commitAmend: false, commitSignoff: false, commitCoauthors: '',
-        commitType: '', commitScope: '',   // conventional-commits template
+        commitType: '', commitScope: '',
         worktrees: [], worktreeForm: { name: '', branch: '', create_branch: true, base: '' },
         submodules: [], branchFilter: '', branchFavs: [],
         identityWarn: false,
         find: '', findOpen: false, findHits: [], findIdx: 0,
-        filter: { scope: 'all', author: '', since: '', branch: '' }, // graph: ref scope + author/date
+        filter: { scope: 'all', author: '', since: '', branch: '' },
         filterOpen: false, graphTruncated: false,
         prs: [], prDetail: null, prFiles: [], prComments: [], prReviews: [], prCommits: [], prChecks: null,
         prReviewComments: [], prFileOpen: '', reviewedSet: [],
@@ -82,28 +67,23 @@
         ctx: { open: false, x: 0, y: 0, type: '', data: null },
         dialog: { open: false, kind: '', title: '', target: null, name: '', message: '', ref: '', mode: 'mixed', flag1: false, flag2: false, danger: false, confirmLabel: 'Confirm', body: '' },
         editor: { open: false, mode: 'edit', path: '', saving: false, _inst: null, _model: null },
-        // inspection panel (overlay): per-line blame, file history, compare refs
         inspect: { open: false, kind: '', loading: false, err: '', path: '', ref: '', blame: [], filelog: [], compare: null, a: '', b: '', mode: 'threedot', hunks: [], reflog: [], conflicts: null, rebaseBase: '', rebaseTodo: [], rebaseBusy: false, stashDiff: '', title: '' },
-        blameLimit: 300, filelogLimit: 200, hunksLimit: 200, reflogLimit: 200, cmpFilesLimit: 200, cmpCommitsLimit: 200, // cap + show-more on the large git lists
-        dragCommit: '',                 // hash being dragged (drag-and-drop)
-        layout: 'cols',                 // 'cols' (side by side, default) | 'rows' (stacked)
-        cols: { graph: 0, author: 150, date: 80, hash: 84 }, // history column widths (px) — resizable (graph = px BEYOND the lanes)
+        blameLimit: 300, filelogLimit: 200, hunksLimit: 200, reflogLimit: 200, cmpFilesLimit: 200, cmpCommitsLimit: 200,
+        dragCommit: '',
+        layout: 'cols',
+        cols: { graph: 0, author: 150, date: 80, hash: 84 },
         _colDrag: null,
         settings: {
           editorTheme: 'vs-dark', fontSize: 13, wordWrap: 'off', minimap: false,
-          density: 'comfortable',       // 'compact' | 'comfortable' | 'spacious'
+          density: 'comfortable',
           showAvatars: true, dateFormat: 'rel', limit: 150,
-          inlineBlame: true,            // inline blame in the editor (GitLens-style)
-          diffSideBySide: true,         // side-by-side diff (vs inline)
-          autoFetch: false, autoFetchMin: 5, // periodic remote fetch (incoming/outgoing)
-          graphTheme: 'dark', graphPalette: 'vivid', // graph appearance
+          inlineBlame: true,
+          diffSideBySide: true,
+          autoFetch: false, autoFetchMin: 5,
+          graphTheme: 'dark', graphPalette: 'vivid',
         },
       },
 
-      // ===== freeze debug instrumentation =====
-      // [GITDBG] in the console: every step of opening the editor plus a
-      // long-task observer that catches ANY main-thread block (the last line
-      // logged before the freeze points at the culprit).
       gitlog() { try { console.log.apply(console, ['[GITDBG]'].concat([].slice.call(arguments))); } catch (e) {} },
       _gitInstrument() {
         if (this._gitDbgOn) return; this._gitDbgOn = true;
@@ -117,7 +97,6 @@
         window.addEventListener('error', (ev) => { try { console.error('[GITDBG] window.error', ev.message, ev.filename + ':' + ev.lineno); } catch (e) {} });
       },
 
-      // ===== lifecycle =====
       async gitInit() {
         this._gitInstrument();
         this.gitLoadSettings();
@@ -127,9 +106,6 @@
         if (this.git.repo) await this.gitLoad();
         this._gitAutoFetchWire();
       },
-      // periodic auto-fetch (opt-in): it checks every minute, but only really
-      // fetches every autoFetchMin minutes and only on the git page — it refreshes
-      // incoming/outgoing.
       _gitAutoFetchWire() {
         if (this._gitAutoFetchTimer) return;
         const self = this; this._gitAutoFetchLast = 0;
@@ -157,7 +133,6 @@
       },
       gitApplySettings() {
         this.gitSaveSettings();
-        // applies theme/font/wrap/minimap to the iframe editor (if it is open)
         const w = this._gitFrameWin();
         if (this.git.editor.open && w && typeof w.gitEditorUpdateOptions === 'function') {
           try { w.gitEditorUpdateOptions({ theme: this.git.settings.editorTheme, fontSize: this.git.settings.fontSize, wordWrap: this.git.settings.wordWrap, minimap: this.git.settings.minimap }); } catch (e) {}
@@ -165,11 +140,7 @@
       },
       gitToggleLayout() { this.git.layout = this.git.layout === 'rows' ? 'cols' : 'rows'; try { localStorage.setItem('panel_git_layout', this.git.layout); } catch (e) {} },
 
-      // ===== resizable history columns =====
-      // effective width of the graph column (lanes + the user’s adjustment),
-      // never negative — it can go to 0 to HIDE the graph completely.
       gitGraphColW() { return Math.max(0, this.gitGraphWidth() + (this.git.cols.graph || 0)); },
-      // grid-template-columns: Graph | Message(flex) | Author | Date | Hash
       gitGridTemplate() {
         const c = this.git.cols;
         return this.gitGraphColW() + 'px minmax(80px,1fr) ' + (c.author || 150) + 'px ' + (c.date || 80) + 'px ' + (c.hash || 84) + 'px';
@@ -177,32 +148,25 @@
       gitColStart(col, sign, ev) {
         ev.preventDefault(); ev.stopPropagation();
         const sx = ev.clientX, sw = this.git.cols[col] || 0, self = this;
-        // the graph can go well negative (shrinking until it hides); the effective
-        // width is clamped to >=0 in gitGraphColW. Other columns: minimum 0.
         const min = col === 'graph' ? -5000 : 0;
         const mv = function (e) { self.git.cols[col] = Math.max(min, Math.min(900, sw + sign * (e.clientX - sx))); };
         const up = function () { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); document.body.style.cursor = ''; };
         document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up); document.body.style.cursor = 'col-resize';
       },
 
-      // ===== PER-PROJECT layout in the PROFILE (server-side, /api/user/prefs) =====
-      // Stored shape: { settings:{...global editor}, repos:{ <repoId>:{cols,layout} } }
       _gitProfile: { settings: {}, repos: {} },
       _gitDefaultCols() { return { graph: 0, author: 150, date: 80, hash: 84 }; },
       async gitLoadLayoutProfile() {
         try {
-          // Best-effort: with no stored profile the layout falls back to the default —
-          // api() throws and the empty catch at the end absorbs it.
           const r = await this.api('/api/user/prefs?key=git');
           const d = await r.json().catch(() => ({}));
           const v = d && (d.value || d);
           if (v && typeof v === 'object') {
             this._gitProfile = { settings: v.settings || {}, repos: v.repos || {} };
-            if (v.settings) Object.assign(this.git.settings, v.settings); // the editor is global
+            if (v.settings) Object.assign(this.git.settings, v.settings);
           }
         } catch (e) {}
       },
-      // applies the stored layout OF the current REPO (or back to the default)
       gitApplyRepoLayout(repoId) {
         const r = (this._gitProfile.repos || {})[repoId];
         if (r && typeof r === 'object') {
@@ -222,9 +186,7 @@
           this.showToast('project layout saved to your profile ✓', 'ok');
         } catch (e) { this.showToast('could not save layout: ' + this._errText(e), 'err'); }
       },
-      // graph row height by density (px) — the SVG and the rows both use this
       rowH() { const d = this.git.settings.density; return d === 'compact' ? 24 : (d === 'spacious' ? 36 : 30); },
-      // date according to the preference (relative/absolute)
       gitDate(iso) { return this.git.settings.dateFormat === 'abs' ? this.gitFmtDate(iso) : this.gitRelDate(iso); },
       async gitLoadRepos() {
         this.git.error = '';
@@ -251,9 +213,8 @@
         this.git.selected = ''; this.git.commitDetail = null;
         this.gitCloseEditor(); this.gitCloseCtx();
         this.git.repoInfo = this.gitCurrentRepo();
-        this.gitApplyRepoLayout(this.git.repo); // this project’s stored layout
+        this.gitApplyRepoLayout(this.git.repo);
         this.gitLoadFavs();
-        // default identity = the one the repo expects (matched by e-mail), else the 1st
         this.gitPickDefaultIdentity();
         try {
           await Promise.all([
@@ -282,9 +243,6 @@
         else if (f.scope === 'branch' && f.branch) u += '&branch=' + encodeURIComponent(f.branch);
         if (f.author) u += '&author=' + encodeURIComponent(f.author);
         if (f.since) u += '&since=' + encodeURIComponent(f.since);
-        // its own try/catch: gitApplyFilter()/gitLoadMore() call it without await
-        // and without catch, so the failure has to become git.error here instead
-        // of escaping.
         try {
           const r = await this.api(u);
           this.git.graph = await r.json();
@@ -292,15 +250,10 @@
           this.gitDecorateGraph();
         } catch (e) { this.git.error = 'graph failed: ' + this._errText(e); this.git.graph = null; }
       },
-      // applies the filters (resets limit to the default) and reloads
       gitApplyFilter() { this.git.settings.limit = 150; this.gitLoadGraph(); },
       gitClearFilter() { this.git.filter = { scope: 'all', author: '', since: '', branch: '' }; this.gitApplyFilter(); },
       gitFilterActive() { const f = this.git.filter || {}; return f.scope !== 'all' || !!f.author || !!f.since; },
-      // "load more": raises the limit and reloads (keeps the filters)
       async gitLoadMore() { this.git.settings.limit = Math.min(2000, (this.git.settings.limit || 150) + 250); await this.gitLoadGraph(); },
-      // Precomputes per commit (avatar/badges/dates) ONCE per load, instead of
-      // calling functions in the bindings of each of the N rows on every render —
-      // this keeps the graph light even with many commits.
       gitDecorateGraph() {
         const g = this.git.graph; if (!g || !g.commits) return;
         const self = this;
@@ -311,23 +264,16 @@
           c._dateAbs = self.gitFmtDate(c.date);
         });
       },
-      // Side panels: each one absorbs its own failure (console warn, the data stays
-      // as it was). They are called both inside gitLoad()’s Promise.all and on
-      // their own after each action (gitStage, gitCommit, …) — those standalone
-      // call-sites have no catch, so throwing here would become an unhandled
-      // rejection. The Git panel’s visible error comes from gitLoadGraph().
       async gitLoadStatus() { try { const r = await this.api('/api/git/status?repo=' + encodeURIComponent(this.git.repo)); this.git.status = await r.json(); } catch (e) { console.warn('[git] status', e); } },
       async gitLoadBranches() { try { const r = await this.api('/api/git/branches?repo=' + encodeURIComponent(this.git.repo)); const d = await r.json(); this.git.branches = (d && d.branches) || []; } catch (e) { console.warn('[git] branches', e); } },
       async gitLoadTags() { try { const r = await this.api('/api/git/tags?repo=' + encodeURIComponent(this.git.repo)); const d = await r.json(); this.git.tags = (d && d.tags) || []; } catch (e) { console.warn('[git] tags', e); } },
       async gitLoadStashes() { try { const r = await this.api('/api/git/stashes?repo=' + encodeURIComponent(this.git.repo)); const d = await r.json(); this.git.stashes = (d && d.stashes) || []; } catch (e) { console.warn('[git] stashes', e); } },
       async gitLoadRemotes() { try { const r = await this.api('/api/git/remotes?repo=' + encodeURIComponent(this.git.repo)); const d = await r.json(); this.git.remotes = (d && d.remotes) || []; } catch (e) { console.warn('[git] remotes', e); } },
 
-      // ===== avatar (initials, no gravatar/tracking) =====
       gitAvatar(name, email) {
         return { text: initials(name), color: AVA_COLORS[hashStr(email || name) % AVA_COLORS.length] };
       },
 
-      // ===== icon by file/folder type =====
       gitIsFolder(path) { return !!path && path.charAt(path.length - 1) === '/'; },
       gitFileIcon(path) {
         if (!path) return '📄';
@@ -350,7 +296,6 @@
         return M[ext] || '📄';
       },
 
-      // ===== SVG graph (rowH dynamic by density) =====
       gitGraphWidth() { const ml = this.git.graph ? (this.git.graph.max_lane || 0) : 0; return PADX * 2 + (ml + 1) * LANEW; },
       gitGraphSVG() {
         const g = this.git.graph;
@@ -382,7 +327,6 @@
         return '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' + paths + dots + '</svg>';
       },
 
-      // classifies a ref from %D into {kind,label}
       gitRefBadge(ref) {
         ref = ref.replace('HEAD -> ', '');
         if (ref === 'HEAD') return { kind: 'head', label: 'HEAD' };
@@ -391,16 +335,12 @@
         return { kind: 'local', label: ref };
       },
 
-      // ===== selected commit =====
       async gitSelectCommit(hash) {
         this.git.selected = hash; this.git.view = 'commit';
         this.gitLoadReviewed('c:' + this.git.repo + ':' + hash);
         try { const r = await this.api('/api/git/show?repo=' + encodeURIComponent(this.git.repo) + '&hash=' + encodeURIComponent(hash)); this.git.commitDetail = await r.json(); }
         catch (e) { this.showToast('could not load the commit: ' + this._errText(e), 'err'); }
       },
-      // Diff of one file from the selected commit: side by side (parent vs commit)
-      // in the Monaco DiffEditor. Falls back to a textual unified diff when the
-      // two sides cannot be assembled (e.g. binary).
       async gitViewCommitDiff(path) {
         const hash = this.git.selected;
         const parents = (this.git.commitDetail && this.git.commitDetail.parents) || [];
@@ -412,22 +352,17 @@
         }
         this._gitOpenDiffEditor(path, orig || '', mod || '');
       },
-      // Working-tree diff (HEAD vs disk) in the DiffEditor.
       async gitDiffWorking(path) {
         if (this.gitIsFolder(path)) return;
-        const mod = await this._gitFileAt(path, '');       // working tree
-        const orig = await this._gitFileAt(path, 'HEAD');   // the version in HEAD
+        const mod = await this._gitFileAt(path, '');
+        const orig = await this._gitFileAt(path, 'HEAD');
         if (mod === null && (orig === null || orig === '')) { this.showToast('diff unavailable (binary?)', 'err'); return; }
         this._gitOpenDiffEditor(path, orig || '', mod || '');
       },
-      // reads a file’s content at a ref (''=working tree). null on error/binary.
       async _gitFileAt(path, ref) {
         try {
           let u = '/api/git/file?repo=' + encodeURIComponent(this.git.repo) + '&path=' + encodeURIComponent(path);
           if (ref) u += '&ref=' + encodeURIComponent(ref);
-          // The helper’s contract is "null on error" — api() throws and the catch
-          // returns null; the call-sites already handle null (falling back to the
-          // unified diff).
           const r = await this.api(u);
           const d = await r.json().catch(() => ({}));
           return d.content || '';
@@ -444,14 +379,7 @@
         if (w && typeof w.gitEditorSetDiffLayout === 'function') { try { w.gitEditorSetDiffLayout(this.git.settings.diffSideBySide); } catch (e) {} }
       },
 
-      // ===== editor / diff (Monaco runs in the IFRAME #git-monaco-frame) =====
-      // The editor lives in an iframe (a separate document) → Alpine’s
-      // MutationObserver does NOT watch Monaco’s DOM, which eliminates the
-      // freeze. The parent merely calls the iframe’s window.gitEditor*
-      // (same-origin).
       _gitFrameWin() { const f = document.getElementById('git-monaco-frame'); return f ? f.contentWindow : null; },
-      // Waits for the iframe to have Monaco ready (gitEditorReady) and then calls
-      // gitEditorOpen. Short poll; resolves true/false.
       _gitFrameOpen(opts) {
         const self = this;
         return new Promise(function (resolve) {
@@ -472,7 +400,6 @@
           })();
         });
       },
-      // like _gitFrameOpen, but opens the DiffEditor (gitEditorOpenDiff).
       _gitFrameOpenDiff(opts) {
         const self = this;
         return new Promise(function (resolve) {
@@ -503,7 +430,6 @@
         this.gitlog('gitOpenWorkingFile START', path);
         if (!path) return;
         if (this.gitIsFolder(path)) { this.showToast('📁 ' + path + ' is a folder — open a file', ''); return; }
-        // Fetches the content FIRST; binary/directory/>8MB → backend 422.
         let content = '';
         try {
           const r = await this.api('/api/git/file?repo=' + encodeURIComponent(this.git.repo) + '&path=' + encodeURIComponent(path));
@@ -518,10 +444,8 @@
           if (ok && this.git.settings.inlineBlame) this._gitApplyInlineBlame(path);
         });
       },
-      // fetches blame and pushes it into the iframe editor (inline annotation on the cursor line)
       async _gitApplyInlineBlame(path) {
         try {
-          // Inline blame is decoration: a failure vanishes quietly (empty catch below).
           const r = await this.api('/api/git/blame?repo=' + encodeURIComponent(this.git.repo) + '&path=' + encodeURIComponent(path));
           const d = await r.json().catch(() => ({}));
           const w = this._gitFrameWin();
@@ -546,7 +470,6 @@
       },
       gitCloseEditor() { const w = this._gitFrameWin(); if (w && typeof w.gitEditorDispose === 'function') { try { w.gitEditorDispose(); } catch (e) {} } this.git.editor.open = false; this.git.editor.path = ''; },
 
-      // ===== Inspection: blame / file history / compare (overlay) =====
       gitCloseInspect() { this.git.inspect.open = false; this.git.inspect.kind = ''; },
       async gitBlame(path, ref) {
         if (!path || this.gitIsFolder(path)) { this.showToast('select a file', ''); return; }
@@ -573,7 +496,6 @@
           ins.filelog = d.commits || [];
         } catch (e) { ins.err = 'history unavailable: ' + this._errText(e); } finally { ins.loading = false; }
       },
-      // opens the compare dialog (A/B choice). Pre-fills with the current branch.
       gitCompareDialog() {
         const cur = (this.git.status && this.git.status.branch) || '';
         Object.assign(this.git.inspect, { open: true, kind: 'compare', loading: false, err: '', compare: null, a: cur, b: '', mode: 'threedot' });
@@ -591,12 +513,9 @@
           ins.compare = d;
         } catch (e) { ins.err = 'compare failed: ' + this._errText(e); } finally { ins.loading = false; }
       },
-      // click on a blame line → selects the commit in the graph (ignores
-      // "Not Committed Yet", whose hash is all zeros).
       gitBlameGoto(l) {
         if (l && l.hash && /[1-9a-f]/i.test(l.hash)) { this.gitCloseInspect(); this.gitSelectCommit(l.hash); }
       },
-      // list of refs (local + remote branches + tags) for the compare selects
       gitCompareRefs() {
         const out = [];
         (this.git.branches || []).forEach(b => out.push(b.name));
@@ -604,9 +523,7 @@
         return out;
       },
 
-      // ===== graph theme/palette, permalink, patch =====
       gitLaneColors() { return PALETTES[this.git.settings.graphPalette] || PALETTES.vivid; },
-      // GitHub base from the origin remote (owner/repo), or '' when not GitHub
       gitGithubBase() {
         const o = (this.git.remotes || []).find(r => r.name === 'origin');
         if (!o || !o.url) return '';
@@ -635,7 +552,6 @@
         } catch (e) { this.showToast('could not generate patch: ' + this._errText(e), 'err'); }
       },
 
-      // ===== branches+, prune, tag push, stash preview, submodules =====
       async gitLoadSubmodules() {
         try {
           const r = await this.api('/api/git/submodules?repo=' + encodeURIComponent(this.git.repo));
@@ -664,7 +580,6 @@
           ins.stashDiff = d.diff || '(no differences)';
         } catch (e) { ins.err = 'could not read the stash: ' + this._errText(e); } finally { ins.loading = false; }
       },
-      // branch favourites (per repo, in localStorage)
       gitFavKey() { return 'panel_git_favs_' + this.git.repo; },
       gitLoadFavs() { try { this.git.branchFavs = JSON.parse(localStorage.getItem(this.gitFavKey()) || '[]'); } catch (e) { this.git.branchFavs = []; } },
       gitIsFav(name) { return this.git.branchFavs.indexOf(name) >= 0; },
@@ -673,12 +588,10 @@
         if (i >= 0) this.git.branchFavs.splice(i, 1); else this.git.branchFavs.push(name);
         try { localStorage.setItem(this.gitFavKey(), JSON.stringify(this.git.branchFavs)); } catch (e) {}
       },
-      // branches filtered by glob/substring + favourites on top
       gitFilteredBranches() {
         const q = (this.git.branchFilter || '').trim().toLowerCase();
         let list = (this.git.branches || []).slice();
         if (q) {
-          // simple glob: * becomes .*  (otherwise substring)
           let re = null;
           if (q.indexOf('*') >= 0) { try { re = new RegExp('^' + q.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$', 'i'); } catch (e) {} }
           list = list.filter(b => re ? re.test(b.name) : b.name.toLowerCase().indexOf(q) >= 0);
@@ -688,7 +601,6 @@
         return list;
       },
 
-      // ===== worktrees, linkify (Jira/markdown/URL), commit templates =====
       async gitLoadWorktrees() {
         try {
           const r = await this.api('/api/git/worktrees?repo=' + encodeURIComponent(this.git.repo));
@@ -715,14 +627,8 @@
           await this.gitLoadWorktrees();
         } catch (e) { this.showToast('could not remove worktree: ' + this._errText(e), 'err'); }
       },
-      // renders a commit message: escape + markdown (bold/italic/code) + URL
-      // autolinking + linking of Jira keys (KEY-123 → /browse/KEY-123).
       gitRenderMsg(text) {
         if (!text) return '';
-        // escape EVERYTHING first (quotes included) — the markup/links below are
-        // added only on top of the already-escaped string (never on the raw
-        // input), and escaping " / ' blocks attribute injection through an
-        // autolink with no spaces.
         let s = String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         s = s.replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,.08);padding:1px 4px;border-radius:4px">$1</code>');
         s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -734,17 +640,14 @@
         });
         return s;
       },
-      // conventional-commits template: prefixes "type(scope): " onto the message.
       gitApplyCommitType() {
         const t = this.git.commitType; if (!t) return;
         const scope = (this.git.commitScope || '').trim();
         const prefix = t + (scope ? '(' + scope + ')' : '') + ': ';
         const msg = this.git.commitMessage || '';
-        // avoids duplicating when it already starts with the same type
         if (!msg.startsWith(prefix)) this.git.commitMessage = prefix + msg.replace(/^\w+(\([^)]*\))?:\s*/, '');
       },
 
-      // ===== reflog/undo, interactive rebase, conflicts, drag-and-drop =====
       async gitReflogOpen() {
         const ins = this.git.inspect;
         Object.assign(ins, { open: true, kind: 'reflog', loading: true, err: '', reflog: [] });
@@ -766,11 +669,9 @@
           this.gitCloseInspect(); await this.gitLoad();
         } catch (e) { this.showToast('reset failed: ' + this._errText(e), 'err'); }
       },
-      // interactive rebase: base = the commit’s first parent (edits commits from it on)
       async gitRebaseDialog(commit) {
         const hash = (commit && commit.hash) || this.git.selected;
         if (!hash) { this.showToast('select a commit', ''); return; }
-        // makes sure commitDetail is there (it carries the parents)
         if (!this.git.commitDetail || this.git.commitDetail.hash !== hash) await this.gitSelectCommit(hash);
         const parents = (this.git.commitDetail && this.git.commitDetail.parents) || [];
         if (!parents.length) { this.showToast('rebase from the root is not supported here', 'err'); return; }
@@ -802,7 +703,6 @@
           else this.showToast(this._errText(d.error) || 'rebase failed', 'err');
         } catch (e) { this.showToast('rebase failed: ' + this._errText(e), 'err'); } finally { ins.rebaseBusy = false; }
       },
-      // conflicts
       async gitConflictsOpen() {
         const ins = this.git.inspect;
         Object.assign(ins, { open: true, kind: 'conflicts', loading: true, err: '', conflicts: null });
@@ -822,9 +722,6 @@
       async gitConflictEdit(path) { this.gitCloseInspect(); await this.gitOpenWorkingFile(path); },
       async gitRebaseContinue() {
         try {
-          // A conflict arrives as HTTP 200 with {ok:false, conflict:true} — which is
-          // why the decision is still taken from the body; the catch covers real
-          // 4xx/5xx.
           const r = await this.api('/api/git/rebase/continue?repo=' + encodeURIComponent(this.git.repo), { method: 'POST', body: JSON.stringify({}) });
           const d = await r.json().catch(() => ({}));
           if (d.ok) { this.showToast('rebase continued', 'ok'); this.gitCloseInspect(); await this.gitLoad(); }
@@ -841,7 +738,6 @@
           else this.showToast(this._errText(d.error) || 'could not abort', 'err');
         } catch (e) { this.showToast('could not abort: ' + this._errText(e), 'err'); }
       },
-      // drag-and-drop: drag a commit → drop it on a branch = cherry-pick onto
       gitDragStart(hash, ev) { this.git.dragCommit = hash; try { ev.dataTransfer.effectAllowed = 'copy'; } catch (e) {} },
       gitDragEnd() { this.git.dragCommit = ''; },
       async gitDropOnBranch(branch) {
@@ -857,8 +753,6 @@
         } catch (e) { this.showToast('cherry-pick failed: ' + this._errText(e), 'err'); }
       },
 
-      // ===== per-HUNK staging =====
-      // splits a unified diff into {header, hunks[]}: header = the lines up to the 1st @@.
       _parseDiffHunks(diff) {
         if (!diff) return { header: '', hunks: [] };
         const lines = diff.split('\n');
@@ -888,7 +782,6 @@
           ins.hunks = out;
         } catch (e) { ins.err = 'could not load the hunks: ' + this._errText(e); } finally { ins.loading = false; }
       },
-      // colourises a hunk (HTML escape + green/red/cyan) for the <pre>.
       gitColorHunk(hunk) {
         if (!hunk) return '';
         const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -911,7 +804,6 @@
         } catch (e) { this.showToast('apply failed: ' + this._errText(e), 'err'); }
       },
 
-      // ===== generic POST =====
       async _gitPost(path, body, okMsg) {
         this.git.busy = true;
         try {
@@ -919,9 +811,6 @@
           const d = await r.json().catch(() => ({}));
           if (okMsg) this.showToast(okMsg, 'ok');
           return d;
-          // Contract kept: null = failed (the callers test the return value).
-          // The action name goes into the message — a bare "error: …" did not say
-          // what had failed.
         } catch (e) { this.showToast('error in ' + path + ': ' + this._errText(e), 'err'); return null; } finally { this.git.busy = false; }
       },
       async _gitDo(path, body, okMsg, reload) {
@@ -930,7 +819,6 @@
         return d;
       },
 
-      // ===== staging / commit =====
       async gitStage(paths) { if (await this._gitPost('stage', { paths })) await this.gitLoadStatus(); },
       async gitUnstage(paths) { if (await this._gitPost('unstage', { paths })) await this.gitLoadStatus(); },
       async gitStageAll() { const ps = (this.git.status ? this.git.status.entries : []).map(e => e.path); if (ps.length) await this.gitStage(ps); },
@@ -954,14 +842,12 @@
         }
       },
 
-      // quick branch creation (Branches tab)
       async gitBranchCreate(checkout) {
         const name = (this.git.newBranch || '').trim(); if (!name) return;
         const d = await this._gitDo('branch/create', { name: name, checkout: !!checkout }, 'branch created: ' + name);
         if (d) this.git.newBranch = '';
       },
 
-      // ===== context menu =====
       gitCtxOpen(type, data, ev) {
         ev.preventDefault(); ev.stopPropagation();
         const x = Math.min(ev.clientX, window.innerWidth - 230), y = Math.min(ev.clientY, window.innerHeight - 320);
@@ -1016,7 +902,6 @@
       },
       gitCtxClick(it) { this.gitCloseCtx(); if (it.fn) it.fn(); },
 
-      // ===== dialogs =====
       gitDialog(kind, target) {
         const dlg = { open: true, kind: kind, target: target || {}, name: '', message: '', ref: '', mode: 'mixed', flag1: false, flag2: false, danger: false, confirmLabel: 'Confirm', body: '' };
         const titles = { 'branch-create': 'Create branch', 'branch-rename': 'Rename branch', 'tag-create': 'Create tag', 'reset': 'Reset to this commit', 'stash-push': 'Stash changes', 'stash-branch': 'Create branch from stash', 'settings': 'Appearance and settings' };
@@ -1044,7 +929,6 @@
         }
       },
 
-      // ===== toolbar actions =====
       async gitFetch() { await this._gitDo('fetch', { prune: true }, 'fetch done'); },
       async gitPull() { await this._gitDo('pull', {}, 'pull done'); },
       async gitPush() { const b = this.git.repoInfo && this.git.repoInfo.current_branch; if (!confirm('Push ' + b + ' to origin?')) return; await this._gitDo('push', { remote: 'origin', branch: b, set_upstream: true }, 'push done'); },
@@ -1059,12 +943,11 @@
       },
       gitCopy(text) { try { navigator.clipboard.writeText(text || ''); this.showToast('copied', 'ok'); } catch (e) { this.showToast('could not copy', 'err'); } },
 
-      // ===== Pull Requests (native, through the GitHub API) =====
       gitSetPRState(st) { this.git.prState = st; this.gitLoadPRs(); },
       async gitLoadPRs() {
         this.git.prLoading = true; this.git.prDetail = null; this.git.prView = 'list'; this.git.prErr = '';
         const st = this.git.prState || 'open';
-        const apiState = (st === 'merged' || st === 'closed') ? 'closed' : st; // open|closed|all
+        const apiState = (st === 'merged' || st === 'closed') ? 'closed' : st;
         try {
           const r = await this.api('/api/git/pr/list?repo=' + encodeURIComponent(this.git.repo) + '&state=' + apiState);
           const d = await r.json().catch(() => ({}));
@@ -1075,7 +958,6 @@
         } catch (e) { this.git.prErr = this._errText(e); this.git.prs = []; }
         finally { this.git.prLoading = false; }
       },
-      // a PR’s visual state: merged / closed / draft / open (colour+icon+label)
       gitPRBadge(p) {
         if (p.merged_at) return { label: 'merged', cls: 'merged' };
         if (p.state === 'closed') return { label: 'closed', cls: 'closed' };
@@ -1089,14 +971,9 @@
         if (p.draft) return { cls: 'draft', oc: 'git-pull-request-draft', label: 'draft' };
         return { cls: 'open', oc: 'git-pull-request', label: 'open' };
       },
-      // Octicons (official GitHub SVG icons)
       gitIcon(name, size) { return octicon(name, size); },
       gitFileIconSvg(path) { return octicon(this.gitIsFolder(path) ? 'file-directory-fill' : 'file', 13); },
       async gitOpenPR(n) {
-        // Do NOT null prDetail here: if the detail is already visible (reopen/merge/
-        // refresh), clearing it triggers an x-if teardown with prDetail=null and
-        // the inner bindings break. We keep the previous one until the new one
-        // arrives.
         this.git.prView = 'detail'; this.git.prComment = '';
         try {
           const r = await this.api('/api/git/pr/get?repo=' + encodeURIComponent(this.git.repo) + '&number=' + n);
@@ -1124,7 +1001,6 @@
         const d = await this._prPost('pr/review', { number: n, event: event, body: this.git.prReviewBody }, 'review: ' + labels[event]);
         if (d) { this.git.prReviewBody = ''; await this.gitOpenPR(n); }
       },
-      // ---- actions on a PR ----
       async _prPost(path, body, okMsg) {
         this.git.prBusy = true;
         try {
@@ -1132,7 +1008,6 @@
           const d = await r.json().catch(() => ({}));
           if (okMsg) this.showToast(okMsg, 'ok');
           return d;
-          // Contract kept: null = failed (the callers test the return value).
         } catch (e) { this.showToast('error in ' + path + ': ' + this._errText(e), 'err'); return null; } finally { this.git.prBusy = false; }
       },
       gitPREditDialog() {
@@ -1146,7 +1021,7 @@
       async gitPRSetState(n, state) {
         if (!confirm((state === 'closed' ? 'Close' : 'Reopen') + ' PR #' + n + '?')) return;
         const d = await this._prPost('pr/update', { number: n, state: state }, state === 'closed' ? 'PR closed' : 'PR reopened');
-        if (d && d.pr) { this.git.prDetail = d.pr; } // only refreshes the detail (without nulling it)
+        if (d && d.pr) { this.git.prDetail = d.pr; }
       },
       async gitPRMerge(n) {
         const head = this.git.prDetail ? this.git.prDetail.head.ref : '';
@@ -1170,7 +1045,6 @@
         const d = await this._gitPost('pr/create', { title: dl.prTitle, body: dl.body, head: dl.head, base: dl.base, draft: !!dl.draft, reviewers: reviewers }, null);
         if (d && d.pr) { this.showToast('PR #' + d.pr.number + ' created' + (dl.draft ? ' (draft)' : ''), 'ok'); await this.gitLoadPRs(); if (d.pr.html_url) window.open(d.pr.html_url, '_blank', 'noopener'); }
       },
-      // ===== reviewed files (localStorage per context) + inline PR diff =====
       gitLoadReviewed(ctxKey) { try { this.git.reviewedSet = JSON.parse(localStorage.getItem('panel_git_rev_' + ctxKey) || '[]'); } catch (e) { this.git.reviewedSet = []; } this._gitRevCtx = ctxKey; },
       gitIsReviewed(path) { return this.git.reviewedSet.indexOf(path) >= 0; },
       gitToggleReviewed(path) {
@@ -1182,12 +1056,10 @@
       gitPRFileComments(path) { return (this.git.prReviewComments || []).filter(c => c.path === path); },
       gitOpenInGitHub(url) { if (url) window.open(url, '_blank', 'noopener'); },
 
-      // uncommitted actions
       async gitStashUncommitted() { this.gitDialog('stash-push', {}); },
       async gitCleanUntracked() { if (!confirm('⚠ Remove ALL untracked files? This cannot be undone.')) return; await this._gitDo('clean', {}, 'cleanup done'); },
       async gitResetUncommitted() { if (!confirm('⚠ Discard ALL uncommitted changes? This cannot be undone.')) return; await this._gitDo('reset-uncommitted', {}, 'changes discarded'); },
 
-      // ===== search (highlight + navigation, preserves the graph) =====
       gitDoFind() {
         const q = (this.git.find || '').toLowerCase().trim();
         const cs = (this.git.graph ? this.git.graph.commits : []);
@@ -1203,7 +1075,6 @@
       gitScrollToRow(i) { this.$nextTick(() => { const el = document.querySelector('[data-git-row="' + i + '"]'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }); },
       gitIsHit(i) { return this.git.findHits.indexOf(i) >= 0; },
 
-      // ===== dates =====
       gitRelDate(iso) { if (!iso) return ''; const d = new Date(iso), s = (Date.now() - d.getTime()) / 1000; if (s < 60) return 'now'; if (s < 3600) return Math.floor(s / 60) + 'min'; if (s < 86400) return Math.floor(s / 3600) + 'h'; if (s < 2592000) return Math.floor(s / 86400) + 'd'; return d.toLocaleDateString(); },
       gitFmtDate(iso) { if (!iso) return ''; try { return new Date(iso).toLocaleString(); } catch (e) { return iso; } },
     };

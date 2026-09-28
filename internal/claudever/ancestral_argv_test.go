@@ -5,7 +5,6 @@ import (
 	"time"
 )
 
-// buildProc writes a fake /proc: each entry is (pid, ppid, cmdline).
 func buildProc(t *testing.T, ents ...struct {
 	pid, ppid int
 	cmd       string
@@ -24,7 +23,6 @@ func buildProc(t *testing.T, ents ...struct {
 		if err := writeFile(d+"/stat", itoa(e.pid)+" (claude) S "+itoa(e.ppid)+" 1"); err != nil {
 			t.Fatal(err)
 		}
-		// a real cmdline is NUL-separated; the trailing \x00 imitates the format.
 		if err := writeFile(d+"/cmdline", e.cmd+"\x00"); err != nil {
 			t.Fatal(err)
 		}
@@ -36,12 +34,6 @@ type ent = struct {
 	cmd       string
 }
 
-// The regression: with the dtach backend the record does NOT keep a PID, so
-// resolution by PID (AncestorIn) returns zero for everything and the panel's
-// "Restart" button is born disabled on every row. The anchor that works is the
-// socket path in the master's argv. Tree identical to production's:
-//
-//	claude  ->  bash -l  ->  dtach -n /…/session-sox/Server.sock -E -z bash -l
 func TestAncestorByArgvFindsSessionViaMasterSocket(t *testing.T) {
 	buildProc(t,
 		ent{300, 301, "claude --continue"},
@@ -57,9 +49,6 @@ func TestAncestorByArgvFindsSessionViaMasterSocket(t *testing.T) {
 	}
 }
 
-// A process outside any of the backend's sessions (e.g. a stray multiplexer)
-// still has no owner — inventing one here would make the panel enable a button
-// that would restart the WRONG session.
 func TestAncestorByArgvDoesNotInventOwner(t *testing.T) {
 	buildProc(t,
 		ent{400, 401, "claude --continue"},
@@ -78,7 +67,6 @@ func TestAncestorByArgvNoMarks(t *testing.T) {
 	}
 }
 
-// The pid itself can be the master (a direct spawn of `dtach -n … claude`).
 func TestAncestorByArgvMatchesOwnPid(t *testing.T) {
 	buildProc(t, ent{600, 1, "/usr/bin/dtach -n /opt/panel/data/session-sox/Panel.sock -E -z claude"})
 	marks := map[string]string{"/opt/panel/data/session-sox/Panel.sock": "Panel"}
@@ -87,8 +75,6 @@ func TestAncestorByArgvMatchesOwnPid(t *testing.T) {
 	}
 }
 
-// Same reason as TestAncestorDoesNotLoop: a recycled PID has already produced
-// a cycle in this sweep, and a loop here hangs the panel's handler.
 func TestAncestorByArgvDoesNotLoop(t *testing.T) {
 	buildProc(t,
 		ent{700, 701, "claude"},

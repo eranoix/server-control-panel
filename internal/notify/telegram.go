@@ -9,13 +9,8 @@ import (
 	"net/http"
 )
 
-// TypeTelegram is the channel type id for Telegram bots.
 const TypeTelegram = "telegram"
 
-// TelegramChannel delivers via the Telegram Bot API
-// (POST https://api.telegram.org/bot<token>/sendMessage). Stateless; one shared
-// http.Client. The bot must already exist (created via @BotFather) and the
-// target chat must have messaged the bot at least once (Telegram requirement).
 type TelegramChannel struct{ client *http.Client }
 
 func NewTelegramChannel() *TelegramChannel { return &TelegramChannel{client: &http.Client{}} }
@@ -52,7 +47,6 @@ func (t *TelegramChannel) Send(ctx context.Context, ev Event, cfg ChannelConfig)
 	return nil
 }
 
-// errMissing builds a uniform "<channel>: <field> not configured" error.
 func errMissing(channel, field string) error {
 	return fmt.Errorf("%s: %s not configured", channel, field)
 }

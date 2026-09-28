@@ -2,11 +2,6 @@ package claudever
 
 import "testing"
 
-// Version comparison is the difference between a trustworthy indicator and one
-// that lies. The first version of this code compared by EQUALITY and marked as
-// "needs restart" anything that was AHEAD — the recovery container, which has its
-// own newer installation, showed up on the list. An indicator that points at the
-// wrong target is worse than no indicator at all.
 func TestOnlyOutdatedNeedRestart(t *testing.T) {
 	cases := []struct {
 		version, installed string
@@ -30,15 +25,12 @@ func TestOnlyOutdatedNeedRestart(t *testing.T) {
 	}
 }
 
-// The version comes from the PATH of the binary the process has open. Anything
-// that is not a Claude version path has to return empty, otherwise the indicator
-// would invent versions out of processes that are not the CLI.
 func TestVersionComesFromBinaryPath(t *testing.T) {
 	cases := map[string]string{
 		"/root/.local/share/claude/versions/2.1.240": "2.1.240",
 		"/opt/x/claude/versions/2.1.9":               "2.1.9",
 		"/usr/bin/bash":                              "",
-		"/root/.local/share/claude/versions/nightly": "", // not digits-and-dots
+		"/root/.local/share/claude/versions/nightly": "",
 		"":                  "",
 		"/claude/versions/": "",
 	}
@@ -49,10 +41,6 @@ func TestVersionComesFromBinaryPath(t *testing.T) {
 	}
 }
 
-// ParentOf cuts the stat AFTER the last ')': the executable's name comes in
-// parentheses and may contain spaces and parentheses. Splitting the whole line on
-// spaces — the naive way — returns the wrong field precisely for processes with
-// an odd name.
 func TestParentOfHandlesProcessNameWithSpace(t *testing.T) {
 	dir := t.TempDir()
 	prevRoot := procRoot
@@ -71,7 +59,7 @@ func TestParentOfHandlesProcessNameWithSpace(t *testing.T) {
 	}
 
 	writeOut(100, 42, "claude")
-	writeOut(101, 43, "meu app (v2)") // parentheses AND a space in the name
+	writeOut(101, 43, "meu app (v2)")
 	writeOut(102, 44, "a b c")
 
 	for _, c := range []struct{ pid, ppid int }{{100, 42}, {101, 43}, {102, 44}} {
@@ -81,15 +69,12 @@ func TestParentOfHandlesProcessNameWithSpace(t *testing.T) {
 	}
 }
 
-// AncestorIn has to terminate even with an inconsistent /proc — a recycled PID
-// has already produced a cycle in production in this kind of sweep.
 func TestAncestorDoesNotLoop(t *testing.T) {
 	dir := t.TempDir()
 	prevRoot := procRoot
 	procRoot = dir
 	defer func() { procRoot = prevRoot }()
 
-	// 200 -> 201 -> 200 (cycle)
 	for _, c := range []struct{ pid, ppid int }{{200, 201}, {201, 200}} {
 		d := dir + "/" + itoa(c.pid)
 		if err := mkdirAll(d); err != nil {

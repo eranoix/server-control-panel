@@ -7,9 +7,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// operationsOf returns every operation in the document, indexed by
-// "METHOD /path" — the same granularity at which openapi-generator decides
-// whether or not to emit authentication code for the call.
 func operationsOf(t *testing.T, spec *huma.OpenAPI) map[string]*huma.Operation {
 	t.Helper()
 	out := map[string]*huma.Operation{}
@@ -41,10 +38,6 @@ func hasBearer(op *huma.Operation) bool {
 	return false
 }
 
-// TestMountDeclaresBearerScheme locks down the existence of the securityScheme
-// in the document: without it openapi-generator emits no credential provider at
-// all, and the Kotlin ApiClient goes back to being born with accessToken/
-// accessTokenProvider/AUTHORIZATION declared and never used.
 func TestMountDeclaresBearerScheme(t *testing.T) {
 	api := Mount(http.NewServeMux(), Deps{})
 	spec := api.OpenAPI()
@@ -61,9 +54,6 @@ func TestMountDeclaresBearerScheme(t *testing.T) {
 	}
 }
 
-// TestMountMarksEveryOperationProtected makes sure a new endpoint cannot enter
-// the authenticated BFF without declared security — the marking comes from the
-// hook in applyBearerSecurity, not from each handlers_*.go remembering to do it.
 func TestMountMarksEveryOperationProtected(t *testing.T) {
 	api := Mount(http.NewServeMux(), Deps{})
 	ops := operationsOf(t, api.OpenAPI())
@@ -77,10 +67,6 @@ func TestMountMarksEveryOperationProtected(t *testing.T) {
 	}
 }
 
-// TestMountPublicDeclaresNoSecurity is the other side of the coin: the routes
-// that sit OUTSIDE auth.Middleware (registry_public.go) must not declare
-// security. A spec that lied here would make the generated client attach a
-// Bearer that does not exist yet, precisely on /auth/login and /auth/refresh.
 func TestMountPublicDeclaresNoSecurity(t *testing.T) {
 	api := MountPublic(http.NewServeMux(), Deps{})
 	spec := api.OpenAPI()
@@ -99,9 +85,6 @@ func TestMountPublicDeclaresNoSecurity(t *testing.T) {
 	}
 }
 
-// TestRequireBearerRespectsPriorMarking documents the escape hatch: a
-// registrar that has already decided its own operation's security (including an
-// empty slice, which in OpenAPI means "explicitly no security") is not overridden.
 func TestRequireBearerRespectsPriorMarking(t *testing.T) {
 	noSecurity := &huma.Operation{Security: []map[string][]string{}}
 	requireBearer(nil, noSecurity)

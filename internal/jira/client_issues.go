@@ -1,15 +1,5 @@
 package jira
 
-// client_issues.go — issue detail, create, transitions, comments,
-// assignees, issue types.
-//
-// Covers GetIssue (with the rawIssue flatten), CreateIssue (POST /issue),
-// Transitions / Transition (list + apply), Comments / AddComment,
-// AssignableUsers (autocomplete for the form), IssueTypesForProject (the
-// list of valid types per project).
-//
-// Split out of client.go (keeps the same *Client receiver).
-
 import (
 	"context"
 	"encoding/json"
@@ -18,12 +8,6 @@ import (
 	"net/url"
 )
 
-// --- issue detail ---
-
-// IssueDetail extends Issue with description ADF (we flatten to text) plus
-// the embedded collections the UI's detail drawer renders directly:
-// subtasks, issuelinks (already paired with the "other" issue) and
-// attachment metadata.
 type IssueDetail struct {
 	Issue
 	Description string          `json:"description,omitempty"`
@@ -32,12 +16,9 @@ type IssueDetail struct {
 	Attachment  []Attachment    `json:"attachment,omitempty"`
 }
 
-// FlatIssueLink is the UI-friendly version: just "the other side" with
-// a human label ("blocks", "is blocked by", "relates to") regardless of
-// inward/outward direction.
 type FlatIssueLink struct {
 	ID       string       `json:"id"`
-	Relation string       `json:"relation"` // e.g. "blocks", "is blocked by"
+	Relation string       `json:"relation"`
 	Other    *LinkedIssue `json:"other,omitempty"`
 }
 
@@ -139,31 +120,18 @@ func (c *Client) GetIssue(ctx context.Context, key string) (*IssueDetail, error)
 	return d, nil
 }
 
-// --- create issue ---
-
 type CreateIssueRequest struct {
-	ProjectKey  string   `json:"project_key"`
-	IssueType   string   `json:"issue_type"` // "Task", "Bug", "Story"…
-	Summary     string   `json:"summary"`
-	Description string   `json:"description,omitempty"`
-	Priority    string   `json:"priority,omitempty"`
-	Labels      []string `json:"labels,omitempty"`
-	AssigneeID  string   `json:"assignee_id,omitempty"`
-	DueDate     string   `json:"due_date,omitempty"` // YYYY-MM-DD
-	// --- hierarchy on creation ---
-	// ParentKey is the `parent` system field: it covers BOTH epic-child (Story/Task
-	// under an Epic) AND subtask (Sub-task under any issue). It is the single
-	// correct path on the create POST (proven against the tenant's create screen).
-	ParentKey string `json:"parent_key,omitempty"`
-	// EpicLinkKey/EpicLinkField: ONLY for tenants that expose the legacy
-	// gh-epic-link (customfield_10014) ON the create screen. Gated by construction:
-	// the builder emits the customfield only when BOTH are filled in. NEVER set
-	// customfield_10014 alongside `parent` on a create POST — this panel's own
-	// project has no such field on its create screen and the dual set would give a
-	// 400 "Field cannot be set, not on the appropriate screen" (≠ UpdateIssue/PUT,
-	// where the dual set is safe).
-	EpicLinkKey   string `json:"epic_link,omitempty"`
-	EpicLinkField string `json:"epic_link_field,omitempty"`
+	ProjectKey    string   `json:"project_key"`
+	IssueType     string   `json:"issue_type"`
+	Summary       string   `json:"summary"`
+	Description   string   `json:"description,omitempty"`
+	Priority      string   `json:"priority,omitempty"`
+	Labels        []string `json:"labels,omitempty"`
+	AssigneeID    string   `json:"assignee_id,omitempty"`
+	DueDate       string   `json:"due_date,omitempty"`
+	ParentKey     string   `json:"parent_key,omitempty"`
+	EpicLinkKey   string   `json:"epic_link,omitempty"`
+	EpicLinkField string   `json:"epic_link_field,omitempty"`
 }
 
 type CreatedIssue struct {
@@ -195,16 +163,9 @@ func (c *Client) CreateIssue(ctx context.Context, in CreateIssueRequest) (*Creat
 	if in.DueDate != "" {
 		fields["duedate"] = in.DueDate
 	}
-	// Hierarchy. `parent` is the system field — it serves epic-child
-	// (Story/Task under an Epic) AND subtask (Sub-task under any issue).
 	if in.ParentKey != "" {
 		fields["parent"] = map[string]string{"key": in.ParentKey}
 	}
-	// Gated: it only fires on a FUTURE tenant that exposes gh-epic-link on the
-	// create screen. Setting customfield_10014 here (as UpdateIssue does on the PUT)
-	// = a 400 on our own create. That is why it stays strictly separate from
-	// `parent`, never dual-set. DO NOT REMOVE the `&&` gate: it is the guard rail
-	// that keeps the branch inert for us.
 	if in.EpicLinkKey != "" && in.EpicLinkField != "" {
 		fields[in.EpicLinkField] = in.EpicLinkKey
 	}
@@ -215,13 +176,11 @@ func (c *Client) CreateIssue(ctx context.Context, in CreateIssueRequest) (*Creat
 	return &resp, nil
 }
 
-// --- transitions ---
-
 type Transition struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
-	ToName string `json:"to_name,omitempty"` // status name after transition
-	ToCat  string `json:"to_cat,omitempty"`  // status category key (new/indeterminate/done)
+	ToName string `json:"to_name,omitempty"`
+	ToCat  string `json:"to_cat,omitempty"`
 }
 
 func (c *Client) Transitions(ctx context.Context, key string) ([]Transition, error) {
@@ -249,8 +208,6 @@ func (c *Client) Transition(ctx context.Context, key, transitionID string) error
 	body := map[string]any{"transition": map[string]string{"id": transitionID}}
 	return c.do(ctx, http.MethodPost, "/rest/api/3/issue/"+url.PathEscape(key)+"/transitions", body, nil)
 }
-
-// --- comments ---
 
 type Comment struct {
 	ID      string `json:"id"`
@@ -300,8 +257,6 @@ func (c *Client) AddComment(ctx context.Context, key, text string) (*Comment, er
 	return &Comment{ID: resp.ID, Body: text, Author: resp.Author, Created: resp.Created}, nil
 }
 
-// --- assignee + priority lookups (for the create form) ---
-
 type AssignableUser = User
 
 func (c *Client) AssignableUsers(ctx context.Context, projectKey, query string) ([]AssignableUser, error) {
@@ -321,19 +276,13 @@ func (c *Client) AssignableUsers(ctx context.Context, projectKey, query string) 
 	return list, nil
 }
 
-// CreateMeta returns the issue types + required fields for a project so
-// the UI can populate the "issue type" dropdown without hardcoding names.
 type CreateMetaIssueType struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	IconURL     string `json:"iconUrl,omitempty"`
-	// The UI uses these for hierarchy on creation. `Subtask==true` → require a
-	// parent issue (parent is mandatory). `HierarchyLevel==1` → it is an Epic
-	// (hide the parent field; the issue is created at the top). They come straight
-	// from Jira's /issue/createmeta/{key}/issuetypes payload.
-	Subtask        bool `json:"subtask"`
-	HierarchyLevel int  `json:"hierarchyLevel"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Description    string `json:"description,omitempty"`
+	IconURL        string `json:"iconUrl,omitempty"`
+	Subtask        bool   `json:"subtask"`
+	HierarchyLevel int    `json:"hierarchyLevel"`
 }
 
 func (c *Client) IssueTypesForProject(ctx context.Context, projectKey string) ([]CreateMetaIssueType, error) {

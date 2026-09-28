@@ -1,14 +1,3 @@
-// Package adguard is a thin client over the AdGuard Home admin API.
-//
-// AdGuard Home (http://127.0.0.1:3000 by default) is a self-hosted DNS filter
-// that blocks ads/trackers/telemetry. It runs on the host in Docker, published
-// only on loopback. PANEL proxies its control surface server-side (Security →
-// AdGuard) so the admin credentials never reach the browser and the panel is
-// gated by PANEL's own auth instead of being exposed publicly.
-//
-// The admin API uses HTTP Basic auth. This client covers the two things the
-// panel needs: read a combined status (protection on/off + stats) and toggle
-// protection (with an optional pause duration).
 package adguard
 
 import (
@@ -23,15 +12,13 @@ import (
 	"time"
 )
 
-// DefaultBaseURL is where the AdGuard Home admin surface listens on the host.
 const DefaultBaseURL = "http://127.0.0.1:3000"
 
 const (
 	requestTimeout = 8 * time.Second
-	maxBodyBytes   = 1 << 20 // 1 MiB — control responses are small
+	maxBodyBytes   = 1 << 20
 )
 
-// Client talks to one AdGuard Home instance with one set of admin credentials.
 type Client struct {
 	BaseURL string
 	User    string
@@ -39,7 +26,6 @@ type Client struct {
 	httpc   *http.Client
 }
 
-// New builds a Client. An empty baseURL falls back to DefaultBaseURL.
 func New(baseURL, user, pass string) *Client {
 	if strings.TrimSpace(baseURL) == "" {
 		baseURL = DefaultBaseURL
@@ -52,15 +38,11 @@ func New(baseURL, user, pass string) *Client {
 	}
 }
 
-// DomainCount is one entry of the top-blocked-domains list.
 type DomainCount struct {
 	Domain string `json:"domain"`
 	Count  int    `json:"count"`
 }
 
-// Status is the combined snapshot the dashboard renders: protection state plus
-// the 24h stats. A failing sub-call leaves its fields zero and adds an entry to
-// Errors instead of failing the whole status.
 type Status struct {
 	ProtectionEnabled bool              `json:"protection_enabled"`
 	Running           bool              `json:"running"`
@@ -73,8 +55,6 @@ type Status struct {
 	Errors            map[string]string `json:"errors,omitempty"`
 }
 
-// do performs one authenticated request. A nil body sends no payload; any other
-// value is JSON-encoded.
 func (c *Client) do(ctx context.Context, method, path string, body any) (int, []byte, error) {
 	var reader io.Reader
 	if body != nil {
@@ -109,13 +89,10 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (int, []
 	return resp.StatusCode, raw, nil
 }
 
-// Status fans /control/status and /control/stats into one object. A failing
-// sub-call is recorded in Errors and leaves that section's fields zero.
 func (c *Client) Status(ctx context.Context) (*Status, error) {
 	out := &Status{}
 	errs := map[string]string{}
 
-	// /control/status — protection flag, running, version.
 	if code, raw, err := c.do(ctx, http.MethodGet, "/control/status", nil); err != nil {
 		errs["status"] = err.Error()
 	} else if code != http.StatusOK {
@@ -135,7 +112,6 @@ func (c *Client) Status(ctx context.Context) (*Status, error) {
 		}
 	}
 
-	// /control/stats — 24h counters + top blocked domains.
 	if code, raw, err := c.do(ctx, http.MethodGet, "/control/stats", nil); err != nil {
 		errs["stats"] = err.Error()
 	} else if code != http.StatusOK {
@@ -152,7 +128,7 @@ func (c *Client) Status(ctx context.Context) (*Status, error) {
 		} else {
 			out.NumQueries = stx.NumDNSQueries
 			out.NumBlocked = stx.NumBlockedFiltered
-			out.AvgProcessingMs = stx.AvgProcessingTime * 1000 // s → ms
+			out.AvgProcessingMs = stx.AvgProcessingTime * 1000
 			if stx.NumDNSQueries > 0 {
 				out.BlockedPct = float64(stx.NumBlockedFiltered) / float64(stx.NumDNSQueries) * 100
 			}
@@ -170,9 +146,6 @@ func (c *Client) Status(ctx context.Context) (*Status, error) {
 	return out, nil
 }
 
-// SetProtection toggles filtering. durationMs > 0 pauses protection for that
-// long then re-enables it automatically (only meaningful when enabled=false);
-// 0 makes the change indefinite. Returns the upstream HTTP status.
 func (c *Client) SetProtection(ctx context.Context, enabled bool, durationMs int) (int, error) {
 	body := map[string]any{"enabled": enabled}
 	if !enabled && durationMs > 0 {

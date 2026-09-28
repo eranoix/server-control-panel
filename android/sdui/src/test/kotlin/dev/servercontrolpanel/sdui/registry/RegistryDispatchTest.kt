@@ -7,11 +7,6 @@ import dev.servercontrolpanel.core.sdui.parseScreen
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/**
- * Checks [renderPolicyFor] against the real SDUI fixtures: known types render,
- * a critical unknown becomes a placeholder, and a non-critical one is skipped
- * and logged once.
- */
 class RegistryDispatchTest {
 
     @Test

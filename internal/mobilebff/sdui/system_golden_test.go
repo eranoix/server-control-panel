@@ -1,9 +1,3 @@
-// Package sdui_test wires the five System screens into the sdui package's
-// own golden-fixture test binary — same rationale as docker_golden_test.go's
-// header comment: golden_test.go's harness only sees screens registered
-// inside the SAME test binary process, and being an external test package
-// (sdui_test) is what lets this file import internal/mobilebff/screens
-// without an import cycle.
 package sdui_test
 
 import (
@@ -15,12 +9,6 @@ import (
 	"server-control-panel/internal/sysextra"
 )
 
-// systemGoldenBackend is a small in-memory stand-in for internal/api.Router's
-// *metrics.Ring, internal/procs and internal/sysextra — enough to build all
-// five System screens and their rows deterministically for the golden
-// corpus. The golden harness only calls Build (via the sdui.Screen builder),
-// never RunAction, so KillProcess/UnitAction below are unreachable from the
-// harness and exist only to satisfy SystemDeps' shape.
 type systemGoldenBackend struct{}
 
 func (systemGoldenBackend) deps() screens.SystemDeps {
@@ -55,14 +43,6 @@ func (systemGoldenBackend) deps() screens.SystemDeps {
 	}
 }
 
-// init registers all five System screens into this test binary's
-// process-global sdui registries exactly once — the same
-// RegisterSystem(deps) internal/api/api.go calls in production, fed
-// synthetic data instead of the real ring/procs/sysextra. This is what
-// makes RegisteredScreens() (used by TestGoldenScreens and its two
-// role-omission checks) see system.history, system.processes, system.ports,
-// system.systemd and system.metrics at all when running
-// `go test ./internal/mobilebff/sdui/...`.
 func init() {
 	screens.RegisterSystem(systemGoldenBackend{}.deps())
 }

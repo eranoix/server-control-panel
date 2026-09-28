@@ -1,15 +1,5 @@
 package main
 
-// backup.go — `panelctl backup` and `panelctl restore` for the live v2 state.
-//
-// Backup: a tarball of data/ + scripts/ + (optionally) /var/lib/panel-whatsapp/.
-// Not included: bin/ (build output), vendor/, node_modules/, .git, huge *.log
-// files (the last 1MB of audit.log is included for context).
-//
-// Restore: unpacks into the destination (non-destructive: it extracts into a
-// timestamped subdir and tells the operator to mv it by hand after validating).
-// Avoids a catastrophic rm -rf if the backup turns out to be corrupt.
-
 import (
 	"archive/tar"
 	"compress/gzip"
@@ -30,7 +20,6 @@ const (
 	defaultV2Data  = "/srv/projects/panel-v2/data"
 )
 
-// resolveDataDir tries v2 first, falls back to v1.
 func resolveDataDir() string {
 	if _, err := os.Stat(defaultV2Data); err == nil {
 		return defaultV2Data
@@ -63,12 +52,9 @@ func cmdBackup(args []string) error {
 	tw := tar.NewWriter(gz)
 	defer tw.Close()
 
-	// 1. data/
 	if err := tarballDir(tw, dataDir, "data/", []string{".tmp", ".lock"}); err != nil {
 		return fmt.Errorf("tar data: %w", err)
 	}
-	// 2. config snapshots in data/*.bak (already captured by 1).
-	// 3. WhatsApp containers — optional, since it can be very large.
 	if *includeContainers {
 		const waRoot = "/var/lib/panel-whatsapp"
 		if _, err := os.Stat(waRoot); err == nil {
@@ -77,7 +63,6 @@ func cmdBackup(args []string) error {
 			}
 		}
 	}
-	// 4. manifest.json with metadata
 	manifest := fmt.Sprintf(`{"created_at":"%s","data_dir":"%s","include_containers":%v,"panelctl_version":"v2"}`+"\n",
 		time.Now().UTC().Format(time.RFC3339), dataDir, *includeContainers)
 	hdr := &tar.Header{
@@ -102,13 +87,11 @@ func cmdBackup(args []string) error {
 func tarballDir(tw *tar.Writer, src, prefix string, skipSuffixes []string) error {
 	return filepath.Walk(src, func(p string, fi os.FileInfo, err error) error {
 		if err != nil {
-			return nil // skip an unreadable file instead of aborting
+			return nil
 		}
-		// Skip sockets and device files.
 		if fi.Mode()&(os.ModeSocket|os.ModeDevice|os.ModeNamedPipe) != 0 {
 			return nil
 		}
-		// Skip these suffixes (temp/lock).
 		for _, s := range skipSuffixes {
 			if strings.HasSuffix(p, s) {
 				return nil
@@ -183,7 +166,6 @@ func cmdRestore(args []string) error {
 		if err != nil {
 			return fmt.Errorf("tar read: %w", err)
 		}
-		// Anti zip-slip: reject .. and absolute paths
 		if strings.Contains(hdr.Name, "..") || filepath.IsAbs(hdr.Name) {
 			fmt.Printf("[skip suspicious entry] %s\n", hdr.Name)
 			continue
@@ -201,7 +183,6 @@ func cmdRestore(args []string) error {
 			_, _ = io.Copy(f, tr)
 			_ = f.Close()
 		case tar.TypeSymlink, tar.TypeLink:
-			// Same defence as internal/files/archive.go — rejects escaping symlinks.
 			if strings.HasPrefix(hdr.Linkname, "/") || strings.Contains(hdr.Linkname, "..") {
 				fmt.Printf("[skip unsafe symlink] %s -> %s\n", hdr.Name, hdr.Linkname)
 				continue
@@ -216,7 +197,6 @@ func cmdRestore(args []string) error {
 	return nil
 }
 
-// cmdBackupList lists the backups found in ~/ to orient the user.
 func cmdBackupList(args []string) error {
 	_ = args
 	home, _ := os.UserHomeDir()
@@ -242,8 +222,6 @@ func cmdBackupList(args []string) error {
 	return nil
 }
 
-// validate sanity checks before restoring — make sure source archive is valid.
-// Not called directly from main but exported for manual testing.
 func validateBackup(src string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

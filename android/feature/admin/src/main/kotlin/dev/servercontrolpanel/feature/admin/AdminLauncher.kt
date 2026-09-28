@@ -33,21 +33,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.servercontrolpanel.data.sdui.SduiSection
 
-/** Label of the search field, shared by the UI and its test. */
 internal const val ADMIN_SEARCH_LABEL = "Search sections"
 
-/** Header of the recents strip. */
 internal const val ADMIN_RECENTS_LABEL = "Recent"
 
-/**
- * The Administration launcher: a search field on top filtering a grid of sections.
- *
- * The grid serves recognition and search serves recall; with this many sections
- * neither alone is enough. Notification deep links bypass the launcher and open
- * their section directly. "No results" is its own state ([NoResults]).
- *
- * Labels, groups and order come from `GET /screens`, already RBAC-filtered by the server.
- */
 @Composable
 internal fun AdminLauncher(
     sections: List<SduiSection>,
@@ -85,7 +74,6 @@ internal fun AdminLauncher(
         }
 
         LazyVerticalGrid(
-            // Adaptive for phones and tablets; 112dp still fits a two-word label on two lines.
             columns = GridCells.Adaptive(minSize = 112.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 start = 12.dp, end = 12.dp, bottom = 24.dp,
@@ -94,7 +82,6 @@ internal fun AdminLauncher(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            // Recents are hidden while searching so they do not mix with results.
             if (!searching && recents.isNotEmpty()) {
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                     GroupHeader(ADMIN_RECENTS_LABEL)
@@ -114,9 +101,6 @@ internal fun AdminLauncher(
     }
 }
 
-/**
- * Filters by label, group and id (the id matters when coming from a log or error message).
- */
 internal fun filterSections(sections: List<SduiSection>, query: String): List<SduiSection> {
     val term = query.trim()
     if (term.isEmpty()) return sections
@@ -137,10 +121,6 @@ private fun GroupHeader(text: String) {
     )
 }
 
-/**
- * A section tile: icon ([sectionIcon]) tinted with its group color ([groupColor]),
- * short label and group name.
- */
 @Composable
 private fun SectionCard(section: SduiSection, onClick: () -> Unit) {
     val color = groupColor(section.group)
@@ -148,10 +128,8 @@ private fun SectionCard(section: SduiSection, onClick: () -> Unit) {
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            // Neutral background; the group color is only an accent.
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        // 128dp fits a two-line label plus the group line.
         modifier = Modifier.height(128.dp),
     ) {
         Column(
@@ -163,13 +141,10 @@ private fun SectionCard(section: SduiSection, onClick: () -> Unit) {
         ) {
             Surface(
                 shape = CircleShape,
-                // 18% alpha: visible in both themes without competing with the icon.
                 color = color.copy(alpha = 0.18f),
                 modifier = Modifier.size(40.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    // No content description: the label below is on the same
-                    // tap target, so a screen reader would repeat it.
                     Icon(
                         imageVector = sectionIcon(section.id),
                         contentDescription = null,
@@ -186,7 +161,6 @@ private fun SectionCard(section: SduiSection, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 6.dp),
             )
-            // The group name in its color acts as the legend for that color.
             Text(
                 text = section.group,
                 style = MaterialTheme.typography.labelSmall,
@@ -198,10 +172,6 @@ private fun SectionCard(section: SduiSection, onClick: () -> Unit) {
     }
 }
 
-/**
- * No search results. Shows the term and the total section count so it is not
- * mistaken for an empty catalog.
- */
 @Composable
 private fun NoResults(term: String, total: Int, onClear: () -> Unit) {
     Column(
@@ -241,11 +211,6 @@ private fun NoResults(term: String, total: Int, onClear: () -> Unit) {
     }
 }
 
-/**
- * Shown when the server offers this user no sections at all (no admin
- * permission). Not an error, and distinct from an empty search: there is no
- * search field here.
- */
 @Composable
 internal fun AdminCatalogEmpty(modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxWidth().padding(24.dp)) {

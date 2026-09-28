@@ -10,8 +10,6 @@ func newTestService() *Service {
 	return New("test-secret-do-not-use-in-production", nil)
 }
 
-// Round-trip: IssueWebAuthnRegToken -> VerifyWebAuthnRegToken returns the
-// same username.
 func TestWebAuthnRegToken_RoundTrip(t *testing.T) {
 	s := newTestService()
 	tok, err := s.IssueWebAuthnRegToken("alice")
@@ -27,8 +25,6 @@ func TestWebAuthnRegToken_RoundTrip(t *testing.T) {
 	}
 }
 
-// Replay: the SAME registration token used twice must fail the second time
-// (single-use / challenge anti-replay — a security requirement).
 func TestWebAuthnRegToken_ReplayFails(t *testing.T) {
 	s := newTestService()
 	tok, err := s.IssueWebAuthnRegToken("alice")
@@ -43,7 +39,6 @@ func TestWebAuthnRegToken_ReplayFails(t *testing.T) {
 	}
 }
 
-// Tamper: any altered bit in the signature invalidates the token.
 func TestWebAuthnRegToken_TamperRejected(t *testing.T) {
 	s := newTestService()
 	tok, err := s.IssueWebAuthnRegToken("alice")
@@ -56,8 +51,6 @@ func TestWebAuthnRegToken_TamperRejected(t *testing.T) {
 	}
 }
 
-// Wrong kind: a token from ANOTHER ceremony (setup) must never be accepted
-// as webauthn_reg, even though it is signed with the same secret.
 func TestWebAuthnRegToken_WrongKindRejected(t *testing.T) {
 	s := newTestService()
 	setupTok, err := s.IssueSetupToken("alice", webAuthnCeremonyTTL)
@@ -69,8 +62,6 @@ func TestWebAuthnRegToken_WrongKindRejected(t *testing.T) {
 	}
 }
 
-// Round-trip with payload: IssueWebAuthnRegSessionToken carries username +
-// the serialised SessionData; Verify returns both intact.
 func TestWebAuthnRegSessionToken_RoundTripWithPayload(t *testing.T) {
 	s := newTestService()
 	payload := []byte(`{"challenge":"abc123"}`)
@@ -90,7 +81,6 @@ func TestWebAuthnRegSessionToken_RoundTripWithPayload(t *testing.T) {
 	}
 }
 
-// Replaying the registration session token must fail too.
 func TestWebAuthnRegSessionToken_ReplayFails(t *testing.T) {
 	s := newTestService()
 	tok, err := s.IssueWebAuthnRegSessionToken("bob", []byte("x"))
@@ -105,7 +95,6 @@ func TestWebAuthnRegSessionToken_ReplayFails(t *testing.T) {
 	}
 }
 
-// Round-trip + replay for the LOGIN session token (no username).
 func TestWebAuthnLoginSessionToken_RoundTripAndReplay(t *testing.T) {
 	s := newTestService()
 	payload := []byte(`{"challenge":"xyz789"}`)
@@ -125,8 +114,6 @@ func TestWebAuthnLoginSessionToken_RoundTripAndReplay(t *testing.T) {
 	}
 }
 
-// Ceremony tokens can never be accepted by ParseWithJTI (the check
-// auth.Middleware uses) — kind != "session" is rejected.
 func TestWebAuthnCeremonyTokens_NeverAcceptedBySessionParser(t *testing.T) {
 	s := newTestService()
 	regTok, _ := s.IssueWebAuthnRegToken("alice")
@@ -139,14 +126,6 @@ func TestWebAuthnCeremonyTokens_NeverAcceptedBySessionParser(t *testing.T) {
 	}
 }
 
-// flipSignatureBit returns tok with one bit of its decoded signature inverted.
-//
-// Swapping the last base64url character is not a reliable tamper: an HS256
-// signature is 32 bytes, so its 43rd character carries 4 bits of signature and
-// 2 padding bits. Replacing an "A" with a "B" changes only a padding bit, the
-// decoder ignores it, and the untouched signature verifies. That happened
-// whenever the signature ended in "A", one run in sixteen. Flipping a bit of the
-// decoded bytes always changes the signature itself.
 func flipSignatureBit(t *testing.T, tok string) string {
 	t.Helper()
 	dot := strings.LastIndexByte(tok, '.')

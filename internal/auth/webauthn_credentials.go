@@ -1,19 +1,5 @@
 package auth
 
-// webauthn_credentials.go — persistent, per-user storage of
-// WebAuthn credentials (passkeys). One JSON file per user, following
-// exactly the pattern of trusted_devices.go (atomic tmp+rename, chmod 0600,
-// SchemaVersion, one mutex per instance).
-//
-// The central security property of this file: a
-// freshly registered credential is born in "pending" status and ONLY List()
-// (used to authorize login and to drop duplicates on registration)
-// hides it. It only enters the "real" list — the one WebAuthn considers to
-// belong to the user for login purposes — after Approve(), called from
-// an already authenticated desktop session. That is what makes
-// QR-code pairing safe: photographing the QR and completing the registration does NOT
-// grant access — it only creates an inert record waiting for approval.
-
 import (
 	"encoding/base64"
 	"encoding/json"
@@ -26,16 +12,13 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 )
 
-// Possible statuses of a CredentialRecord.
 const (
 	CredentialStatusPending  = "pending"
 	CredentialStatusApproved = "approved"
 )
 
-// CredentialRecord is a persisted WebAuthn credential, carrying the approval
-// metadata that go-webauthn does not have (it only knows webauthn.Credential).
 type CredentialRecord struct {
-	ID         string              `json:"id"` // base64url (no padding) of Credential.ID — stable external identifier
+	ID         string              `json:"id"`
 	Label      string              `json:"label,omitempty"`
 	Status     string              `json:"status"`
 	CreatedAt  time.Time           `json:"created_at"`
@@ -48,31 +31,19 @@ type webAuthnCredentialsFile struct {
 	Credentials   []CredentialRecord `json:"credentials"`
 }
 
-// WebAuthnCredentialsStore is ONE user's credential file. It never opens or
-// even sees another user's file — the separation between users is by file
-// path, not by an in-memory filter, so no logic bug can leak a credential to
-// the wrong user.
 type WebAuthnCredentialsStore struct {
 	mu   sync.Mutex
 	path string
 }
 
-// WebAuthnCredentialsPath builds the per-user path, same scheme as
-// TrustedDevicesPath.
 func WebAuthnCredentialsPath(dataDir, user string) string {
 	return filepath.Join(dataDir, "webauthn_credentials", user+".json")
 }
 
-// NewWebAuthnCredentialsStore opens (without loading yet — lazy) the
-// credentials file at the given path.
 func NewWebAuthnCredentialsStore(path string) *WebAuthnCredentialsStore {
 	return &WebAuthnCredentialsStore{path: path}
 }
 
-// CredentialRecordID computes the stable external identifier (base64url
-// without padding of Credential.ID) used as the key in Add/Approve/Remove/
-// CredentialByID — the same conversion everywhere keeps writers and readers
-// from diverging.
 func CredentialRecordID(cred webauthn.Credential) string {
 	return base64.RawURLEncoding.EncodeToString(cred.ID)
 }
@@ -116,9 +87,6 @@ func (s *WebAuthnCredentialsStore) save(f *webAuthnCredentialsFile) error {
 	return os.Rename(tmp, s.path)
 }
 
-// Add persists a freshly registered credential in PENDING status — never
-// approved by default. label is what the UI shows on approval
-// (e.g. "Pixel 8 — Chrome"), and may be empty.
 func (s *WebAuthnCredentialsStore) Add(cred webauthn.Credential, label string) (CredentialRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -146,9 +114,6 @@ func (s *WebAuthnCredentialsStore) Add(cred webauthn.Credential, label string) (
 	return rec, nil
 }
 
-// List returns ONLY approved credentials — the set WebAuthn should treat as
-// "the user's credentials" when excluding duplicates at registration. A
-// pending credential never appears here.
 func (s *WebAuthnCredentialsStore) List() ([]CredentialRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -165,10 +130,6 @@ func (s *WebAuthnCredentialsStore) List() ([]CredentialRecord, error) {
 	return out, nil
 }
 
-// ListAll returns every credential, approved or pending — used by the pairing
-// panel to show what is waiting for approval, and by the login flow itself so
-// it can RECOGNISE a pending credential (and then refuse with 403
-// pending_approval, instead of "unknown credential").
 func (s *WebAuthnCredentialsStore) ListAll() ([]CredentialRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -181,9 +142,6 @@ func (s *WebAuthnCredentialsStore) ListAll() ([]CredentialRecord, error) {
 	return out, nil
 }
 
-// CredentialByID looks a credential up by ID WITHIN this store — it never
-// consults another file, so there is no code path in which one user's
-// credential could be confused with another's.
 func (s *WebAuthnCredentialsStore) CredentialByID(id string) (CredentialRecord, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -199,8 +157,6 @@ func (s *WebAuthnCredentialsStore) CredentialByID(id string) (CredentialRecord, 
 	return CredentialRecord{}, false, nil
 }
 
-// Approve marks credential `id` as approved. It rejects an unknown ID WITHOUT
-// mutating the file (it never even reaches save).
 func (s *WebAuthnCredentialsStore) Approve(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -224,8 +180,6 @@ func (s *WebAuthnCredentialsStore) Approve(id string) error {
 	return s.save(f)
 }
 
-// Remove deletes credential `id`, approved or pending — used both to reject a
-// pending pairing and to revoke an approved passkey.
 func (s *WebAuthnCredentialsStore) Remove(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -249,13 +203,6 @@ func (s *WebAuthnCredentialsStore) Remove(id string) error {
 	return s.save(f)
 }
 
-// UpdateCredential overwrites the webauthn.Credential blob of an existing
-// record (same ID), preserving label/status/timestamps. Necessary because
-// every successful authentication updates the authenticator's signature
-// counter (SignCount) — the library returns the updated Credential and expects
-// the Relying Party to persist it back (see the go-webauthn/webauthn package
-// docs, "Storage" section); not doing so weakens authenticator clone
-// detection.
 func (s *WebAuthnCredentialsStore) UpdateCredential(cred webauthn.Credential) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

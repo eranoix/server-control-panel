@@ -19,13 +19,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The three labels fit in the drawer width (360dp sheet minus side padding).
- *
- * Robolectric has no real font, so `didOverflowWidth` is rounding noise. This
- * test instead checks one line per label and that each button offers far more
- * room than the text needs; real-font clipping is verified on an emulator.
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w411dp-h891dp-xxhdpi")
 class ThemeModeSelectorWidthTest {
@@ -33,10 +26,8 @@ class ThemeModeSelectorWidthTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    /** Material 3 drawer sheet width. */
     private val drawerWidth = 360.dp
 
-    /** Same padding `AppDrawerSheet` applies to the selector. */
     private val sidePadding = 28.dp
 
     private fun SemanticsNodeInteraction.textLayout(): TextLayoutResult {
@@ -69,7 +60,6 @@ class ThemeModeSelectorWidthTest {
             val layout = composeRule.onNodeWithText(mode.label).textLayout()
             assertEquals("label \"${mode.label}\" wrapped onto more than one line", 1, layout.lineCount)
 
-            // Compare offered vs requested width; absolute widths are distorted by Robolectric's fake font.
             val offered = layout.layoutInput.constraints.maxWidth
             val request = layout.multiParagraph.maxIntrinsicWidth
             assertTrue(
@@ -83,7 +73,6 @@ class ThemeModeSelectorWidthTest {
     fun `the three buttons split the width evenly`() {
         renderInDrawer()
 
-        // A squeezed segment would clip the longest label first.
         val widths = ThemeMode.entries.map {
             composeRule.onNodeWithTag(themeOptionTag(it)).fetchSemanticsNode().size.width
         }

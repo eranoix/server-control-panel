@@ -14,11 +14,6 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.graphics.vector.ImageVector
 import dev.servercontrolpanel.designsystem.PanelIcons
 
-/**
- * The panel's map: the parent pages and their children. It copies the web panel's taxonomy
- * (`PAGE_REMAP` in `00-shell.js`) so both find things in the same place and every new screen
- * has an obvious parent. The Jira board is a native child of Operations, as on the web.
- */
 internal enum class ParentPage(
     val id: String,
     val title: String,
@@ -35,33 +30,19 @@ internal enum class ParentPage(
     Settings("config", "Settings", Icons.Filled.Settings, "Settings"),
 }
 
-/**
- * Where a child leads: [Native] is an [AppNavHost] route, [Sdui] a server-described section.
- * Both look identical in the grid.
- */
 internal sealed interface ChildDestination {
     data class Native(val route: String) : ChildDestination
     data class Sdui(val sectionId: String) : ChildDestination
 }
 
-/** A child page, as it appears in the parent's grid. */
 internal data class ChildPage(
     val title: String,
     val icon: ImageVector,
     val destination: ChildDestination,
 )
 
-/**
- * SDUI sections the app does not list because it has its own screen for them. `jira.issues`
- * is still served for older app versions without the native board.
- */
 internal val HIDDEN_SDUI_CHILDREN = setOf("jira.issues")
 
-/**
- * The children of each parent, in the web panel's order (most used first, not alphabetical).
- * The screen crosses this list with the server catalogue, so SDUI children the server does not
- * offer disappear, and new server sections appear under their prefix's parent.
- */
 internal fun childrenOf(parent: ParentPage): List<ChildPage> = when (parent) {
     ParentPage.Home, ParentPage.Settings -> emptyList()
 
@@ -98,7 +79,6 @@ internal fun childrenOf(parent: ParentPage): List<ChildPage> = when (parent) {
         ChildPage("DNS", PanelIcons.Globe, ChildDestination.Sdui("security.adguard")),
         ChildPage("Devices", PanelIcons.Phone, ChildDestination.Sdui("security.devices")),
         ChildPage("Network usage", PanelIcons.Chart, ChildDestination.Sdui("security.savings")),
-        // From the DEVICE, not the server: app lock and protected screen.
         ChildPage("This device", Icons.Filled.Lock, ChildDestination.Native(ROUTE_SECURITY)),
     )
 
@@ -108,7 +88,6 @@ internal fun childrenOf(parent: ParentPage): List<ChildPage> = when (parent) {
     )
 
     ParentPage.Operations -> listOf(
-        // Named "Tasks" as on the web; it opens the native Jira board.
         ChildPage("Tasks", PanelIcons.Board, ChildDestination.Native(ROUTE_JIRA)),
         ChildPage("Job queue", Icons.Filled.List, ChildDestination.Sdui("queue.jobs")),
         ChildPage("Scheduler", Icons.Filled.DateRange, ChildDestination.Sdui("scheduler.jobs")),
@@ -116,10 +95,6 @@ internal fun childrenOf(parent: ParentPage): List<ChildPage> = when (parent) {
     )
 }
 
-/**
- * The parent an SDUI section belongs to, by its id prefix, so unknown new sections still land
- * in the right place. Unknown prefixes go to Operations.
- */
 internal fun parentOfSection(sectionId: String): ParentPage = when (sectionId.substringBefore('.')) {
     "system", "alerts" -> ParentPage.System
     "docker" -> ParentPage.Docker
@@ -128,8 +103,6 @@ internal fun parentOfSection(sectionId: String): ParentPage = when (sectionId.su
     else -> ParentPage.Operations
 }
 
-/** Icon for a section this app does not know by name. */
 internal val UNKNOWN_SECTION_ICON: ImageVector = Icons.Filled.Info
 
-/** The notification icon, used on the Settings page. */
 internal val NOTIFICATIONS_ICON: ImageVector = Icons.Filled.Notifications

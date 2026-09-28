@@ -10,23 +10,6 @@ import (
 	"time"
 )
 
-// enshrouded implements Adapter for the Enshrouded dedicated server.
-//
-// Layout on the host (Root = /opt/enshrouded):
-//
-//	docker-compose.yml
-//	.active                        -> name of the active world
-//	worlds/<name>/.saveid          -> original save id of that world
-//	worlds/<name>/<saveid>*        -> ring buffer of 10 slots + index
-//	data/server/savegame/          -> ACTIVE world, always with the canonical id
-//	data/server/enshrouded_server.json
-//	data/server/backups/
-//
-// Critical detail of the format: the dedicated server ALWAYS loads the canonical
-// save id 3ad85aea ("World 1"). A world imported with any other id is ignored and
-// the server creates an empty world in its place. That is why switching worlds
-// renames the files to/from the original id — it is what the enshrouded-world
-// script does, and we call it here so there is a single source of truth.
 type enshrouded struct{}
 
 const enshSwitchScript = "/usr/local/bin/enshrouded-world"
@@ -66,8 +49,6 @@ func (e enshrouded) Worlds(s Server) ([]World, error) {
 		if fi, err := os.Stat(wdir); err == nil {
 			w.Modified = fi.ModTime()
 		}
-		// The active world lives in data/server/savegame, not in worlds/: use the
-		// mtime from there so it does not show the frozen date of the last archiving.
 		if w.Active {
 			if fi, err := os.Stat(filepath.Join(s.Root, "data", "server", "savegame")); err == nil {
 				w.Modified = fi.ModTime()
@@ -89,8 +70,6 @@ func (enshrouded) SwitchWorld(s Server, world string) error {
 	if _, err := os.Stat(enshSwitchScript); err != nil {
 		return fmt.Errorf("script %s missing", enshSwitchScript)
 	}
-	// Stop + archive + install + bring up. It takes a while (the save closes
-	// cleanly), hence the generous timeout.
 	cmd := exec.Command(enshSwitchScript, "switch", world)
 	cmd.Env = append(os.Environ(), "HOME=/root")
 	done := make(chan error, 1)
@@ -107,7 +86,6 @@ func (enshrouded) SwitchWorld(s Server, world string) error {
 	}
 }
 
-// ConfigPath exposes the config file to the raw editor.
 func (enshrouded) ConfigPath(s Server) string { return enshConfigPath(s) }
 
 func enshConfigPath(s Server) string {
@@ -135,13 +113,6 @@ func (enshrouded) Settings(s Server) (map[string]interface{}, error) {
 	}, nil
 }
 
-// SaveSettings applies a patch to gameSettings preserving the rest of the file.
-//
-// It forces gameSettingsPreset="Custom": with any other preset the server
-// silently ignores the individual factors — the classic gotcha that makes the
-// user believe they saved and nothing changed.
-//
-// It only writes; restarting is the caller's job (the server reads the config at boot).
 func (enshrouded) SaveSettings(s Server, patch map[string]interface{}) error {
 	path := enshConfigPath(s)
 	b, err := os.ReadFile(path)
@@ -169,10 +140,6 @@ func (enshrouded) SaveSettings(s Server, patch map[string]interface{}) error {
 	if err != nil {
 		return err
 	}
-	// The previous idiom (WriteFile + Chmod + Rename) preserved the MODE and
-	// silently lost the OWNER — the container reads as 4711 and aborts the next
-	// boot, far from the action that caused it. writeAtomic takes owner, mode
-	// and durability from the disk.
 	return writeAtomic(path, out, s.Root)
 }
 
@@ -200,7 +167,6 @@ func (enshrouded) Backups(s Server) ([]Backup, error) {
 			Modified: fi.ModTime(),
 		})
 	}
-	// Most recent first.
 	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
 		out[i], out[j] = out[j], out[i]
 	}

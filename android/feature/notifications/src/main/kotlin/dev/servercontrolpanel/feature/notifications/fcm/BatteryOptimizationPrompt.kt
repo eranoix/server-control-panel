@@ -11,13 +11,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import dev.servercontrolpanel.data.push.PushOnboardingState
 
-/**
- * Shown once, in the same post-login onboarding moment as the `POST_NOTIFICATIONS` request,
- * explaining that exempting the app from battery optimization materially improves push delivery
- * reliability on OEMs known for aggressive throttling (Samsung/Xiaomi/OnePlus). Explanatory and
- * consent-seeking, never a forced gate — declining dismisses it for good (see
- * [PushOnboardingState]), it is never re-shown on a later launch.
- */
 @Composable
 fun BatteryOptimizationPrompt(onDismissed: () -> Unit) {
     val context = LocalContext.current
@@ -57,7 +50,6 @@ fun BatteryOptimizationPrompt(onDismissed: () -> Unit) {
     )
 }
 
-/** Whether [BatteryOptimizationPrompt] still needs to be shown to this install. */
 @Composable
 fun rememberShouldShowBatteryOptimizationPrompt(): Boolean {
     val context = LocalContext.current

@@ -24,7 +24,6 @@ func TestMobileList_Success(t *testing.T) {
 	if len(res.Entries) != 2 {
 		t.Fatalf("entries = %d, want 2", len(res.Entries))
 	}
-	// Directories come first (the same ordering as handleList).
 	if !res.Entries[0].IsDir || res.Entries[0].Name != "a-dir" {
 		t.Errorf("entries[0] = %+v, want a-dir (is_dir)", res.Entries[0])
 	}
@@ -110,18 +109,12 @@ func TestMobileWrite_SuccessThenConflict(t *testing.T) {
 	if err := os.WriteFile(f, []byte("original"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	// Force an "old" and deterministic mtime instead of trusting the real
-	// creation mtime — on filesystems with 1s granularity, the read and the
-	// first write landing inside the same second would produce the same mtime,
-	// and the test would pass by accident even if conflict detection were
-	// broken.
 	stale := time.Now().Add(-1 * time.Hour).Truncate(time.Second)
 	if err := os.Chtimes(f, stale, stale); err != nil {
 		t.Fatal(err)
 	}
 	staleMtime := stale.Unix()
 
-	// First write: the expected mtime matches, so it must succeed.
 	newMtime, err := MobileWrite(f, "first edit", staleMtime)
 	if err != nil {
 		t.Fatalf("first MobileWrite: %v", err)
@@ -140,9 +133,6 @@ func TestMobileWrite_SuccessThenConflict(t *testing.T) {
 		t.Fatalf("content after first write = %q, want %q", got, "first edit")
 	}
 
-	// Second write using the OLD mtime (captured before the first write) — it
-	// must be rejected as a conflict and must NOT alter the content written by
-	// the first write.
 	if _, err := MobileWrite(f, "second edit (should not land)", staleMtime); !errors.Is(err, ErrConflict) {
 		t.Fatalf("second MobileWrite: err = %v, want ErrConflict", err)
 	}
@@ -188,16 +178,7 @@ func TestMobileWrite_ConflictWhenFileDeleted(t *testing.T) {
 	}
 }
 
-// TestMobileRead_SymlinkEscapesDenylist_Rejected proves that a symlink
-// placed inside an allowed directory, pointing at a target that matches
-// validatePath's denylist (the "/opt/panel/data/secrets" prefix),
-// is rejected — even though the LINK'S OWN PATH contains no forbidden
-// substring. Without the second check in resolveReal (validatePath run
-// again over the already-resolved path), that access would slip past the
-// first validation and leak the target file's content.
 func TestMobileRead_SymlinkEscapesDenylist_Rejected(t *testing.T) {
-	// A real decoy under the denied prefix — created and removed by the test
-	// itself, never reusing a production secret.
 	decoy := "/opt/panel/data/secrets-mobile-adapter-test-decoy"
 	if err := os.WriteFile(decoy, []byte("secret-must-not-leak"), 0600); err != nil {
 		t.Skipf("could not create the decoy at %s (environment cannot write to that path): %v", decoy, err)
@@ -220,7 +201,6 @@ func TestMobileRead_SymlinkEscapesDenylist_Rejected(t *testing.T) {
 		t.Fatal("MobileWrite followed a symlink into the denylist without an error — overwrite via path traversal was not blocked")
 	}
 
-	// Confirms the decoy was not altered by the write attempt above.
 	got, err := os.ReadFile(decoy)
 	if err != nil {
 		t.Fatal(err)
@@ -230,11 +210,6 @@ func TestMobileRead_SymlinkEscapesDenylist_Rejected(t *testing.T) {
 	}
 }
 
-// TestMobileWrite_SymlinkParentEscapesDenylist_Rejected covers the NEW-file
-// creation case (expectedMtime == 0): the file itself does not exist yet, so
-// only the parent directory gets resolved by realpathAllowMissing — and even
-// then the check has to catch a parent symlinked into the
-// denylist.
 func TestMobileWrite_SymlinkParentEscapesDenylist_Rejected(t *testing.T) {
 	decoyDir := "/opt/panel/data/secrets-mobile-adapter-test-decoy-dir"
 	if err := os.MkdirAll(decoyDir, 0700); err != nil {
@@ -257,9 +232,6 @@ func TestMobileWrite_SymlinkParentEscapesDenylist_Rejected(t *testing.T) {
 	}
 }
 
-// TestMobileWrite_ConcurrentSamePath_Serialized makes sure two concurrent
-// writes to the SAME file are serialized by the per-path mutex — neither of
-// them must corrupt or interleave the other's content.
 func TestMobileWrite_ConcurrentSamePath_Serialized(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "concurrent.txt")

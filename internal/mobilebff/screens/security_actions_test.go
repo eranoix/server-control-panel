@@ -11,11 +11,6 @@ import (
 	"server-control-panel/internal/mobilebff/sdui"
 )
 
-// fakeSecurityActionsBackend is an in-memory stand-in for
-// SecurityDeps/NetworkDeps' mutating closures, plus spy counters — mirrors
-// fakeDockerActionsBackend (docker_actions_test.go) so tests can assert a
-// mutation NEVER happened (e.g. deps.DeleteUser must not be reached when the
-// self-delete guard or the confirmation gate rejects the request first).
 type fakeSecurityActionsBackend struct {
 	mu sync.Mutex
 
@@ -27,9 +22,6 @@ type fakeSecurityActionsBackend struct {
 	addDeviceCalls, removeDeviceCalls, renameDeviceCalls,
 	setExitCalls, setDatasaverCalls, probeDatasaverCalls int
 
-	// deleteUserErr/saveUserErr let tests simulate internal/config's own
-	// Primary-protection rejection strings without importing internal/config
-	// itself — this package never re-derives that logic, only surfaces it.
 	deleteUserErr error
 	saveUserErr   error
 
@@ -189,12 +181,6 @@ func (b *fakeSecurityActionsBackend) counts() map[string]int {
 	}
 }
 
-// --- Test 1: Primary-protection guard (last-admin lockout) ---------------
-
-// TestSecurityUserDelete_SurfacesRemoveUserError proves handleSecurityUserDelete
-// wraps deps.DeleteUser's own error as a FieldErrors verbatim — never a
-// re-derived count check — and that a rejected delete never mutates anything
-// past the single (failed) DeleteUser call.
 func TestSecurityUserDelete_SurfacesRemoveUserError(t *testing.T) {
 	backend := newFakeSecurityActionsBackend()
 	backend.deleteUserErr = errors.New("cannot remove the primary user 'sec-admin'")
@@ -217,9 +203,6 @@ func TestSecurityUserDelete_SurfacesRemoveUserError(t *testing.T) {
 	}
 }
 
-// TestSecurityUserSave_SurfacesSetAdminError proves a demoting
-// security.user.save surfaces SetAdmin's own last-admin rejection as a
-// FieldErrors keyed "admin", never a re-derived count check.
 func TestSecurityUserSave_SurfacesSetAdminError(t *testing.T) {
 	backend := newFakeSecurityActionsBackend()
 	backend.saveUserErr = errors.New("cannot revoke admin from the primary user 'sec-admin'")
@@ -243,11 +226,6 @@ func TestSecurityUserSave_SurfacesSetAdminError(t *testing.T) {
 	}
 }
 
-// --- Test 2: destructive gate ---------------------------------------------
-
-// registerSecurityActionsForTest registers the real security.*/network
-// actions in this test binary's global sdui action registry EXACTLY once —
-// RegisterAction panics on a duplicate ActionID.
 var (
 	registerSecurityActionsTestOnce sync.Once
 	registerSecurityActionsTestDeps *fakeSecurityActionsBackend
@@ -262,11 +240,6 @@ func registerSecurityActionsForTest() *fakeSecurityActionsBackend {
 	return registerSecurityActionsTestDeps
 }
 
-// TestSecurityAction_DestructiveActionsRequireConfirmation proves
-// user.delete, secret.delete, session.revoke, device.remove and ufw.apply
-// are all registered Destructive:true and unreachable without confirmation —
-// an unconfirmed RunAction call returns a ConfirmationFieldKey FieldErrors
-// WITHOUT ever calling the domain closure.
 func TestSecurityAction_DestructiveActionsRequireConfirmation(t *testing.T) {
 	backend := registerSecurityActionsForTest()
 	admin, _ := testSecurityViewers()
@@ -302,10 +275,6 @@ func TestSecurityAction_DestructiveActionsRequireConfirmation(t *testing.T) {
 	}
 }
 
-// TestSecurityAction_NonDestructiveActionsRunWithoutConfirmation proves the
-// non-destructive actions (secret.set, adguard.set_protection, device.add/
-// rename/set_exit) execute with Confirmed:false — they were never registered
-// Destructive:true, so RunAction's confirmation gate does not apply to them.
 func TestSecurityAction_NonDestructiveActionsRunWithoutConfirmation(t *testing.T) {
 	backend := registerSecurityActionsForTest()
 	admin, _ := testSecurityViewers()
@@ -321,12 +290,6 @@ func TestSecurityAction_NonDestructiveActionsRunWithoutConfirmation(t *testing.T
 	}
 }
 
-// --- Test 3: self-delete guard --------------------------------------------
-
-// TestSecurityUserDelete_SelfDeleteIsUnconditional proves a viewer deleting
-// their OWN username is rejected before deps.DeleteUser is ever called —
-// checked FIRST, independent of admin/Primary status (mirrors
-// handlers_users.go's unconditional 403).
 func TestSecurityUserDelete_SelfDeleteIsUnconditional(t *testing.T) {
 	backend := newFakeSecurityActionsBackend()
 	deps := backend.securityDeps()
@@ -348,9 +311,6 @@ func TestSecurityUserDelete_SelfDeleteIsUnconditional(t *testing.T) {
 	}
 }
 
-// TestSecuritySessionRevoke_OwnCurrentSessionIsAllowed proves revoking one's
-// OWN current session (unlike deleting one's own account) is explicitly
-// allowed — RevokeSession IS called, no self-protection guard blocks it.
 func TestSecuritySessionRevoke_OwnCurrentSessionIsAllowed(t *testing.T) {
 	backend := newFakeSecurityActionsBackend()
 	deps := backend.securityDeps()
@@ -366,12 +326,6 @@ func TestSecuritySessionRevoke_OwnCurrentSessionIsAllowed(t *testing.T) {
 	}
 }
 
-// --- Test 4: RBAC parity ---------------------------------------------------
-
-// TestSecurityAction_NonAdminGetsNotFound proves a non-admin viewer invoking
-// any of the twelve security/network action ids directly — even with a
-// fully confirmed request — gets sdui.ErrActionNotFound at RunAction's
-// authorize step, never reaching the confirmation gate or the handler.
 func TestSecurityAction_NonAdminGetsNotFound(t *testing.T) {
 	backend := registerSecurityActionsForTest()
 	_, nonAdmin := testSecurityViewers()
@@ -410,10 +364,6 @@ func TestSecurityAction_NonAdminGetsNotFound(t *testing.T) {
 	}
 }
 
-// --- Test 5: field-keyed validation ----------------------------------------
-
-// TestSecurityUserSave_MissingUsernameIsFieldError proves an empty username
-// never reaches deps.SaveUser, keyed to "username".
 func TestSecurityUserSave_MissingUsernameIsFieldError(t *testing.T) {
 	backend := newFakeSecurityActionsBackend()
 	deps := backend.securityDeps()
@@ -435,10 +385,6 @@ func TestSecurityUserSave_MissingUsernameIsFieldError(t *testing.T) {
 	}
 }
 
-// TestSecurityUFWApply_EmptySpecOnActionRequiringOneIsFieldError proves an
-// "allow"/"deny"/"reject"/"delete" ufw.apply with an empty spec returns
-// FieldErrors keyed "spec", never reaching deps.UFWApplyRule — mirrors
-// handleUFWRule's own validation for these same four actions.
 func TestSecurityUFWApply_EmptySpecOnActionRequiringOneIsFieldError(t *testing.T) {
 	backend := newFakeSecurityActionsBackend()
 	deps := backend.networkDeps()
@@ -460,7 +406,6 @@ func TestSecurityUFWApply_EmptySpecOnActionRequiringOneIsFieldError(t *testing.T
 		t.Errorf("UFWApplyRule was called %d time(s) with an empty spec on an action that requires spec, want 0", backend.counts()["ufwApply"])
 	}
 
-	// enable/disable act on the firewall as a whole — empty spec is valid.
 	for _, action := range []string{"enable", "disable"} {
 		body, _ := json.Marshal(securityUFWApplyInput{Action: action, Spec: ""})
 		_, err := handler(context.Background(), admin, nil, body)
@@ -473,18 +418,12 @@ func TestSecurityUFWApply_EmptySpecOnActionRequiringOneIsFieldError(t *testing.T
 	}
 }
 
-// TestSecurityDeviceSetDatasaver_RequiresCaAckAndHealthyProbe proves the
-// two-gate safety pair (Rule 2, security_actions.go's doc comment): turning
-// datasaver ON without ca_ack is a field error, and a failing health probe
-// is also a field error — SetDeviceDatasaver is reached in neither case.
-// Turning datasaver OFF requires neither gate.
 func TestSecurityDeviceSetDatasaver_RequiresCaAckAndHealthyProbe(t *testing.T) {
 	backend := newFakeSecurityActionsBackend()
 	deps := backend.networkDeps()
 	admin, _ := testSecurityViewers()
 	handler := handleSecurityDeviceSetDatasaver(deps)
 
-	// Missing ca_ack.
 	body, _ := json.Marshal(securityDeviceSetDatasaverInput{On: true, CaAck: false})
 	_, err := handler(context.Background(), admin, map[string]string{"id": "uuid-1"}, body)
 	var fe sdui.FieldErrors
@@ -498,7 +437,6 @@ func TestSecurityDeviceSetDatasaver_RequiresCaAckAndHealthyProbe(t *testing.T) {
 		t.Errorf("SetDeviceDatasaver was called without ca_ack, want 0 calls")
 	}
 
-	// ca_ack true but probe fails.
 	deps2 := backend.networkDeps()
 	deps2.ProbeDatasaverHealthy = func(context.Context, string) (string, error) { return "", errors.New("proxy unavailable") }
 	handler2 := handleSecurityDeviceSetDatasaver(deps2)
@@ -511,7 +449,6 @@ func TestSecurityDeviceSetDatasaver_RequiresCaAckAndHealthyProbe(t *testing.T) {
 		t.Errorf("SetDeviceDatasaver was called with a failing probe, want 0 calls")
 	}
 
-	// Turning OFF requires neither gate.
 	body, _ = json.Marshal(securityDeviceSetDatasaverInput{On: false})
 	_, err = handler(context.Background(), admin, map[string]string{"id": "uuid-1"}, body)
 	if err != nil {

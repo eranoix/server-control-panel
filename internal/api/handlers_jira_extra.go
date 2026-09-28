@@ -1,9 +1,3 @@
-// handlers_jira_extra.go — second-wave Jira HTTP surface (J2): inline edits,
-// watchers, links, attachments (upload + stream), worklog, changelog,
-// picker, priorities, and Confluence v2 spaces/pages.
-//
-// All routes wired in NewRouter alongside the J1 set. Authz model:
-// per-user vault, scope.New + secrets.UserVault.
 package api
 
 import (
@@ -17,22 +11,12 @@ import (
 	"server-control-panel/internal/jira"
 )
 
-// maxJiraAttachmentBytes is Jira's attachment ceiling — 32 MiB, the same value
-// the front end checks BEFORE sending ("Hard cap aligns with the server's
-// multipart limit (32MiB)", in uploadJiraAttachment) and that
-// ParseMultipartForm uses below. httpmw.MaxBody applies 25 MiB by default on
-// every route; without the RegisterLargeBody in init() below, any attachment between
-// 25 and 32 MiB passed the client-side check and still died on the
-// server — the panel promised 32 MiB and delivered 25.
 const maxJiraAttachmentBytes = 32 << 20
 
 func init() {
 	httpmw.RegisterLargeBody(isJiraAttachmentUpload, maxJiraAttachmentBytes)
 }
 
-// isJiraAttachmentUpload matches exactly POST /api/jira/issue/{key}/attachments
-// — the only route in the Jira family that receives a file (the rest are small
-// JSON).
 func isJiraAttachmentUpload(r *http.Request) bool {
 	if r.Method != http.MethodPost {
 		return false
@@ -45,7 +29,6 @@ func isJiraAttachmentUpload(r *http.Request) bool {
 	return len(parts) == 2 && parts[1] == "attachments"
 }
 
-// PATCH /api/jira/issue/{key}  body: UpdateIssueRequest
 func (r *Router) handleJiraIssueUpdate(w http.ResponseWriter, req *http.Request, key string) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -65,7 +48,6 @@ func (r *Router) handleJiraIssueUpdate(w http.ResponseWriter, req *http.Request,
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
-// Watchers: GET, POST {account_id?}, DELETE ?account_id=
 func (r *Router) handleJiraWatchers(w http.ResponseWriter, req *http.Request, key string) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -104,7 +86,6 @@ func (r *Router) handleJiraWatchers(w http.ResponseWriter, req *http.Request, ke
 	}
 }
 
-// Issue links — GET /api/jira/linktypes, POST /api/jira/issuelink {type,inward_key,outward_key}, DELETE /api/jira/issuelink/{id}
 func (r *Router) handleJiraLinkTypes(w http.ResponseWriter, req *http.Request) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -165,8 +146,6 @@ func (r *Router) handleJiraIssueLinkDelete(w http.ResponseWriter, req *http.Requ
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
-// Attachments — POST upload (multipart), DELETE /api/jira/attachment/{id},
-// GET /api/jira/attachment/{id}/content streams the bytes.
 func (r *Router) handleJiraAttachmentUpload(w http.ResponseWriter, req *http.Request, key string) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -192,11 +171,6 @@ func (r *Router) handleJiraAttachmentUpload(w http.ResponseWriter, req *http.Req
 	writeJSON(w, map[string]any{"attachments": out})
 }
 
-// handleJiraAvatar proxies a Jira user's avatar through OUR origin, so that
-// the browser never touches third-party CDNs (gravatar/wp.com) and never fires
-// "Tracking Prevention blocked access to storage". The URL arrives in ?u= and is
-// validated against an allowlist in the client (SSRF defence). No avatar / blocked
-// host → 204 (the browser logs no error; the front end falls back to initials).
 func (r *Router) handleJiraAvatar(w http.ResponseWriter, req *http.Request) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -215,19 +189,14 @@ func (r *Router) handleJiraAvatar(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	defer body.Close()
-	// ctype was already validated as a safe raster image in AvatarContent.
 	if ctype != "" {
 		w.Header().Set("Content-Type", ctype)
 	}
-	// Defence in depth: nosniff stops the browser from re-sniffing to HTML;
-	// CSP sandbox + Content-Disposition inline neutralize any execution if
-	// a type slips through. This matters for direct navigation to the URL (an img tag is
-	// unaffected, but opening it in a new tab renders the response as a document).
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", `inline; filename="avatar"`)
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	w.Header().Set("Cache-Control", "private, max-age=86400")
-	_, _ = io.Copy(w, io.LimitReader(body, 2<<20)) // cap 2 MiB — an avatar is small
+	_, _ = io.Copy(w, io.LimitReader(body, 2<<20))
 }
 
 func (r *Router) handleJiraAttachment(w http.ResponseWriter, req *http.Request) {
@@ -275,7 +244,6 @@ func (r *Router) handleJiraAttachment(w http.ResponseWriter, req *http.Request) 
 	}
 }
 
-// Worklog
 func (r *Router) handleJiraWorklog(w http.ResponseWriter, req *http.Request, key string) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -311,7 +279,6 @@ func (r *Router) handleJiraWorklog(w http.ResponseWriter, req *http.Request, key
 	}
 }
 
-// Changelog
 func (r *Router) handleJiraChangelog(w http.ResponseWriter, req *http.Request, key string) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -326,7 +293,6 @@ func (r *Router) handleJiraChangelog(w http.ResponseWriter, req *http.Request, k
 	writeJSON(w, map[string]any{"changelog": list})
 }
 
-// Issue picker
 func (r *Router) handleJiraPicker(w http.ResponseWriter, req *http.Request) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -342,7 +308,6 @@ func (r *Router) handleJiraPicker(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]any{"issues": out})
 }
 
-// Priorities
 func (r *Router) handleJiraPriorities(w http.ResponseWriter, req *http.Request) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -357,7 +322,6 @@ func (r *Router) handleJiraPriorities(w http.ResponseWriter, req *http.Request) 
 	writeJSON(w, map[string]any{"priorities": out})
 }
 
-// Confluence
 func (r *Router) handleJiraConfluenceSpaces(w http.ResponseWriter, req *http.Request) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -393,7 +357,6 @@ func (r *Router) handleJiraConfluencePages(w http.ResponseWriter, req *http.Requ
 	writeJSON(w, map[string]any{"pages": pages, "next_cursor": next})
 }
 
-// DELETE /api/jira/issue/{key}?with_subtasks=1
 func (r *Router) handleJiraIssueDelete(w http.ResponseWriter, req *http.Request, key string) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -410,7 +373,6 @@ func (r *Router) handleJiraIssueDelete(w http.ResponseWriter, req *http.Request,
 	writeJSON(w, map[string]string{"status": "deleted"})
 }
 
-// POST /api/jira/issue/{key}/clone
 func (r *Router) handleJiraIssueClone(w http.ResponseWriter, req *http.Request, key string) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -427,7 +389,6 @@ func (r *Router) handleJiraIssueClone(w http.ResponseWriter, req *http.Request, 
 	writeJSON(w, got)
 }
 
-// PUT/DELETE /api/jira/issue/{key}/comment/{id}
 func (r *Router) handleJiraCommentByID(w http.ResponseWriter, req *http.Request, key, commentID string) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -466,7 +427,6 @@ func (r *Router) handleJiraCommentByID(w http.ResponseWriter, req *http.Request,
 	}
 }
 
-// /api/jira/issue/{key}/votes — GET/POST/DELETE
 func (r *Router) handleJiraVotes(w http.ResponseWriter, req *http.Request, key string) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -500,7 +460,6 @@ func (r *Router) handleJiraVotes(w http.ResponseWriter, req *http.Request, key s
 	}
 }
 
-// GET /api/jira/project/{key}/{versions|components|epics}
 func (r *Router) handleJiraProjectMeta(w http.ResponseWriter, req *http.Request) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {

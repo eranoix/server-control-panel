@@ -2,10 +2,6 @@ package sdui
 
 import "testing"
 
-// contractWith assembles a minimal synthetic Contract with a single "widget"
-// component type containing the fields passed in — enough to exercise Compat
-// without depending on any of the 7 real types of the production
-// vocabulary.
 func contractWith(fields map[string]FieldContract) Contract {
 	return Contract{
 		ComponentTypes: map[string]ComponentContract{
@@ -33,7 +29,6 @@ func breakingOnly(breaks []Break) []Break {
 	return out
 }
 
-// Test 1 (BREAKING): a field mandatory in frozen, absent from current.
 func TestCompat_FieldRemoved(t *testing.T) {
 	frozen := contractWith(map[string]FieldContract{
 		"name": {JSONType: "string", Required: true},
@@ -49,7 +44,6 @@ func TestCompat_FieldRemoved(t *testing.T) {
 	}
 }
 
-// Test 2 (BREAKING): a field mandatory in frozen turns optional in current.
 func TestCompat_FieldOptionalized(t *testing.T) {
 	frozen := contractWith(map[string]FieldContract{
 		"name": {JSONType: "string", Required: true},
@@ -64,7 +58,6 @@ func TestCompat_FieldOptionalized(t *testing.T) {
 	}
 }
 
-// Test 3 (BREAKING): a field's JSONType changed.
 func TestCompat_TypeChanged(t *testing.T) {
 	frozen := contractWith(map[string]FieldContract{
 		"tags": {JSONType: "string", Required: true},
@@ -79,7 +72,6 @@ func TestCompat_TypeChanged(t *testing.T) {
 	}
 }
 
-// Test 4 (BREAKING): a field's Const changed.
 func TestCompat_ConstChanged(t *testing.T) {
 	frozen := contractWith(map[string]FieldContract{
 		"type": {JSONType: "string", Required: true, Const: "widget"},
@@ -94,7 +86,6 @@ func TestCompat_ConstChanged(t *testing.T) {
 	}
 }
 
-// Test 5 (BREAKING): a whole component type vanished from the current contract.
 func TestCompat_ComponentTypeRemoved(t *testing.T) {
 	frozen := Contract{
 		ComponentTypes: map[string]ComponentContract{
@@ -109,7 +100,6 @@ func TestCompat_ComponentTypeRemoved(t *testing.T) {
 	}
 }
 
-// Test 6 (BREAKING): an enum value vanished.
 func TestCompat_EnumNarrowed(t *testing.T) {
 	frozen := contractWith(map[string]FieldContract{
 		"kind": {JSONType: "string", Required: true, Enum: []string{"line", "bar"}},
@@ -124,8 +114,6 @@ func TestCompat_EnumNarrowed(t *testing.T) {
 	}
 }
 
-// Test 7 (COMPATIBLE): a new component type in current, absent from frozen —
-// the old app simply skips what it does not know.
 func TestCompat_NewComponentType_IsCompatible(t *testing.T) {
 	frozen := Contract{
 		ComponentTypes: map[string]ComponentContract{
@@ -145,9 +133,6 @@ func TestCompat_NewComponentType_IsCompatible(t *testing.T) {
 	}
 }
 
-// Test 8 (COMPATIBLE): a new OPTIONAL field in current — no break at all,
-// not even an informative one (ignoreUnknownKeys on the client side covers
-// it with no reaction required).
 func TestCompat_NewOptionalField_IsCompatible(t *testing.T) {
 	frozen := contractWith(map[string]FieldContract{
 		"name": {JSONType: "string", Required: true},
@@ -163,9 +148,6 @@ func TestCompat_NewOptionalField_IsCompatible(t *testing.T) {
 	}
 }
 
-// Test 9 (COMPATIBLE, with a note): a new MANDATORY field in current that
-// frozen never had — it does not break the old client (which never knew that
-// field existed), but it is recorded as Severity note for review.
 func TestCompat_NewRequiredField_IsCompatibleButNoted(t *testing.T) {
 	frozen := contractWith(map[string]FieldContract{
 		"name": {JSONType: "string", Required: true},
@@ -189,9 +171,6 @@ func TestCompat_NewRequiredField_IsCompatibleButNoted(t *testing.T) {
 	}
 }
 
-// Test 10 (FixtureRenderable, BREAKING): a fixture with a component whose
-// type is unknown to frozen AND critical:true — the already published app
-// would show an update card today.
 func TestFixtureRenderable_CriticalUnknown_IsBreaking(t *testing.T) {
 	frozen := Contract{ComponentTypes: map[string]ComponentContract{}}
 	fixture := []byte(`{
@@ -210,8 +189,6 @@ func TestFixtureRenderable_CriticalUnknown_IsBreaking(t *testing.T) {
 	}
 }
 
-// Test 11 (FixtureRenderable, COMPATIBLE): the same unknown type, without
-// critical (or false) — the old app ignores the component by design.
 func TestFixtureRenderable_NonCriticalUnknown_IsCompatible(t *testing.T) {
 	frozen := Contract{ComponentTypes: map[string]ComponentContract{}}
 	fixture := []byte(`{
@@ -227,9 +204,6 @@ func TestFixtureRenderable_NonCriticalUnknown_IsCompatible(t *testing.T) {
 	}
 }
 
-// Test 12 (FixtureRenderable, BREAKING): a fixture whose component (of a
-// type frozen knows) omits a field frozen marks
-// mandatory.
 func TestFixtureRenderable_RequiredFieldMissing_IsBreaking(t *testing.T) {
 	frozen := Contract{
 		ComponentTypes: map[string]ComponentContract{
@@ -254,9 +228,6 @@ func TestFixtureRenderable_RequiredFieldMissing_IsBreaking(t *testing.T) {
 	}
 }
 
-// Not one of the twelve cases above, but it closes the same reasoning: a
-// fixture with no "sdui_version" (e.g. validation-error.json) is not a screen
-// and must produce no Break at all.
 func TestFixtureRenderable_NonScreenFixture_IsSkipped(t *testing.T) {
 	frozen := Contract{ComponentTypes: map[string]ComponentContract{}}
 	fixture := []byte(`{"error": "validation_failed", "fields": {"name": ["required"]}}`)

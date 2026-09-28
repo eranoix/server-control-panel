@@ -46,13 +46,11 @@ class BoardViewModelTest {
 
     @Test
     fun `the card changes column BEFORE the server responds`() = runTest(dispatcher) {
-        // Otherwise the screen contradicts the gesture for a whole network round trip.
         val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
         vm.move("KAN-1", "In Progress")
-        // No dispatcher advance: the state must already have changed.
         assertEquals(listOf("KAN-1"), keysIn(vm, "In Progress"))
         assertTrue(keysIn(vm, "To Do").isEmpty())
     }
@@ -60,7 +58,6 @@ class BoardViewModelTest {
     @Test
     fun `a workflow refusal puts the card back in its original column and POSITION`() =
         runTest(dispatcher) {
-            // Putting it back at the end of a long column would make the card seem to disappear.
             val source = FakeSource(
                 board = JiraResult.Ok(
                     testBoard(toDo = listOf(card("KAN-1"), card("KAN-2"), card("KAN-3"))),
@@ -79,7 +76,6 @@ class BoardViewModelTest {
 
     @Test
     fun `a refusal becomes a notice with the SERVER's reason, not a generic sentence`() = runTest(dispatcher) {
-        // Only the server's message says where the card CAN go next.
         val reason = "the workflow does not take KAN-1 to \"Done\"; from here it can only go to: In Progress"
         val source = FakeSource(
             board = JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))),
@@ -111,7 +107,6 @@ class BoardViewModelTest {
 
     @Test
     fun `dropping on the card's current column does not call the server`() = runTest(dispatcher) {
-        // Picking a card up and dropping it back is common; a transition there would be unasked for.
         val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
@@ -149,7 +144,6 @@ class BoardViewModelTest {
 
     @Test
     fun `switching project PINS the choice on the server`() = runTest(dispatcher) {
-        // Same preference the web panel uses, so it syncs and survives an app restart.
         val source = FakeSource()
         val vm = BoardViewModel(source)
         advanceUntilIdle()
@@ -162,7 +156,6 @@ class BoardViewModelTest {
 
     @Test
     fun `the selection is pruned when the filter removes issues from the board`() = runTest(dispatcher) {
-        // Without pruning, the counter would say "2 ticked" with none on screen.
         val source = FakeSource(
             JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1"), card("KAN-2")))),
         )
@@ -206,7 +199,6 @@ class BoardViewModelTest {
 
     @Test
     fun `without knowing who I am, assign to me warns instead of sending empty`() = runTest(dispatcher) {
-        // An empty accountId would UNASSIGN, the opposite of what was asked.
         val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")), me = null)))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
@@ -232,7 +224,6 @@ class BoardViewModelTest {
 
     @Test
     fun `reloading does not go back to Loading when a board is already on screen`() = runTest(dispatcher) {
-        // A spinner on every filter change flashes the screen and loses the scroll position.
         val vm = BoardViewModel(FakeSource())
         advanceUntilIdle()
         assertTrue(vm.state.value is BoardState.Ready)
@@ -276,7 +267,6 @@ class BulkSummaryTest {
 
     @Test
     fun `failures are NAMED because they need action`() {
-        // A bare "2 failed" would force a before/after board comparison to find which.
         val sentence = bulkSummary(
             1,
             listOf(BulkFailure("KAN-2", "no transition"), BulkFailure("KAN-3", "no transition")),

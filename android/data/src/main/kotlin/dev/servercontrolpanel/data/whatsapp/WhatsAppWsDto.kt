@@ -7,13 +7,6 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-/**
- * Wire shape of `internal/whatsapp/types.go`'s `WSEvent`, as pushed on
- * `/ws/whatsapp`. Deliberately narrower than the Go struct -- fields this
- * plan's screens never consume (`state`, `qr` snapshot fields, `presence`)
- * are left unmodeled; an unknown/unmodeled `kind` decodes fine (all fields
- * optional) and [toDomainEvent] maps it to null.
- */
 @Serializable
 internal data class WsEventDto(
     @SerialName("kind") val kind: String,
@@ -26,7 +19,6 @@ internal data class WsEventDto(
     @SerialName("reaction_emoji") val reactionEmoji: String? = null,
 )
 
-/** Wire shape of `internal/whatsapp/types.go`'s `Message`, embedded in a `"message"`-kind event. */
 @Serializable
 internal data class WsMessageDto(
     @SerialName("id") val id: String,
@@ -59,11 +51,6 @@ internal data class WsReactionDto(
     @SerialName("ts") val ts: Long = 0,
 )
 
-/**
- * A `/ws/whatsapp` event, mapped to the same domain shapes REST history uses
- * -- [WhatsAppWsEvent.MessageReceived] carries a full [WhatsAppMessage] so
- * the caller can merge it into a message list exactly like a REST-loaded one.
- */
 sealed interface WhatsAppWsEvent {
     data class MessageReceived(val message: WhatsAppMessage) : WhatsAppWsEvent
     data class Ack(val messageId: String, val ackLevel: Int) : WhatsAppWsEvent
@@ -72,13 +59,6 @@ sealed interface WhatsAppWsEvent {
 
 private val wsJson = Json { ignoreUnknownKeys = true }
 
-/**
- * Parses a raw `/ws/whatsapp` text frame into a [WhatsAppWsEvent], or null
- * for a `kind` this plan's screens do not act on (`status`, `qr`, `chat`,
- * `presence`, `revoked`) or a frame this device cannot make sense of
- * (malformed JSON, a `"message"` event missing its `message` payload, an
- * `"ack"`/`"reaction"` event missing its id) -- callers simply drop it.
- */
 fun parseWhatsAppWsEvent(text: String): WhatsAppWsEvent? {
     val dto = try {
         wsJson.decodeFromString(WsEventDto.serializer(), text)

@@ -17,22 +17,6 @@ import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 
-/**
- * The full-screen video player -- opened when [MediaMessageRow] handles
- * a tap on a `video`-type bubble's thumbnail. Reuses the conversation's
- * single [player] (the same [ExoPlayer] instance [AudioPlayerBar] rows
- * share), so opening a video pauses whatever voice note was playing, and
- * closing this screen leaves the player idle rather than tearing it down --
- * it is released once, at [dev.servercontrolpanel.feature.whatsapp.ConversationScreen]'s
- * own `DisposableEffect`.
- *
- * The [player] is fed through Media3's `OkHttpDataSource` (see
- * `MediaCache.dataSourceFactory`), which issues genuine byte-range requests
- * as the user seeks -- verified only by decompiling `OkHttpDataSource`'s
- * class file (adds a `Range: bytes=N-` header derived from the seek
- * position), NOT by an on-device playback run (no device/emulator available
- * here; see the human verification script).
- */
 @Composable
 fun VideoPlayerScreen(
     url: String,

@@ -14,7 +14,6 @@ func TestFormatText(t *testing.T) {
 		t.Fatalf("FormatText mismatch:\n got=%q\nwant=%q", got, want)
 	}
 
-	// Falls back to Type when Title is empty; no subline/body when absent.
 	min := FormatText(Event{Type: "metric.threshold", Severity: SeverityWarning})
 	if min != "🟡 metric.threshold" {
 		t.Fatalf("minimal format wrong: %q", min)

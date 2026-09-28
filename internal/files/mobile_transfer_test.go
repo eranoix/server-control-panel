@@ -13,10 +13,6 @@ import (
 	"time"
 )
 
-// TestUploadSession_OutOfOrderChunks_AssemblesCorrectly proves the
-// protocol's central guarantee: the chunks arrive OUT of order (2, then 0,
-// then 1) and the final file is still byte-for-byte identical to the
-// original, because the write is by offset (WriteAt) and not an append.
 func TestUploadSession_OutOfOrderChunks_AssemblesCorrectly(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
@@ -32,7 +28,6 @@ func TestUploadSession_OutOfOrderChunks_AssemblesCorrectly(t *testing.T) {
 		t.Fatalf("InitUpload: %v", err)
 	}
 
-	// Arrival order: chunk 2, then chunk 0, then chunk 1.
 	if _, err := WriteChunk(dataDir, sessionID, 200, chunk2); err != nil {
 		t.Fatalf("WriteChunk(chunk2): %v", err)
 	}
@@ -67,8 +62,6 @@ func TestUploadSession_OutOfOrderChunks_AssemblesCorrectly(t *testing.T) {
 	}
 }
 
-// TestUploadSession_IncompleteCannotComplete proves that a session with
-// bytes missing cannot be completed and stays open (resumable).
 func TestUploadSession_IncompleteCannotComplete(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
@@ -93,8 +86,6 @@ func TestUploadSession_IncompleteCannotComplete(t *testing.T) {
 		t.Fatalf("SessionStatus = (%d, %d), want (100, 300)", received, total)
 	}
 
-	// The session stays resumable: the missing chunk can still be written and
-	// completion then works.
 	if _, err := WriteChunk(dataDir, sessionID, 100, make([]byte, 200)); err != nil {
 		t.Fatalf("WriteChunk (resumed): %v", err)
 	}
@@ -103,10 +94,6 @@ func TestUploadSession_IncompleteCannotComplete(t *testing.T) {
 	}
 }
 
-// TestUploadSession_DuplicateChunkDoesNotInflateReceivedBytes proves that
-// re-sending an already written chunk (a client retry after a connection that
-// dropped without confirming the ACK) does not inflate received_bytes beyond
-// the file's real size — the interval merge deduplicates the overlap.
 func TestUploadSession_DuplicateChunkDoesNotInflateReceivedBytes(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
@@ -119,7 +106,6 @@ func TestUploadSession_DuplicateChunkDoesNotInflateReceivedBytes(t *testing.T) {
 	if _, err := WriteChunk(dataDir, sessionID, 0, data[:60]); err != nil {
 		t.Fatalf("WriteChunk 1: %v", err)
 	}
-	// Re-send of the same chunk (simulates a retry).
 	if _, err := WriteChunk(dataDir, sessionID, 0, data[:60]); err != nil {
 		t.Fatalf("WriteChunk 1 (retry): %v", err)
 	}
@@ -132,8 +118,6 @@ func TestUploadSession_DuplicateChunkDoesNotInflateReceivedBytes(t *testing.T) {
 	}
 }
 
-// TestUploadSession_OutOfRangeOffset_Rejected proves that an offset beyond
-// the declared total size is rejected with ErrInvalidChunk, writing nothing.
 func TestUploadSession_OutOfRangeOffset_Rejected(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
@@ -147,8 +131,6 @@ func TestUploadSession_OutOfRangeOffset_Rejected(t *testing.T) {
 	}
 }
 
-// TestUploadSession_UnknownSession_NotFound proves the unknown-session
-// mapping.
 func TestUploadSession_UnknownSession_NotFound(t *testing.T) {
 	dataDir := t.TempDir()
 	if _, err := WriteChunk(dataDir, "missing-session", 0, []byte("x")); !errors.Is(err, ErrSessionNotFound) {
@@ -159,7 +141,6 @@ func TestUploadSession_UnknownSession_NotFound(t *testing.T) {
 	}
 }
 
-// TestInitUpload_RejectsOversizedTotal proves the total_size ceiling.
 func TestInitUpload_RejectsOversizedTotal(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
@@ -168,9 +149,6 @@ func TestInitUpload_RejectsOversizedTotal(t *testing.T) {
 	}
 }
 
-// TestInitUpload_RejectsPathEscapingFilename proves the same guard as
-// handleUpload (files.go): the file name must contain neither ".." nor a
-// path separator.
 func TestInitUpload_RejectsPathEscapingFilename(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
@@ -181,14 +159,6 @@ func TestInitUpload_RejectsPathEscapingFilename(t *testing.T) {
 	}
 }
 
-// TestInitUpload_SymlinkDestDirEscapingDenylist_Rejected proves that a
-// dest_dir that is (or contains) a symlink pointing outside what
-// validatePath's denylist allows (the "/opt/panel/data/secrets" prefix)
-// is rejected by InitUpload — even though the LINK'S OWN PATH matches no
-// forbidden substring. Before the fix, InitUpload only ran validatePath
-// (a STRING check) and never EvalSymlinks; CompleteUpload would then do
-// os.Rename(..., destDir/filename), which the kernel resolves by genuinely
-// following the symlink — writing outside the denylist.
 func TestInitUpload_SymlinkDestDirEscapingDenylist_Rejected(t *testing.T) {
 	decoyDir := "/opt/panel/data/secrets-mobile-transfer-test-decoy"
 	if err := os.MkdirAll(decoyDir, 0700); err != nil {
@@ -216,12 +186,6 @@ func TestInitUpload_SymlinkDestDirEscapingDenylist_Rejected(t *testing.T) {
 	}
 }
 
-// TestCompleteUpload_DestDirSwappedToSymlinkAfterInit_Rejected proves the
-// second check (re-resolving s.DestDir in CompleteUpload, not merely trusting
-// the path already resolved by InitUpload): the session sits on disk between
-// the two calls, and if the original destination is replaced by a symlink
-// into the denylist in the meantime (TOCTOU), CompleteUpload still has to
-// refuse the rename instead of blindly following the link.
 func TestCompleteUpload_DestDirSwappedToSymlinkAfterInit_Rejected(t *testing.T) {
 	decoyDir := "/opt/panel/data/secrets-mobile-transfer-test-decoy-toctou"
 	if err := os.MkdirAll(decoyDir, 0700); err != nil {
@@ -241,8 +205,6 @@ func TestCompleteUpload_DestDirSwappedToSymlinkAfterInit_Rejected(t *testing.T) 
 		t.Fatalf("WriteChunk: %v", err)
 	}
 
-	// Simulates the destination being swapped for a symlink AFTER InitUpload had
-	// already validated the original.
 	if err := os.RemoveAll(destDir); err != nil {
 		t.Fatal(err)
 	}
@@ -263,8 +225,6 @@ func TestCompleteUpload_DestDirSwappedToSymlinkAfterInit_Rejected(t *testing.T) 
 	}
 }
 
-// TestOpenForRange_Success proves that OpenForRange returns an *os.File
-// usable as an io.ReadSeeker (the contract http.ServeContent requires).
 func TestOpenForRange_Success(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "video.bin")
@@ -281,7 +241,6 @@ func TestOpenForRange_Success(t *testing.T) {
 	if fi.Size() != int64(len(content)) {
 		t.Fatalf("fi.Size() = %d, want %d", fi.Size(), len(content))
 	}
-	// Proves io.ReadSeeker: seek to the middle and read the rest.
 	if _, err := rf.Seek(2048, io.SeekStart); err != nil {
 		t.Fatalf("Seek: %v", err)
 	}
@@ -294,8 +253,6 @@ func TestOpenForRange_Success(t *testing.T) {
 	}
 }
 
-// TestOpenForRange_RejectsDirectory proves the directory rejection (the same
-// rule as handleDownload in files.go).
 func TestOpenForRange_RejectsDirectory(t *testing.T) {
 	dir := t.TempDir()
 	if _, _, err := OpenForRange(dir); err == nil {
@@ -303,17 +260,12 @@ func TestOpenForRange_RejectsDirectory(t *testing.T) {
 	}
 }
 
-// TestOpenForRange_RejectsDenylistedPath proves that OpenForRange reuses the
-// very same denylist as the file editor (validatePath), without duplicating
-// logic.
 func TestOpenForRange_RejectsDenylistedPath(t *testing.T) {
 	if _, _, err := OpenForRange("/etc/shadow"); err == nil {
 		t.Fatal("OpenForRange on a denylisted path should have been rejected")
 	}
 }
 
-// TestMobileInboxDir_CreatesAndReturnsPath proves that the inbox directory is
-// created under dataDir and returned as an existing path.
 func TestMobileInboxDir_CreatesAndReturnsPath(t *testing.T) {
 	dataDir := t.TempDir()
 	dir, err := MobileInboxDir(dataDir)
@@ -337,10 +289,6 @@ func sha256sum(b []byte) string {
 	return string(sum[:])
 }
 
-// touchSessionUpdatedAt rewrites the session sidecar with UpdatedAt in the
-// past, simulating the effect of "last activity N hours ago" without having
-// to actually wait — the very sidecar WriteChunk/InitUpload write, only with
-// the clock doctored for the test.
 func touchSessionUpdatedAt(t *testing.T, dataDir, sessionID string, when time.Time) {
 	t.Helper()
 	s, err := loadSession(dataDir, sessionID)
@@ -357,9 +305,6 @@ func touchSessionUpdatedAt(t *testing.T, dataDir, sessionID string, when time.Ti
 	}
 }
 
-// TestReapStaleUploadSessions_FreshSessionSurvives proves that a freshly
-// created session (InitUpload, zero chunks) is never a candidate for
-// removal — its UpdatedAt is "now", well inside the retention window.
 func TestReapStaleUploadSessions_FreshSessionSurvives(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
@@ -381,10 +326,6 @@ func TestReapStaleUploadSessions_FreshSessionSurvives(t *testing.T) {
 	}
 }
 
-// TestReapStaleUploadSessions_InProgressSurvivesEvenIfOld proves that a
-// session created longer ago than the retention window, but with recent
-// activity (WriteChunk), survives — the criterion is ONLY UpdatedAt, never
-// the age of creation nor how many bytes have already arrived.
 func TestReapStaleUploadSessions_InProgressSurvivesEvenIfOld(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
@@ -393,9 +334,7 @@ func TestReapStaleUploadSessions_InProgressSurvivesEvenIfOld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InitUpload: %v", err)
 	}
-	// Simulates a session "created" 48h ago (well beyond the 24h window)...
 	touchSessionUpdatedAt(t, dataDir, sessionID, time.Now().Add(-48*time.Hour))
-	// ...but with a chunk written NOW (a legitimate resume in flight).
 	if _, err := WriteChunk(dataDir, sessionID, 0, make([]byte, 100)); err != nil {
 		t.Fatalf("WriteChunk: %v", err)
 	}
@@ -416,10 +355,6 @@ func TestReapStaleUploadSessions_InProgressSurvivesEvenIfOld(t *testing.T) {
 	}
 }
 
-// TestReapStaleUploadSessions_StaleSessionRemoved proves that a session with
-// no activity at all for longer than staleUploadSessionTTL is removed — the
-// sidecar and the staging file (which may be holding up to 2 GiB of reserved
-// space) disappear from the disk.
 func TestReapStaleUploadSessions_StaleSessionRemoved(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
@@ -445,10 +380,6 @@ func TestReapStaleUploadSessions_StaleSessionRemoved(t *testing.T) {
 	}
 }
 
-// TestReapStaleUploadSessions_CorruptSidecarFallsBackToDirMtime proves that a
-// session with an unreadable (corrupted) sidecar uses the directory's mtime
-// as its activity signal — without that fallback, a corrupted session would
-// never age out and would leak disk forever.
 func TestReapStaleUploadSessions_CorruptSidecarFallsBackToDirMtime(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
@@ -457,17 +388,12 @@ func TestReapStaleUploadSessions_CorruptSidecarFallsBackToDirMtime(t *testing.T)
 	if err != nil {
 		t.Fatalf("InitUpload: %v", err)
 	}
-	// Corrupts the sidecar (invalid JSON).
 	if err := os.WriteFile(sessionSidecarFile(dataDir, sessionID), []byte("{not json"), 0o600); err != nil {
 		t.Fatalf("corrupting the sidecar: %v", err)
 	}
-	// Directory just touched: it must not be removed yet.
 	if removed, err := ReapStaleUploadSessions(dataDir, time.Now()); err != nil || removed != 0 {
 		t.Fatalf("session with a corrupted sidecar but a recent directory: removed=%d err=%v, want 0/nil", removed, err)
 	}
-	// Advances the reaper's "now" by 25h (without touching the directory's
-	// mtime) — equivalent to running the reaper more than a day later, with the
-	// directory having sat still (no WriteChunk) the whole time.
 	removed, err := ReapStaleUploadSessions(dataDir, time.Now().Add(25*time.Hour))
 	if err != nil {
 		t.Fatalf("ReapStaleUploadSessions: %v", err)
@@ -477,8 +403,6 @@ func TestReapStaleUploadSessions_CorruptSidecarFallsBackToDirMtime(t *testing.T)
 	}
 }
 
-// TestReapStaleUploadSessions_EmptyDataDir_NoOp proves that running the
-// reaper before any upload (staging directory nonexistent) is not an error.
 func TestReapStaleUploadSessions_EmptyDataDir_NoOp(t *testing.T) {
 	dataDir := t.TempDir()
 	removed, err := ReapStaleUploadSessions(dataDir, time.Now())

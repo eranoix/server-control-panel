@@ -6,10 +6,6 @@ import (
 	"testing"
 )
 
-// Detached enqueue: the job must become running with a Scope and NOT be pushed
-// to the in-process worker pool. The reaper then merges the per-job status
-// file (written by the "external" process) into the in-memory view — progress
-// first, then the terminal status.
 func TestDetachedEnqueueAndReap(t *testing.T) {
 	dir := t.TempDir()
 	q, err := NewQueue(Options{DataDir: dir, Workers: 1, MaxKeep: 50})
@@ -19,7 +15,6 @@ func TestDetachedEnqueueAndReap(t *testing.T) {
 	defer q.Shutdown(context.Background())
 	q.Register(&fakeRunner{kind: "jira_ai_analysis", mode: "ok", steps: 1})
 
-	// Launcher just hands back a scope name (the real one starts systemd-run).
 	q.SetDetach(func(id string) (string, error) {
 		return "panel-job-" + id + ".scope", nil
 	}, "jira_ai_analysis")
@@ -35,7 +30,6 @@ func TestDetachedEnqueueAndReap(t *testing.T) {
 		t.Fatal("detached job must have a Scope")
 	}
 
-	// Simulate the external process reporting progress, then completion.
 	if err := WriteDetachedStatus(q.dataDir, j.ID, DetachedStatus{Status: StatusRunning, Progress: 50, Step: "analyzing"}); err != nil {
 		t.Fatal(err)
 	}
@@ -58,13 +52,9 @@ func TestDetachedEnqueueAndReap(t *testing.T) {
 	}
 }
 
-// On boot, a detached job whose scope is dead but whose per-job file shows a
-// terminal result must ADOPT that result — never be clobbered to interrupted.
-// (The detached process finished while the main process was down for deploy.)
 func TestReconcileDetachedAdoptsTerminal(t *testing.T) {
 	jobs := []*Job{{ID: "j_d", Kind: "jira_ai_analysis", Status: StatusRunning, Started: 1, Scope: "panel-job-j_d.scope"}}
 	dir := seedState(t, jobs)
-	// Write the terminal detached file the "finished" external process left.
 	queueRoot := dir + "/queue"
 	if err := WriteDetachedStatus(queueRoot, "j_d", DetachedStatus{Status: StatusDone, Progress: 100, Finished: 999}); err != nil {
 		t.Fatal(err)
@@ -84,8 +74,6 @@ func TestReconcileDetachedAdoptsTerminal(t *testing.T) {
 	}
 }
 
-// On boot, a detached job whose scope is dead AND has no terminal file (the
-// external process crashed) must become interrupted — recoverable, not lost.
 func TestReconcileDetachedInterruptedWhenNoFile(t *testing.T) {
 	jobs := []*Job{{ID: "j_c", Kind: "jira_ai_analysis", Status: StatusRunning, Started: 1, Scope: "panel-job-j_c.scope"}}
 	dir := seedState(t, jobs)

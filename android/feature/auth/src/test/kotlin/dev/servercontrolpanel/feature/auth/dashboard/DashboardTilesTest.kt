@@ -6,10 +6,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Guards two grid guarantees: it never hides a critical tile, and it keeps
- * columns aligned.
- */
 class DashboardTilesTest {
 
     private fun tile(
@@ -26,7 +22,6 @@ class DashboardTilesTest {
         wide = wide,
     )
 
-    /** A disk that fills up must show even if the user never chose its tile. */
     @Test
     fun `a CRITICAL tile joins the grid even if not chosen`() {
         val catalog = listOf(
@@ -40,7 +35,6 @@ class DashboardTilesTest {
         assertTrue("the critical disk must appear", visible.any { it.id == "disco" })
     }
 
-    /** It goes first, since a problem at the bottom of a scrolled grid goes unseen. */
     @Test
     fun `a critical tile goes to the front of the grid`() {
         val catalog = listOf(
@@ -63,7 +57,6 @@ class DashboardTilesTest {
         assertEquals(listOf("cpu", "memory"), visible.map { it.id })
     }
 
-    /** WARNING is not forced in, or long-lived warnings would clutter the grid. */
     @Test
     fun `WARNING does not force a tile into the grid`() {
         val catalog = listOf(tile("cpu"), tile("swap", severity = Severity.WARNING))
@@ -99,7 +92,6 @@ class DashboardTilesTest {
         assertEquals(1, lines[1].size)
     }
 
-    /** A wide tile closes the current row first, keeping columns aligned. */
     @Test
     fun `a wide tile never shares a row with a narrow one`() {
         val lines = gridRows(listOf(tile("a"), tile("wide", wide = true), tile("b")))

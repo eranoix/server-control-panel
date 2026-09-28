@@ -1,29 +1,4 @@
 #!/usr/bin/env bash
-# android-publish-devsigned.sh <versionName> <versionCode> [apk]: publishes a
-# release signed with the DEVELOPMENT KEY to BOTH places that need to know it.
-#
-# `scripts/android-publish.sh` is the operator path: it needs the offline-signed
-# APK and an F-Droid index regenerated with the repokey, neither of which exists
-# on this server by design (docs/android-signing-keystore.md). Until the release
-# key is used, working builds are signed with the throwaway key from
-# docs/android-dev-key.md and published from here.
-#
-# Publishing only to the F-Droid repository is not enough: the app checks the
-# INCREMENTAL CHANNEL (`data/android-updates/manifest.json`, served by
-# `/api/mobile/v1/app/update`), a separate artifact built by
-# `scripts/android-patches.sh`. This script does both.
-#
-# The index keeps a window of versions, not only the new one: android-patches.sh
-# builds its patch window from the versions in `index-v2.json`. With one version
-# the channel only has the full artifact (~10 MB); with the window an update is
-# an incremental patch (~1.5 MB measured).
-#
-# Old .apk files still leave the public directory: android-patches.sh reads the
-# old bytes from `data/android-updates/apks/` (its own archive, by hash). The
-# index keeps the MEMORY of the versions; the public disk keeps only the current one.
-#
-# Environment overrides (for tests): FDROID_REPO_DIR, UPDATES_DIR, PACKAGE_ID,
-# WINDOW (window size), APKSIGNER.
 set -euo pipefail
 
 fail_early() { echo "ERROR: $*" >&2; exit 1; }
@@ -34,10 +9,6 @@ VERSION_CODE="${2:?usage: scripts/android-publish-devsigned.sh <versionName> <ve
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APK="${3:-$ROOT_DIR/android/app/build/outputs/apk/release/app-release.apk}"
 
-# The target is the data/ THE SERVER SERVES, never the one under the current
-# directory: every worktree has its own empty data/, and a repo-relative path
-# would "succeed" into a directory nothing serves. The running binary always
-# uses PANEL_HOME as its DataDir.
 PANEL_HOME="${PANEL_HOME:-/opt/panel}"
 [ -d "$PANEL_HOME/data" ] || fail_early "PANEL_HOME=$PANEL_HOME has no data/; point PANEL_HOME at the served installation"
 FDROID_REPO_DIR="${FDROID_REPO_DIR:-$PANEL_HOME/data/fdroid/repo}"
@@ -55,9 +26,6 @@ default_package_id() {
 PACKAGE_ID="${PACKAGE_ID:-$(default_package_id)}"
 [ -n "$PACKAGE_ID" ] || fail "PACKAGE_ID is empty"
 
-# An UNSIGNED APK is the expensive silent mistake here: Gradle produces
-# `app-release-unsigned.apk` when the dev-key property is missing, and the device
-# only refuses it after a full download.
 if command -v "$APKSIGNER" >/dev/null 2>&1; then
   "$APKSIGNER" verify "$APK" >/dev/null 2>&1 || fail "the APK is not signed (or the signature is invalid): $APK"
 else
@@ -66,14 +34,6 @@ fi
 
 mkdir -p "$FDROID_REPO_DIR"
 
-# The FILE NAME and the versionName differ on purpose. The dev build appends
-# "-devsigned" to the versionName so a throwaway-key artifact identifies itself
-# everywhere, but the public file name is `panel-<version>.apk` because it becomes
-# a link that must keep its shape.
-#
-# The versionName comes from the APK itself, never from the argument: the app
-# compares the index with what is installed, and an index announcing "0.1.24"
-# for an APK named "0.1.24-devsigned" would make the update banner lie.
 FILE_NAME="panel-$VERSION_NAME.apk"
 REAL_VERSION_NAME="$VERSION_NAME"
 AAPT2="${AAPT2:-$(command -v aapt2 || ls /opt/android-sdk/build-tools/*/aapt2 2>/dev/null | sort -r | head -1)}"
@@ -175,8 +135,6 @@ with io.open(os.path.join(repo, "index-v2.json"), "w", encoding="utf-8") as fh:
 print("published %s · sha %s · window of %d version(s)" % (name, new["sha256"][:16], len(registry)))
 PY
 
-# The other half: the channel the APP checks. Without it the app never learns
-# about the new version.
 echo "── generating the incremental channel (android-patches.sh) ──"
 ANDROID_UPDATES_DIR="$UPDATES_DIR" FDROID_REPO_DIR="$FDROID_REPO_DIR" \
   PACKAGE_ID="$PACKAGE_ID" PATCH_WINDOW="$WINDOW" \

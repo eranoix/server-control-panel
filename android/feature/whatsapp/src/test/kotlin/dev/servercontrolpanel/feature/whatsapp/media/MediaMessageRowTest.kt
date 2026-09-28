@@ -11,10 +11,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders [MediaMessageRow] under Robolectric for the document and unknown-type branches.
- * Image and video start a real network fetch on composition, so they are left to a device.
- */
 @RunWith(RobolectricTestRunner::class)
 class MediaMessageRowTest {
 

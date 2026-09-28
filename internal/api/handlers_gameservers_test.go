@@ -14,25 +14,11 @@ import (
 	"server-control-panel/internal/gameservers"
 )
 
-// os27Case is the triage transcribed LINE BY LINE, carrying the line number of
-// the original file, so that checking it is mechanical.
-//
-// Three of the 27 lines are NOT HTTP endpoints, and that is declared rather than
-// silently omitted — a 25-entry table checking a criterion that speaks of 27
-// would be exactly the kind of discrepancy nobody notices:
-//
-//   - line 84 (`start|stop|restart`) is the VALUE sub-switch inside `action`;
-//     it was never a route of its own and became the closed set `Verb`.
-//   - lines 320 and 498 (`worlds`, `backups`) are the FAMILY header; the real
-//     route is the empty action right below them (322 and 500).
-//
-// What is checked for those three is that the destination exists, not that they
-// answer a URL of their own — because they never did.
 var os27Case = []struct {
 	line     int
 	resource string
 	action   string
-	endpoint bool // false = became a value, or is a family header
+	endpoint bool
 	note     string
 }{
 	{72, "action", "", true, ""},
@@ -44,10 +30,6 @@ var os27Case = []struct {
 	{166, "build", "", true, "field of server.status"},
 	{169, "update", "", true, "verb of server.action"},
 	{179, "rawconfig", "", true, "narrowed by the contract"},
-	// Line 209 covers trainer.status, trainer.apply and trainer.desired: one
-	// triage line, three operations. The sub-actions are exercised in
-	// subActionsOfLine209, outside the count, so the table stays a faithful
-	// transcription of the triage — 27 lines, not one more.
 	{209, "trainer", "", true, "covers status, apply and desired"},
 	{254, "runtime", "", true, ""},
 	{280, "server", "", true, ""},
@@ -68,8 +50,6 @@ var os27Case = []struct {
 	{568, "logs", "", true, ""},
 }
 
-// subActionsOfLine209 are the actions of the `trainer` resource, which the triage
-// handled on a single line.
 var subActionsOfLine209 = []string{"apply", "desired"}
 
 func gamesRouter(t *testing.T) (*Router, string) {
@@ -84,19 +64,9 @@ func gamesRouter(t *testing.T) (*Router, string) {
 	return r, dir
 }
 
-// TestEveryCaseHasDestination: no case was lost in the rewrite.
-//
-// The criterion is "the route exists": a business error counts as existing, a
-// route 404 does not. With no node registered they all answer 400 with the
-// registration message — which is the correct behaviour and proves the case got
-// all the way to resolution.
 func TestEveryCaseHasDestination(t *testing.T) {
 	r, _ := gamesRouter(t)
 
-	// The table has to carry the 27 lines of the triage. The count is asserted
-	// here, and only here, because it is a HISTORICAL count (how many cases
-	// existed in the original file) and not a property of the current code — the
-	// rule forbids freezing a count that grows, not recording a closed fact.
 	if len(os27Case) != 27 {
 		t.Fatalf("the 08-03 triage has 27 lines; the table transcribed %d", len(os27Case))
 	}
@@ -147,7 +117,6 @@ func TestEveryCaseHasDestination(t *testing.T) {
 	}
 }
 
-// TestServerWithoutNodeRejectedAtSurface: the hard rule reaches the HTTP layer.
 func TestServerWithoutNodeRejectedAtSurface(t *testing.T) {
 	r, _ := gamesRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/gameservers/game-b/worlds", nil)
@@ -162,7 +131,6 @@ func TestServerWithoutNodeRejectedAtSurface(t *testing.T) {
 	}
 }
 
-// TestListSurvivesMissingNode: the whole page must not disappear.
 func TestListSurvivesMissingNode(t *testing.T) {
 	r, _ := gamesRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/gameservers", nil)
@@ -189,12 +157,9 @@ func TestListSurvivesMissingNode(t *testing.T) {
 	}
 }
 
-// A node error must not leak the credential.
 func TestAgentErrorNeverLeaksToken(t *testing.T) {
 	const token = "TOKEN-TOP-SECRET-OF-NODE-123456"
 	err := &gameservers.AuthorizationError{
-		// A deliberate worst case: an error that ALREADY carries the token. If the
-		// translation passed any part of it through, this test would catch it.
 		Msg: "401 calling http://10.0.0.5:8710/v1/op/server.status with Bearer " + token,
 	}
 	code, msg := translateNodeError(err, "games")
@@ -215,9 +180,6 @@ func TestAgentErrorNeverLeaksToken(t *testing.T) {
 }
 
 func TestBusinessErrorPassesThrough(t *testing.T) {
-	// The class that MUST get through: a message produced by our own agent,
-	// telling the operator what happened. Translating this one too would leave
-	// every failure wearing the same useless sentence.
 	code, msg := translateNodeError(&gameservers.OperationError{Msg: "world 'alpha' does not exist"}, "games")
 	if code != http.StatusBadRequest {
 		t.Errorf("business error should give 400, gave %d", code)
@@ -227,12 +189,6 @@ func TestBusinessErrorPassesThrough(t *testing.T) {
 	}
 }
 
-// TestRBACPreserved: every mutation still requires the primary account.
-//
-// The test is about FORM, not execution: it walks the AST and demands that every
-// `execOp(..., true)` — the writes — exists, and that the gate lives inside
-// it. That way a new write inherits the RBAC by construction, instead of relying
-// on somebody remembering to copy the line.
 func TestRBACPreserved(t *testing.T) {
 	source, err := os.ReadFile("gamebackend.go")
 	if err != nil {
@@ -242,8 +198,6 @@ func TestRBACPreserved(t *testing.T) {
 		t.Fatal("the primary-account gate disappeared from execOp — EVERY write is now without RBAC")
 	}
 
-	// And no write may have been left outside execOp: the two exceptions
-	// (import, which uploads first) call mustPrimary explicitly.
 	h, err := os.ReadFile("handlers_gameservers.go")
 	if err != nil {
 		t.Fatal(err)
@@ -257,7 +211,6 @@ func TestRBACPreserved(t *testing.T) {
 	}
 }
 
-// TestWriteOperationIsAudited: a write audits, a read does not.
 func TestWriteOperationIsAudited(t *testing.T) {
 	source, err := os.ReadFile("gamebackend.go")
 	if err != nil {
@@ -265,8 +218,6 @@ func TestWriteOperationIsAudited(t *testing.T) {
 	}
 	txt := string(source)
 
-	// The audit lives inside the `if isWrite` — that is what guarantees both
-	// halves of the rule in a single line.
 	i := strings.Index(txt, "auditGame(req")
 	if i < 0 {
 		t.Fatal("no audit call in the execution path")
@@ -278,7 +229,6 @@ func TestWriteOperationIsAudited(t *testing.T) {
 		t.Error("the audit is not guarded by `if isWrite` — a read would also generate an event")
 	}
 
-	// The event has to carry the four things an incident asks about.
 	for _, field := range []string{"node=", "server=", "result=", "gameserver."} {
 		if !strings.Contains(txt, field) {
 			t.Errorf("the audit event does not carry %q", field)
@@ -303,8 +253,6 @@ func TestSafeDownloadName(t *testing.T) {
 	sort.Strings(keys)
 	for _, entry := range keys {
 		got := safeDownloadName(entry, "fallback")
-		// The property that matters is not the exact text but this: nothing that
-		// could break the header survives.
 		for _, bad := range []string{"\r", "\n", `"`, "/", "\\"} {
 			if strings.Contains(got, bad) {
 				t.Errorf("name %q produced %q, which still contains %q — header injection", entry, got, bad)

@@ -2,7 +2,6 @@ package api
 
 import "testing"
 
-// parseSuggestJSON must tolerate the model wrapping JSON in prose or code fences.
 func TestParseSuggestJSON(t *testing.T) {
 	cases := []struct {
 		in         string
@@ -29,7 +28,6 @@ func TestParseSuggestJSON(t *testing.T) {
 	}
 }
 
-// The prompt must include the metric context and demand pure JSON.
 func TestBuildAlertSuggestPrompt(t *testing.T) {
 	p := buildAlertSuggestPrompt(suggestAlertReq{Kind: "metric", Label: "CPU (usage)", Metric: "sys.cpu", Op: ">", Threshold: 90, Unit: "%", Duration: 60, Severity: "critical"})
 	for _, want := range []string{"CPU (usage)", "sys.cpu", "JSON", "name", "description"} {

@@ -1,10 +1,3 @@
-// attachments.go — upload/download/delete of attachments on Jira issues.
-//
-// Multipart streaming via io.Pipe (constant memory, independent of the file
-// size). The X-Atlassian-Token: no-check header bypasses the CSRF guard Jira
-// demands on any file POST.
-//
-// Split out of extra.go to keep the multipart logic isolated.
 package jira
 
 import (
@@ -18,8 +11,6 @@ import (
 	"strings"
 )
 
-// --- Attachments ---
-
 type Attachment struct {
 	ID        string `json:"id"`
 	Filename  string `json:"filename"`
@@ -27,27 +18,16 @@ type Attachment struct {
 	Size      int64  `json:"size"`
 	Created   string `json:"created"`
 	Author    User   `json:"author"`
-	Content   string `json:"content"` // download URL (needs auth)
+	Content   string `json:"content"`
 	Thumbnail string `json:"thumbnail,omitempty"`
 }
 
-// UploadAttachment multipart-posts a file to the issue. Jira requires
-// the `X-Atlassian-Token: no-check` header (CSRF guard bypass for API).
-//
-// Streaming: the previous version buffered the entire file into a
-// bytes.Buffer in memory before sending, doubling RAM for every upload
-// and OOM-killing the server on large attachments. We now use io.Pipe
-// so the multipart encoding is consumed by the http transport as it
-// reads from the caller's source — constant memory regardless of size.
 func (c *Client) UploadAttachment(ctx context.Context, key, filename string, body io.Reader) ([]Attachment, error) {
 	pr, pw := io.Pipe()
 	mp := multipart.NewWriter(pw)
 	go func() {
 		var err error
 		defer func() {
-			// CloseWithError surfaces the multipart write failure as a
-			// read error in the request — better than http hanging on
-			// truncated body.
 			_ = mp.Close()
 			_ = pw.CloseWithError(err)
 		}()
@@ -105,7 +85,6 @@ func (c *Client) DeleteAttachment(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodDelete, "/rest/api/3/attachment/"+url.PathEscape(id), nil, nil)
 }
 
-// AttachmentContent streams the file bytes. Caller pipes to the HTTP response.
 func (c *Client) AttachmentContent(ctx context.Context, id string) (io.ReadCloser, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.site+"/rest/api/3/attachment/content/"+url.PathEscape(id), nil)
 	if err != nil {

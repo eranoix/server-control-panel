@@ -8,9 +8,6 @@ import (
 	"server-control-panel/internal/notify"
 )
 
-// RuleStatus embeds Rule anonymously; encoding/json must flatten it so the
-// existing front-end keeps reading r.name/r.field/... at the top level while
-// the new state fields are purely additive.
 func TestRuleStatusMarshalsFlat(t *testing.T) {
 	rs := metrics.RuleStatus{
 		Rule:         metrics.Rule{Name: "cpu", Field: "cpu", Op: ">", Threshold: 90, Duration: 60, Severity: "critical"},
@@ -33,11 +30,10 @@ func TestRuleStatusMarshalsFlat(t *testing.T) {
 	}
 }
 
-// sanitizeList must dedup []RuleStatus by the promoted (embedded) "Name" field.
 func TestSanitizeListPromotesEmbeddedName(t *testing.T) {
 	in := []metrics.RuleStatus{
 		{Rule: metrics.Rule{Name: "a"}, State: "normal"},
-		{Rule: metrics.Rule{Name: "a"}, State: "firing"}, // duplicate name
+		{Rule: metrics.Rule{Name: "a"}, State: "firing"},
 		{Rule: metrics.Rule{Name: "b"}, State: "pending"},
 	}
 	out, ok := sanitizeList(in, "Name").([]metrics.RuleStatus)
@@ -49,8 +45,6 @@ func TestSanitizeListPromotesEmbeddedName(t *testing.T) {
 	}
 }
 
-// A rule with severity:"critical" must emit a metric.threshold event carrying
-// critical severity through the notify spine.
 func TestRecordFiresPropagatesCriticalSeverity(t *testing.T) {
 	rt, err := notify.New(notify.Options{DataDir: t.TempDir()})
 	if err != nil {
@@ -68,7 +62,6 @@ func TestRecordFiresPropagatesCriticalSeverity(t *testing.T) {
 	}
 }
 
-// A fire with no severity (legacy rule) defaults to warning.
 func TestRecordFiresDefaultsSeverityToWarning(t *testing.T) {
 	rt, err := notify.New(notify.Options{DataDir: t.TempDir()})
 	if err != nil {

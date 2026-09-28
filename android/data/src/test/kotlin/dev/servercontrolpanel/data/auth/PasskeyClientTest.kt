@@ -33,8 +33,6 @@ class PasskeyClientTest {
     fun `buildCreateRequestJson unwraps the publicKey envelope, not a byte-identical copy`() {
         val requestJson = buildCreateRequestJson(REGISTRATION_CHALLENGE)
 
-        // CreatePublicKeyCredentialRequest expects only the inner object, without the
-        // server's "publicKey"/"mediation" wrapper (go-webauthn's CredentialCreation shape).
         assertTrue(!requestJson.contains("\"mediation\""))
         assertTrue(!requestJson.trimStart().startsWith("{\"publicKey\""))
         assertTrue(requestJson.contains("\"rp\""))

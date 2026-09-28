@@ -1,12 +1,3 @@
-// Package gameservers manages game servers running in Docker on the VPS.
-//
-// The package is game-agnostic: the common part (status, start/stop/restart,
-// logs, resource usage) lives here, and whatever is specific to each game (where
-// the worlds are, what the settings file looks like, how to list backups) stays
-// behind the Adapter interface. Adding a new game = implement Adapter and
-// register it in adapters — without touching the handlers or the UI.
-//
-// The server inventory is declarative: <DataDir>/gameservers.json.
 package gameservers
 
 import (
@@ -23,28 +14,18 @@ import (
 	"server-control-panel/internal/docker"
 )
 
-// Server describes a game server registered in the inventory.
 type Server struct {
-	ID        string `json:"id"`        // stable slug, used in the routes
-	Name      string `json:"name"`      // displayed label
-	Game      string `json:"game"`      // adapter key ("enshrouded")
-	Container string `json:"container"` // name of the Docker container
-	Root      string `json:"root"`      // root on the host (compose + data + worlds)
-	Address   string `json:"address"`   // host:port to connect to the game
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Game      string `json:"game"`
+	Container string `json:"container"`
+	Root      string `json:"root"`
+	Address   string `json:"address"`
 	Notes     string `json:"notes,omitempty"`
 
-	// No is the ID of the Node (from the inventory) where this server LIVES.
-	//
-	// WITHOUT `omitempty`, on purpose: an empty value has to reach the payload
-	// saying "I do not know which node this lives on", because that is exactly the
-	// case that makes the panel REFUSE the operation. A field that vanishes from
-	// the JSON when empty is a field the inventory screen does not show, and the
-	// operator does not fix what they cannot see.
 	No string `json:"node"`
 }
 
-// Caps tells the UI which tabs make sense for this game. A game with no notion
-// of a "switchable world" simply reports Worlds=false and the tab disappears.
 type Caps struct {
 	Worlds   bool `json:"worlds"`
 	Settings bool `json:"settings"`
@@ -52,7 +33,6 @@ type Caps struct {
 	Players  bool `json:"players"`
 }
 
-// World is a world/save managed by the server.
 type World struct {
 	Name     string    `json:"name"`
 	SaveID   string    `json:"saveId"`
@@ -61,32 +41,29 @@ type World struct {
 	Modified time.Time `json:"modified"`
 }
 
-// Backup is a restorable snapshot.
 type Backup struct {
 	File     string    `json:"file"`
 	SizeMB   float64   `json:"sizeMb"`
 	Modified time.Time `json:"modified"`
 }
 
-// Status is the server's current state (the generic part, through Docker).
 type Status struct {
 	Server
 	Caps       Caps    `json:"caps"`
-	State      string  `json:"state"`  // running | exited | missing | ...
-	Health     string  `json:"health"` // healthy | unhealthy | "" (no healthcheck)
-	Uptime     string  `json:"uptime"` // readable: "2d 4h"
+	State      string  `json:"state"`
+	Health     string  `json:"health"`
+	Uptime     string  `json:"uptime"`
 	CPUPerc    float64 `json:"cpuPerc"`
 	MemMB      float64 `json:"memMb"`
 	MemLimit   float64 `json:"memLimitMb"`
 	Players    int     `json:"players"`
 	MaxPlayers int     `json:"maxPlayers"`
 	Version    string  `json:"version"`
-	HasPlayer  bool    `json:"hasPlayers"` // false = the game does not report a count
-	World      string  `json:"world"`      // active world, where applicable
+	HasPlayer  bool    `json:"hasPlayers"`
+	World      string  `json:"world"`
 	Err        string  `json:"err,omitempty"`
 }
 
-// Adapter isolates what is specific to each game.
 type Adapter interface {
 	Caps() Caps
 	Worlds(s Server) ([]World, error)
@@ -96,7 +73,6 @@ type Adapter interface {
 	Backups(s Server) ([]Backup, error)
 	ActiveWorld(s Server) string
 
-	// Management operations (v2)
 	DuplicateWorld(s Server, src, dst string) error
 	DeleteWorld(s Server, name string) error
 	CreateBackup(s Server, stamp string) (string, error)
@@ -104,18 +80,15 @@ type Adapter interface {
 	BackupPath(s Server, file string) (string, error)
 	ConnectionInfo(s Server) map[string]interface{}
 
-	// Server options (outside gameSettings) + world rename
 	ServerSettings(s Server) (map[string]interface{}, error)
 	SaveServerSettings(s Server, srv, grp map[string]interface{}) error
 	RenameWorld(s Server, old, fresh string) error
 
-	// Privilege groups and bans
 	Groups(s Server) ([]Group, error)
 	SaveGroups(s Server, gs []Group) error
 	Bans(s Server) ([]string, error)
 	SaveBans(s Server, list []string) error
 
-	// Path of the game's config file ("" = there is none)
 	ConfigPath(s Server) string
 }
 
@@ -123,7 +96,6 @@ var adapters = map[string]Adapter{
 	"enshrouded": enshrouded{},
 }
 
-// Manager loads the inventory and runs the operations.
 type Manager struct {
 	path string
 	dc   *docker.Client
@@ -134,19 +106,14 @@ type Manager struct {
 	hist *history
 }
 
-// New opens the inventory at <dataDir>/gameservers.json. A missing file is not
-// an error: the manager comes up empty and the page shows a "no servers" state.
 func New(dataDir string, dc *docker.Client) *Manager {
 	m := &Manager{path: filepath.Join(dataDir, "gameservers.json"), dc: dc}
 	_ = m.Reload()
 	m.hist = newHistory(dataDir)
-	// The usage/player sampler runs for the life of the process: without it the
-	// chart would only exist while somebody had the page open.
 	m.StartSampler(context.Background())
 	return m
 }
 
-// Reload re-reads the inventory from disk.
 func (m *Manager) Reload() error {
 	b, err := os.ReadFile(m.path)
 	if err != nil {
@@ -168,7 +135,6 @@ func (m *Manager) Reload() error {
 	return nil
 }
 
-// List returns the raw inventory.
 func (m *Manager) List() []Server {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -177,7 +143,6 @@ func (m *Manager) List() []Server {
 	return out
 }
 
-// Get resolves a server by ID.
 func (m *Manager) Get(id string) (Server, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -196,8 +161,6 @@ func (m *Manager) adapter(s Server) Adapter {
 	return noopAdapter{}
 }
 
-// Statuses assembles the state of every server. An error on one server does not
-// bring down the others: it becomes that item's Err field.
 func (m *Manager) Statuses(ctx context.Context) []Status {
 	servers := m.List()
 	out := make([]Status, 0, len(servers))
@@ -207,7 +170,6 @@ func (m *Manager) Statuses(ctx context.Context) []Status {
 	return out
 }
 
-// Status assembles one server's state.
 func (m *Manager) Status(ctx context.Context, s Server) Status {
 	st := Status{Server: s, Caps: m.adapter(s).Caps(), State: "missing"}
 
@@ -241,7 +203,6 @@ func (m *Manager) Status(ctx context.Context, s Server) Status {
 	if st.Caps.Worlds {
 		st.World = m.adapter(s).ActiveWorld(s)
 	}
-	// Player count through A2S — only makes sense with the server up.
 	if st.State == "running" {
 		if info := m.Players(s); info.OK {
 			st.Players, st.MaxPlayers, st.HasPlayer = info.Players, info.MaxPlayers, true
@@ -251,7 +212,6 @@ func (m *Manager) Status(ctx context.Context, s Server) Status {
 	return st
 }
 
-// Action runs start/stop/restart on the server's container.
 func (m *Manager) Action(ctx context.Context, s Server, action string) error {
 	if m.dc == nil {
 		return fmt.Errorf("docker unavailable")
@@ -282,7 +242,6 @@ func (m *Manager) Action(ctx context.Context, s Server, action string) error {
 	return fmt.Errorf("unknown action: %s", action)
 }
 
-// Logs returns the container's last lines.
 func (m *Manager) Logs(ctx context.Context, s Server, tail string) (string, error) {
 	if m.dc == nil {
 		return "", fmt.Errorf("docker unavailable")
@@ -301,7 +260,6 @@ func (m *Manager) Logs(ctx context.Context, s Server, tail string) (string, erro
 	return "", fmt.Errorf("container '%s' not found", s.Container)
 }
 
-// Delegations to the game's adapter.
 func (m *Manager) Worlds(s Server) ([]World, error) { return m.adapter(s).Worlds(s) }
 func (m *Manager) SwitchWorld(s Server, w string) error {
 	return m.adapter(s).SwitchWorld(s, w)
@@ -352,8 +310,6 @@ func (m *Manager) SaveBans(s Server, list []string) error {
 	return m.adapter(s).SaveBans(s, list)
 }
 
-// ---------- helpers ----------
-
 func humanSince(t time.Time) string {
 	d := time.Since(t)
 	switch {
@@ -368,9 +324,6 @@ func humanSince(t time.Time) string {
 	}
 }
 
-// parseStats extracts CPU% and memory from Docker stats' raw payload. The CPU
-// calculation is the same one `docker stats` does: process delta over system
-// delta, times the number of CPUs.
 func parseStats(raw map[string]interface{}) (cpu, mem, limit float64) {
 	num := func(m map[string]interface{}, k string) float64 {
 		if v, ok := m[k].(float64); ok {
@@ -422,7 +375,6 @@ func sortWorlds(w []World) {
 	})
 }
 
-// noopAdapter serves games with no dedicated adapter: only the basics (status/logs).
 type noopAdapter struct{}
 
 func (noopAdapter) Caps() Caps                       { return Caps{} }
@@ -462,7 +414,6 @@ func (noopAdapter) ConfigPath(Server) string         { return "" }
 
 var errUnsupported = fmt.Errorf("not supported by this game")
 
-// readJSONFile reads a JSON object from disk.
 func readJSONFile(path string) (map[string]interface{}, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -475,45 +426,19 @@ func readJSONFile(path string) (map[string]interface{}, error) {
 	return m, nil
 }
 
-// BACK-END FACTORY — the choice by the node's transport
-//
-// No new concept: `Transport` and `TransportAgent` are the selector already
-// delivered in internal/inventory. All that happens here is honoring what the
-// model already declared — the comment on `TransportAgent` itself says the
-// value "is accepted by the model and refused by whoever dials". This is where
-// it stops being refused.
-
-// NodeTarget is the minimum the factory needs to know about a node.
-//
-// A small struct instead of `inventory.Node`, on purpose: having `gameservers`
-// import `inventory` would couple the package the node-agent LINKS to the package
-// that talks to the Proxmox API — the agent would carry the whole hypervisor
-// inventory just to open a zip. The panel builds this struct from its own Node;
-// the agent never needs it.
 type NodeTarget struct {
-	Name      string // readable name of the node ("games", "apps")
-	Transport string // value of inventory.Transport
-	Base      string // HTTP root of the node-agent, when the transport is the agent
-	Token     string // that node's bearer — injected ON THE SERVER
+	Name      string
+	Transport string
+	Base      string
+	Token     string
 }
 
-// The three transports, as strings. Duplicated here rather than imported, for
-// the NodeTarget reason above; TestSelectionByTransport checks that they stay
-// equal to inventory's, so the duplication does not turn into silent
-// divergence.
 const (
 	TransportAgent  = "agent"
 	TransportPVEAPI = "pve-api"
 	TransportSSH    = "ssh"
 )
 
-// NewBackend chooses the transport.
-//
-// A transport that is not the agent's falls to LOCAL, and that is deliberate: it
-// is what keeps the VPS panel working throughout, which is the central argument
-// of the extraction and the safety net until the cutover. An EMPTY transport,
-// however, is an error — a node with no declared transport is an inventory
-// defect, and guessing "local" there would hide the defect behind a working path.
 func NewBackend(d NodeTarget, m *Manager) (Backend, error) {
 	switch d.Transport {
 	case "":
@@ -523,18 +448,12 @@ func NewBackend(d NodeTarget, m *Manager) (Backend, error) {
 		return NewBackendHTTP(d.Base, d.Token, d.Name)
 
 	case TransportPVEAPI, TransportSSH:
-		// A node with no agent keeps being served by today's code, in the panel's
-		// own process. This is what keeps the VPS panel working throughout the
-		// transition.
 		if m == nil {
 			return nil, fmt.Errorf("local back-end of node %q requires Manager", d.Name)
 		}
 		return NewBackendLocal(m, d.Name), nil
 
 	default:
-		// A value outside the closed set NAMES the value. Falling back to local here
-		// would turn a typo in the inventory into "it worked, only on the wrong
-		// node" — the worst possible outcome.
 		return nil, fmt.Errorf("invalid transport on node %q: %q is not one of the three supported", d.Name, d.Transport)
 	}
 }

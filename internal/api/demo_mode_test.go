@@ -9,17 +9,11 @@ import (
 	"testing"
 )
 
-// The demo gate is the only thing between a public URL and a root shell, so it
-// gets a test that enumerates the dangerous surface explicitly. A gate nobody
-// verifies is a gate nobody can trust after the next refactor.
-
 func demoReq(method, path string) *http.Request {
 	return httptest.NewRequest(method, "http://demo.example"+path, nil)
 }
 
 func TestDemoDeniesEveryMutatingMethod(t *testing.T) {
-	// Path chosen from the ALLOWED read list on purpose: if the method rule
-	// regressed, an allowlisted path is exactly where it would show.
 	for _, m := range []string{
 		http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodPost,
 	} {
@@ -43,8 +37,6 @@ func TestDemoDeniesShellSurfaces(t *testing.T) {
 }
 
 func TestDemoDeniesWebSocketUpgradeOnAnyPath(t *testing.T) {
-	// Even on an allowlisted path: the upgrade rule is by header, not by path,
-	// so a terminal smuggled onto a readable route is still refused.
 	r := demoReq(http.MethodGet, "/api/system/stats")
 	r.Header.Set("Upgrade", "websocket")
 	if demoAllows(r) {
@@ -64,8 +56,6 @@ func TestDemoAllowsLoginAndReads(t *testing.T) {
 }
 
 func TestDemoDeniesUnknownAPIByDefault(t *testing.T) {
-	// The property that makes this an allowlist: a route nobody has considered
-	// is refused. This is what a denylist could not give.
 	for _, p := range []string{
 		"/api/something-added-next-quarter", "/api/whatsapp/chats", "/api/videocall/rooms",
 	} {
@@ -76,7 +66,6 @@ func TestDemoDeniesUnknownAPIByDefault(t *testing.T) {
 }
 
 func TestDemoOffByDefault(t *testing.T) {
-	// A normal deployment must not accidentally serve in demo mode.
 	t.Setenv("DEMO_MODE", "")
 	demoOnce = sync.Once{}
 	if demoMode() {
@@ -84,11 +73,6 @@ func TestDemoOffByDefault(t *testing.T) {
 	}
 }
 
-// Every stylesheet and script the page loads from the site root must pass the
-// gate. The list of public prefixes is written by hand, and it once missed
-// /tailwind.css: the demo came up with no styles at all while every other test
-// stayed green. Reading index.html makes a new root-level asset fail here
-// instead of in a screenshot.
 func TestDemoAllowsEveryRootAssetThePageLoads(t *testing.T) {
 	html, err := os.ReadFile("../webassets/web/index.html")
 	if err != nil {

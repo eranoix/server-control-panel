@@ -1,26 +1,4 @@
 #!/usr/bin/env bash
-# check-mobile-bff-only.sh: CI net that needs no Gradle/JDK.
-#
-# The app's only legal HTTP surface is /api/mobile/v1/* through the generated
-# client in :data:mobile-api-client. This enforces the same two violation classes
-# as the Gradle lexical gate (BffOnlyNetworkPlugin), with grep/awk only:
-#   1. a direct okhttp3./retrofit2. import outside the BFF
-#   2. a string literal naming an /api/* route that does not start with
-#      /api/mobile/v1 (and is not one of the WebSocket paths approved separately)
-#
-# NOT covered on purpose: routes built by concatenation/interpolation and fully
-# qualified references without an import (`okhttp3.OkHttpClient()`). The
-# type-resolving detekt rule (BffOnlyNetworkClientRule, android/build-logic/
-# lint-rules) closes those.
-#
-# Scope: app modules (android/**/src/main|test/kotlin/**/*.kt), EXCLUDING
-# android/data/** (the authorized :data + :data:mobile-api-client pair) and
-# android/build-logic/** (it implements the gates; its docs quote the forbidden
-# tokens as prose).
-#
-# Block comments /* ... */ (including KDoc) are blanked BEFORE matching, then whole
-# `//` lines are skipped, so prose that only explains the rule is not a violation.
-# Nested block comments are not handled; the authoritative gates do that.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -30,8 +8,6 @@ ALLOWED_API_PREFIX="/api/mobile/v1"
 WS_EXEMPT_1="/ws/shell"
 WS_EXEMPT_2="/ws/videocall"
 
-# Removes (non-nested) /* ... */ blocks keeping line numbers, then drops whole
-# `//` lines.
 strip_comments() {
   awk '
     BEGIN { in_block = 0 }

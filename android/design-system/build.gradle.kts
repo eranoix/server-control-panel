@@ -1,4 +1,3 @@
-// Shared Compose theme and small widgets.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
@@ -23,7 +22,6 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
-    // WindowCompat: the theme sets system bar icon contrast for the chosen mode (see Theme.kt).
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.core)
 

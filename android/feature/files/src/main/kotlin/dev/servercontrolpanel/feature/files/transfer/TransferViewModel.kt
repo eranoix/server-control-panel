@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/** Rendered state of one in-flight (or finished) transfer, keyed by its WorkManager id. */
 sealed interface TransferUiState {
     data class InProgress(val percent: Int) : TransferUiState
     data class Completed(val path: String) : TransferUiState
@@ -25,20 +24,14 @@ sealed interface TransferUiState {
     data object Cancelled : TransferUiState
 }
 
-/**
- * Enqueues and observes [DownloadWorker] and [UploadWorker] jobs. An `AndroidViewModel` because
- * `WorkManager.getInstance` needs an application Context.
- */
 class TransferViewModel(application: Application) : AndroidViewModel(application) {
 
     private val workManager = WorkManager.getInstance(application)
     private val stateStore = TransferStateStore(application)
-    // Cancellation skips the workers' own cleanup, so it runs here on CANCELLED (see observe).
     private val garbageCollector = TransferGarbageCollector(stateStore)
     private val _transfers = MutableStateFlow<Map<UUID, TransferUiState>>(emptyMap())
     val transfers: StateFlow<Map<UUID, TransferUiState>> = _transfers.asStateFlow()
 
-    /** Transfers need network; WorkManager holds the job until connectivity returns. */
     private val transferConstraints = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()
@@ -57,8 +50,6 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
                 ),
             )
             .build()
-        // KEEP avoids duplicating a running job; after a terminal state a new trigger
-        // enqueues fresh and resumes from the persisted state.
         workManager.enqueueUniqueWork(workName, ExistingWorkPolicy.KEEP, request)
         observe(request.id, workName)
     }
@@ -91,7 +82,6 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
                 if (info == null) return@collect
                 _transfers.value = _transfers.value + (workId to info.toUiState())
                 if (info.state == WorkInfo.State.CANCELLED) {
-                    // The worker has fully stopped by CANCELLED, so cleanup cannot race a writer.
                     garbageCollector.cleanupCancelled(workName) { mediaUri ->
                         getApplication<Application>().contentResolver.delete(Uri.parse(mediaUri), null, null)
                     }

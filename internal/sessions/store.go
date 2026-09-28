@@ -1,7 +1,3 @@
-// Package sessions tracks active JWT sessions so the user can list and revoke
-// them individually (e.g. "log me out of that other browser"). Sessions are
-// keyed by the JWT's `jti` claim and persisted to disk under data/sessions.json
-// so a service restart doesn't kick everyone out.
 package sessions
 
 import (
@@ -14,29 +10,25 @@ import (
 	"time"
 )
 
-// Session is a single live token grant.
 type Session struct {
-	JTI       string `json:"jti"`               // JWT ID — primary key
-	User      string `json:"user"`              // subject
-	IP        string `json:"ip"`                // first-seen IP
-	UserAgent string `json:"ua"`                // first-seen UA (truncated)
-	IssuedAt  int64  `json:"issued_at"`         // unix seconds
-	LastSeen  int64  `json:"last_seen"`         // unix seconds — refreshed on every authenticated request
-	ExpiresAt int64  `json:"expires_at"`        // unix seconds — matches JWT exp
-	Revoked   bool   `json:"revoked,omitempty"` // tombstone: kept around so the JTI can't be auto-re-added by migration
+	JTI       string `json:"jti"`
+	User      string `json:"user"`
+	IP        string `json:"ip"`
+	UserAgent string `json:"ua"`
+	IssuedAt  int64  `json:"issued_at"`
+	LastSeen  int64  `json:"last_seen"`
+	ExpiresAt int64  `json:"expires_at"`
+	Revoked   bool   `json:"revoked,omitempty"`
 }
 
-// Store is a concurrent map of active sessions with disk persistence.
 type Store struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
-	path     string // data/sessions.json
-	dirty    bool   // set on every mutation; cleared by background flusher
+	path     string
+	dirty    bool
 	stop     chan struct{}
 }
 
-// Open loads sessions.json (or starts empty if missing) and spawns a flusher
-// that persists changes every 5 seconds — keeps writes off the hot path.
 func Open(path string) (*Store, error) {
 	s := &Store{
 		sessions: make(map[string]*Session),
@@ -50,7 +42,6 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
-// Close tells the flusher to stop and does a final flush.
 func (s *Store) Close() error {
 	if s == nil {
 		return nil
@@ -73,14 +64,12 @@ func (s *Store) load() error {
 	}
 	var arr []*Session
 	if err := json.Unmarshal(b, &arr); err != nil {
-		// Tolerate a corrupt file: start fresh rather than refuse to boot.
-		// The penalty is "everyone has to log in again", not "service down".
 		return nil
 	}
 	now := time.Now().Unix()
 	for _, sess := range arr {
 		if sess.ExpiresAt > 0 && sess.ExpiresAt < now {
-			continue // forget expired sessions
+			continue
 		}
 		s.sessions[sess.JTI] = sess
 	}
@@ -106,7 +95,6 @@ func (s *Store) flusher() {
 	}
 }
 
-// save writes atomically: .new + rename + fsync(dir). Same pattern as config.
 func (s *Store) save() error {
 	s.mu.RLock()
 	arr := make([]*Session, 0, len(s.sessions))
@@ -143,8 +131,6 @@ func (s *Store) save() error {
 	return nil
 }
 
-// Add registers a brand-new session. If the JTI already exists (e.g. as a
-// revoked tombstone) the existing entry is preserved — we never undo a revoke.
 func (s *Store) Add(sess Session) {
 	if sess.JTI == "" {
 		return
@@ -158,12 +144,6 @@ func (s *Store) Add(sess Session) {
 	s.dirty = true
 }
 
-// Touch marks the session as recently active. Returns true only if the
-// session exists and is NOT revoked. Returning false has two meanings:
-//   - JTI unknown — caller may auto-add (migration) via Add() and try again.
-//   - JTI known but revoked — caller must reject the request (401).
-//
-// Use HasTombstone to disambiguate.
 func (s *Store) Touch(jti string) bool {
 	if jti == "" {
 		return false
@@ -179,8 +159,6 @@ func (s *Store) Touch(jti string) bool {
 	return true
 }
 
-// HasTombstone reports whether the JTI was explicitly revoked. Used by the
-// middleware to refuse migration of a token that was killed on purpose.
 func (s *Store) HasTombstone(jti string) bool {
 	if jti == "" {
 		return false
@@ -191,7 +169,6 @@ func (s *Store) HasTombstone(jti string) bool {
 	return ok && sess.Revoked
 }
 
-// Has reports whether a session with that jti exists (live OR tombstone).
 func (s *Store) Has(jti string) bool {
 	if jti == "" {
 		return false
@@ -202,8 +179,6 @@ func (s *Store) Has(jti string) bool {
 	return ok
 }
 
-// Revoke marks a session as revoked (tombstone). Returns the user it
-// belonged to, or "" if not found.
 func (s *Store) Revoke(jti string) string {
 	if jti == "" {
 		return ""
@@ -212,8 +187,6 @@ func (s *Store) Revoke(jti string) string {
 	defer s.mu.Unlock()
 	sess, ok := s.sessions[jti]
 	if !ok {
-		// Create a tombstone anyway so the JTI can't be auto-added later
-		// (defends against revoke-before-migration races).
 		s.sessions[jti] = &Session{JTI: jti, Revoked: true, LastSeen: time.Now().Unix()}
 		s.dirty = true
 		return ""
@@ -226,8 +199,6 @@ func (s *Store) Revoke(jti string) string {
 	return sess.User
 }
 
-// RevokeAllExcept tombstones every LIVE session for `user` except the one
-// whose jti matches `keep`. Returns the number revoked.
 func (s *Store) RevokeAllExcept(user, keep string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -244,7 +215,6 @@ func (s *Store) RevokeAllExcept(user, keep string) int {
 	return n
 }
 
-// ListForUser returns the user's LIVE sessions (no tombstones), newest first.
 func (s *Store) ListForUser(user string) []Session {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -258,9 +228,6 @@ func (s *Store) ListForUser(user string) []Session {
 	return out
 }
 
-// PruneExpired removes sessions whose JWT has expired — INCLUDING tombstones,
-// because once the token can no longer pass JWT signature validation by exp,
-// keeping the tombstone is pointless. Called periodically.
 func (s *Store) PruneExpired() int {
 	now := time.Now().Unix()
 	s.mu.Lock()

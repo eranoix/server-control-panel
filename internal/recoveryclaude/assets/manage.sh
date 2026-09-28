@@ -1,26 +1,9 @@
 #!/usr/bin/env bash
-# recovery-claude.sh: the Claude of the recovery screen.
-#
-# A dedicated container running ALONGSIDE the panel with an independent
-# connection: no custom API base URL and its own login, so it survives
-# the situations /recovery exists for (host Claude misconfigured, bad deploy
-# live, broken Claude install on the host).
-#
-# Usage:
-#   recovery-claude.sh build     # build the image
-#   recovery-claude.sh up        # create/start the container (idempotent)
-#   recovery-claude.sh down      # stop and remove the container (the login STAYS)
-#   recovery-claude.sh status    # state, version and whether it has a login
-#   recovery-claude.sh shell     # enter the dtach session (same path as the screen)
-#   recovery-claude.sh doctor    # check the guarantees (no base URL, login, reach)
 set -euo pipefail
 
 IMAGE="panel-recovery-claude:latest"
 NAME="panel-recovery-claude"
 VOLUME="panel-recovery-claude-config"
-# The build context is this script's own directory (Dockerfile, entrypoint and
-# banner are its siblings), both in the repository and where the binary
-# materializes it (<DataDir>/recovery-claude/).
 CTX="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 msg() { printf '%s\n' "$*"; }
@@ -37,18 +20,11 @@ up() {
     fail "image missing, run: $0 build"
     return 1
   fi
-  # `container inspect`, not plain `docker inspect`: the image has the same
-  # name as the container and plain inspect would match it.
   if docker container inspect "$NAME" >/dev/null 2>&1; then
     docker start "$NAME" >/dev/null
     msg "container already existed, started"
     return 0
   fi
-  # The flags below give FULL reach on purpose: whoever reaches /recovery
-  # already has a root shell on the host, so this does not widen the surface.
-  # --restart always makes the container independent of the panel (Docker
-  # starts it at boot). There is deliberately no ANTHROPIC_BASE_URL here: its
-  # absence is what keeps this Claude off any proxy the host Claude uses.
   docker run -d \
     --name "$NAME" \
     --restart always \
@@ -101,7 +77,6 @@ doctor() {
   [ "$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$NAME" 2>/dev/null)" = "always" ] \
     && check "starts on its own at boot (restart=always, independent of the panel)" ok \
     || check "starts on its own at boot" fail
-  # The central guarantee: no variable pointing Claude at a proxy.
   if docker container inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$NAME" 2>/dev/null | grep -q '^ANTHROPIC_BASE_URL='; then
     check "no ANTHROPIC_BASE_URL (direct API connection)" fail
   else
@@ -112,9 +87,6 @@ doctor() {
   else
     check "the container settings.json does not set a base URL either" ok
   fi
-  # The login is a MANUAL one-time step (device flow), so a missing login is
-  # "not configured yet", not a broken guarantee. Exit code 2 = only the login
-  # is missing, 1 = something regressed.
   local noLogin=0
   if docker exec "$NAME" test -f /config/.credentials.json 2>/dev/null; then
     check "own login (does not share a refresh token with the host)" ok

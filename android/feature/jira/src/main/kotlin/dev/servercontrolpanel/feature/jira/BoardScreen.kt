@@ -76,22 +76,11 @@ import dev.servercontrolpanel.data.jira.JiraColumn
 import dev.servercontrolpanel.data.jira.JiraBoard
 import kotlinx.coroutines.delay
 
-/** Test tags shared by the UI and the tests. */
 internal const val TAG_BOARD = "jira-board"
 internal const val TAG_DRAGGING = "jira-card-dragging"
 
-/** How many columns fit on screen at once. */
 private const val VISIBLE_COLUMNS = 3
 
-/**
- * The Jira kanban board.
- *
- * Three narrow columns are shown at once (about 125 dp each on a 411 dp screen) so the board
- * shows where work piles up; hence the compact [BoardCard]. While dragging, the drop target is
- * the highlighted column under the finger; edge scrolling only matters with more than three.
- *
- * There is no pull-to-refresh because it would compete with dragging a card vertically.
- */
 @Composable
 fun JiraBoardRoute(
     modifier: Modifier = Modifier,
@@ -191,7 +180,6 @@ private fun Board(
     val scroll = rememberScrollState()
     val haptics = LocalHapticFeedback.current
 
-    // Edge scrolling only when there are more columns than fit on screen.
     val edge = if (columns.size > VISIBLE_COLUMNS) dragState.edge() else null
     LaunchedEffect(edge) {
         if (edge == null) return@LaunchedEffect
@@ -227,7 +215,6 @@ private fun Board(
             }
 
             board.rejection?.let { reason ->
-                // The controls stay visible so the filter that caused the refusal can be changed.
                 Text(
                     text = reason,
                     style = MaterialTheme.typography.bodySmall,
@@ -249,7 +236,6 @@ private fun Board(
             val target = dragState.targetColumn()
 
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                // Width is sized so exactly three columns fit on screen.
                 val gap = 6.dp
                 val margin = 8.dp
                 val width = (maxWidth - margin * 2 - gap * (VISIBLE_COLUMNS - 1)) / VISIBLE_COLUMNS
@@ -279,7 +265,6 @@ private fun Board(
             }
         }
 
-        // The floating card is drawn at the root; inside a column it would be clipped to its bounds.
         dragState.card?.let { card ->
             val density = LocalDensity.current
             BoardCard(
@@ -300,10 +285,6 @@ private fun Board(
     }
 }
 
-/**
- * One column: header with label and count, then the cards. [highlighted] marks the drop
- * target during a drag, since narrow columns make the target hard to judge.
- */
 @Composable
 private fun BoardColumn(
     column: JiraColumn,
@@ -385,13 +366,11 @@ private fun BoardColumn(
                     selected = card.key in selection,
                     onSelect = { onSelect(card.key) },
                     modifier = Modifier
-                        // Keep the original faded in place so the column does not reflow mid-drag.
                         .alpha(if (shown) 0.25f else 1f)
                         .draggable(
                             state = dragState,
                             card = card,
                             column = column.label,
-                            // In multi-select, taps select instead of dragging.
                             enabled = !selecting,
                             onPick = onPick,
                             onDrop = onDrop,
@@ -408,7 +387,6 @@ private fun BoardColumn(
     }
 }
 
-/** The bar holding the project, the filters and search. */
 @Composable
 private fun ControlsBar(
     board: JiraBoard,
@@ -455,8 +433,6 @@ private fun ControlsBar(
                 }
             }
 
-            // Filters and their labels come from the server so they stay in sync with the web
-            // panel. They share the project row to save vertical space.
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -564,7 +540,6 @@ private fun ControlsBar(
     }
 }
 
-/** The bar that appears while multi-select is on. */
 @Composable
 private fun SelectionBar(
     selectedCount: Int,

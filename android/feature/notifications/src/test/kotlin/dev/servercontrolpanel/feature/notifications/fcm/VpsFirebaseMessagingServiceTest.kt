@@ -39,7 +39,6 @@ private fun remoteMessageWithData(data: Map<String, String>): RemoteMessage =
 @RunWith(RobolectricTestRunner::class)
 class VpsFirebaseMessagingServiceTest {
 
-    // setupService attaches a real Context, which the ops-alert fallthrough reads.
     private val service = Robolectric.setupService(VpsFirebaseMessagingService::class.java)
 
     @After
@@ -98,7 +97,6 @@ class VpsFirebaseMessagingServiceTest {
     fun `a payload with no handler registered does not crash`() {
         assertNull(IncomingCallDispatcher.handler)
 
-        // Must not throw even though nothing is registered to receive it.
         service.onMessageReceived(
             remoteMessageWithData(
                 mapOf("type" to "incoming-call", "room_id" to "r1", "room_name" to "Room", "caller_name" to "alice", "call_id" to "c1"),
@@ -124,7 +122,6 @@ class VpsFirebaseMessagingServiceTest {
         IncomingCallDispatcher.handler = fake
         val context = RuntimeEnvironment.getApplication()
 
-        // Calls the builder directly instead of onMessageReceived, which would post a real notification.
         val notification = ActionableNotificationBuilder.build(
             context,
             mapOf("event_type" to "job.failed", "job_id" to "abc123"),
@@ -136,7 +133,6 @@ class VpsFirebaseMessagingServiceTest {
 
     @Test
     fun `without POST_NOTIFICATIONS the notification is dropped, not posted`() {
-        // Without the permission `notify` is silently swallowed, so the service must check and log.
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
         val service = Robolectric.setupService(VpsFirebaseMessagingService::class.java)

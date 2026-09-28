@@ -11,12 +11,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * The appearance choice persists across runs, and following the system is the default.
- *
- * Each test uses its own preferences file because Robolectric caches
- * `SharedPreferences` by name, which would leak values between tests.
- */
 @RunWith(RobolectricTestRunner::class)
 class ThemePreferenceTest {
 
@@ -45,7 +39,6 @@ class ThemePreferenceTest {
 
         ThemePreference(file).set(ThemeMode.LIGHT)
 
-        // A new instance on the same file simulates a process restart.
         val afterReopen = ThemePreference(file)
         assertEquals(ThemeMode.LIGHT, afterReopen.current())
     }
@@ -64,7 +57,6 @@ class ThemePreferenceTest {
         val file = newFile()
         ThemePreference(file).set(ThemeMode.DARK)
 
-        // An async read would expose the default first and flash the wrong theme.
         assertEquals(ThemeMode.DARK, ThemePreference(file).mode.value)
     }
 
@@ -92,7 +84,6 @@ class ThemePreferenceTest {
     @Test
     fun `get returns the same instance for the whole process`() {
         assertTrue(ThemePreference.get(context) === ThemePreference.get(context))
-        // The constructor still gives an isolated instance, which the tests above rely on.
         assertNotSame(ThemePreference.get(context), ThemePreference(newFile()))
     }
 
@@ -108,7 +99,6 @@ class ThemePreferenceTest {
 
     @Test
     fun `stored ids are stable`() {
-        // Changing an id would silently reset existing users' saved choice to SYSTEM.
         assertEquals("light", ThemeMode.LIGHT.id)
         assertEquals("dark", ThemeMode.DARK.id)
         assertEquals("system", ThemeMode.SYSTEM.id)

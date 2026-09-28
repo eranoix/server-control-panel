@@ -9,12 +9,6 @@ import (
 	"testing"
 )
 
-// TestSendFileJSONContract locks down the JSON contract of WAHA's media
-// endpoints. The bug it guards against: SendFile was sending
-// multipart/form-data, which the current WAHA/GOWS rejects — it only accepts
-// JSON with file:{mimetype,filename,data(base64 raw)}, caption and reply_to at
-// the top level, and convert on voice/video. If anyone reverts to multipart (or
-// forgets the convert on voice), this test breaks.
 func TestSendFileJSONContract(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -58,23 +52,18 @@ func TestSendFileJSONContract(t *testing.T) {
 				t.Errorf("id = %q, want parsed flexible id", id)
 			}
 
-			// 1. Correct endpoint per type.
 			if gotPath != tc.wantPath {
 				t.Errorf("path = %q, want %q", gotPath, tc.wantPath)
 			}
-			// 2. JSON, never multipart.
 			if gotCT != "application/json" {
 				t.Errorf("Content-Type = %q, want application/json (multipart regression?)", gotCT)
 			}
-			// 3. chatId normalised to @s.whatsapp.net (not @c.us).
 			if got := gotBody["chatId"]; got != "5511999998888@s.whatsapp.net" {
 				t.Errorf("chatId = %v, want normalized @s.whatsapp.net", got)
 			}
-			// 4. session present.
 			if got := gotBody["session"]; got != "default" {
 				t.Errorf("session = %v, want default", got)
 			}
-			// 5. file.data is RAW base64 that decodes back into the original bytes.
 			file, ok := gotBody["file"].(map[string]any)
 			if !ok {
 				t.Fatalf("file missing/!object: %v", gotBody["file"])
@@ -89,7 +78,6 @@ func TestSendFileJSONContract(t *testing.T) {
 			} else if string(dec) != string(payload) {
 				t.Errorf("decoded file.data = %q, want %q", dec, payload)
 			}
-			// 6. convert only on voice/video.
 			_, hasConvert := gotBody["convert"]
 			if hasConvert != tc.wantConvert {
 				t.Errorf("convert present = %v, want %v", hasConvert, tc.wantConvert)
@@ -97,7 +85,6 @@ func TestSendFileJSONContract(t *testing.T) {
 			if tc.wantConvert && gotBody["convert"] != true {
 				t.Errorf("convert = %v, want true", gotBody["convert"])
 			}
-			// 7. caption/reply_to at the top level only when they are set.
 			_, hasCaption := gotBody["caption"]
 			if hasCaption != tc.wantCaption {
 				t.Errorf("caption present = %v, want %v", hasCaption, tc.wantCaption)

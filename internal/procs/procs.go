@@ -1,11 +1,3 @@
-// Package procs is the host process manager backend.
-//
-// It exposes List/Tree/Signal over gopsutil/v4/process with a hard denylist
-// on the system-critical PIDs (init, sshd, this very server-control-panel) so a UI
-// kill button can never lock the operator out of the box.
-//
-// All exported functions are safe for concurrent use; gopsutil snapshots
-// each /proc read so there's no shared mutable state here.
 package procs
 
 import (
@@ -20,9 +12,6 @@ import (
 	"github.com/shirou/gopsutil/v4/process"
 )
 
-// Info is the snapshot returned by List and Tree. CPU is a percentage of one
-// core (so 230% on a 4-core box means ~58% total) and Memory is the resident
-// set as a percentage of total RAM.
 type Info struct {
 	PID     int32   `json:"pid"`
 	PPID    int32   `json:"ppid"`
@@ -33,11 +22,9 @@ type Info struct {
 	RSS     uint64  `json:"rss"`
 	Cmdline string  `json:"cmdline"`
 	Status  string  `json:"status"`
-	Started int64   `json:"started"` // unix sec
+	Started int64   `json:"started"`
 }
 
-// Filter narrows List output. Empty values match anything; numeric fields
-// of zero are ignored.
 type Filter struct {
 	NameContains string
 	User         string
@@ -46,7 +33,6 @@ type Filter struct {
 	MinMEM       float64
 }
 
-// SortBy is the column List sorts by, descending.
 type SortBy string
 
 const (
@@ -57,18 +43,12 @@ const (
 	SortStart SortBy = "start"
 )
 
-// Errors returned by Signal. ErrDenied means the PID is on the static
-// denylist; ErrForbidden means the caller is not allowed to signal this
-// PID (RBAC check at the handler layer should turn this into 403).
 var (
 	ErrDenied    = errors.New("pid denied by safety list")
 	ErrForbidden = errors.New("caller not allowed to signal this pid")
 	ErrBadSignal = errors.New("unknown signal name")
 )
 
-// sanitize strips ASCII control bytes and clamps length. Mirrors the
-// helper in internal/system; copied to keep procs free of cross-package
-// imports beyond gopsutil.
 func sanitize(s string) string {
 	const max = 512
 	var b strings.Builder
@@ -89,8 +69,6 @@ func sanitize(s string) string {
 	return strings.TrimSpace(b.String())
 }
 
-// List returns up to `limit` processes after applying filter and sort.
-// Offset is honored for pagination. limit<=0 means "all".
 func List(ctx context.Context, f Filter, by SortBy, limit, offset int) ([]Info, int, error) {
 	procs, err := process.ProcessesWithContext(ctx)
 	if err != nil {
@@ -125,9 +103,6 @@ func List(ctx context.Context, f Filter, by SortBy, limit, offset int) ([]Info, 
 	return out, total, nil
 }
 
-// Tree returns every process indexed by PID and a separate slice of root PIDs
-// (parent missing or self-parented), letting the UI walk the tree without a
-// second pass over gopsutil.
 type TreeNode struct {
 	Info
 	Children []int32 `json:"children"`
@@ -167,8 +142,6 @@ func Tree(ctx context.Context) (map[int32]TreeNode, []int32, error) {
 	return nodes, roots, nil
 }
 
-// SignalByName resolves a signal name (TERM, KILL, HUP, STOP, CONT, INT, USR1, USR2)
-// to a syscall.Signal. Empty defaults to TERM.
 func SignalByName(name string) (syscall.Signal, error) {
 	u := strings.ToUpper(name)
 	u = strings.TrimPrefix(u, "SIG")
@@ -193,13 +166,6 @@ func SignalByName(name string) (syscall.Signal, error) {
 	return 0, ErrBadSignal
 }
 
-// IsDenied reports whether killing a PID would brick the box. The list is:
-//   - PID 1 (init/systemd)
-//   - this process (os.Getpid)
-//   - sshd parent process (so the operator never loses remote access)
-//
-// gopsutil is consulted only for the sshd lookup; failures fall closed
-// (deny). This is deliberate: when unsure, refuse.
 func IsDenied(ctx context.Context, pid int32) bool {
 	if pid <= 1 {
 		return true
@@ -207,14 +173,12 @@ func IsDenied(ctx context.Context, pid int32) bool {
 	if int(pid) == os.Getpid() {
 		return true
 	}
-	// Walk up from this process to see if pid is an ancestor — kill it
-	// and the session dies.
 	if pid == int32(os.Getppid()) {
 		return true
 	}
 	p, err := process.NewProcessWithContext(ctx, pid)
 	if err != nil {
-		return true // unknown PID → safer to deny than race
+		return true
 	}
 	name, _ := p.NameWithContext(ctx)
 	switch strings.ToLower(name) {
@@ -224,9 +188,6 @@ func IsDenied(ctx context.Context, pid int32) bool {
 	return false
 }
 
-// Signal sends sig to pid after the denylist check. Caller must have done
-// the RBAC check (primary, or PID owned by caller) before invoking — this
-// function only enforces the static safety list.
 func Signal(ctx context.Context, pid int32, sig syscall.Signal) error {
 	if IsDenied(ctx, pid) {
 		return ErrDenied
@@ -238,13 +199,6 @@ func Signal(ctx context.Context, pid int32, sig syscall.Signal) error {
 	return p.SendSignalWithContext(ctx, sig)
 }
 
-// OwnerOf returns the unix username that owns pid, or "" on lookup failure.
-// The handler uses this to decide whether a non-primary user is allowed to
-// signal pid (rule: only your own processes).
-//
-// WARNING: OwnerOf alone is racy — by the time the caller signals, the
-// PID may have been recycled to a different process owned by someone else.
-// Use SignalAsOwner for the atomic check-then-signal.
 func OwnerOf(ctx context.Context, pid int32) string {
 	p, err := process.NewProcessWithContext(ctx, pid)
 	if err != nil {
@@ -254,13 +208,6 @@ func OwnerOf(ctx context.Context, pid int32) string {
 	return u
 }
 
-// SignalAsOwner verifies the PID belongs to `expectedOwner` (case-insensitive),
-// captures the process start time, then signals — re-checking start time
-// just before the kill syscall to detect a PID reuse race. Returns
-// ErrForbidden if the owner doesn't match or the process was replaced.
-//
-// This is the function HTTP handlers should call for non-privileged
-// users; primaries can bypass via plain Signal().
 func SignalAsOwner(ctx context.Context, pid int32, sig syscall.Signal, expectedOwner string) error {
 	if IsDenied(ctx, pid) {
 		return ErrDenied
@@ -274,9 +221,6 @@ func SignalAsOwner(ctx context.Context, pid int32, sig syscall.Signal, expectedO
 		return ErrForbidden
 	}
 	startBefore, _ := p.CreateTimeWithContext(ctx)
-	// Re-fetch right before the kill: if the PID has been recycled, the
-	// new process will have a different CreateTime — we refuse rather
-	// than signal a stranger.
 	p2, err := process.NewProcessWithContext(ctx, pid)
 	if err != nil {
 		return err
@@ -321,9 +265,6 @@ func snapshot(ctx context.Context, p *process.Process) (Info, bool) {
 }
 
 func match(i Info, f Filter) bool {
-	// The "name" filter now matches Name OR Cmdline: the user searches for "claude"
-	// but the process shows up as "node" (Name = binary) with claude in the
-	// cmdline — it used to filter 0 results, now it catches them.
 	if f.NameContains != "" {
 		needle := strings.ToLower(f.NameContains)
 		if !strings.Contains(strings.ToLower(i.Name), needle) &&
@@ -356,7 +297,7 @@ func sortBy(s []Info, by SortBy) {
 		sort.Slice(s, func(i, j int) bool { return s[i].Name < s[j].Name })
 	case SortStart:
 		sort.Slice(s, func(i, j int) bool { return s[i].Started > s[j].Started })
-	default: // SortCPU
+	default:
 		sort.Slice(s, func(i, j int) bool { return s[i].CPU > s[j].CPU })
 	}
 }

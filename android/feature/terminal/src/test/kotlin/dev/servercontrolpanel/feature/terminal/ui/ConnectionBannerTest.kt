@@ -8,10 +8,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders [ConnectionBanner] in every [ConnectionState] plus `Live` while stalled,
- * checking the real rendered text so a stalled connection never looks healthy.
- */
 @RunWith(RobolectricTestRunner::class)
 class ConnectionBannerTest {
 

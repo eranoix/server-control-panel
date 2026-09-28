@@ -7,10 +7,6 @@ import dev.servercontrolpanel.data.ops.NetSnapshot
 import dev.servercontrolpanel.data.ops.OpsSnapshot
 import dev.servercontrolpanel.data.ops.SystemSnapshot
 
-/**
- * A live capture of `GET /api/mobile/v1/ops/status`, unrounded: swap near 100%, load 11.97 on
- * 8 cores, yet `alerts` empty and `health_ok` true, the case a naive dashboard shows as healthy.
- */
 internal fun productionLike(
     swapUsedPercent: Double = 99.99814033419625,
     memUsedPercent: Double = 63.13659490136221,
@@ -54,7 +50,6 @@ internal fun productionLike(
     platform = "ubuntu 24.04",
 )
 
-/** The full `/ops/status` from the same moment: all subsystems healthy, idle queue, no alerts. */
 internal fun opsReal(system: SystemSnapshot? = productionLike()) = OpsSnapshot(
     health = mapOf(
         "audit" to "ok",
@@ -73,12 +68,10 @@ internal fun opsReal(system: SystemSnapshot? = productionLike()) = OpsSnapshot(
     system = system,
 )
 
-/** The real `/deploy/apps`: one app, with its last deploy rolled back. */
 internal fun realisticDeploys() = listOf(
     DeploySummary(name = "hello", lastStatus = "rolled_back", updated = "2026-07-19 13:17 UTC"),
 )
 
-/** The five real scheduled jobs, all with `last_status = ok`. */
 internal fun realisticScheduled() = listOf(
     ScheduledSummary("Terminal session backup every 10min", "ok", "2026-09-06 07:00 UTC", "2026-09-06 07:10 UTC", true),
     ScheduledSummary("Preview env reaper", "ok", "2026-09-06 06:17 UTC", "2026-09-06 07:17 UTC", true),

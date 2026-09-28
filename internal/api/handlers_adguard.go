@@ -1,13 +1,5 @@
 package api
 
-// handlers_adguard.go — server-side proxy for AdGuard Home (Security → AdGuard).
-//
-// Same design as the private-ai integration (handlers_ai.go): it resolves the
-// credentials from the vault, builds a thin client that talks to the local admin
-// API on 127.0.0.1, and hands the result to the browser — the credentials never
-// leave the server. The routes are registered on the `protected` sub-mux, so they
-// are already gated by auth.
-
 import (
 	"encoding/json"
 	"net/http"
@@ -22,9 +14,6 @@ const (
 	adguardPassSecret = "adguard_password"
 )
 
-// adguardClient builds an AdGuard admin API client with the URL from the config
-// and the credentials resolved from the vault. Returns ok=false when credentials
-// are missing — the caller answers 503 with a clear warning.
 func (r *Router) adguardClient() (*adguard.Client, bool) {
 	user, pass := r.adguardCreds()
 	if strings.TrimSpace(pass) == "" {
@@ -36,7 +25,6 @@ func (r *Router) adguardClient() (*adguard.Client, bool) {
 	return adguard.New(r.cfg.AdGuardURL, user, pass), true
 }
 
-// adguardCreds reads the AdGuard username and password from the secrets vault.
 func (r *Router) adguardCreds() (user, pass string) {
 	if r.secrets == nil {
 		return "", ""
@@ -50,7 +38,6 @@ func (r *Router) adguardCreds() (user, pass string) {
 	return user, pass
 }
 
-// handleAdguardStatus — GET: combined status (protection on/off + 24h stats).
 func (r *Router) handleAdguardStatus(w http.ResponseWriter, req *http.Request) {
 	if auth.UserFrom(req) == "" {
 		writeErr(w, 401, "unauthorized")
@@ -73,8 +60,6 @@ func (r *Router) handleAdguardStatus(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, st)
 }
 
-// handleAdguardProtection — POST {enabled, duration_ms}: turns the filter on/off.
-// duration_ms>0 with enabled=false pauses for that long and re-enables itself.
 func (r *Router) handleAdguardProtection(w http.ResponseWriter, req *http.Request) {
 	if auth.UserFrom(req) == "" {
 		writeErr(w, 401, "unauthorized")

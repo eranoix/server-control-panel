@@ -22,21 +22,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
-/**
- * Inline voice-note row. All rows in a conversation share one
- * [player] (built once in `ConversationScreen`) -- calling
- * [ExoPlayer.setMediaItem] for a newly tapped bubble naturally tears down
- * whatever the previous bubble had loaded, giving "only one voice note plays
- * at a time" for free with no extra bookkeeping beyond comparing
- * `player.currentMediaItem?.mediaId` to this row's own [messageId] to know
- * whether it is the currently active bubble.
- *
- * [player] streams through Media3's `OkHttpDataSource` (see
- * `MediaCache.dataSourceFactory`), which issues real HTTP Range requests as
- * the user scrubs -- confirmed by inspecting `OkHttpDataSource`'s decompiled
- * class file (adds a `Range: bytes=N-` header from its `DataSpec.position`),
- * not by an on-device playback run (no device/emulator available here).
- */
 @Composable
 fun AudioPlayerBar(
     url: String,

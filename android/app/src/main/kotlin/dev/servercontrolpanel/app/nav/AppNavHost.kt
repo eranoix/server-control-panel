@@ -79,56 +79,29 @@ import kotlinx.coroutines.launch
 import java.net.URLDecoder
 import java.net.URLEncoder
 
-/** Nested detail route below the Terminal list: one live session per session name. */
 private fun terminalSessionRoute(name: String) = "terminal/$name"
 
-/** Nav argument name carrying the joined room's id. */
 private const val VIDEOCALL_ROOM_ID_ARG = "roomId"
 
-/** Nested detail route below the call lobby: one active call per room. */
 private fun videocallRoomRoute(roomId: String) = "call/$roomId"
 
-/** Nav argument name carrying the tapped file's server path, URL-encoded (paths contain `/`). */
 private const val FILE_EDITOR_PATH_ARG = "path"
 
-/** Nested detail route below the file browser: one file editor per opened path. */
 private fun fileEditorRoute(path: String) = "files/edit/${URLEncoder.encode(path, "UTF-8")}"
 
-/** Nav argument name carrying the opaque SDUI section id; see [AdminScreen]. */
 private const val ADMIN_SECTION_ID_ARG = "sectionId"
 
-/**
- * The single route every SDUI section renders through, so a new section only needs a
- * screen descriptor on the server, not an app release.
- */
 internal fun adminSectionRoute(sectionId: String) = "admin/$sectionId"
 
-/** Section that notification deep links open. */
 internal const val SCHEDULER_SECTION_ID = "scheduler.jobs"
 
-/** Debug-only route for [PayloadPreviewScreen], registered only under `BuildConfig.DEBUG`. */
 private const val DEBUG_SDUI_PREVIEW_ROUTE = "debug/sdui-preview"
 
-/**
- * Detail route for the diagnostic report. The update banner sends the user here when an
- * install fails, because the `PackageInstaller` message does not fit in a banner.
- */
 internal const val DIAGNOSTICS_ROUTE = "diagnostics"
 internal const val ROUTE_STORAGE = "storage"
 
-/**
- * A tapped notification's deep link, resolved to a concrete [AppNavHost] route.
- * [entityId] is carried opaquely and never interpolated into a route, so a hostile launch
- * Intent cannot steer navigation beyond the fixed [navRoute].
- */
 internal data class ResolvedNotificationDeepLink(val navRoute: String, val entityId: String?)
 
-/**
- * Maps the raw [NotificationDeepLink.EXTRA_ROUTE] value to one of [AppNavHost]'s own routes.
- * [route] comes from a launch Intent any app can send to the exported activity, so it is
- * untrusted: anything but the exact tokens the notification builder emits resolves to `null`,
- * which callers must treat as "navigate nowhere".
- */
 internal fun resolveNotificationDeepLink(route: String?, entityId: String?): ResolvedNotificationDeepLink? =
     when (route) {
         NotificationDeepLink.ROUTE_DEPLOY_JOB, NotificationDeepLink.ROUTE_ALERT ->
@@ -136,21 +109,9 @@ internal fun resolveNotificationDeepLink(route: String?, entityId: String?): Res
         else -> null
     }
 
-/**
- * Resolves the room id of a call answered from the lock screen
- * ([dev.servercontrolpanel.feature.videocall.call.PanelConnection.onAnswer]) through the same
- * single-consumption deep link path as notifications. `roomId` is untrusted and only ever
- * placed in this one fixed route shape.
- */
 internal fun resolveVideocallDeepLink(roomId: String?): ResolvedNotificationDeepLink? =
     roomId?.let { ResolvedNotificationDeepLink(navRoute = videocallRoomRoute(it), entityId = null) }
 
-/**
- * The single way to navigate to a work screen from the shell (drawer, dock shortcut, parent grid).
- * `popUpTo(start)` pops any open terminal first; otherwise two terminal destinations stay on the
- * stack, each replaying the scrollback over the other. `saveState`/`restoreState` keep each
- * screen's position when coming back.
- */
 private fun NavHostController.goToWorkScreen(route: String) {
     navigate(route) {
         graph.startDestinationRoute?.let { start ->
@@ -161,24 +122,6 @@ private fun NavHostController.goToWorkScreen(route: String) {
     }
 }
 
-/**
- * The app's navigable shell: a [ModalNavigationDrawer] with the grouped destinations (see
- * [AppDrawerSheet]) and the [NavHost] that swaps the content. A drawer is used because eight
- * destinations do not fit a Material 3 bottom bar.
- *
- * One header per screen: the shell's [TopAppBar] (hamburger, never "back") appears only on
- * drawer destinations. Detail screens bring their own bar with "back" (see [ChildScreen]) or
- * are full-screen, so headers never stack.
- *
- * Window insets are applied exactly once, on the [NavHost]'s modifier.
- *
- * [pendingDeepLinkRoute] is a route already resolved by [resolveNotificationDeepLink] or
- * [resolveVideocallDeepLink]; it is navigated once and then [onDeepLinkConsumed] is called so
- * the owner clears it, otherwise every recomposition would navigate again.
- *
- * [onSignOut] ends the session for real (see `MainActivity`); it is a parameter so UI tests
- * can observe it.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppNavHost(
@@ -193,7 +136,6 @@ fun AppNavHost(
     onClearUpdateDiagnostics: () -> Unit = {},
     installedVersion: String? = null,
     onCheckForUpdate: () -> Unit = {},
-    // Appearance is a device preference: `MainActivity` owns its persistence.
     themeMode: ThemeMode = ThemeMode.DEFAULT,
     onThemeModeChange: (ThemeMode) -> Unit = {},
     navController: NavHostController = rememberNavController(),
@@ -203,9 +145,6 @@ fun AppNavHost(
 
     LaunchedEffect(pendingDeepLinkRoute) {
         val route = pendingDeepLinkRoute ?: return@LaunchedEffect
-        // Wait for the graph: on first composition this runs before the NavHost sets it, and
-        // navigating would throw "Navigation graph has not been set". The first emission of
-        // `currentBackStackEntryFlow` means the graph exists.
         navController.currentBackStackEntryFlow.first()
         navController.navigate(route) { launchSingleTop = true }
         onDeepLinkConsumed()
@@ -214,28 +153,21 @@ fun AppNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Updating kills the process, so the current route is saved to reopen it afterwards.
-    // It is recorded here because the update coordinator knows nothing about navigation.
     val context = LocalContext.current
     val resumePoint = remember(context) { ResumePoint(context.applicationContext) }
     val onRefresh: () -> Unit = {
         resumePoint.save(currentRoute)
         onUpdateClick()
     }
-    // Each parent has a concrete route, so the route alone identifies the destination.
     val currentDestination = AppDestination.entries.firstOrNull { it.matches(currentRoute) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        // Edge gesture left on (the default) so the drawer opens with a thumb.
         drawerContent = {
             AppDrawerSheet(
                 currentRoute = currentRoute,
                 onDestinationSelected = { destination ->
-                    // Close before navigating so the drawer is not left open over the new screen.
                     scope.launch { drawerState.close() }
-                    // Reselecting Home scrolls it to the top; otherwise `launchSingleTop`
-                    // swallows the tap and the button seems broken.
                     if (destination == AppDestination.Home) ScrollToTopRequest.request()
                     navController.goToWorkScreen(destination.navigationTarget)
                 },
@@ -245,7 +177,6 @@ fun AppNavHost(
                 },
                 onShortcut = { route ->
                     scope.launch { drawerState.close() }
-                    // Same options as the drawer; see goToWorkScreen.
                     navController.goToWorkScreen(route)
                 },
             )
@@ -253,9 +184,6 @@ fun AppNavHost(
     ) {
         Scaffold(
             topBar = {
-                // Banners live in the `topBar` slot so the Scaffold's `innerPadding` already
-                // accounts for their height. They are hidden on detail screens (terminal,
-                // call, editor), where every dp belongs to the content.
                 if (currentDestination != null) {
                     Column {
                         TopAppBar(
@@ -275,14 +203,11 @@ fun AppNavHost(
                                 }
                             },
                             actions = {
-                                // Same entry `currentDestination` came from, so actions and content stay in sync.
                                 backStackEntry?.let { entry ->
                                     TopLevelActions(destination = currentDestination, entry = entry)
                                 }
                             },
                         )
-                        // Offline notice goes above the update banner: stale data matters more
-                        // than an update that cannot be downloaded right now.
                         OfflineBanner()
                         UpdateBanner(
                             state = updateState,
@@ -300,15 +225,8 @@ fun AppNavHost(
                 }
             },
         ) { innerPadding ->
-            // Post-login onboarding (notification permission, battery exemption). It lives in
-            // the shell because it belongs to no screen and this is the first point where the
-            // user is known to be signed in.
             PushOnboarding()
-            // Features never know routes, so the shell tells the terminal bridge how to open
-            // the terminal.
             ConnectTerminalBridge(navController)
-            // `NeedsUpdateCard` sits deep in server-described payloads, so the update action is
-            // passed as a composition local instead of through every SDUI signature.
             CompositionLocalProvider(LocalUpdateRequest provides onRefresh) {
                 NavHost(
                     navController = navController,
@@ -319,7 +237,6 @@ fun AppNavHost(
                         .imePadding(),
                 ) {
                     composable(AppDestination.Home.route) {
-                        // Home emits destinations, never routes; mapping them to routes lives here.
                         HomeScreen(
                             onOpenSection = { sectionId ->
                                 navController.navigate(adminSectionRoute(sectionId)) { launchSingleTop = true }
@@ -335,10 +252,6 @@ fun AppNavHost(
                             },
                         )
                     }
-                    // One concrete route per parent. `launchSingleTop` and `restoreState`
-                    // compare by destination, not by argument, so a single parameterised
-                    // route would make the drawer unable to switch parents. It also gives each
-                    // parent its own saved state.
                     ParentPage.entries
                         .filter { childrenOf(it).isNotEmpty() }
                         .forEach { parent ->
@@ -392,8 +305,6 @@ fun AppNavHost(
                         ) {
                         SessionListScreen(
                             viewModel = contentViewModel,
-                            // `launchSingleTop` prevents a second terminal for the same session,
-                            // whose fresh attach would replay the scrollback over the first.
                             onSessionSelected = { name ->
                                 navController.navigate(terminalSessionRoute(name)) { launchSingleTop = true }
                             },
@@ -406,8 +317,6 @@ fun AppNavHost(
                     ) {
                         TerminalRoute(
                             onBack = { navController.popBackStack() },
-                            // Switching sessions replaces the destination instead of stacking
-                            // terminals, each holding a live grid in memory.
                             onSwitchSession = { name ->
                                 navController.navigate(terminalSessionRoute(name)) {
                                     popUpTo(ROUTE_TERMINAL)
@@ -416,7 +325,6 @@ fun AppNavHost(
                             },
                         )
                     }
-                    // Every SDUI section renders here; see adminSectionRoute.
                     composable(
                         route = "admin/{sectionId}",
                         arguments = listOf(navArgument(ADMIN_SECTION_ID_ARG) { type = NavType.StringType }),
@@ -469,8 +377,6 @@ fun AppNavHost(
                     }
                     composable(ROUTE_LICENSES) { OssLicensesScreen() }
 
-                    // Measuring reads directories, so it runs on open and after each cleanup,
-                    // never per frame. A keyed `remember` because the value is the screen.
                     composable(ROUTE_STORAGE) {
                         val context = LocalContext.current
                         var pass by remember { mutableIntStateOf(0) }
@@ -490,10 +396,8 @@ fun AppNavHost(
                             )
                         }
                     }
-                    // Not in the drawer: reached from Home's session card and from Settings.
                     composable(ROUTE_SECURITY) { SecurityScreen() }
 
-                    // Detail screen, target of the update banner's "Diagnostics" button.
                     composable(DIAGNOSTICS_ROUTE) {
                         DiagnosticsScreen(
                             initFailures = emptyList(),
@@ -506,8 +410,6 @@ fun AppNavHost(
                         )
                     }
 
-                    // Debug-only payload inspector. BuildConfig.DEBUG is a compile-time
-                    // constant, so release builds never register this route.
                     if (BuildConfig.DEBUG) {
                         composable(DEBUG_SDUI_PREVIEW_ROUTE) { PayloadPreviewScreen() }
                     }
@@ -517,13 +419,8 @@ fun AppNavHost(
     }
 }
 
-/** Label of the action that reloads the current screen. The UI and the test read it from here. */
 internal const val REFRESH_ACTION_LABEL = "Refresh"
 
-/**
- * The frame of a child screen: a bar with "back", a title and its actions. A top-level bar has
- * a hamburger and never "back"; a child bar has "back" and never a hamburger.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChildScreen(
@@ -549,18 +446,10 @@ private fun ChildScreen(
     }
 }
 
-/** Description of the back button on child screens. The UI and the test read it from here. */
 internal const val BACK_DESCRIPTION = "Back"
 
-/**
- * Actions of the current top-level screen, drawn in the shell bar. A screen's action should come
- * from its own ViewModel via `viewModel(viewModelStoreOwner = entry)`, which resolves the same
- * instance the screen uses.
- */
 @Composable
 private fun RowScope.TopLevelActions(destination: AppDestination, entry: NavBackStackEntry) {
-    // No parent has a bar action: parents are grids of shortcuts. The `when` stays exhaustive
-    // so a new parent forces a decision here.
     when (destination) {
         AppDestination.Home,
         AppDestination.System,
@@ -574,15 +463,6 @@ private fun RowScope.TopLevelActions(destination: AppDestination, entry: NavBack
     }
 }
 
-/**
- * Tells [TerminalBridge] how to open the Terminal while this shell lives. The registration
- * captures the [NavHostController], so [DisposableEffect] removes it with the shell to avoid
- * navigating on a dead controller.
- *
- * It opens the session list, not a session: the bridge cannot know which session the user
- * wants, and the list is where a session is created when none exists. The pending command is
- * consumed by `TerminalViewModel` once a session opens.
- */
 @Composable
 private fun ConnectTerminalBridge(navController: NavHostController) {
     val controller by rememberUpdatedState(navController)
@@ -594,5 +474,4 @@ private fun ConnectTerminalBridge(navController: NavHostController) {
     }
 }
 
-/** Route of the device security screen. */
 internal const val ROUTE_SECURITY = "security"

@@ -15,12 +15,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/**
- * The status bar small icon. Referencing a drawable does not prove it inflates (a
- * wrong xmlns compiles fine but yields an inert vector), so these tests load the
- * real resource and inspect its pixels. They also check it is a SILHOUETTE, since
- * Android repaints the alpha shape in the theme colour and a filled icon turns grey.
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -28,7 +22,6 @@ class NotificationIconTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
 
-    /** A real deploy notification, assembled by the production builder. */
     private fun realNotification() = ActionableNotificationBuilder.build(
         context,
         mapOf(
@@ -40,7 +33,6 @@ class NotificationIconTest {
         ),
     ).build()
 
-    /** Rasterises the small icon at 24dp times [scale] over transparency, as the system does. */
     private fun rasterizeSmallIcon(scale: Int = 16): Bitmap {
         val icon = realNotification().smallIcon
         assertNotNull(
@@ -89,7 +81,6 @@ class NotificationIconTest {
         val total = bitmap.width * bitmap.height
         val opaque = countOpaque(bitmap)
 
-        // The corners must be empty; a filled background shows as a grey square.
         for ((x, y) in listOf(
             0 to 0,
             bitmap.width - 1 to 0,
@@ -105,7 +96,6 @@ class NotificationIconTest {
             )
         }
 
-        // Coverage must look like a shape, not a block; a 20dp mark in a 24dp frame covers about 40%.
         val coverage = 100f * opaque / total
         assertTrue(
             "The icon covers %.0f%% of the 24dp frame. Outside 15%% to 70%% it does not read ".format(
@@ -117,7 +107,6 @@ class NotificationIconTest {
 
     @Test
     fun `keeps the cutouts that make the mark recognisable`() {
-        // The negative-space spine and wedges are what distinguish the mark from a plain hexagon.
         val bitmap = rasterizeSmallIcon()
         val middle = bitmap.width / 2
         val transparentInCenterColumn = (0 until bitmap.height).count {
@@ -131,7 +120,6 @@ class NotificationIconTest {
 
     @Test
     fun `the artwork is written out for visual review`() {
-        // No assert can detect a blurry 24dp icon, so write PNGs for checking by eye.
         val output = File("build/reports/notification-icon").apply { mkdirs() }
         File(output, "ic-notification-24dp.png").outputStream().use {
             rasterizeSmallIcon(scale = 24).compress(Bitmap.CompressFormat.PNG, 100, it)

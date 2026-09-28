@@ -6,11 +6,6 @@ import java.lang.reflect.Modifier
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * WorkManager's default factory finds the `(Context, WorkerParameters)` constructor by
- * reflection; without it the job fails before `doWork`. Kotlin default parameters do not
- * generate that constructor, and direct Kotlin construction in other tests would not notice.
- */
 class TransferWorkersConstructorTest {
 
     @Test

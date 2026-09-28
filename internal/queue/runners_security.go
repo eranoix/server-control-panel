@@ -1,22 +1,5 @@
 package queue
 
-// Security / audit / host-health runners.
-//
-// Derived from Linux server hardening best practice:
-//   - Recurring audit (Lynis), rootkit detection (rkhunter/chkrootkit),
-//     file integrity (AIDE), container vulnerability scanning
-//     (Trivy), fail2ban report.
-//   - Hygiene: audit snapshot (timers/cron/ports/logins) to diff against,
-//     cache/journal/tmp cleanup.
-//   - Spot monitoring: TLS certificate expiry, disk usage.
-//
-// All of them are primary-only (host-wide operations/observation). Runners that
-// depend on external tools fail with a friendly message when the tool is not
-// installed. Several of them "fail on purpose" when they find a problem
-// (rkhunter found something, aide detected a change, trivy found a CVE, a cert
-// expires soon) — that way the schedule fires the scheduler's failure
-// notification.
-
 import (
 	"context"
 	"crypto/tls"
@@ -32,7 +15,6 @@ import (
 	"time"
 )
 
-// requireTool returns a friendly error when bin is not in PATH.
 func requireTool(bin string) error {
 	if _, err := exec.LookPath(bin); err != nil {
 		return fmt.Errorf("tool %q is not installed on the host — install it to use this schedule", bin)
@@ -40,8 +22,6 @@ func requireTool(bin string) error {
 	return nil
 }
 
-// validHost is a light sanity check (host is passed to net/tls, not a shell):
-// non-empty, reasonable length, no spaces/slashes.
 func validHost(s string) bool {
 	if s == "" || len(s) > 253 {
 		return false
@@ -49,20 +29,16 @@ func validHost(s string) bool {
 	return !strings.ContainsAny(s, " /\\\t\n")
 }
 
-// --- SSLCheck runner: TLS certificate expiry ---
-
 type SSLCheckArgs struct {
 	Host     string `json:"host"`
-	Port     int    `json:"port,omitempty"`      // default 443
-	WarnDays int    `json:"warn_days,omitempty"` // fail when fewer than N days remain (default 14)
+	Port     int    `json:"port,omitempty"`
+	WarnDays int    `json:"warn_days,omitempty"`
 }
 
 type SSLCheckRunner struct{}
 
 func (SSLCheckRunner) Kind() string { return "ssl_check" }
 
-// PRIMARY-ONLY: connects to an arbitrary host:port (an SSRF-like primitive for
-// non-primary users). Primary already has a shell, so this grants no new privilege.
 func (SSLCheckRunner) AuthorizedFor(_ string, isPrimary bool) bool { return isPrimary }
 
 func (SSLCheckRunner) Run(ctx context.Context, args json.RawMessage, logW io.Writer, progress func(int), step func(string)) error {
@@ -85,9 +61,6 @@ func (SSLCheckRunner) Run(ctx context.Context, args json.RawMessage, logW io.Wri
 	step("checking the certificate of " + addr)
 	fmt.Fprintln(logW, "$ tls.Dial "+addr)
 	d := &net.Dialer{Timeout: 15 * time.Second}
-	// InsecureSkipVerify: we want to READ the certificate even when verification
-	// fails, and apply our own expiry policy. The real validity is evaluated
-	// below (NotAfter), and dialing already confirms the host answers TLS.
 	conn, err := tls.DialWithDialer(d, "tcp", addr, &tls.Config{ServerName: a.Host, InsecureSkipVerify: true}) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("TLS connection failed: %w", err)
@@ -111,11 +84,9 @@ func (SSLCheckRunner) Run(ctx context.Context, args json.RawMessage, logW io.Wri
 	return nil
 }
 
-// --- DiskCheck runner: disk usage above a threshold ---
-
 type DiskCheckArgs struct {
-	Path      string `json:"path,omitempty"`      // default /
-	Threshold int    `json:"threshold,omitempty"` // % (default 90)
+	Path      string `json:"path,omitempty"`
+	Threshold int    `json:"threshold,omitempty"`
 }
 
 type DiskCheckRunner struct{}
@@ -161,8 +132,6 @@ func (DiskCheckRunner) Run(ctx context.Context, args json.RawMessage, logW io.Wr
 	return nil
 }
 
-// --- SecurityAudit runner: Lynis ---
-
 type SecurityAuditRunner struct{}
 
 func (SecurityAuditRunner) Kind() string                                { return "security_audit" }
@@ -178,10 +147,8 @@ func (SecurityAuditRunner) Run(ctx context.Context, _ json.RawMessage, logW io.W
 	return streamCommand(ctx, cmd, logW, progress)
 }
 
-// --- RootkitScan runner: rkhunter / chkrootkit ---
-
 type RootkitScanArgs struct {
-	Tool string `json:"tool"` // "rkhunter" | "chkrootkit"
+	Tool string `json:"tool"`
 }
 
 type RootkitScanRunner struct{}
@@ -213,11 +180,8 @@ func (RootkitScanRunner) Run(ctx context.Context, args json.RawMessage, logW io.
 	}
 	step("hunting for rootkits (" + tool + ")")
 	fmt.Fprintln(logW, "$ "+strings.Join(cmd.Args, " "))
-	// Non-zero exit (it found something) propagates as a failure → notifies. Intentional.
 	return streamCommand(ctx, cmd, logW, progress)
 }
-
-// --- IntegrityCheck runner: AIDE ---
 
 type IntegrityCheckRunner struct{}
 
@@ -230,17 +194,14 @@ func (IntegrityCheckRunner) Run(ctx context.Context, _ json.RawMessage, logW io.
 	}
 	step("checking file integrity (aide)")
 	fmt.Fprintln(logW, "$ aide --check")
-	// aide --check returns != 0 when it detects changes → becomes a failure → notifies.
 	cmd := exec.CommandContext(ctx, "aide", "--check")
 	return streamCommand(ctx, cmd, logW, progress)
 }
 
-// --- TrivyScan runner: vulnerabilities in an image/filesystem ---
-
 type TrivyScanArgs struct {
-	Scope    string `json:"scope"`              // "image" | "fs"
-	Target   string `json:"target"`             // image ref or path
-	Severity string `json:"severity,omitempty"` // ex.: "HIGH,CRITICAL"
+	Scope    string `json:"scope"`
+	Target   string `json:"target"`
+	Severity string `json:"severity,omitempty"`
 }
 
 type TrivyScanRunner struct{}
@@ -270,7 +231,6 @@ func (TrivyScanRunner) Run(ctx context.Context, args json.RawMessage, logW io.Wr
 		return errors.New("scope must be image or fs")
 	}
 	if sev := strings.TrimSpace(a.Severity); sev != "" {
-		// Severity allowlist — keeps arbitrary flags from being injected.
 		for _, s := range strings.Split(sev, ",") {
 			switch strings.ToUpper(strings.TrimSpace(s)) {
 			case "UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL":
@@ -283,12 +243,9 @@ func (TrivyScanRunner) Run(ctx context.Context, args json.RawMessage, logW io.Wr
 	cmdArgs = append(cmdArgs, a.Target)
 	step("vulnerability scan (trivy " + a.Scope + ")")
 	fmt.Fprintln(logW, "$ trivy "+strings.Join(cmdArgs, " "))
-	// --exit-code 1: trivy returns 1 if it finds a CVE → failure → notifies.
 	cmd := exec.CommandContext(ctx, "trivy", cmdArgs...)
 	return streamCommand(ctx, cmd, logW, progress)
 }
-
-// --- Fail2banReport runner ---
 
 type Fail2banReportRunner struct{}
 
@@ -301,12 +258,9 @@ func (Fail2banReportRunner) Run(ctx context.Context, _ json.RawMessage, logW io.
 	}
 	step("fail2ban status")
 	fmt.Fprintln(logW, "$ fail2ban-client status")
-	// Fails when the service is down — which is useful: a dead fail2ban should alert.
 	cmd := exec.CommandContext(ctx, "fail2ban-client", "status")
 	return streamCommand(ctx, cmd, logW, progress)
 }
-
-// --- AuditReport runner: read-only snapshot for the audit trail ---
 
 type AuditReportRunner struct{}
 
@@ -314,9 +268,6 @@ func (AuditReportRunner) Kind() string                                { return "
 func (AuditReportRunner) AuthorizedFor(_ string, isPrimary bool) bool { return isPrimary }
 
 func (AuditReportRunner) Run(ctx context.Context, _ json.RawMessage, logW io.Writer, progress func(int), step func(string)) error {
-	// A snapshot of what is scheduled/listening/logging — to diff month over month
-	// (cron/timer audit best practice). Best-effort: an error in one section does
-	// not bring the whole report down.
 	section := func(title, bin string, a ...string) {
 		fmt.Fprintf(logW, "\n===== %s =====\n", title)
 		if _, err := exec.LookPath(bin); err != nil {
@@ -339,10 +290,8 @@ func (AuditReportRunner) Run(ctx context.Context, _ json.RawMessage, logW io.Wri
 	return nil
 }
 
-// --- Cleanup runner: disk-space hygiene ---
-
 type CleanupArgs struct {
-	Scope string `json:"scope"` // "apt_cache" | "journal" | "tmp"
+	Scope string `json:"scope"`
 }
 
 type CleanupRunner struct{}
@@ -362,7 +311,6 @@ func (CleanupRunner) Run(ctx context.Context, args json.RawMessage, logW io.Writ
 	case "journal":
 		cmd = exec.CommandContext(ctx, "journalctl", "--vacuum-time=14d")
 	case "tmp":
-		// Removes files in /tmp not accessed for 7+ days (fixed path, safe).
 		cmd = exec.CommandContext(ctx, "find", "/tmp", "-type", "f", "-atime", "+7", "-delete")
 	default:
 		return errors.New("scope must be apt_cache, journal or tmp")

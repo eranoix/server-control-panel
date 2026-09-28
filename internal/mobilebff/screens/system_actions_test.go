@@ -13,9 +13,6 @@ import (
 	"server-control-panel/internal/sysextra"
 )
 
-// fakeSystemActionsBackend is an in-memory stand-in for SystemDeps' mutating
-// closures, plus spy counters — mirrors fakeDockerActionsBackend
-// (docker_actions_test.go).
 type fakeSystemActionsBackend struct {
 	mu sync.Mutex
 
@@ -83,12 +80,6 @@ func (b *fakeSystemActionsBackend) auditLog() []systemAuditRecord {
 	return out
 }
 
-// --- Test 2: non-destructive round trip ---------------------------------
-
-// TestSystemAction_UnitActions_CallCorrectVerbAndInvalidate proves each of
-// the five unit actions calls deps.UnitAction with the matching action
-// string, reads params["id"] as the unit name, and returns Invalidate on the
-// systemd table.
 func TestSystemAction_UnitActions_CallCorrectVerbAndInvalidate(t *testing.T) {
 	backend := newFakeSystemActionsBackend()
 	deps := backend.deps()
@@ -124,8 +115,6 @@ func TestSystemAction_UnitActions_CallCorrectVerbAndInvalidate(t *testing.T) {
 	}
 }
 
-// TestSystemAction_UnitAction_EmptyIDIsNotFound proves an empty unit name
-// never reaches deps.UnitAction.
 func TestSystemAction_UnitAction_EmptyIDIsNotFound(t *testing.T) {
 	backend := newFakeSystemActionsBackend()
 	deps := backend.deps()
@@ -141,12 +130,6 @@ func TestSystemAction_UnitAction_EmptyIDIsNotFound(t *testing.T) {
 	}
 }
 
-// TestSystemAction_MetricsWindow_ValidWindowSetsPreferenceAndInvalidatesCharts
-// proves a valid window is written to the per-username preference store and
-// the response invalidates all three chart components. Uses a unique
-// username (never "golden-admin"/"golden-user"/"sys-admin"/"sys-user") per
-// systemMetricsWindowMu's doc comment, so this test's write can never leak
-// into another test's or the golden corpus' assertions.
 func TestSystemAction_MetricsWindow_ValidWindowSetsPreferenceAndInvalidatesCharts(t *testing.T) {
 	backend := newFakeSystemActionsBackend()
 	deps := backend.deps()
@@ -181,9 +164,6 @@ func TestSystemAction_MetricsWindow_ValidWindowSetsPreferenceAndInvalidatesChart
 	}
 }
 
-// TestSystemAction_MetricsWindow_InvalidWindowIsFieldError proves an
-// out-of-set window value is rejected without touching the preference
-// store.
 func TestSystemAction_MetricsWindow_InvalidWindowIsFieldError(t *testing.T) {
 	backend := newFakeSystemActionsBackend()
 	deps := backend.deps()
@@ -208,11 +188,6 @@ func TestSystemAction_MetricsWindow_InvalidWindowIsFieldError(t *testing.T) {
 	}
 }
 
-// --- Test 1 (destructive gate) + Test 3 (RBAC parity) --------------------
-
-// registerSystemActionsForTest registers the real system.* actions in this
-// test binary's global sdui action registry EXACTLY once — mirrors
-// registerDockerActionsForTest.
 var (
 	registerSystemActionsTestOnce sync.Once
 	registerSystemActionsTestDeps *fakeSystemActionsBackend
@@ -226,10 +201,6 @@ func registerSystemActionsForTest() *fakeSystemActionsBackend {
 	return registerSystemActionsTestDeps
 }
 
-// TestSystemAction_ProcessKillRequiresConfirmation proves
-// system.process.kill is unreachable without confirmation: an unconfirmed
-// RunAction call returns a ConfirmationFieldKey FieldErrors WITHOUT ever
-// calling deps.KillProcess.
 func TestSystemAction_ProcessKillRequiresConfirmation(t *testing.T) {
 	backend := registerSystemActionsForTest()
 	admin, _ := testSystemViewers()
@@ -261,13 +232,6 @@ func TestSystemAction_ProcessKillRequiresConfirmation(t *testing.T) {
 	}
 }
 
-// TestSystemAction_NonAdminDestructiveAndUnitActionsNotFound proves a
-// non-admin invoking kill or any of the five unit actions directly — even
-// fully confirmed — gets sdui.ErrActionNotFound at RunAction's authorize
-// step, never reaching the handler. This is the golden-harness-cannot-
-// express-ownership limitation from PLAN.md's Blocker 2: kill stays
-// admin-only for every viewer, there is no "kill only your own process"
-// carve-out.
 func TestSystemAction_NonAdminDestructiveAndUnitActionsNotFound(t *testing.T) {
 	backend := registerSystemActionsForTest()
 	_, nonAdmin := testSystemViewers()
@@ -307,12 +271,6 @@ func TestSystemAction_NonAdminDestructiveAndUnitActionsNotFound(t *testing.T) {
 	}
 }
 
-// TestSystemAction_MetricsWindow_ReachableByNonAdmin proves
-// system.metrics.window is open to any authenticated viewer, not admin-only
-// — reading/adjusting one's own metrics window has no destructive or
-// privileged aspect. Uses a unique username (never the shared "sys-user"
-// non-admin identity other tests in this file read/assert against) per
-// systemMetricsWindowMu's test-isolation rule.
 func TestSystemAction_MetricsWindow_ReachableByNonAdmin(t *testing.T) {
 	registerSystemActionsForTest()
 	nonAdmin := sdui.ViewerFrom(testSystemCfg(), "sys-window-test-nonadmin")

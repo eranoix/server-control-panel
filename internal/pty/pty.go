@@ -22,36 +22,21 @@ import (
 	"server-control-panel/internal/wsorigin"
 )
 
-// Keepalive parameters tuned to survive idle proxies/firewalls with 30s
-// timeouts AND browsers that throttle background tabs (which can stretch JS
-// timers but not protocol-level WS pings). Ping at 25s, expect pong within 45s.
 const (
-	pongWait   = 45 * time.Second
-	pingPeriod = 25 * time.Second
-	writeWait  = 10 * time.Second
-	maxMessage = 1 << 20 // 1 MiB — paste-buffer headroom
-	readChunk  = 8 * 1024
-	// maxPauseDuration: ceiling on how long flow control may keep the PTY paused
-	// without a resume from the client. Legitimate pauses last seconds (xterm
-	// drains MB/s); past that the client is stuck → auto-resume so it never freezes.
-	maxPauseDuration = 30 * time.Second
-	// maxSessionsPerUser caps how many sessions a single user can create.
-	// Each session costs ~10MB (shell + engine overhead). 20 is generous for normal
-	// use and blocks a DOS via a curl loop on /ws/shell?name=test$i. Could become
-	// configurable through a flag/env later.
+	pongWait           = 45 * time.Second
+	pingPeriod         = 25 * time.Second
+	writeWait          = 10 * time.Second
+	maxMessage         = 1 << 20
+	readChunk          = 8 * 1024
+	maxPauseDuration   = 30 * time.Second
 	maxSessionsPerUser = 20
-	// clientExitWait: how long teardown waits for the client (`dtach -a`)
-	// to leave on its own before SIGKILL. Two seconds is an eternity for a
-	// process that only has to close two descriptors and exit, and short
-	// enough that it never holds the handler for a noticeable time.
-	clientExitWait = 2 * time.Second
+	clientExitWait     = 2 * time.Second
 )
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  4096,
 	WriteBufferSize: 4096,
-	// Anti-CSRF: reject a WS upgrade whose Origin differs from the Host.
-	CheckOrigin: wsorigin.CheckSameHost,
+	CheckOrigin:     wsorigin.CheckSameHost,
 }
 
 type ctrlMsg struct {
@@ -59,65 +44,12 @@ type ctrlMsg struct {
 	Cols uint16 `json:"cols,omitempty"`
 	Rows uint16 `json:"rows,omitempty"`
 	Data string `json:"data,omitempty"`
-	// X: the SESSION column where this client's crop starts, for the "pan"
-	// type. Only meaningful in frame mode — see `frame.go`. Without it, on a
-	// client narrower than the session the right half would be unreachable.
-	X int `json:"x,omitempty"`
+	X    int    `json:"x,omitempty"`
 }
 
-// ownedSessionCount returns how many sessions the registry has recorded for the
-// user. It does not filter "alive vs dead" — the listing auto-purges on the next
-// operation, and the registry is refreshed then.
-
-// HostShell spawns (or reattaches to) a session and pipes it through
-// the websocket. Session names are taken verbatim from the client (just
-// sanitised to [A-Za-z0-9_-], max 40 chars) — no "panel-<user>-" prefix
-// glued on. Ownership is recorded in the *Ownership registry instead.
-//
-// `user` must come from the JWT (never the query string) so an attacker
-// cannot hijack another user's session. The session name comes from
-// ?name= (preferred) or ?tab= (legacy alias).
-//
-// primary should be true for any system admin (config.Primary or a user
-// flagged Admin — see config.IsAdmin); when true, attaching to an unowned
-// existing session claims it. When false, attaching to an unowned existing
-// session is rejected (the session belongs to the admins' adoption pool).
-//
-// If dtach is not installed we fall back to a plain login shell.
-// claudeConfigDir is the CLAUDE_CONFIG_DIR for the "terminal"
-// consumer's assigned account, or "" to inherit the default ($HOME/.claude).
-// Injected via the backend's env seam so any `claude` run inside the pane uses
-// the chosen account. NOTE: `new-session -A` only applies -e when CREATING the
-// session — switching accounts requires killing + recreating the pane (the env
-// is frozen at first attach). The UI surfaces this.
-// serverPriming decides, for one connection, which of the TWO mechanisms the
-// server has to "fill the client's screen" should run: re-emitting the
-// recorded history (`attachReplay`) and forcing the remote program to repaint
-// (`repaint-wobble`).
-//
-// They are two mechanisms and a single question: WHO REBUILDS THE SCREEN. They lived
-// behind separate flags for far too long, and it was that separation that left the
-// Android app — which rebuilds its own screen — getting a wobble on
-// every attach. See the evidence block on `repaint-wobble`, in [HostShell].
-//
-//	attach=1  → "I already have the screen" (reconnect): no history, no repaint.
-//	replay=0  → "I rebuild the screen": no history, no repaint.
-//	none      → client that does not prime itself (the web panel): both.
 func serverPriming(attach, replay string) (sendHistory, forceRepaint bool) {
 	freshAttach := attach != "1"
 	clientRebuildsScreen := replay == "0"
-	// HISTORY and REPAINT are DIFFERENT questions again, and this time the
-	// separation is the right answer, not the defect.
-	//
-	// A client that rebuilds the screen on its own (the app) does not want the
-	// server's history — it would show everything twice. But it DOES need the
-	// repaint, and the reason is measured in the comment on `wobble`: the log is a
-	// cut of a live stream taken at an arbitrary instant, and in the middle of a
-	// frame it rebuilds a half-painted screen. Only the program knows how to draw
-	// the whole frame.
-	//
-	// On a reconnect (attach=1) neither runs: the client's in-memory grid is
-	// intact, and repainting over it would duplicate.
 	return freshAttach && !clientRebuildsScreen, freshAttach
 }
 
@@ -128,30 +60,12 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	}
 	defer conn.Close()
 
-	// The session engine is `dtach`, and it is the only one. There was a flag
-	// selector (PANEL_SESSION_BACKEND) while two engines ran side by side, for an
-	// instant rollback during the migration; the migration finished and the selector
-	// went away. `NewSessionBackend` survives anyway because it keeps callers
-	// decoupled from the concrete engine — which cost nothing and pays off the day
-	// there is a second one.
-	//
-	// THE SWEEP WENT ALL THE WAY: the old engine's name is gone from the whole
-	// package. If someone reintroduces it in a comment, that is a sign they copied
-	// stale text — the engine is `dtach`, and it is the only one.
-	//
-	// What the sweep did NOT erase is the REASONING behind the decisions: wherever
-	// the difference between the previous engine and this one explained a choice,
-	// the explanation stayed, described by BEHAVIOUR instead of by name. A name is a
-	// label; what makes someone understand why the code looks like this is the
-	// behaviour.
 	backend := NewSessionBackend(dataDir, reg)
 
 	user = safeSessionName(user)
 	if user == "" {
 		user = "anon"
 	}
-	// Both ?name= (preferred) and ?tab= (legacy alias) accept the raw
-	// session name. Sanitise but do NOT glue any prefix on.
 	sessionName := safeSessionName(r.URL.Query().Get("name"))
 	if sessionName == "" {
 		sessionName = safeSessionName(r.URL.Query().Get("tab"))
@@ -160,20 +74,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		sessionName = "main"
 	}
 
-	// attach-only (auto-reconnect): NEVER resurrect a session that has ended.
-	// The web-terminal pane keeps a reconnect loop; killing a session while its
-	// pane is still open used to race that reconnect, which recreated the
-	// session via `new-session -A` (attach-OR-create) below — so a deliberately
-	// deleted session reappeared "active" seconds later. On every reconnect the
-	// client sets ?attach=1; if the session is gone we refuse with a distinct
-	// close code (4404) so the pane stops reconnecting and shows a "session
-	// ended" notice instead of spawning a blank shell in its place.
-	//
-	// SECURITY: the precise liveness signal (4404) only reaches whoever MAY touch the
-	// name — the owner, the "*" audience or an admin. A non-owner gets the
-	// SAME generic "session not found" the ACL would give for someone else's live
-	// session; otherwise attach=1 becomes an existence oracle (telling
-	// "dead/nonexistent" from "alive-but-another's" breaks the 404-not-403 discipline).
 	if r.URL.Query().Get("attach") == "1" {
 		owner := own.Owner(sessionName)
 		if owner == user || owner == AudienceAll || primary {
@@ -189,35 +89,20 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		}
 	}
 
-	// ACL check (mirrors handleTerminalKillSession's 404). The branch
-	// where the registry says nobody owns the name is the interesting
-	// one: if the session already exists on the host and user is
-	// NOT primary, we refuse (it's part of the primary's adoption pool);
-	// if it doesn't exist OR user IS primary, we claim it now and let
-	// `new-session -A` either attach or create.
 	owner := own.Owner(sessionName)
 	switch {
 	case owner == user || owner == AudienceAll:
-		// ours, or shared to everyone ("Everyone") — proceed. We do NOT
-		// re-Claim here: that would overwrite the audience and steal posse.
 	case owner != "" && owner != user:
-		// owned by another profile: an admin (master session manager) may
-		// attach it — proceed WITHOUT re-Claim so posse/audience stay intact.
-		// A non-admin never even learns it exists (404, not 403).
 		if !primary {
 			conn.WriteMessage(websocket.TextMessage, []byte("session not found"))
 			return
 		}
-	default: // owner == ""
+	default:
 		exists, _ := backend.Has(sessionName)
 		if exists && !primary {
-			// legacy unowned session — only primary can adopt.
 			conn.WriteMessage(websocket.TextMessage, []byte("session not found"))
 			return
 		}
-		// Before creating a NEW session (one that does not exist yet), apply the
-		// per-user quota. Re-attaching to your own existing session does not
-		// count — only creation. Blocks a DOS by an endless session-creating loop.
 		if !exists {
 			current := ownedSessionCount(own, user)
 			if current >= maxSessionsPerUser {
@@ -227,7 +112,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 			}
 		}
 		if err := own.Claim(sessionName, user); err != nil {
-			// concurrent claim wedged us out.
 			conn.WriteMessage(websocket.TextMessage, []byte("session not found"))
 			return
 		}
@@ -238,11 +122,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		shell = "/bin/bash"
 	}
 
-	// Session env injected at CREATION time: CLAUDE_CONFIG_DIR. The backend
-	// maps it — dtachBackend via
-	// `systemd-run --setenv`. It is exactly what the legacy path injected, and the
-	// behaviour is identical. backend.Attach returns the
-	// client (attach-or-create), confined to user.slice when it creates the server.
 	var sessionEnv []string
 	if claudeConfigDir != "" {
 		sessionEnv = append(sessionEnv, "CLAUDE_CONFIG_DIR="+claudeConfigDir)
@@ -252,8 +131,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		cmd = exec.Command(shell, "-l")
 	}
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-	// also carry CLAUDE_CONFIG_DIR on the client env — harmless for
-	// the session client, and essential for the no-dtach fallback shell above.
 	if claudeConfigDir != "" {
 		cmd.Env = append(cmd.Env, "CLAUDE_CONFIG_DIR="+claudeConfigDir)
 	}
@@ -263,32 +140,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		return
 	}
 	defer func() {
-		// Kills only the CLIENT process (cmd) — the `dtach -a`. SIGHUP merely
-		// DETACHES; the session (the dtach master) stays
-		// alive in user.slice. A reattach picks up where it left off.
-		//
-		//
-		// This used to be a bare `cmd.Process.Wait()`. A `Wait` with no deadline inside
-		// a handler is a hang waiting to happen: all it takes is the client not dying
-		// on SIGHUP — pty already closed, signal ignored, process stuck in I/O —
-		// and `HostShell` NEVER RETURNS.
-		//
-		// The cost of that stopped being "one leaked process" and became
-		// active damage, because of two things this file now does:
-		//
-		//  1. The connection still counts as attached, so it is still the SCRIBE
-		//     for the session log (`sessionlog_shared.go`) — a dead
-		//     connection doing the recording.
-		//  2. Its size still counts towards the SMALLEST
-		//     (`session_size.go`), and a dead connection with a small
-		//     window SHRINKS EVERYONE'S SESSION, forever. There is no operator
-		//     gesture that undoes it; only restarting the server.
-		//
-		// So: ask politely, wait a little, and kill. A leaked process is a
-		// nuisance; a handler that never returns is a leak that gets worse over
-		// time. If even SIGKILL does not settle it (process in D state, pinned to
-		// stuck disk I/O), we give up and RETURN anyway — releasing the session
-		// slot matters more than reaping the child.
 		_ = ptmx.Close()
 		if cmd.Process == nil {
 			return
@@ -313,15 +164,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		}
 	}()
 
-	// Tee the pty output into the session log (replaces capture-pane; see
-	// sessionlog.go). Absolutely best-effort: openSessionLog never returns nil and
-	// Write swallows errors — the terminal must never break because of the log. It
-	// is wired in from the very start so the log is already populated when read.
-	//
-	// ONE writer per SESSION, shared by every connection — see
-	// [acquireSessionLog]. Opening one per connection wrote every byte once per
-	// attached client, and the Android app, which rebuilds the screen by replaying
-	// this log, got the same frame twice.
 	var tee io.Writer
 	var sharedSession *sharedLog
 	var connID int64
@@ -331,31 +173,13 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		tee = slog
 		sharedSession = shared
 		connID = id
-		// The log must not stop when this tab closes: the session stays alive
-		// producing output, and without a recorder of its own none of that is
-		// written anywhere. See `recorder.go` — idempotent, best-effort, and it
-		// never creates a session.
 		EnsureRecorder(dataDir, user, sessionName, reg)
 	}
 
-	// On a new attach (not a reconnect) the xterm starts empty and dtach re-emits
-	// nothing. For a plain SHELL we replay the tee-log history (the client "lands"
-	// straight into its scrollback instead of a black screen). TUI sessions
-	// (claude/vim) are skipped — there the repaint comes from the wobble below. A
-	// reconnect (attach=1) does NOT replay: the xterm still holds the content, it
-	// would duplicate. Absolutely best-effort.
-	//
-	// `replay=0` is the client saying "I AM THE ONE WHO REBUILDS THE SCREEN" — and
-	// that waives BOTH mechanisms here: this block and the repaint-wobble below.
-	// See [clientRebuildsScreen] for why tying the two together is right, and
-	// why splitting them cost the operator three corrupted screens.
 	sendHistory, forceRepaint := serverPriming(
 		r.URL.Query().Get("attach"),
 		r.URL.Query().Get("replay"),
 	)
-	// The same "I rebuild the screen" that decides the history also decides whether
-	// `dtach`'s attach-time clear is allowed to reach this client — see
-	// [dtachAttachClear].
 	clientPrimesOwnScreen := r.URL.Query().Get("replay") == "0"
 
 	if dataDir != "" && sendHistory {
@@ -365,16 +189,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		}
 	}
 
-	// dtach keeps no screen; it attaches with `-r winch` (a single SIGWINCH). TUI
-	// apps whose renderer only emits on the DIFF (Ink/Claude Code) re-render into the
-	// SAME buffer when the size does not change → ZERO bytes written → the new client
-	// stays BLACK. The only cure used to be opening the session in another client
-	// (VSCode) at a DIFFERENT size, which forces a full relayout+repaint. We reproduce
-	// that ourselves: on attach we "wobble" by one row (R-1 → R) with enough slack for
-	// the app to paint the intermediate frame — so the repaint happens even when
-	// reattaching at the same size. Once per connection (sync.Once); it always
-	// restores the MOST recent size the client reported, so it never fights a
-	// concurrent resize.
 	var (
 		szMu               sync.Mutex
 		lastCols, lastRows uint16
@@ -383,19 +197,11 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		repaintOnce        sync.Once
 	)
 
-	//
-	// See `frame.go`. In short: when this client's window is SMALLER than the
-	// session, it stops receiving the raw stream (which is drawn for the session's
-	// grid and would land entirely in the wrong place) and starts receiving a
-	// rendered crop of the server's screen, diffed line by line.
-	//
-	// This is what lets the session sit at the LARGEST client instead of the
-	// smallest — that is, the phone stops shrinking the desktop.
 	acceptsFrame := r.URL.Query().Get("frame") == "1"
 	var (
 		frameMu          sync.Mutex
 		frame            *clientFrame
-		winCols, winRows uint16 // this client's REAL window
+		winCols, winRows uint16
 		scrolledTotal    int
 		stopFrame        func()
 	)
@@ -406,23 +212,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		return frame != nil
 	}
 
-	//
-	// applySize puts the session's EFFECTIVE size on THIS connection, and does
-	// both halves together because they are a single decision:
-	//
-	//  1. the pty of THIS connection — it is what this `dtach -a` reports to the
-	//     master. Without it, every connection kept a different size and the master
-	//     arbitrated between clients that disagreed. Worse: an arriving client was
-	//     sized by nobody, because `pty.Start` creates the pty at 0x0 and the only
-	//     path that fixed it was the repaint-wobble — by accident.
-	//
-	//  2. the client's grid (the `{"type":"size"}` notice), for whoever asked for
-	//     `size=1`. A client drawing a grid different from the PTY's puts every
-	//     piece of text in the wrong place.
-	//
-	// Reapplying the same size is cheap and safe: the kernel compares the winsize
-	// before signalling (`tty_do_resize`), so an identical TIOCSWINSZ does NOT
-	// raise SIGWINCH and does not make the program repaint.
 	applySize := func(cols, rows uint16) {
 		if cols < 2 || rows < 1 {
 			return
@@ -431,9 +220,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		lastCols, lastRows = cols, rows
 		notifyFn := notifyClient
 		szMu.Unlock()
-		// The pty of THIS connection goes to the session's size even in frame
-		// mode: it is what this `dtach -a` reports to the master, and that is what
-		// stops this client from dragging the session down to its own size.
 		_ = pty.Setsize(ptmx, &pty.Winsize{Cols: cols, Rows: rows})
 
 		frameMu.Lock()
@@ -446,24 +232,12 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 				frame.resize(int(jc), int(jr))
 			}
 		} else if frame != nil {
-			// The session now fits in its window: back to the raw stream, which is
-			// cheaper and is the usual path. The program will repaint.
 			frame = nil
 		}
 		inFrame := frame != nil
 		frameMu.Unlock()
 
 		if inFrame {
-			// In frame mode it draws ITS OWN grid — being told "draw
-			// 120x40" in a 53x45 window is exactly the defect frame mode
-			// exists to prevent.
-			//
-			// And the notice carries ITS window rather than being suppressed: a
-			// client that had already been told the session's grid before it
-			// shrank would stay stuck on it (the panel remembers the last notice
-			// and the FitAddon obeys — see the session grid handling in 00-shell.js). Sending
-			// its own window is how you say "go back to drawing your own size"
-			// using the mechanism that already exists, instead of inventing another.
 			if notifyFn != nil {
 				notifyFn(jc, jr)
 			}
@@ -477,12 +251,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 			notifyFn(cols, rows)
 		}
 	}
-	//
-	// It lives in a goroutine of its own on purpose: what announces that the screen
-	// changed is the RECORDER, and the recorder is the only thing feeding the
-	// session log. Composing and writing to the websocket in there would let one
-	// slow client hold up the record of the entire session. The notice only raises
-	// a flag; the work happens here.
 	if acceptsFrame && dataDir != "" {
 		screen := screenOf(dataDir, user, sessionName)
 		if screen != nil {
@@ -492,7 +260,7 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 				frameMu.Unlock()
 				select {
 				case frameSignal <- struct{}{}:
-				default: // a signal is already pending: the next frame covers it
+				default:
 				}
 			})
 			frameDone := make(chan struct{})
@@ -512,8 +280,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 						return
 					case <-frameSignal:
 					}
-					// Coalesce whatever arrives over the next few milliseconds:
-					// fast typing does not need one frame per keystroke.
 					time.Sleep(16 * time.Millisecond)
 
 					frameMu.Lock()
@@ -548,23 +314,17 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		}
 	}
 
-	// Registered RIGHT AWAY, before the first resize: that way a connection that
-	// arrives mid-session gets the size in force without having had to speak.
 	if sharedSession != nil {
 		if c, r := sharedSession.registerApplier(connID, applySize); c > 0 && r > 0 {
 			applySize(c, r)
 		}
 	}
 	wobble := func() {
-		// Let any BURST of reattach output settle before forcing the repaint —
-		// otherwise the app repaints and the burst immediately dirties the screen again
-		// (typical on deploy: the server restarts, the session reattaches, and Claude
-		// Code dumps its current frame into the new client).
 		time.Sleep(180 * time.Millisecond)
 		szMu.Lock()
 		c, rw := lastCols, lastRows
 		szMu.Unlock()
-		if c == 0 || rw == 0 { // client has not sent a size yet → use the master's
+		if c == 0 || rw == 0 {
 			if ws, err := pty.GetsizeFull(ptmx); err == nil {
 				c, rw = ws.Cols, ws.Rows
 			}
@@ -572,24 +332,10 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		if c == 0 || rw < 2 {
 			return
 		}
-		// A DRAMATIC shrink, but **in ROWS only**: TUI apps (Ink/Claude
-		// Code) IGNORE or coalesce small nudges and only invalidate+repaint the
-		// whole screen on a BIG change — which is exactly what minimising the
-		// window used to unstick. Shrink → hold (the app re-lays out) → restore
-		// (invalidate again → full repaint, clearing the reattach
-		// corruption). Typical on deploy: the server restarts, the session
-		// reattaches at the same size and the app's partial frame dirties the screen.
-		//
-		// Only ROWS change, and only upwards. Changing columns makes a TUI re-render
-		// its whole history at the new width; the squeezed copy stays in the
-		// scrollback and gets teed into the session log, duplicating history.
-		// Shrinking rows scrolls content into the scrollback and fuses two frames.
-		// Growing by one row sends the same SIGWINCH, forces the same re-layout and
-		// neither scrolls nor reflows anything.
 		bigger := pty.Winsize{Cols: c, Rows: rw + 1}
 		_ = pty.Setsize(ptmx, &bigger)
 		time.Sleep(350 * time.Millisecond)
-		szMu.Lock() // restore to the most recent size
+		szMu.Lock()
 		c2, r2 := lastCols, lastRows
 		szMu.Unlock()
 		if c2 == 0 || r2 == 0 {
@@ -598,23 +344,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		_ = pty.Setsize(ptmx, &pty.Winsize{Cols: c2, Rows: r2})
 		log.Printf("[pty] repaint wobble on attach: %dx%d → %dx%d → %dx%d (session %q)", c, rw, bigger.Cols, bigger.Rows, c2, r2, sessionName)
 	}
-	// Fallback: if the client reconnects WITHOUT resending a resize (no re-fit), we
-	// still force a repaint using the master's current size. Cancelled at teardown
-	// (attachDone) so it does not wobble ~750ms after the request has already closed.
-	// The wobble ALWAYS fires in a goroutine (go wobble()) so the sync.Once NEVER
-	// holds the proxy's read loop for the wobble's 150ms.
-	// The SERVER wobble only arms on a FRESH attach (not a reconnect). On a reconnect
-	// (attach=1) the screen is cleared by the CLIENT wobble (it resizes its own xterm
-	// → reflows the browser's corrupted grid, which the server cannot reach).
-	// Running both would make them fight; so the server covers the fresh attach and
-	// the client covers the reattach.
-	//
-	// Every fresh attach gets the repaint, including clients that prime their own
-	// screen from the log: the log is a cut of a live stream, and a replay cut
-	// mid-frame rebuilds a half-painted screen that an idle program never fixes.
-	// The nudge grows instead of shrinking (see `wobble`), because lying about a
-	// SMALLER geometry corrupts the remote program's frame. The decision lives in
-	// [serverPriming], where it is tested.
 	defer func() {
 		if stopFrame != nil {
 			stopFrame()
@@ -633,47 +362,20 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		}
 	}()
 
-	// `size=1` is the client saying it UNDERSTANDS the effective-size notice and
-	// that it will draw the SESSION's grid. Anyone who does not ask carries on as
-	// before — an old client would receive the JSON and write it to the screen.
 	wantsNotice := r.URL.Query().Get("size") == "1"
 
-	// req*: what THIS client last asked for. It serves only the instrumentation
-	// below — what rules the pty is the session's EFFECTIVE size, kept in
-	// last* by [applySize]. Confusing the two is what made the
-	// repaint-wobble restore this client's raw request on top of the
-	// effective size, silently trampling the minimum.
-	// Only the proxy's read loop touches this, and it is single-threaded.
 	var reqCols, reqRows uint16
 	proxy(conn, ptmx, func(cols, rows uint16) {
-		// INSTRUMENTATION: every size change makes a differentially redrawing
-		// app (Ink/Claude Code) repaint the WHOLE FRAME. If the frame is taller
-		// than the screen, the repaint's `ESC[nA` saturates at the first line and
-		// the previous copy stays — and that is the duplication the operator
-		// reports, now live and not only on attach.
-		//
-		// The suspicion is that the phone's on-screen keyboard is shrinking the
-		// grid (adjustResize + imePadding) and giving it back, one SIGWINCH per
-		// open and close. The wobble log has already shown the signature: it
-		// restored at 53 having left from 52. Without this record, the correlation
-		// between opening the keyboard and duplicating stays a guess — with it, it
-		// becomes a measurement.
 		if reqRows != 0 && (reqCols != cols || reqRows != rows) {
 			log.Printf("[pty] client resize: %dx%d → %dx%d (session %q)", reqCols, reqRows, cols, rows, sessionName)
 		}
 		reqCols, reqRows = cols, rows
-		// This client's REAL window. In frame mode its pty sits at the SESSION's
-		// size, so this is the only place holding the true size — and it is what
-		// the crop is computed against.
 		frameMu.Lock()
 		winCols, winRows = cols, rows
 		if frame != nil {
 			frame.resize(int(cols), int(rows))
 		}
 		frameMu.Unlock()
-		// The PTY sits at the LARGEST among the clients that accept frame mode —
-		// see `session_size.go`. With a single client this is the identity;
-		// with two, it is the difference between converging and fighting forever.
 		if sharedSession == nil {
 			applySize(cols, rows)
 		} else {
@@ -685,21 +387,13 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 					log.Printf("[pty] effective size (smallest across clients): %dx%d (session %q)",
 						effCols, effRows, sessionName)
 				}
-				// OUTSIDE the lock: applying means writing to a websocket and an
-				// ioctl, and doing that while holding the session mutex is how you
-				// invent a deadlock between two connections.
 				for _, apply := range appliers {
 					apply(effCols, effRows)
 				}
 			} else {
-				// The SESSION has not changed, but THIS client may have just
-				// arrived: its pty is born 0x0 and needs the effective size
-				// either way. Returning early here is what left a new
-				// connection depending on the wobble to get sized.
 				applySize(effCols, effRows)
 			}
 		}
-		// first resize from the client = it has just attached → fire the repaint (fresh attach only).
 		if forceRepaint {
 			repaintOnce.Do(func() { go wobble() })
 		}
@@ -710,26 +404,14 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		if !wantsNotice {
 			return
 		}
-		// From here on [applySize] tells the client too. And it announces what
-		// is already in force: a client arriving mid-session needs to know the
-		// session's size BEFORE the first byte, otherwise it draws the first frame
-		// on the wrong grid.
 		szMu.Lock()
 		notifyClient = notifyFn
 		cols, rows := lastCols, lastRows
 		szMu.Unlock()
-		// A client that accepts frame mode does NOT get the initial notice: at this
-		// instant we still do not know its window (the first resize has not arrived),
-		// and telling "draw the session's grid" to a client that will end up in frame
-		// mode is exactly the defect frame mode prevents. If it turns out to be big
-		// enough, the notice goes out from [applySize] right afterwards.
 		if cols > 0 && rows > 0 && !acceptsFrame && !inFrameMode() {
 			notifyFn(cols, rows)
 		}
 	}, func(p []byte, first bool) []byte {
-		// In frame mode the raw stream does not go to this client: it is drawn for
-		// the SESSION's grid and would land entirely in the wrong place in the
-		// smaller window. What draws there is the compositor (`frame.go`).
 		if inFrameMode() {
 			return nil
 		}
@@ -760,16 +442,10 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	})
 }
 
-// ContainerShell execs into a running container with a TTY.
 func ContainerShell(w http.ResponseWriter, r *http.Request, cli *dockerclient.Client, id string) {
 	ContainerExec(w, r, cli, id, nil, nil)
 }
 
-// ContainerExec is ContainerShell with the command (and the env) chosen by the
-// caller. It was born for the recovery Claude, which needs to enter
-// a NAMED session instead of a loose shell: that way the conversation survives
-// a browser reconnect, which on an emergency screen is the rule and not the
-// exception. An empty `cmd` keeps the old behaviour (login shell).
 func ContainerExec(w http.ResponseWriter, r *http.Request, cli *dockerclient.Client, id string, cmd []string, env []string) {
 	conn, err := upgrader.Upgrade(w, r, wsorigin.SecHeaders())
 	if err != nil {
@@ -802,10 +478,9 @@ func ContainerExec(w http.ResponseWriter, r *http.Request, cli *dockerclient.Cli
 
 	proxy(conn, wsFromHijacked{attach.Conn, attach.Reader}, func(cols, rows uint16) {
 		_ = cli.ContainerExecResize(ctx, exec.ID, container.ResizeOptions{Width: uint(cols), Height: uint(rows)})
-	}, nil, nil, nil, nil) // docker exec: there is no `dtach` in the path, and no screen to compose
+	}, nil, nil, nil, nil)
 }
 
-// wsFromHijacked adapts hijacked connection to io.ReadWriteCloser.
 type wsFromHijacked struct {
 	w io.WriteCloser
 	r io.Reader
@@ -817,53 +492,16 @@ func (h wsFromHijacked) Close() error                { return h.w.Close() }
 
 type resizer func(cols, rows uint16)
 
-// sizeIsSane rejects degenerate sizes. A hidden or buggy client sending 1x1
-// would make the program redraw into a single column, which is pure garbage; the
-// ceiling keeps out the absurdities at the other end.
-//
-// There is deliberately no per-connection dedup of sizes: with several clients
-// the PTY sits at the SMALLEST, and a per-connection "already applied" memory
-// would stop the bigger client from re-asserting when the small one leaves.
-// Repeated SIGWINCH is avoided by the session (`recompute` only reports a
-// change of the EFFECTIVE size) and by the kernel (`tty_do_resize` does not
-// signal an unchanged winsize).
 func sizeIsSane(cols, rows uint16) bool {
 	return cols >= 2 && rows >= 1 && cols <= 1000 && rows <= 1000
 }
 
-// proxy bridges a websocket connection and a PTY-like ReadWriteCloser.
-// It enforces ping/pong keepalive, read/write deadlines and serialises all
-// writes to the websocket through a single mutex so the ping goroutine and
-// the PTY-output goroutine never race on the underlying conn.
-// sizeNotice is the control frame that tells the client the session's
-// EFFECTIVE size — the smallest among the attached clients.
-//
-// It is the second half of the classic multiplexer rule: the server picks the
-// size AND SAYS SO, and
-// the client draws a grid of THAT size, not of its own window. Without this, a
-// larger client renders into a grid bigger than the one the program is painting
-// for, and all of the text lands in the wrong place.
-//
-// It goes as TEXT, not as PTY bytes, so it does not pass through the client's
-// emulator: it is a conversation between server and client, not program output.
 type sizeNotice struct {
 	Type string `json:"type"`
 	Cols uint16 `json:"cols"`
 	Rows uint16 `json:"rows"`
 }
 
-// outputFilter decides what of the PTY reaches THIS connection. It receives the
-// chunk and whether it is the FIRST of this connection; returning nil/empty
-// swallows the chunk.
-//
-// Two uses, and both have to be per connection:
-//
-//   - the first chunk carries the "erase everything" that `dtach` sends to an
-//     arriving client, and a client that primes its own screen must not get it
-//     (it would erase what it has painted);
-//   - in frame mode (`frame.go`) the raw stream is drawn for the SESSION's
-//     grid and would land entirely in the wrong place in the client's smaller
-//     window — what draws there is the compositor, not the PTY.
 type outputFilter func(p []byte, first bool) []byte
 
 func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.Writer, onWritable func(notifySize func(uint16, uint16), writeBytes func([]byte) error), filterFn outputFilter, shift func(int)) {
@@ -874,8 +512,6 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 		return nil
 	})
 
-	// Record the connection as live so that a SIGTERM (deploy) can warn it
-	// before the process dies — see restart.go.
 	defer registerLive(conn)()
 
 	var mu sync.Mutex
@@ -885,8 +521,6 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 		_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
 		return conn.WriteMessage(websocket.BinaryMessage, b)
 	}
-	// Only clients that ASKED for the notice receive it — see `HostShell`. An old
-	// client that does not understand the frame would write JSON to the screen.
 	if onWritable != nil {
 		onWritable(func(cols, rows uint16) {
 			b, err := json.Marshal(sizeNotice{Type: "size", Cols: cols, Rows: rows})
@@ -915,17 +549,10 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 		})
 	}
 
-	// The client (xterm.js) says when its write buffer is full ({type:pause}) or has
-	// drained again ({type:resume}). On pause, the PTY->WS pump STOPS reading the rwc
-	// → the OS-PTY buffer fills → the program blocks on write and stops producing
-	// (real backpressure, no bytes dropped). Without this, heavy output (Claude
-	// streaming) overruns xterm's 50MB buffer, which then DISCARDS data =
-	// corruption/missing characters. This is the official xterm.js pattern (its Flow
-	// Control guide).
 	var (
 		fcMu     sync.Mutex
 		fcPaused bool
-		fcResume = make(chan struct{}) // (re)created on every pause; closed on resume
+		fcResume = make(chan struct{})
 	)
 	setPaused := func(p bool) {
 		fcMu.Lock()
@@ -948,15 +575,10 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 			ch := fcResume
 			fcMu.Unlock()
 			select {
-			case <-ch: // resumed
+			case <-ch:
 			case <-done:
 				return
 			case <-time.After(maxPauseDuration):
-				// Defence against a stuck client: if the xterm has not resumed within
-				// maxPauseDuration (frozen renderer, a write callback that never
-				// fired), auto-resume so the terminal is NOT left frozen forever. If
-				// the client is still overloaded it pauses again on the next
-				// message — so this is safe.
 				setPaused(false)
 				log.Printf("[pty] flow control: auto-resume after %v paused (the client never resumed)", maxPauseDuration)
 				return
@@ -964,7 +586,6 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 		}
 	}
 
-	// PTY -> WS pump — panic recovery: pty.Read can raise on a closed fd.
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -975,12 +596,9 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 		buf := make([]byte, readChunk)
 		firstBlock := true
 		for {
-			waitIfPaused() // backpressure: blocks while the client asked for a pause
+			waitIfPaused()
 			n, err := rwc.Read(buf)
 			if n > 0 {
-				// Tee into the session log BEFORE the WS: best-effort, error ignored
-				// (sessionLogWriter.Write never really fails). Only the pty's output
-				// is logged — user input does not pass through here.
 				if tee != nil {
 					_, _ = tee.Write(buf[:n])
 				}
@@ -1003,7 +621,6 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 		}
 	}()
 
-	// ping ticker — keeps NAT/proxy idle timers from killing the connection
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -1026,7 +643,6 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 		}
 	}()
 
-	// WS -> PTY pump (this goroutine is the function's main loop)
 	for {
 		mt, data, err := conn.ReadMessage()
 		if err != nil {
@@ -1040,55 +656,24 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 				if jerr := json.Unmarshal(data, &m); jerr == nil {
 					switch m.Type {
 					case "resize":
-						// No per-connection dedup: what reaches the PTY is decided
-						// by the session. See [sizeIsSane].
 						if resize != nil && sizeIsSane(m.Cols, m.Rows) {
 							resize(m.Cols, m.Rows)
 						}
 					case "pan":
-						// Pans this client's crop horizontally. Inert outside
-						// frame mode.
 						if shift != nil {
 							shift(m.X)
 						}
 					case "input":
 						_, _ = rwc.Write([]byte(m.Data))
 					case "paste":
-						// Bracketed paste (xterm and mosh already do this): the
-						// pasted content arrives wrapped in ESC[200~ ... ESC[201~
-						// in a SINGLE Write, so readline shells (bash/zsh) and
-						// apps like vim treat it as ONE atomic block — without the
-						// line-by-line auto-indent that raw "input" would produce.
-						// The server does not track whether the app on the other
-						// side has bracketed paste enabled; the terminal/app itself
-						// decides, exactly as with any real xterm client.
 						_, _ = rwc.Write([]byte("\x1b[200~" + m.Data + "\x1b[201~"))
 					case "pause":
-						// flow control: client buffer full → stop reading the PTY
 						setPaused(true)
 					case "resume":
 						setPaused(false)
 					case "ping":
-						// Application-level heartbeat from the browser. ANSWERING is not
-						// optional: the client watchdog closes the
-						// connection with code 4000 after 70s without ANY
-						// message, and PROTOCOL pings/pongs are invisible to
-						// JavaScript. On an IDLE pane — user reading or typing
-						// without producing output — nothing arrived, and the watchdog killed a
-						// HEALTHY connection every ~70s. That was the "it keeps reconnecting
-						// by itself": self-inflicted, not a network problem.
-						//
-						// The answer is a deliberately EMPTY binary frame. The
-						// client writes to the terminal everything that arrives, so a pong
-						// in JSON would become garbage on screen for any client with the old
-						// JS still cached. Zero bytes is invisible when written and
-						// still counts as a "message" for the watchdog — the
-						// fix works for new AND old clients.
 						_ = writeBinary(nil)
 					}
-					// Valid JSON (with or without a known type) NEVER falls through
-					// to the fallback Write — otherwise a well-formed
-					// {"type":"foo"} would leak into the session as literal text.
 					continue
 				}
 			}

@@ -14,19 +14,13 @@ import (
 	"server-control-panel/internal/webpush"
 )
 
-// fcmCall records one SendDataToUser invocation observed by fakeFCMSender.
 type fcmCall struct {
 	user    string
 	data    map[string]string
 	opts    fcmpush.DataOptions
-	allowed bool // result of allowDevice("probe-device"), if allowDevice != nil
+	allowed bool
 }
 
-// fakeFCMSender implements the videocall-local fcmRingSender interface.
-// fcmpush.Sender's fields are all unexported (white-box test construction
-// only works from within the fcmpush package itself), so a real Sender
-// cannot be faked from here — this is why announceJoin/broadcastCallEnded
-// depend on the fcmRingSender interface instead of the concrete type.
 type fakeFCMSender struct {
 	calls chan fcmCall
 }
@@ -66,13 +60,6 @@ func expectNoFCMCall(t *testing.T, ch chan fcmCall, d time.Duration) {
 	}
 }
 
-// genPushKeys builds a real EC P-256 keypair + 16-byte auth secret in
-// base64url form — webpush-go's real ECDH+HKDF path rejects malformed keys
-// before ever reaching the network, so a fixture must carry valid ones.
-// Duplicated from internal/webpush/store_test.go's genSubscriberKeys
-// (unexported, package-private there) — same precedent as push.go's
-// atomicWriteJSON doc comment for this codebase's intentional small
-// cross-package duplications.
 func genPushKeys(t *testing.T) webpush.PushSubscriptionKeys {
 	t.Helper()
 	_, x, y, err := elliptic.GenerateKey(elliptic.P256(), rand.Reader)
@@ -90,11 +77,6 @@ func genPushKeys(t *testing.T) webpush.PushSubscriptionKeys {
 	}
 }
 
-// TestAnnounceJoin_FansOutToBothPushAndFCM proves the FCM fan-out this plan
-// adds is genuinely ADDITIVE: it fires alongside the pre-existing Web Push
-// fan-out, for the same recipient, without either one suppressing the
-// other — a native Android device and a browser both get reached from one
-// ring.
 func TestAnnounceJoin_FansOutToBothPushAndFCM(t *testing.T) {
 	var pushHits int
 	pushSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -129,8 +111,6 @@ func TestAnnounceJoin_FansOutToBothPushAndFCM(t *testing.T) {
 	if err := s.AddMember("sam", room.ID, "jordan"); err != nil {
 		t.Fatal(err)
 	}
-	// jordan has no in-tab presence sub at all — WantsRing("jordan") is false,
-	// so BOTH off-app paths (Push and FCM) must fire for her.
 	s.announceJoin(room.ID, "sam", "Sam", "cid-sam", false)
 
 	call, ok := waitFCMCall(t, fcm.calls, 2*time.Second)
@@ -159,10 +139,6 @@ func TestAnnounceJoin_FansOutToBothPushAndFCM(t *testing.T) {
 	}
 }
 
-// TestAnnounceJoin_FCMNilDoesNotPanic proves Service.FCM is optional — a
-// Service opened without an FCM credential provisioned (the common case
-// until Phase 6's vault secret is set) must ring exactly as before, with no
-// FCM call attempted and no panic.
 func TestAnnounceJoin_FCMNilDoesNotPanic(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Open(Options{DataDir: dir})
@@ -182,16 +158,9 @@ func TestAnnounceJoin_FCMNilDoesNotPanic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Must not panic.
 	s.announceJoin(room.ID, "sam", "Sam", "cid-sam", false)
 }
 
-// TestBroadcastCallEnded_SendsFCMCancel proves the call_id/cancellation gap
-// this plan documents is actually closed on the server side: when a call
-// ends, every FCM-reachable recipient gets a data-only "call-ended" push
-// carrying the same call_id and collapse_key as the original ring, so the
-// native client can correlate and cancel/clear the ringing UI instead of
-// being stuck ringing forever.
 func TestBroadcastCallEnded_SendsFCMCancel(t *testing.T) {
 	dir := t.TempDir()
 	fcm := newFakeFCMSender()

@@ -1,12 +1,5 @@
 package mobilebff
 
-// handlers_jira_test.go exercises the board over real HTTP, against a fake
-// Jira. The pure functions are already covered in jira_board_test.go; what
-// shows up ONLY here is the end-to-end behaviour: the routing, the response
-// shape, and the two decisions the user feels in their finger — a refused
-// transition becoming a 409 with the reason, and a not-connected account
-// becoming a 200 with the form instead of an error.
-
 import (
 	"encoding/json"
 	"fmt"
@@ -20,8 +13,6 @@ import (
 	"server-control-panel/internal/jira"
 )
 
-// fakeJira answers the minimum the board queries. Each route returns what the
-// real route would return, in the shape the client already knows how to read.
 func fakeJira(t *testing.T, transitions string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +34,6 @@ func fakeJira(t *testing.T, transitions string) *httptest.Server {
 			}
 			_, _ = w.Write([]byte(transitions))
 		default:
-			// Some issue, for the "already in the column" path.
 			_, _ = w.Write([]byte(`{"id":"1","key":"TASK-1","fields":{"summary":"drain the queue","status":{"name":"Backlog","statusCategory":{"key":"new"}}}}`))
 		}
 	}))
@@ -99,8 +89,6 @@ func TestBoardReturnsColumnsWithDistributedCards(t *testing.T) {
 	if len(body.Columns[0].Cards) != 1 || body.Columns[0].Cards[0].Key != "TASK-1" {
 		t.Errorf("the Backlog issue had to land in the first column: %+v", body.Columns[0].Cards)
 	}
-	// "IN REVIEW" is the name Jira uses; the column is by CATEGORY, so it lands
-	// in "In Progress".
 	if len(body.Columns[1].Cards) != 1 || body.Columns[1].Cards[0].Key != "TASK-2" {
 		t.Errorf("IN REVIEW had to land in the middle column: %+v", body.Columns[1].Cards)
 	}
@@ -113,9 +101,6 @@ func TestBoardReturnsColumnsWithDistributedCards(t *testing.T) {
 }
 
 func TestBoardWithoutLinkedAccountReturns200WithForm(t *testing.T) {
-	// Never having connected is everybody's initial state, not a failure. A 4xx
-	// would make the app show "could not load" with a retry button that is never
-	// going to work.
 	deps := Deps{
 		Cfg:     adminCfg(),
 		JiraFor: func(string) (*jira.Client, error) { return nil, jira.ErrNotConfigured },
@@ -145,18 +130,12 @@ func TestMoveAppliesTransitionReachingColumn(t *testing.T) {
 	}
 	var body JiraMoveResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
-	// The status comes from the APPLIED transition, not from the client's wish: it
-	// is with that status that the app confirms instead of assuming.
 	if body.Status != "Ready" || body.Column != "Done" {
 		t.Errorf("response = %+v; want status Ready in column Done", body)
 	}
 }
 
 func TestNoTransitionToColumnReturns409WithPossibleDestinations(t *testing.T) {
-	// 409 and not 500: the server is fine, it is the ACTION that does not fit the
-	// current state. It is the code by which the app sends the card back to its
-	// original column instead of showing "server error". And the reason has to say
-	// where it IS possible to go — that is what turns the refusal into a next step.
 	srv := fakeJira(t, `{"transitions":[
 		{"id":"11","name":"Start","to":{"name":"In Progress","statusCategory":{"key":"indeterminate"}}}
 	]}`)
@@ -170,9 +149,6 @@ func TestNoTransitionToColumnReturns409WithPossibleDestinations(t *testing.T) {
 }
 
 func TestMoveToColumnIssueIsAlreadyInIsNotError(t *testing.T) {
-	// The board on screen may have gone stale. "Already in X" is a very different
-	// answer from "the workflow forbids it", and confusing the two would send the
-	// card back for no reason.
 	srv := fakeJira(t, `{"transitions":[]}`)
 	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-1","column":"To Do"}`)
 	if rec.Code != http.StatusOK {
@@ -181,8 +157,6 @@ func TestMoveToColumnIssueIsAlreadyInIsNotError(t *testing.T) {
 }
 
 func TestColumnMissingFromBoardIs400(t *testing.T) {
-	// The operator may have reconfigured the board between the load and the drag.
-	// Moving to a "similar-looking" column would be worse than refusing.
 	srv := fakeJira(t, `{"transitions":[]}`)
 	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-1","column":"Column that does not exist"}`)
 	if rec.Code != http.StatusBadRequest {
@@ -191,8 +165,6 @@ func TestColumnMissingFromBoardIs400(t *testing.T) {
 }
 
 func TestBatchReturnsWhatSucceededAndWhatFailed(t *testing.T) {
-	// A batch is not atomic against Jira: every issue has its own workflow. An
-	// "ok" for the set would hide precisely the ones that need action.
 	srv := fakeJira(t, `{"transitions":[
 		{"id":"11","name":"Start","to":{"name":"In Progress","statusCategory":{"key":"indeterminate"}}}
 	]}`)
@@ -209,8 +181,6 @@ func TestBatchReturnsWhatSucceededAndWhatFailed(t *testing.T) {
 }
 
 func TestWithoutJiraOnServerRoutesReturn503InsteadOfPanic(t *testing.T) {
-	// Same pattern as the other optional fields of Deps: absence degrades, it
-	// never brings the process down.
 	rec := call(t, Deps{Cfg: adminCfg()}, http.MethodGet, "/jira/board", "")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503 (body=%s)", rec.Code, rec.Body.String())
@@ -218,7 +188,6 @@ func TestWithoutJiraOnServerRoutesReturn503InsteadOfPanic(t *testing.T) {
 }
 
 func TestIssueCarriesDestinationsInColumnVocabulary(t *testing.T) {
-	// The move menu uses the board's column label, not the raw status name.
 	srv := fakeJira(t, `{"transitions":[
 		{"id":"11","name":"Start","to":{"name":"In Progress","statusCategory":{"key":"indeterminate"}}}
 	]}`)
@@ -239,10 +208,6 @@ func TestIssueCarriesDestinationsInColumnVocabulary(t *testing.T) {
 	}
 }
 
-// starvingJira returns 99 done issues for ANY search that does not restrict
-// the category, and a single "to do" when the search asks for To Do. It is the
-// exact shape of the reported defect: with a single search, the done issues ate
-// the quota and the left-hand column came back empty.
 func starvingJira(t *testing.T) (*httptest.Server, *[]string) {
 	t.Helper()
 	var queries []string
@@ -264,7 +229,6 @@ func starvingJira(t *testing.T) (*httptest.Server, *[]string) {
 		case strings.Contains(jql, "In Progress"):
 			_, _ = w.Write([]byte(`{"issues":[],"total":0}`))
 		default:
-			// Done: many of them, and they are the ones that ate the quota.
 			var sb strings.Builder
 			sb.WriteString(`{"issues":[`)
 			for i := 0; i < 99; i++ {
@@ -282,7 +246,6 @@ func starvingJira(t *testing.T) (*httptest.Server, *[]string) {
 }
 
 func TestColumnNotStarvedByAnother(t *testing.T) {
-	// Done issues must not use up the quota of the other columns.
 	srv, queries := starvingJira(t)
 	rec := call(t, depsWithJira(srv), http.MethodGet, "/jira/board?max=40", "")
 	if rec.Code != http.StatusOK {
@@ -301,15 +264,12 @@ func TestColumnNotStarvedByAnother(t *testing.T) {
 	if len(body.Columns[2].Cards) == 0 {
 		t.Error("the done ones keep coming — they just stop trampling the others")
 	}
-	// One query PER COLUMN: it is the only way for each one to have its own quota.
 	if len(*queries) < 3 {
 		t.Errorf("expected one search per column, there were %d: %v", len(*queries), *queries)
 	}
 }
 
 func TestFailingColumnDoesNotEraseOthers(t *testing.T) {
-	// The refusal shows on top of the board, with the cards we managed to bring.
-	// Wiping everything because of one column would lose what already worked.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if !strings.Contains(r.URL.Path, "/search") {
@@ -343,23 +303,9 @@ func TestFailingColumnDoesNotEraseOthers(t *testing.T) {
 }
 
 func TestFirstLoadEqualsRefresh(t *testing.T) {
-	// The DEFECT reported by the owner: entering Tasks showed three empty
-	// columns, and only a refresh filled the board.
-	//
-	// The cause was stateful: on the first load the app does not know the project
-	// yet, so it does not send `project=`. The server read that as "the operator
-	// picked no project" and swapped the filter's JQL for the board_jql from the
-	// vault — which, in his case, returned zero. On refresh the app already knew
-	// the project, sent `project=PANEL`, the detour did not happen, and the board
-	// filled up.
-	//
-	// The same filter, with the same project, gave two different boards depending
-	// on whether the client had already learned where it was. This test exists so
-	// that the two loads never diverge again.
 	srv := fakeJira(t, `{"transitions":[]}`)
 	deps := depsWithJira(srv)
 	deps.JiraConfigFor = func(user string) jira.Config {
-		// A configured board_jql that matches NOTHING must not hijack the filter.
 		return jira.Config{
 			Site:       srv.URL,
 			ProjectKey: "PANEL",
@@ -398,8 +344,6 @@ func TestFirstLoadEqualsRefresh(t *testing.T) {
 }
 
 func TestMyBoardChosenOnPurposeUsesOperatorJQL(t *testing.T) {
-	// The operator's JQL was not thrown away — it became a NAMED filter. An empty
-	// board there says the stored query matches nothing, not that the app failed.
 	srv := fakeJira(t, `{"transitions":[]}`)
 	deps := depsWithJira(srv)
 	deps.JiraConfigFor = func(user string) jira.Config {

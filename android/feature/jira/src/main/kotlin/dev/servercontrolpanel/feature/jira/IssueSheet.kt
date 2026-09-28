@@ -40,15 +40,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-/** Test tag for the detail sheet. */
 internal const val TAG_ISSUE_SHEET = "jira-issue-sheet"
 
-/**
- * The open issue on a bottom sheet, so the board stays in context behind it.
- *
- * The "Move to" list is the accessible alternative to dragging (screen readers cannot drag).
- * Destinations arrive from the server already named after the board's columns.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun IssueSheet(
@@ -158,7 +151,6 @@ private fun IssueBody(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // Two transitions can land on the same column; show it once.
                 issue.destinations.distinctBy { it.column }.forEach { destination ->
                     SuggestionChip(
                         onClick = { onMove(issue.key, destination.column) },

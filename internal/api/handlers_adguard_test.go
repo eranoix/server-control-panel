@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-// The AdGuard routes have to exist (never vanish in a heal/refactor) and be
-// gated by auth. The smoke router has no vault with credentials, so an
-// authenticated request degrades to 503 (with a hint about the secret) instead of crashing.
 func TestAdguardRoutesGatedAndDegrade(t *testing.T) {
 	r := newSmokeRouter(t)
 
@@ -17,12 +14,9 @@ func TestAdguardRoutesGatedAndDegrade(t *testing.T) {
 	}
 
 	for _, p := range paths {
-		// No token → 401 (the route exists; never 404 — this guards against silent
-		// removal in a future refactor).
 		if w := privAIReq(t, r, p.method, p.path, "", ""); w.Code != 401 {
 			t.Fatalf("%s %s without token: got %d, want 401; body=%s", p.method, p.path, w.Code, w.Body.String())
 		}
-		// Authenticated but with no credential in the vault → 503 with a clear hint.
 		w := privAIReq(t, r, p.method, p.path, `{"enabled":true}`, "sam")
 		if w.Code != 503 {
 			t.Fatalf("%s %s authenticated: got %d, want 503; body=%s", p.method, p.path, w.Code, w.Body.String())

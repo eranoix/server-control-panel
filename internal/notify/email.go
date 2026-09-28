@@ -10,13 +10,8 @@ import (
 	"time"
 )
 
-// TypeEmail is the channel type id for SMTP e-mail.
 const TypeEmail = "email"
 
-// EmailChannel delivers via SMTP. It honors the Router's ctx deadline by dialing
-// with DialContext and stamping the connection deadline, since net/smtp itself
-// is context-unaware. Supports STARTTLS (ports 587/25) and implicit TLS
-// (port 465); optional PLAIN auth when smtp_user is set.
 type EmailChannel struct{}
 
 func NewEmailChannel() *EmailChannel { return &EmailChannel{} }
@@ -51,7 +46,6 @@ func (e *EmailChannel) Send(ctx context.Context, ev Event, cfg ChannelConfig) er
 		_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
 	}
 
-	// Implicit TLS (465): wrap before the SMTP handshake.
 	if port == 465 {
 		conn = tls.Client(conn, &tls.Config{ServerName: cfg.SMTPHost})
 	}
@@ -63,7 +57,6 @@ func (e *EmailChannel) Send(ctx context.Context, ev Event, cfg ChannelConfig) er
 	}
 	defer c.Close()
 
-	// STARTTLS for non-implicit ports when the server advertises it.
 	if port != 465 {
 		if ok, _ := c.Extension("STARTTLS"); ok {
 			if err := c.StartTLS(&tls.Config{ServerName: cfg.SMTPHost}); err != nil {
@@ -98,7 +91,6 @@ func (e *EmailChannel) Send(ctx context.Context, ev Event, cfg ChannelConfig) er
 	return c.Quit()
 }
 
-// buildMessage assembles a minimal RFC 5322 message (plain text, UTF-8).
 func buildMessage(from string, to []string, ev Event) []byte {
 	subject := ev.Title
 	if subject == "" {
@@ -116,7 +108,6 @@ func buildMessage(from string, to []string, ev Event) []byte {
 	return []byte(b.String())
 }
 
-// splitList parses a comma/semicolon/whitespace-separated address list.
 func splitList(s string) []string {
 	fields := strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ';' || r == ' ' || r == '\n' || r == '\t' })
 	out := make([]string, 0, len(fields))
@@ -128,7 +119,6 @@ func splitList(s string) []string {
 	return out
 }
 
-// sanitizeHeader strips CR/LF so a crafted title can't inject extra headers.
 func sanitizeHeader(s string) string {
 	return strings.NewReplacer("\r", " ", "\n", " ").Replace(s)
 }

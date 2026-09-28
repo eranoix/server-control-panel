@@ -1,10 +1,3 @@
-// mfa_emergency.go — panelctl mfa-emergency-reset.
-//
-// Resets a user's MFA through:
-//  1. SQL against auth.mfa_factors (the admin channel via supabase-db)
-//  2. Removal of the local backup-codes file
-//
-// The UUID lookup goes through data/migration-uuid-map.json.
 package main
 
 import (
@@ -18,10 +11,6 @@ import (
 	"server-control-panel/internal/config"
 )
 
-// mfaResetSQL returns the SQL script with the :'uuid' placeholder (bound by
-// psql -v). Before: an inline fmt.Sprintf with supabaseUUID — functional,
-// because the UUID comes from an admin-controlled file, but SQL hygiene calls
-// for binding by variable. psql substitutes :'uuid' with the escaped literal.
 func mfaResetSQL() string {
 	const tableName = "auth.mfa_factors"
 	return fmt.Sprintf("DELETE FROM %s WHERE user_id = :'uuid';\n", tableName)
@@ -58,9 +47,6 @@ func cmdMFAEmergencyReset(args []string) error {
 		return fmt.Errorf("aborted by operator")
 	}
 
-	// 1. Run the SQL through psql with the :'uuid' binding. psql -v substitutes
-	// before sending to the server — the literal is escaped by the client, not
-	// concatenated textually here.
 	sqlScript := mfaResetSQL()
 	cmd := exec.Command("docker", "exec", "-i",
 		"supabase-db", "psql", "-U", "postgres", "-d", "postgres",
@@ -74,7 +60,6 @@ func cmdMFAEmergencyReset(args []string) error {
 	}
 	fmt.Println(strings.TrimSpace(string(out)))
 
-	// 2. Delete the backup-codes file.
 	bcPath := auth.BackupCodesPath(cfg.DataDir, user)
 	bcStore := auth.NewBackupCodesStore(bcPath)
 	if delErr := bcStore.Delete(); delErr != nil {
@@ -83,7 +68,6 @@ func cmdMFAEmergencyReset(args []string) error {
 		fmt.Printf("Backup codes file removed: %s\n", bcPath)
 	}
 
-	// 3. Audit.
 	if al, alErr := auth.NewAuditLog(filepath.Join(cfg.DataDir, "audit.log")); alErr == nil {
 		al.Append(auth.Event{
 			Time:   time.Now().Unix(),

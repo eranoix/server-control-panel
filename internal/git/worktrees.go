@@ -9,14 +9,7 @@ import (
 	"server-control-panel/internal/httpx"
 )
 
-// worktrees.go — the git worktrees panel. List/create/remove worktrees
-// straight from the app (the user works one ticket per worktree). New
-// worktrees are born under <repo>/.claude/worktrees/<name> (the project's
-// convention); removal only accepts a path that really is in the repo's worktree list.
-
 var worktreeNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
-
-// ---- GET /worktrees ----
 
 type worktreeInfo struct {
 	Path     string `json:"path"`
@@ -54,8 +47,6 @@ func (s *svc) handleWorktrees(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"worktrees": out})
 }
 
-// parseWorktrees interprets `git worktree list --porcelain` (blocks separated
-// by a blank line; keys: worktree/HEAD/branch/detached/bare/locked).
 func parseWorktrees(out string) []worktreeInfo {
 	res := []worktreeInfo{}
 	var cur *worktreeInfo
@@ -101,18 +92,16 @@ func parseWorktrees(out string) []worktreeInfo {
 	return res
 }
 
-// ---- POST /worktree/add ----
-
 func (s *svc) handleWorktreeAdd(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
 	if !ok {
 		return
 	}
 	var body struct {
-		Name         string `json:"name"`          // directory under .claude/worktrees/
-		Branch       string `json:"branch"`        // branch to use/create
-		CreateBranch bool   `json:"create_branch"` // -b (creates from Base/HEAD)
-		Base         string `json:"base"`          // starting point (optional)
+		Name         string `json:"name"`
+		Branch       string `json:"branch"`
+		CreateBranch bool   `json:"create_branch"`
+		Base         string `json:"base"`
 	}
 	if err := decodeBody(r, &body); err != nil {
 		httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
@@ -161,8 +150,6 @@ func (s *svc) handleWorktreeAdd(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"ok": true, "path": wtPath, "branch": body.Branch})
 }
 
-// ---- POST /worktree/remove ----
-
 func (s *svc) handleWorktreeRemove(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
 	if !ok {
@@ -176,8 +163,6 @@ func (s *svc) handleWorktreeRemove(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	// Only removes a path that IS in the repo's worktree list (and never the main
-	// repo itself) — this bars arbitrary directory removal.
 	listed := run2List(r, repo.Path)
 	target := filepath.Clean(body.Path)
 	found := false
@@ -220,7 +205,6 @@ func (s *svc) handleWorktreeRemove(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"ok": true})
 }
 
-// run2List returns the worktree list (an internal helper for validating the remove).
 func run2List(r *http.Request, repoPath string) []worktreeInfo {
 	res, err := run(r.Context(), repoPath, "worktree", "list", "--porcelain")
 	if err != nil || res.Code != 0 {

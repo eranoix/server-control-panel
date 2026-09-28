@@ -6,9 +6,6 @@ import (
 	"server-control-panel/internal/queue"
 )
 
-// QueueEnqueuer adapts *queue.Queue to the scheduler's Enqueuer interface.
-// Stays in its own file so the test suite can ignore the queue dependency
-// by providing a fake Enqueuer in scheduler_test.go.
 type QueueEnqueuer struct {
 	Q *queue.Queue
 }

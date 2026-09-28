@@ -16,12 +16,10 @@ import (
 	"time"
 )
 
-// ─── COMPRESS ───────────────────────────────────────────────────
-
 type archiveReq struct {
-	Paths []string `json:"paths"`          // files/folders to compress
-	Dest  string   `json:"dest"`           // path of the .zip/.tar.gz/.7z
-	Base  string   `json:"base,omitempty"` // base directory (entries inside the archive are relative to it). Default: parent folder of the paths.
+	Paths []string `json:"paths"`
+	Dest  string   `json:"dest"`
+	Base  string   `json:"base,omitempty"`
 }
 
 func decodeArchive(r *http.Request) (*archiveReq, error) {
@@ -58,11 +56,9 @@ func relName(base, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Normalize the separator to "/" (the neutral form inside the archive).
 	return filepath.ToSlash(rel), nil
 }
 
-// Iterates each requested path; if it is a dir, walks it recursively. Calls fn(absPath, rel, info) per entry.
 func walkPaths(base string, paths []string, fn func(abs, rel string, info os.FileInfo) error) error {
 	for _, p := range paths {
 		info, err := os.Lstat(p)
@@ -218,7 +214,6 @@ func handleTar(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "dest": req.Dest})
 }
 
-// 7z shells out to the external `7z` binary (p7zip-full). No Go library writes 7z.
 func handle7z(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErr(w, http.StatusBadRequest, "method not allowed")
@@ -232,12 +227,9 @@ func handle7z(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasSuffix(strings.ToLower(req.Dest), ".7z") {
 		req.Dest += ".7z"
 	}
-	// Remove an existing dest so that 7z does not stop to ask "Overwrite?".
 	_ = os.Remove(req.Dest)
 	args := []string{"a", "-t7z", "-mx=5", req.Dest}
 	args = append(args, req.Paths...)
-	// 10min timeout — large archives can legitimately take a while, but a
-	// corrupt binary or an endless path must not hang a request forever.
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "7z", args...)
@@ -248,8 +240,6 @@ func handle7z(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "dest": req.Dest})
 }
-
-// ─── EXTRACT ───────────────────────────────────────────────────
 
 type extractReq struct {
 	Archive string `json:"archive"`
@@ -293,7 +283,6 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case strings.HasSuffix(low, ".7z"):
-		// 7z x -o<dest> <arch>  (extracts preserving paths) with a timeout
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "7z", "x", "-y", "-o"+dest, arch)
@@ -301,8 +290,6 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusInternalServerError, fmt.Sprintf("7z: %v — %s", err, strings.TrimSpace(string(out))))
 			return
 		}
-		// 7z is an external binary — there is no per-entry hook to block escaping
-		// symlinks. Sweep the result afterwards and remove them.
 		if err := validateNoEscapingSymlinks(dest); err != nil {
 			writeErr(w, http.StatusInternalServerError, "archive contains symlinks outside the destination: "+err.Error())
 			return
@@ -314,7 +301,6 @@ func handleExtract(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "dest": dest})
 }
 
-// Anti zip-slip: makes sure the final path stays inside dest.
 func safeJoin(dest, name string) (string, error) {
 	clean := filepath.Clean(name)
 	if strings.HasPrefix(clean, "..") || strings.Contains(clean, ".."+string(filepath.Separator)) {
@@ -328,9 +314,6 @@ func safeJoin(dest, name string) (string, error) {
 	return target, nil
 }
 
-// symlinkEscapes reports whether a symlink with `linkname` placed at
-// `linkPath` would point outside the `dest` root. linkname may be absolute
-// ("/etc/passwd") or relative ("../../../etc/passwd").
 func symlinkEscapes(dest, linkPath, linkname string) bool {
 	var resolved string
 	if filepath.IsAbs(linkname) {
@@ -345,9 +328,6 @@ func symlinkEscapes(dest, linkPath, linkname string) bool {
 	return strings.HasPrefix(rel, "..")
 }
 
-// validateNoEscapingSymlinks walks dest recursively and removes any symlink
-// whose target escapes dest. Used after extraction through 7z (an external
-// binary) where there is no per-entry control.
 func validateNoEscapingSymlinks(dest string) error {
 	return filepath.Walk(dest, func(p string, fi os.FileInfo, err error) error {
 		if err != nil {
@@ -454,10 +434,6 @@ func extractTar(arch, dest string) error {
 			}
 			out.Close()
 		case tar.TypeSymlink, tar.TypeLink:
-			// Symlinks/hardlinks are the classic tar-slip vector — header.Linkname can
-			// be "/etc/passwd" or "../../../etc/passwd". Validate before creating; the
-			// escaping ones are dropped silently rather than aborting the whole
-			// extraction.
 			if symlinkEscapes(dest, target, hdr.Linkname) {
 				continue
 			}

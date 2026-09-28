@@ -7,23 +7,6 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 
-/**
- * Production [WhatsAppWebSocketFactory]: opens a real OkHttp WebSocket
- * against `/ws/whatsapp`. Reuses [ApiClient.defaultClient] -- the exact same
- * shared `OkHttpClient` (connection pool, configured interceptors) every
- * generated BFF call already goes through -- rather than building a second
- * HTTP client, and attaches [ApiClient.accessToken] (the companion-level
- * value every generated `ApiClient` instance's own `accessTokenProvider`
- * hook defaults to reading) via a plain `Authorization: Bearer` header
- * (`internal/whatsapp/ws.go` accepts this for a native client, unlike a
- * browser WS). That value is written by
- * [dev.servercontrolpanel.data.auth.SessionManager] on every session change (login,
- * renewal, logout) -- before a login flow existed it was always null and the
- * socket opened with no credential. It is read on every `open()`, so a
- * reconnection after a renewal already carries the new token. The 25s ping /
- * 45s pong keepalive is server-driven (`internal/whatsapp/ws.go`) -- OkHttp
- * answers protocol-level pings on its own, nothing to configure here.
- */
 class OkHttpWhatsAppWsFactory(
     private val client: OkHttpClient = ApiClient.defaultClient,
     private val accessTokenProvider: () -> String? = { ApiClient.accessToken },

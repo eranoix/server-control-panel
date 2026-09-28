@@ -6,15 +6,10 @@ import (
 	"testing"
 )
 
-// The tunnel device manager's routes have to exist (never vanish in a
-// heal/refactor) and be gated. With a non-existent config path, an
-// authenticated read degrades to 503 (tunnel not configured) instead of crashing.
 func TestTunnelDeviceRoutesGatedAndDegrade(t *testing.T) {
 	r := newSmokeRouter(t)
-	// force a non-existent config path → List() fails deterministically
 	r.cfg.SingboxConfigPath = filepath.Join(t.TempDir(), "does-not-exist.json")
 
-	// no token → 401 (the route exists; never 404)
 	if w := privAIReq(t, r, "GET", "/api/tunnel/devices", "", ""); w.Code != 401 {
 		t.Fatalf("GET devices without a token: got %d, want 401; body=%s", w.Code, w.Body.String())
 	}
@@ -22,7 +17,6 @@ func TestTunnelDeviceRoutesGatedAndDegrade(t *testing.T) {
 		t.Fatalf("DELETE device without a token: got %d, want 401; body=%s", w.Code, w.Body.String())
 	}
 
-	// authenticated, config missing → 503 with a hint
 	w := privAIReq(t, r, "GET", "/api/tunnel/devices", "", "sam")
 	if w.Code != 503 {
 		t.Fatalf("GET devices authenticated: got %d, want 503; body=%s", w.Code, w.Body.String())

@@ -1,16 +1,5 @@
 package api
 
-// handlers_auth_test.go — characterisation of handleLogin.
-//
-// Pins the OBSERVABLE behaviour of handleLogin against a fake GoTrue (fake
-// Supabase), BEFORE any code extraction (verifyLoginMFA). The same suite runs
-// unchanged before and after the extraction — if any of these cases changes
-// result, the extraction introduced a regression in the production login path.
-//
-// Covers the branches of the reference flow: password ok/wrong, MFA required
-// without a trusted device, MFA skipped via a trusted device, Supabase TOTP
-// correct/incorrect, backup-code fallback.
-
 import (
 	"encoding/json"
 	"fmt"
@@ -26,22 +15,17 @@ import (
 	"server-control-panel/internal/config"
 )
 
-// fakeGoTrueUser is a user's state in the fake GoTrue.
 type fakeGoTrueUser struct {
 	email      string
 	password   string
 	factorID   string
-	factorType string // "totp" when MFA is enrolled; empty when it is not
-	factorOK   string // the TOTP code the verify accepts as correct
+	factorType string
+	factorOK   string
 }
 
-// fakeGoTrue emulates the subset of self-hosted GoTrue used by
-// VerifyDetailed + supabaseGetUserMFA + supabaseChallengeAndVerify:
-// POST /auth/v1/token (password), GET /auth/v1/user, POST
-// /auth/v1/factors/{id}/challenge, POST /auth/v1/factors/{id}/verify.
 type fakeGoTrue struct {
 	mu    sync.Mutex
-	users map[string]*fakeGoTrueUser // by email
+	users map[string]*fakeGoTrueUser
 }
 
 func newFakeGoTrue() *fakeGoTrue {
@@ -54,8 +38,6 @@ func (f *fakeGoTrue) addUser(u *fakeGoTrueUser) {
 	f.users[u.email] = u
 }
 
-// accessToken is deterministic and reversible — "tok-"+email — enough for the
-// fake to resolve the user without implementing real JWT.
 func accessTokenFor(email string) string { return "tok-" + email }
 
 func emailFromAccessToken(tok string) string { return strings.TrimPrefix(tok, "tok-") }
@@ -113,7 +95,6 @@ func (f *fakeGoTrue) server(t *testing.T) *httptest.Server {
 		})
 	})
 	mux.HandleFunc("/auth/v1/factors/", func(w http.ResponseWriter, r *http.Request) {
-		// paths: /auth/v1/factors/{id}/challenge ou /verify
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/auth/v1/factors/"), "/")
 		if len(parts) != 2 {
 			w.WriteHeader(http.StatusNotFound)
@@ -150,10 +131,6 @@ func (f *fakeGoTrue) server(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// newLoginTestRouter builds a real *Router with a Supabase backend pointing at
-// the fake GoTrue — the only way to exercise handleLogin's MFA branch (which
-// requires vres.Session.AccessToken != "" && SupabaseClient() != nil) without
-// talking to a real GoTrue.
 func newLoginTestRouter(t *testing.T, gt *fakeGoTrue, username, email string) *Router {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "panel-login-test-")
@@ -210,14 +187,10 @@ func doLogin(t *testing.T, r *Router, body map[string]any) (*httptest.ResponseRe
 	return w, out
 }
 
-// strings_NewReader avoids a redundant import — just a local alias for
-// strings.NewReader, keeping the import block lean.
 func strings_NewReader(s string) *strings.Reader { return strings.NewReader(s) }
 
 const testPassword = "correct-horse-battery-staple"
 
-// TestHandleLogin_PasswordOK_NoMFA proves: correct password + a user with no
-// TOTP factor enrolled -> session issued straight away, no code demanded.
 func TestHandleLogin_PasswordOK_NoMFA(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "sam@test.local", password: testPassword})
@@ -235,7 +208,6 @@ func TestHandleLogin_PasswordOK_NoMFA(t *testing.T) {
 	}
 }
 
-// TestHandleLogin_PasswordWrong proves: wrong password -> 401, no token.
 func TestHandleLogin_PasswordWrong(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "sam@test.local", password: testPassword})
@@ -250,9 +222,6 @@ func TestHandleLogin_PasswordWrong(t *testing.T) {
 	}
 }
 
-// TestHandleLogin_MFARequired_NoTrustedDevice_NoCode proves: MFA enrolled, no
-// trusted device, no code sent -> {"totp_required": true}, no
-// token.
 func TestHandleLogin_MFARequired_NoTrustedDevice_NoCode(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{
@@ -273,8 +242,6 @@ func TestHandleLogin_MFARequired_NoTrustedDevice_NoCode(t *testing.T) {
 	}
 }
 
-// TestHandleLogin_MFASkippedViaTrustedDevice proves: MFA enrolled, device
-// already trusted (valid trust cookie) -> session issued WITHOUT demanding a code.
 func TestHandleLogin_MFASkippedViaTrustedDevice(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{
@@ -305,8 +272,6 @@ func TestHandleLogin_MFASkippedViaTrustedDevice(t *testing.T) {
 	}
 }
 
-// TestHandleLogin_MFACorrectCode proves: MFA enrolled + correct Supabase code
-// -> session issued.
 func TestHandleLogin_MFACorrectCode(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{
@@ -324,9 +289,6 @@ func TestHandleLogin_MFACorrectCode(t *testing.T) {
 	}
 }
 
-// TestHandleLogin_MFAWrongCode_BackupCodeFallback proves: wrong Supabase code,
-// but a valid backup code present -> session issued via
-// backupCodeStoreFor(...).TryConsume, and the code is consumed (one-shot).
 func TestHandleLogin_MFAWrongCode_BackupCodeFallback(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{
@@ -362,8 +324,6 @@ func TestHandleLogin_MFAWrongCode_BackupCodeFallback(t *testing.T) {
 	}
 }
 
-// TestHandleLogin_MFAWrongCode_NoValidBackup proves: wrong Supabase code and no
-// valid backup code -> 401, no token.
 func TestHandleLogin_MFAWrongCode_NoValidBackup(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{

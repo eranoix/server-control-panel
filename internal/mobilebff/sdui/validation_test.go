@@ -8,13 +8,8 @@ import (
 	"testing"
 )
 
-// validationErrorFixturePath is the golden fixture shared with the Kotlin
-// consumer — see contracts/sdui/fixtures/README.md.
 const validationErrorFixturePath = "../../../contracts/sdui/fixtures/validation-error.json"
 
-// Test 1: FieldErrors marshals into exactly the committed fixture's shape —
-// a structural comparison (parsing both sides), not raw bytes, so as not to
-// depend on key order.
 func TestFieldErrors_MarshalsToCommittedFixture(t *testing.T) {
 	fe := FieldErrors{
 		"name":     {"required"},
@@ -43,8 +38,6 @@ func TestFieldErrors_MarshalsToCommittedFixture(t *testing.T) {
 	}
 }
 
-// Test 2: errors.Is(err, ErrValidation) is true for a FieldErrors value,
-// including one returned directly as a function's error.
 func TestFieldErrors_ErrorsIsErrValidation(t *testing.T) {
 	var err error = FieldErrors{"name": {"required"}}
 	if !errors.Is(err, ErrValidation) {
@@ -52,8 +45,6 @@ func TestFieldErrors_ErrorsIsErrValidation(t *testing.T) {
 	}
 }
 
-// Test 3: Validate() refuses an empty key, an empty value and an empty message —
-// a 422 with no message gives the renderer nothing to attach to the input.
 func TestFieldErrors_Validate(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -79,8 +70,6 @@ func TestFieldErrors_Validate(t *testing.T) {
 	}
 }
 
-// Test 4: MatchesForm reports a FieldErrors key the form does not
-// declare — the check that keeps inline field errors honest.
 func TestFieldErrors_MatchesForm(t *testing.T) {
 	form := &FormComponent{
 		ComponentBase: ComponentBase{Type: ComponentTypeForm, ID: "f1"},
@@ -98,8 +87,6 @@ func TestFieldErrors_MatchesForm(t *testing.T) {
 		t.Fatal("MatchesForm with unknown key \"foo\" did not return an error")
 	}
 
-	// ConfirmationFieldKey is reserved and always passes, even when it is not
-	// among the form's fields.
 	if err := (FieldErrors{ConfirmationFieldKey: {"confirmation required"}}).MatchesForm(form); err != nil {
 		t.Fatalf("MatchesForm with ConfirmationFieldKey: %v", err)
 	}

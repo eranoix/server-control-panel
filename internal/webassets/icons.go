@@ -5,10 +5,6 @@ import (
 	"strings"
 )
 
-// HandleIcon serves the pre-rendered logo PNGs (web/*.png). Before: it drew a
-// procedural "VM" out of rectangles. Now: a dispatch to a static file
-// (rsvg-convert on logo-mark.svg generated the 7 sizes once).
-// Changing the logo = re-rendering the PNGs, without touching Go.
 func HandleIcon(w http.ResponseWriter, req *http.Request) {
 	file := "web/icon-192.png"
 	switch {

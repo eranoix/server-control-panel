@@ -7,17 +7,10 @@ import (
 	"server-control-panel/internal/inventory"
 )
 
-// 🔴 TestListNodesPublishesSecondClock — the route has to deliver BOTH clocks,
-// not one. A node gone stale from a dead poller (our failure) and one gone stale
-// from a dead node (its failure) produce an identical `age_seconds`; what
-// separates them is the age of the poller's last ATTEMPT, and it only exists on
-// the screen if it leaves from here.
 func TestListNodesPublishesSecondClock(t *testing.T) {
 	r, st := newNodesRouter(t, []inventory.Node{
-		testNode("lxc/207", "apps", 207, testNow-600), // dado de 10 min
+		testNode("lxc/207", "apps", 207, testNow-600),
 	})
-	// The poller TRIED 4 s ago and failed. The two facts together are the
-	// diagnosis: the panel is alive, it is the hypervisor that does not answer.
 	if err := st.Replace(func(iv *inventory.Inventory) {
 		iv.LastPollAt = testNow - 4
 		iv.LastPollError = "discovery: hypervisor silent"
@@ -40,7 +33,6 @@ func TestListNodesPublishesSecondClock(t *testing.T) {
 		t.Errorf("poll.error = %v — without the reason, 'tried' and 'tried and failed' become the same screen", got)
 	}
 
-	// And the NODE's age stays its own, not the attempt's.
 	nodes, _ := out["nodes"].([]any)
 	if len(nodes) != 1 {
 		t.Fatalf("want 1 node, got %d", len(nodes))
@@ -51,8 +43,6 @@ func TestListNodesPublishesSecondClock(t *testing.T) {
 	}
 }
 
-// TestNeverAttemptedPollIsNotNow — a freshly created inventory (no tick yet)
-// has to show up as "never observed", never as "0 s ago".
 func TestNeverAttemptedPollIsNotNow(t *testing.T) {
 	r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
 	_, out := callAPI(t, r, http.MethodGet, "/api/nodes", "")

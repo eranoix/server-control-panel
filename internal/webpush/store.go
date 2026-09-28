@@ -1,23 +1,3 @@
-// Package webpush provides a generic, channel-agnostic Web Push sender: a
-// persisted VAPID keypair plus a per-user subscription store.
-//
-// This existed only inside internal/videocall (as the private "pushStore"
-// that powers the incoming-call ring) until it was extracted here so
-// internal/notify could reuse it for a generic "push" channel.
-// internal/webassets/serviceworker.go already handles an "alert-fired"
-// push payload that no Go code has ever published, precisely because there
-// was no shared way to reach a subscribed browser from outside videocall.
-//
-// Storage (caller decides the root directory — this package does not
-// hardcode a path):
-//
-//	<root>/vapid.json       — public/private VAPID keypair (single)
-//	<root>/push-subs.json   — array of subscriptions, keyed by endpoint
-//
-// Lifecycle:
-//   - VAPID keys generated on first Open() if vapid.json is missing.
-//   - Subs added via Add(), removed via Remove() or automatically on a
-//     410 Gone / 404 Not Found response from the push service.
 package webpush
 
 import (
@@ -35,28 +15,19 @@ import (
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
 
-// vapidKeys is the persisted ECDSA-P256 keypair we identify ourselves with
-// to push services. Same pair for the lifetime of the install; rotating
-// would invalidate every existing subscription.
 type vapidKeys struct {
 	Public  string `json:"public"`
 	Private string `json:"private"`
-	Subject string `json:"subject"` // mailto:... for compliance
+	Subject string `json:"subject"`
 }
 
-// PushSubscription matches the W3C PushSubscription JSON the browser
-// returns from PushManager.subscribe(). Stored verbatim plus a User stamp.
 type PushSubscription struct {
-	User     string               `json:"user"`
-	Endpoint string               `json:"endpoint"`
-	Keys     PushSubscriptionKeys `json:"keys"`
-	// DeviceID ties the subscription to the DEVICE. Without that link,
-	// silencing "this computer" would mute only the in-tab ring, and the operating
-	// system push would keep popping on the same device.
-	// Empty on subscriptions predating the field → never silenced.
-	DeviceID  string `json:"device_id,omitempty"`
-	UserAgent string `json:"user_agent,omitempty"`
-	CreatedAt int64  `json:"created_at"`
+	User      string               `json:"user"`
+	Endpoint  string               `json:"endpoint"`
+	Keys      PushSubscriptionKeys `json:"keys"`
+	DeviceID  string               `json:"device_id,omitempty"`
+	UserAgent string               `json:"user_agent,omitempty"`
+	CreatedAt int64                `json:"created_at"`
 }
 
 type PushSubscriptionKeys struct {
@@ -64,21 +35,16 @@ type PushSubscriptionKeys struct {
 	Auth   string `json:"auth"`
 }
 
-// SendOptions parameterizes one send — the three fields that already varied per
-// call in the old SendIncomingCall (TTL, Topic and Urgency). Subscriber and
-// the VAPID keys stay internal to Store; callers never see them.
 type SendOptions struct {
 	TTL     int
 	Topic   string
 	Urgency webpush.Urgency
 }
 
-// Store holds the VAPID pair + the list of subscriptions, with a
-// background flusher that batches writes off the hot path.
 type Store struct {
 	mu        sync.RWMutex
 	keys      vapidKeys
-	subs      map[string]*PushSubscription // endpoint -> sub
+	subs      map[string]*PushSubscription
 	rootPath  string
 	keysPath  string
 	subsPath  string
@@ -86,8 +52,6 @@ type Store struct {
 	stop      chan struct{}
 }
 
-// Open creates root (if missing), loads/generates the VAPID keypair and
-// loads any persisted subscriptions, then starts a 5s background flusher.
 func Open(root string) (*Store, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
@@ -107,7 +71,6 @@ func Open(root string) (*Store, error) {
 	return p, nil
 }
 
-// Close signals the flusher to stop and does a final flush.
 func (p *Store) Close() error {
 	if p == nil {
 		return nil
@@ -129,7 +92,6 @@ func (p *Store) loadKeys() error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	// Generate a fresh pair.
 	priv, pub, err := webpush.GenerateVAPIDKeys()
 	if err != nil {
 		return fmt.Errorf("vapid keygen: %w", err)
@@ -148,7 +110,7 @@ func (p *Store) loadSubs() error {
 	}
 	var arr []*PushSubscription
 	if err := json.Unmarshal(b, &arr); err != nil {
-		return nil // tolerant
+		return nil
 	}
 	for _, s := range arr {
 		if s.Endpoint == "" {
@@ -194,18 +156,12 @@ func (p *Store) saveSubs() error {
 	return atomicWriteJSON(p.subsPath, arr, 0o600)
 }
 
-// PublicKey returns the VAPID public key in base64-url-encoded raw form
-// — the format the browser PushManager.subscribe() expects in the
-// applicationServerKey field.
 func (p *Store) PublicKey() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.keys.Public
 }
 
-// Add inserts or updates a subscription. Idempotent — re-subscribing the
-// same endpoint just refreshes the UA / user fields. New subs are written
-// immediately so a server restart right after subscribe doesn't lose them.
 func (p *Store) Add(sub *PushSubscription) {
 	if sub == nil || sub.Endpoint == "" || sub.User == "" {
 		return
@@ -217,11 +173,9 @@ func (p *Store) Add(sub *PushSubscription) {
 	p.subs[sub.Endpoint] = sub
 	p.dirtySubs = true
 	p.mu.Unlock()
-	_ = p.saveSubs() // synchronous on subscribe — important
+	_ = p.saveSubs()
 }
 
-// Remove deletes a subscription by endpoint. Used when the user explicitly
-// unsubscribes OR when a push attempt returns 410 Gone.
 func (p *Store) Remove(endpoint string) {
 	p.mu.Lock()
 	if _, ok := p.subs[endpoint]; ok {
@@ -231,7 +185,6 @@ func (p *Store) Remove(endpoint string) {
 	p.mu.Unlock()
 }
 
-// ForUser returns a snapshot of the user's active subs.
 func (p *Store) ForUser(user string) []*PushSubscription {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -244,7 +197,6 @@ func (p *Store) ForUser(user string) []*PushSubscription {
 	return out
 }
 
-// all returns a snapshot of every stored subscription, regardless of user.
 func (p *Store) all() []*PushSubscription {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -255,9 +207,6 @@ func (p *Store) all() []*PushSubscription {
 	return out
 }
 
-// send delivers payload to every sub in subs, filtered by allowDevice.
-// Returns the number of pushes successfully delivered (HTTP 2xx).
-// Subscriptions returning 410/404 are auto-removed.
 func (p *Store) send(ctx context.Context, subs []*PushSubscription, payload []byte, opts SendOptions, allowDevice func(deviceID string) bool) int {
 	if len(subs) == 0 {
 		return 0
@@ -270,15 +219,14 @@ func (p *Store) send(ctx context.Context, subs []*PushSubscription, payload []by
 		VAPIDPublicKey:  pub,
 		VAPIDPrivateKey: priv,
 		TTL:             opts.TTL,
-		Topic:           opts.Topic, // collapses duplicates at the push service
+		Topic:           opts.Topic,
 		Urgency:         opts.Urgency,
 	}
 	delivered := 0
 	for _, s := range subs {
 		if allowDevice != nil && !allowDevice(s.DeviceID) {
-			continue // device silenced by its owner
+			continue
 		}
-		// Translate our PushSubscription to webpush-go's struct shape.
 		wpSub := &webpush.Subscription{
 			Endpoint: s.Endpoint,
 			Keys: webpush.Keys{
@@ -292,7 +240,6 @@ func (p *Store) send(ctx context.Context, subs []*PushSubscription, payload []by
 		if err != nil {
 			continue
 		}
-		// 2xx = delivered; 410/404 = subscription dead → remove.
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			delivered++
 		} else if resp.StatusCode == 410 || resp.StatusCode == 404 {
@@ -303,26 +250,14 @@ func (p *Store) send(ctx context.Context, subs []*PushSubscription, payload []by
 	return delivered
 }
 
-// SendToUser fires payload to every active subscription for user. Returns
-// the number of pushes successfully delivered (HTTP 2xx). `allowDevice`
-// filters by device policy; nil = send to all.
 func (p *Store) SendToUser(ctx context.Context, user string, payload []byte, opts SendOptions, allowDevice func(deviceID string) bool) int {
 	return p.send(ctx, p.ForUser(user), payload, opts, allowDevice)
 }
 
-// SendToAll fires payload to every stored subscription, regardless of
-// user. Returns the number of pushes successfully delivered (HTTP 2xx).
-// filters by device policy; nil = send to all.
 func (p *Store) SendToAll(ctx context.Context, payload []byte, opts SendOptions, allowDevice func(deviceID string) bool) int {
 	return p.send(ctx, p.all(), payload, opts, allowDevice)
 }
 
-// ---- utilities ---------------------------------------------------------
-
-// atomicWriteJSON is a deliberate copy of the version in internal/videocall —
-// that package keeps its own (used by devices.go,
-// livecall.go and recordings.go), so we duplicate it here instead of coupling the
-// two packages over a 25-line function.
 func atomicWriteJSON(path string, v any, mode os.FileMode) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -349,9 +284,6 @@ func atomicWriteJSON(path string, v any, mode os.FileMode) error {
 		_ = os.Remove(tmp)
 		return err
 	}
-	// Fsync on the parent directory to make sure the link is persisted (without
-	// it, on a crash between Rename and shutdown, the file can vanish
-	// even with Sync).
 	if df, err := os.Open(filepath.Dir(path)); err == nil {
 		_ = df.Sync()
 		_ = df.Close()

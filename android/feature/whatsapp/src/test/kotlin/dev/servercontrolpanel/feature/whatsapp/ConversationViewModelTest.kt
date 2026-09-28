@@ -26,10 +26,6 @@ import org.junit.Test
 
 private const val JID = "5511999@s.whatsapp.net"
 
-/**
- * Fake [WhatsAppRepository] for exercising the ViewModel's state machine; the real client
- * mapping is covered by [dev.servercontrolpanel.data.whatsapp.WhatsAppRepositoryTest].
- */
 private class FakeConversationRepository(
     private val onMessages: suspend () -> MessagesResult = { MessagesResult.Success(emptyList(), backfilling = false) },
     private val onSend: suspend (String, String) -> SendResult = { _, _ -> SendResult.Error("failed") },
@@ -49,7 +45,6 @@ private class FakeConversationRepository(
     }
 }
 
-/** Fake [WhatsAppEventSource] that drives connection state and events without a socket. */
 private class FakeWhatsAppEventSource : WhatsAppEventSource {
     private val _state = MutableStateFlow<WhatsAppConnectionState>(WhatsAppConnectionState.Live)
     override val state: StateFlow<WhatsAppConnectionState> = _state.asStateFlow()
@@ -113,7 +108,6 @@ class ConversationViewModelTest {
 
         eventSource.push(WhatsAppWsEvent.MessageReceived(incoming))
         dispatcher.scheduler.advanceUntilIdle()
-        // A WS redelivery of the exact same server id must not append a second bubble.
         eventSource.push(WhatsAppWsEvent.MessageReceived(incoming))
         dispatcher.scheduler.advanceUntilIdle()
 
@@ -151,7 +145,6 @@ class ConversationViewModelTest {
         assertEquals(1, content.messages.size)
         assertEquals(MessageSendStatus.SENT, content.messages.single().sendStatus)
         assertEquals("server-9", content.messages.single().id)
-        // Same client_msg_id reused on retry, never a second one minted.
         assertEquals(listOf(clientMsgId, clientMsgId), repository.sentClientMsgIds)
     }
 
@@ -173,7 +166,6 @@ class ConversationViewModelTest {
         assertTrue(viewModel.uiState.value is ConversationUiState.Content)
     }
 
-    /** Guards that sending is actually wired to the offline write queue. */
     @Test
     fun `without network the message is queued, and the bubble says so`() = runTest {
         val repository = FakeConversationRepository(onSend = { _, _ -> SendResult.Queued })
@@ -189,10 +181,6 @@ class ConversationViewModelTest {
         assertEquals(MessageSendStatus.QUEUED, content.messages.single().sendStatus)
     }
 
-    /**
-     * QUEUED is not FAILED: showing a failure would invite a retry, and a retry
-     * would create a duplicate of the queued message.
-     */
     @Test
     fun `queued is NOT failed, the text stays and the state differs`() = runTest {
         val repository = FakeConversationRepository(onSend = { _, _ -> SendResult.Queued })

@@ -12,16 +12,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Tests for the phantom ringer.
-//
-// The bug: the server decided to ring by `len(existing) == 0` at Join, i.e.
-// "I am the first live peer in the hub → new call". Since the hub is pure
-// memory, every restart of the process emptied it and the first client to
-// reconnect (reconnection is automatic) fired a ring in the middle of a call
-// already in progress. The tests below pin down each face of that.
-
-// waitEvent reads a presence event with a timeout, so the tests do not depend
-// on a sleep.
 func waitEvent(t *testing.T, sub *PresenceSub, d time.Duration) (PresenceEvent, bool) {
 	t.Helper()
 	select {
@@ -32,7 +22,6 @@ func waitEvent(t *testing.T, sub *PresenceSub, d time.Duration) (PresenceEvent, 
 	}
 }
 
-// expectNoEvent fails if ANY ring event arrives within the window.
 func expectNoRing(t *testing.T, sub *PresenceSub, d time.Duration) {
 	t.Helper()
 	deadline := time.After(d)
@@ -42,14 +31,11 @@ func expectNoRing(t *testing.T, sub *PresenceSub, d time.Duration) {
 			if ev.Type == "incoming-call" {
 				t.Fatalf("the ringer rang when it should NOT have: %+v", ev)
 			}
-			// control events (call-answered-elsewhere/ended) are fine
 		case <-deadline:
 			return
 		}
 	}
 }
-
-// --- the registry alone -------------------------------------------------
 
 func TestCallRegistry_FirstJoinRings(t *testing.T) {
 	r := newCallRegistry(filepath.Join(t.TempDir(), "active-calls.json"))
@@ -95,7 +81,6 @@ func TestCallRegistry_SecondParticipantDoesNotRingAgain(t *testing.T) {
 func TestCallRegistry_ResumeHintSilences(t *testing.T) {
 	r := newCallRegistry(filepath.Join(t.TempDir(), "active-calls.json"))
 	now := time.Now().Unix()
-	// No live call at all, but the client declares it is resuming.
 	dec := r.OnJoin("R", "alice", "cid-a", true, now)
 	if dec.Ring {
 		t.Fatal("resume=1 has to silence it even with no live session")
@@ -109,8 +94,6 @@ func TestCallRegistry_GraceExpiresAndNewCallRings(t *testing.T) {
 	r := newCallRegistry(filepath.Join(t.TempDir(), "active-calls.json"))
 	now := time.Now().Unix()
 	r.OnJoin("R", "alice", "cid-a", false, now)
-	// Well past the grace window: this is a genuinely new call, it MUST ring.
-	// The fix must not turn into a permanent silencer.
 	dec := r.OnJoin("R", "alice", "cid-a", false, now+liveCallGraceSec+10)
 	if !dec.Ring {
 		t.Fatal("after the grace period, a new call has to ring again")
@@ -122,7 +105,6 @@ func TestCallRegistry_DropKeepsCall_HangupEnds(t *testing.T) {
 	now := time.Now().Unix()
 	r.OnJoin("R", "alice", "cid-a", false, now)
 
-	// A drop (not graceful): the call stays alive waiting for the reconnect.
 	if ended, _ := r.OnPeerGone("R", "cid-a", false, now+1); ended {
 		t.Fatal("a dropped connection must NOT end the call (that is the deploy reconnect)")
 	}
@@ -130,7 +112,6 @@ func TestCallRegistry_DropKeepsCall_HangupEnds(t *testing.T) {
 		t.Fatal("a reconnect after a drop must not ring")
 	}
 
-	// Hung up on purpose (the client sent "leave"): ends right away.
 	ended, callID := r.OnPeerGone("R", "cid-a", true, now+3)
 	if !ended || callID == "" {
 		t.Fatalf("a hangup by the last participant should end the call (ended=%v id=%q)", ended, callID)
@@ -161,8 +142,6 @@ func TestCallRegistry_TouchKeepsAlive(t *testing.T) {
 	r := newCallRegistry(filepath.Join(t.TempDir(), "active-calls.json"))
 	now := time.Now().Unix()
 	r.OnJoin("R", "alice", "cid-a", false, now)
-	// A long call with no join/leave at all: it is the heartbeat's Touch that
-	// prevents the ageing (otherwise the deploy at minute 40 would ring again).
 	r.Touch([]string{"R"}, now+liveCallGraceSec+30)
 	if dec := r.OnJoin("R", "alice", "cid-a", false, now+liveCallGraceSec+31); dec.Ring {
 		t.Fatal("a call renewed by the heartbeat cannot be read as new")
@@ -182,11 +161,6 @@ func TestCallRegistry_GCEndsExpiredCall(t *testing.T) {
 	}
 }
 
-// --- persistence: the DEPLOY case ---------------------------------------
-
-// TestCallRegistry_SurvivesRestart is the test that stands for the reported
-// bug: during a call, a deploy restarts the process; the client reconnects on
-// its own; the ringer must NOT sound.
 func TestCallRegistry_SurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "active-calls.json")
@@ -197,15 +171,12 @@ func TestCallRegistry_SurvivesRestart(t *testing.T) {
 	if !first.Ring {
 		t.Fatal("setup: the original call should have rung")
 	}
-	// Shutdown: it is the Service's Close() that writes — without that write,
-	// the memory goes away and the restart looks like an empty room.
 	if err := r1.save(); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 
-	// A new process rereads from disk.
 	r2 := newCallRegistry(path)
-	dec := r2.OnJoin("R", "alice", "cid-a", false, now+3) // ~3s of restart
+	dec := r2.OnJoin("R", "alice", "cid-a", false, now+3)
 	if dec.Ring {
 		t.Fatal("REGRESSION: a post-restart reconnect rang the doorbell again")
 	}
@@ -218,7 +189,6 @@ func TestCallRegistry_DoesNotReviveOldCall(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "active-calls.json")
 	r1 := newCallRegistry(path)
-	// A call from "yesterday", written with an old LastActiveAt.
 	r1.calls["R"] = &LiveCall{
 		RoomID: "R", CallID: "old",
 		StartedAt:    time.Now().Unix() - 86400,
@@ -250,17 +220,13 @@ func TestCallRegistry_CorruptFileDoesNotCrash(t *testing.T) {
 	}
 }
 
-// --- per-device policy --------------------------------------------------
-
 func TestDeviceStore_PolicyPerDevice(t *testing.T) {
 	d := newDeviceStore(filepath.Join(t.TempDir(), "ring-devices.json"))
 	now := time.Now().Unix()
 
-	// An unknown device RINGS — graceful degradation.
 	if !d.ShouldRing("sam", "dev-unknown", now) {
 		t.Fatal("an unknown device has to ring")
 	}
-	// An old client (with no device_id) does too.
 	if !d.ShouldRing("sam", "", now) {
 		t.Fatal("a client with no device_id has to ring")
 	}
@@ -283,7 +249,6 @@ func TestDeviceStore_PolicyPerDevice(t *testing.T) {
 		t.Fatal("switching it back on should ring again")
 	}
 
-	// A temporary silence expires on its own.
 	until := now + 3600
 	d.Set("sam", "dev-win", nil, &until, "")
 	if d.ShouldRing("sam", "dev-win", now) {
@@ -293,7 +258,6 @@ func TestDeviceStore_PolicyPerDevice(t *testing.T) {
 		t.Fatal("once the silence is over, it rings again on its own")
 	}
 
-	// Isolation between users.
 	if !d.ShouldRing("jordan", "dev-win", now) {
 		t.Fatal("the policy is per user — it cannot leak between accounts")
 	}
@@ -345,8 +309,6 @@ func TestPresenceHub_RingRespectsMutedDevice(t *testing.T) {
 		t.Fatalf("the Windows one is silenced and could NOT ring: %+v", ev)
 	}
 
-	// A CONTROL event ignores the policy: clearing the screen is mandatory even
-	// on a silenced device.
 	p.NotifyUsers([]string{"sam"}, "", PresenceEvent{Type: "call-ended", RoomID: "R", CallID: "c1"})
 	if ev, ok := waitEvent(t, win, 200*time.Millisecond); !ok || ev.Type != "call-ended" {
 		t.Fatalf("call-ended has to arrive even on the silenced device (ok=%v ev=%+v)", ok, ev)
@@ -371,11 +333,6 @@ func TestPresenceHub_WantsRing(t *testing.T) {
 	}
 }
 
-// --- integration in the Service ----------------------------------------
-
-// TestService_DeployDoesNotRing is the end-to-end test of the reported
-// symptom: a call in progress, the process restarts, the other side
-// reconnects — and Sam's panel must NOT ring.
 func TestService_DeployDoesNotRing(t *testing.T) {
 	dir := t.TempDir()
 	s := openServiceAt(t, dir)
@@ -387,11 +344,9 @@ func TestService_DeployDoesNotRing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Sam with the panel open on two devices (Windows + Mac).
 	win := s.Presence.Subscribe("sam", "dev-win")
 	mac := s.Presence.Subscribe("sam", "dev-mac")
 
-	// Jordan calls: both devices ring (correct behaviour).
 	s.announceJoin(room.ID, "jordan", "jordan", "cid-jordan", false)
 	if ev, ok := waitEvent(t, win, time.Second); !ok || ev.Type != "incoming-call" {
 		t.Fatalf("the real call had to ring (ok=%v ev=%+v)", ok, ev)
@@ -399,10 +354,8 @@ func TestService_DeployDoesNotRing(t *testing.T) {
 	if _, ok := waitEvent(t, mac, time.Second); !ok {
 		t.Fatal("the real call had to ring on the Mac too")
 	}
-	// Sam answers on the Mac.
 	s.announceJoin(room.ID, "sam", "sam", "cid-sam-mac", false)
 
-	// --- DEPLOY: the process dies and comes back ------------------------
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -410,7 +363,6 @@ func TestService_DeployDoesNotRing(t *testing.T) {
 	win2 := s2.Presence.Subscribe("sam", "dev-win")
 	defer s2.Presence.Unsubscribe(win2)
 
-	// Both sides reconnect on their own. Neither may ring.
 	s2.announceJoin(room.ID, "jordan", "jordan", "cid-jordan", false)
 	s2.announceJoin(room.ID, "sam", "sam", "cid-sam-mac", true)
 	expectNoRing(t, win2, 400*time.Millisecond)
@@ -419,8 +371,6 @@ func TestService_DeployDoesNotRing(t *testing.T) {
 	s.Presence.Unsubscribe(mac)
 }
 
-// TestService_AnsweringOnOneDeviceSilencesOthers covers the second half of the
-// symptom: I answered on the Mac and Windows kept ringing / trying to connect.
 func TestService_AnsweringOnOneDeviceSilencesOthers(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
@@ -437,7 +387,6 @@ func TestService_AnsweringOnOneDeviceSilencesOthers(t *testing.T) {
 	}
 	callID := ev.CallID
 
-	// Sam answers on the Mac → Windows receives the cancellation.
 	s.announceJoin(room.ID, "sam", "sam", "cid-sam-mac", false)
 	got, ok := waitEvent(t, win, time.Second)
 	if !ok || got.Type != "call-answered-elsewhere" {
@@ -448,8 +397,6 @@ func TestService_AnsweringOnOneDeviceSilencesOthers(t *testing.T) {
 	}
 }
 
-// TestService_HangupClearsPendingModal: an ended call has to erase the
-// "Call from X" left on the screen of whoever did not answer.
 func TestService_HangupClearsPendingModal(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
@@ -463,7 +410,6 @@ func TestService_HangupClearsPendingModal(t *testing.T) {
 	if ev, ok := waitEvent(t, win, time.Second); !ok || ev.Type != "incoming-call" {
 		t.Fatalf("setup: it should have rung (%+v)", ev)
 	}
-	// Jordan gives up and hangs up (a graceful exit).
 	s.onPeerGone(room.ID, "cid-jordan", true)
 	ev, ok := waitEvent(t, win, time.Second)
 	if !ok || ev.Type != "call-ended" {
@@ -471,8 +417,6 @@ func TestService_HangupClearsPendingModal(t *testing.T) {
 	}
 }
 
-// TestService_CallAfterHangupRingsAgain makes sure the fix did not
-// become a permanent silencer.
 func TestService_CallAfterHangupRingsAgain(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
@@ -490,7 +434,6 @@ func TestService_CallAfterHangupRingsAgain(t *testing.T) {
 		t.Fatalf("setup: expected call-ended, got %+v", ev)
 	}
 
-	// A second call, outside the dedup window.
 	s.Calls.mu.Lock()
 	for k := range s.Calls.lastRing {
 		delete(s.Calls.lastRing, k)
@@ -503,9 +446,6 @@ func TestService_CallAfterHangupRingsAgain(t *testing.T) {
 	}
 }
 
-// --- E2E through the real HTTP handler ---------------------------------
-
-// wsDialQ is wsDial with extra query params (we need ?resume=1).
 func wsDialQ(t *testing.T, srv *httptest.Server, user, room, clientID string, extra url.Values) *websocket.Conn {
 	t.Helper()
 	q := url.Values{"user": {user}, "room_id": {room}}
@@ -525,11 +465,6 @@ func wsDialQ(t *testing.T, srv *httptest.Server, user, room, clientID string, ex
 	return c
 }
 
-// TestHandleWS_ReconnectDoesNotRing_E2E exercises the REAL deployed path
-// — query parsing, Peer, Hub.Join and the ring decision — and not just the
-// registry in isolation. An earlier test proved that the Hub in isolation can
-// pass while the handler is wrong; here the same guarantee is given for the
-// ring.
 func TestHandleWS_ReconnectDoesNotRing_E2E(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
@@ -540,11 +475,9 @@ func TestHandleWS_ReconnectDoesNotRing_E2E(t *testing.T) {
 	srv := wsTestServer(t, s)
 	defer srv.Close()
 
-	// Sam with the panel open on Windows (presence, outside the call).
 	win := s.Presence.Subscribe("sam", "dev-win")
 	defer s.Presence.Unsubscribe(win)
 
-	// Jordan really calls → it rings.
 	chey1 := wsDialQ(t, srv, "jordan", room.ID, "cid-jordan", nil)
 	wsReadUntil(t, chey1, "joined")
 	ev, ok := waitEvent(t, win, 2*time.Second)
@@ -552,8 +485,6 @@ func TestHandleWS_ReconnectDoesNotRing_E2E(t *testing.T) {
 		t.Fatalf("the real call had to ring: ok=%v ev=%+v", ok, ev)
 	}
 
-	// Her connection drops and comes back (same client_id, with resume=1 — which
-	// is what reopenSignaling sends). It must NOT ring again.
 	_ = chey1.Close()
 	chey2 := wsDialQ(t, srv, "jordan", room.ID, "cid-jordan", url.Values{"resume": {"1"}})
 	defer chey2.Close()
@@ -561,9 +492,6 @@ func TestHandleWS_ReconnectDoesNotRing_E2E(t *testing.T) {
 	expectNoRing(t, win, 500*time.Millisecond)
 }
 
-// TestHandleWS_ExplicitLeaveEndsCall_E2E proves the "hung up" vs
-// "dropped" discriminator end to end: the `leave` message the client sends on
-// hangup has to end the session (and clear the others' modal).
 func TestHandleWS_ExplicitLeaveEndsCall_E2E(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
@@ -583,7 +511,6 @@ func TestHandleWS_ExplicitLeaveEndsCall_E2E(t *testing.T) {
 		t.Fatalf("setup: it should have rung (%+v)", ev)
 	}
 
-	// The user's hangup: videocall.js sends {"type":"leave"} before closing.
 	if err := jordan.WriteJSON(SignalingMsg{Type: "leave"}); err != nil {
 		t.Fatalf("write leave: %v", err)
 	}

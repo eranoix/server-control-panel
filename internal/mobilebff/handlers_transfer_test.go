@@ -20,12 +20,9 @@ import (
 	"server-control-panel/internal/config"
 )
 
-// TestTransferDownload_RangeRequest_ReturnsPartialContent proves, with a real
-// HTTP request, that a Range request returns 206 with the correct body and
-// Content-Range — the basis of resumable download.
 func TestTransferDownload_RangeRequest_ReturnsPartialContent(t *testing.T) {
 	dir := t.TempDir()
-	content := bytes.Repeat([]byte("0123456789"), 100) // 1000 bytes
+	content := bytes.Repeat([]byte("0123456789"), 100)
 	f := filepath.Join(dir, "large.bin")
 	if err := os.WriteFile(f, content, 0o644); err != nil {
 		t.Fatal(err)
@@ -57,9 +54,6 @@ func TestTransferDownload_RangeRequest_ReturnsPartialContent(t *testing.T) {
 	}
 }
 
-// TestTransferDownload_UnsatisfiableRange_Returns416 proves the edge case:
-// a Range beyond the file's size returns 416, not 200 and not a silently
-// empty body.
 func TestTransferDownload_UnsatisfiableRange_Returns416(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "small.bin")
@@ -80,8 +74,6 @@ func TestTransferDownload_UnsatisfiableRange_Returns416(t *testing.T) {
 	}
 }
 
-// TestTransferDownload_NoRange_ReturnsFullFile200 proves that an ordinary
-// request (no Range) keeps working as a full download.
 func TestTransferDownload_NoRange_ReturnsFullFile200(t *testing.T) {
 	dir := t.TempDir()
 	content := []byte("full file content")
@@ -105,8 +97,6 @@ func TestTransferDownload_NoRange_ReturnsFullFile200(t *testing.T) {
 	}
 }
 
-// TestTransferDownload_Unauthenticated_401 keeps parity with the BFF's other
-// routes: with no session, 401 before any disk access.
 func TestTransferDownload_Unauthenticated_401(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: &config.Config{DataDir: t.TempDir()}})
@@ -120,23 +110,16 @@ func TestTransferDownload_Unauthenticated_401(t *testing.T) {
 	}
 }
 
-// TestTransferUpload_ResumeAfterFailure_HashMatches is the central test of
-// resumable upload: an upload is started, one part is sent, the connection
-// "drops" (the test simply stops sending chunks without calling complete), and
-// then the client RESUMES sending only the chunks that were missing — without
-// resending the ones already acknowledged — and the final file matches the
-// original byte for byte (hash).
 func TestTransferUpload_ResumeAfterFailure_HashMatches(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: &config.Config{DataDir: dataDir}})
 
-	original := bytes.Repeat([]byte("abcdefghij"), 500) // 5000 bytes
+	original := bytes.Repeat([]byte("abcdefghij"), 500)
 	part1 := original[0:2000]
 	part2 := original[2000:5000]
 
-	// 1. init
 	initBody, _ := json.Marshal(UploadInitRequest{DestDir: destDir, Filename: "resumed.bin", TotalSize: int64(len(original))})
 	req := newAuthedRequest(http.MethodPost, "/api/mobile/v1/files/upload/init", initBody)
 	rec := httptest.NewRecorder()
@@ -149,17 +132,10 @@ func TestTransferUpload_ResumeAfterFailure_HashMatches(t *testing.T) {
 		t.Fatalf("decode init: %v", err)
 	}
 
-	// 2. sends the first chunk successfully.
 	sendChunk(t, mux, initResp.SessionID, 0, part1)
 
-	// 3. "failure": the connection drops here — the test simply stops sending
-	// anything for now, simulating the app being killed mid-transfer.
-
-	// 4. resume: the client reconnects and resends only the remainder (offset 2000
-	// onwards), never part1 again.
 	sendChunk(t, mux, initResp.SessionID, 2000, part2)
 
-	// 5. complete
 	completeBody, _ := json.Marshal(UploadCompleteRequest{SessionID: initResp.SessionID})
 	req = newAuthedRequest(http.MethodPost, "/api/mobile/v1/files/upload/complete", completeBody)
 	rec = httptest.NewRecorder()
@@ -204,9 +180,6 @@ func sendChunk(t *testing.T, mux *http.ServeMux, sessionID string, offset int64,
 	return resp
 }
 
-// TestTransferUpload_IncompleteComplete_409WithProgress proves the 409 body
-// returned when upload/complete is called before all the bytes have
-// arrived.
 func TestTransferUpload_IncompleteComplete_409WithProgress(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
@@ -241,10 +214,6 @@ func TestTransferUpload_IncompleteComplete_409WithProgress(t *testing.T) {
 	}
 }
 
-// TestTransferDownload_MissingFile_404NoPathLeak proves that a download of a
-// nonexistent path returns 404, and that the error body does NOT carry the
-// server's absolute path — before the fix, mapTransferErr echoed
-// err.Error() of an *os.PathError, which embeds exactly that path.
 func TestTransferDownload_MissingFile_404NoPathLeak(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "missing.bin")
@@ -264,8 +233,6 @@ func TestTransferDownload_MissingFile_404NoPathLeak(t *testing.T) {
 	}
 }
 
-// TestTransferInbox_ReturnsExistingDir proves that /files/inbox returns a real,
-// existing path.
 func TestTransferInbox_ReturnsExistingDir(t *testing.T) {
 	dataDir := t.TempDir()
 	mux := http.NewServeMux()
@@ -291,11 +258,6 @@ func TestTransferInbox_ReturnsExistingDir(t *testing.T) {
 	}
 }
 
-// TestMapTransferErr_DiskFull_507 proves that a full disk (ENOSPC, as the
-// staging os.WriteFile returns it) reaches the app as 507 Insufficient Storage
-// and not as the old 400 "invalid request" from the default branch. The
-// difference is not cosmetic: with a 400 the app retried the upload forever
-// against a disk that was never going to fit it, and the operator had no clue why.
 func TestMapTransferErr_DiskFull_507(t *testing.T) {
 	err := mapTransferErr(&os.PathError{
 		Op:   "write",
@@ -315,10 +277,6 @@ func TestMapTransferErr_DiskFull_507(t *testing.T) {
 	}
 }
 
-// TestMapTransferErr_PermissionDenied_403 proves that "no write permission on
-// the folder" is a condition of the REQUEST, not a server defect. As a 500, the
-// app classified the case as a temporary failure and kept retrying against a
-// folder that would never accept the write.
 func TestMapTransferErr_PermissionDenied_403(t *testing.T) {
 	err := mapTransferErr(&os.PathError{
 		Op:   "open",

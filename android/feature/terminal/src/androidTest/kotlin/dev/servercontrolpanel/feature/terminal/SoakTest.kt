@@ -14,16 +14,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * Memory soak: drives [TerminalEngine] and the glyph-atlas rasterization path used by
- * [dev.servercontrolpanel.feature.terminal.render.TerminalCanvas] and
- * [dev.servercontrolpanel.feature.terminal.render.TerminalSurfaceGrid] for `-Psoak.hours=N`.
- *
- * Native leaks cannot be seen from the JVM, so they are measured host-side
- * (`run-soak.sh` samples meminfo). In-process this only asserts that the run finishes
- * without a JNI abort (CheckJNI on) and that the atlas stays within its fixed budget.
- * Without the argument it is a short smoke pass ([DEFAULT_SMOKE_HOURS]), not the 4h gate.
- */
 @RunWith(AndroidJUnit4::class)
 class SoakTest {
 
@@ -42,7 +32,6 @@ class SoakTest {
         val initialAtlasBytes = atlas.byteSize()
         val atlasCapacity = ATLAS_NARROW_CAPACITY + ATLAS_WIDE_CAPACITY
 
-        // Sized for the larger geometry; Canvas clips silently, so one bitmap covers both.
         val canvasBitmap = Bitmap.createBitmap(
             geometryB.first * cellWidthPx,
             geometryB.second * cellHeightPx,
@@ -102,8 +91,6 @@ class SoakTest {
                 }
             }
 
-            // The LRU atlas must keep its initial byte size and never exceed its capacity,
-            // however many distinct glyph combinations were produced.
             assertEquals(
                 "glyph atlas byte size must never change after construction",
                 initialAtlasBytes,
@@ -142,7 +129,6 @@ class SoakTest {
         }
     }
 
-    /** A 5 MB write, split into sub-chunks only to avoid one oversized allocation. */
     private fun burst(engine: TerminalEngine, seq: Long) {
         var remaining = BURST_TOTAL_BYTES
         var n = seq
@@ -168,10 +154,6 @@ class SoakTest {
         return parsed ?: DEFAULT_SMOKE_HOURS
     }
 
-    /**
-     * Deterministic synthetic PTY output covering SGR colors (atlas churn), attributes,
-     * wide glyphs, scroll regions, erases and the alternate screen, cycled by `seq`.
-     */
     private object SoakContent {
         private val WIDE_CODEPOINTS = intArrayOf(0x4E2D, 0x6587, 0x1F600, 0x1F680)
         private const val FILLER = "the quick brown fox jumps over the lazy dog 0123456789 "
@@ -243,12 +225,10 @@ class SoakTest {
         const val TAG = "SoakTest"
         const val SOAK_HOURS_ARG = "soak.hours"
 
-        /** Smoke-run default when `-Psoak.hours` is not passed. */
-        const val DEFAULT_SMOKE_HOURS = 0.02 // ~72s
+        const val DEFAULT_SMOKE_HOURS = 0.02
 
         const val NANOS_PER_HOUR = 3_600_000_000_000.0
 
-        // ~200 KB/s sustained: a 20,000-byte chunk every 100ms.
         const val SUSTAINED_CHUNK_BYTES = 20_000
         val SUSTAINED_INTERVAL_NANOS = 100_000_000L
 
@@ -260,7 +240,6 @@ class SoakTest {
 
         val LOG_INTERVAL_NANOS = 60L * 1_000_000_000L
 
-        // Mirrors GlyphAtlas's own defaults (narrowCapacity=384, wideCapacity=128).
         const val ATLAS_NARROW_CAPACITY = 384
         const val ATLAS_WIDE_CAPACITY = 128
 

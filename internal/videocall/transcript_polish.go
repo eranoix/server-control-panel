@@ -13,12 +13,9 @@ import (
 	"server-control-panel/internal/auth"
 )
 
-// aiCallBudget is the per-user per-minute limit on calls to Anthropic.
-// Polish: 12/min (one utterance every 5s is the real usage); Summary: 3/min (rare).
-// Defence against: a user looping curl → an unexpected bill.
 type aiCallBudget struct {
 	mu     sync.Mutex
-	hits   map[string][]time.Time // user -> timestamps of recent calls
+	hits   map[string][]time.Time
 	maxN   int
 	window time.Duration
 }
@@ -31,7 +28,6 @@ func newAICallBudget(maxN int, window time.Duration) *aiCallBudget {
 	}
 }
 
-// Allow records a hit. Returns false if the user exceeded the budget in the window.
 func (b *aiCallBudget) Allow(user string) bool {
 	if user == "" {
 		return false
@@ -40,7 +36,6 @@ func (b *aiCallBudget) Allow(user string) bool {
 	defer b.mu.Unlock()
 	now := time.Now()
 	cutoff := now.Add(-b.window)
-	// Clean out old hits.
 	bucket := b.hits[user]
 	keep := bucket[:0]
 	for _, t := range bucket {
@@ -56,15 +51,11 @@ func (b *aiCallBudget) Allow(user string) bool {
 	return true
 }
 
-// Singleton buckets — instantiated at boot.
 var (
 	polishBudget  = newAICallBudget(12, time.Minute)
 	summaryBudget = newAICallBudget(3, time.Minute)
 )
 
-// sanitizePromptContext cleans items coming from the client that will be embedded
-// in a prompt to the model. Prompt-injection defence — it replaces control chars,
-// line breaks, common marker strings. Final cap at 200 runes per item.
 func sanitizePromptContext(items []string) []string {
 	out := make([]string, 0, len(items))
 	for _, c := range items {
@@ -90,30 +81,6 @@ func sanitizePromptContext(items []string) []string {
 	return out
 }
 
-// HandleTranscriptPolish takes a raw block of Web Speech transcription and
-// returns a version polished by Claude Haiku: correct punctuation, no filler
-// hesitations, consistent proper nouns, without changing
-// the meaning or adding new words.
-//
-// POST /api/videocall/transcript/polish
-// Body: { text, lang?, context?[], speaker? }
-//   - text: the raw utterance (required)
-//   - lang: BCP47 ("en-US", "pt-BR"...). Default "en-US".
-//   - context: the last 3-5 previous utterances (any speaker), to keep
-//     coherence with the topic. Each item is an already-polished string.
-//   - speaker: the name of whoever spoke (helps the AI with direct speech).
-//
-// Response: { polished, ms_taken }
-//
-// Cost: input ~50-200 tokens, output ~50-200 tokens per call. With Haiku
-// (~$0.25/MTok input, ~$1.25/MTok output) that is ~$0.0001-0.0003 per utterance.
-// 1h of conversation with ~200 utterances = ~$0.02-0.06.
-//
-// Safety limits:
-//   - Raw text ≤ 2000 chars (rejected above that) — Web Speech utterances
-//     rarely go past 200 chars.
-//   - Context ≤ 5 items, each ≤ 500 chars (truncated).
-//   - Not cached (each utterance is unique + the cost is low).
 func (s *Service) HandleTranscriptPolish(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -125,8 +92,6 @@ func (s *Service) HandleTranscriptPolish(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if !polishBudget.Allow(user) {
-		// 12 polishes/min is roomy for real use (~1 utterance every 5s); going past
-		// that is a loop, a bot, or abuse. Returns 429 without calling Anthropic — protects cost.
 		http.Error(w, "rate limit — wait a few seconds", http.StatusTooManyRequests)
 		return
 	}
@@ -157,14 +122,10 @@ func (s *Service) HandleTranscriptPolish(w http.ResponseWriter, r *http.Request)
 	if req.Lang == "" {
 		req.Lang = "en-US"
 	}
-	// Truncate context + sanitize against prompt injection (the client supplies
-	// the context; if we allowed newlines + markers like "```" or "<|" in the
-	// input, an attacker could break the prompt and instruct the model otherwise).
 	if len(req.Context) > 5 {
 		req.Context = req.Context[len(req.Context)-5:]
 	}
 	req.Context = sanitizePromptContext(req.Context)
-	// Speaker is client-supplied too — same treatment.
 	if utf8.RuneCountInString(req.Speaker) > 60 {
 		runes := []rune(req.Speaker)
 		req.Speaker = string(runes[:60])
@@ -178,8 +139,6 @@ func (s *Service) HandleTranscriptPolish(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "anthropic: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	// Sanitize: the AI may answer with prefixes/explanations. Strip everything
-	// up to the first quote OR use it directly if the answer is short.
 	polished = extractPolished(polished, req.Text)
 	writeJSONHTTP(w, map[string]string{"polished": polished})
 }
@@ -213,18 +172,13 @@ func buildPolishPrompt(text, lang string, context []string, speaker string) stri
 	return sb.String()
 }
 
-// extractPolished takes the model's answer and removes a possible "Polished
-// version:" prefix or surrounding quotes. If it comes back empty or suspicious,
-// it returns the original text (defensive — better unpolished than ruined).
 func extractPolished(resp, original string) string {
 	r := strings.TrimSpace(resp)
-	// Strip common prefixes.
 	for _, prefix := range []string{"Polished version:", "POLISHED VERSION:", "Response:"} {
 		r = strings.TrimPrefix(r, prefix)
 		r = strings.TrimPrefix(r, strings.ToLower(prefix))
 	}
 	r = strings.TrimSpace(r)
-	// Strip surrounding quotes.
 	if len(r) >= 2 {
 		first, last := r[0], r[len(r)-1]
 		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
@@ -235,8 +189,6 @@ func extractPolished(resp, original string) string {
 	if r == "" {
 		return original
 	}
-	// Sanity check: if the AI returned something absurdly different in size
-	// (5x bigger — it probably hallucinated an explanation), return the original.
 	if utf8.RuneCountInString(r) > 5*utf8.RuneCountInString(original)+200 {
 		return original
 	}

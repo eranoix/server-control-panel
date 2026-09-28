@@ -10,31 +10,11 @@ import (
 	"testing"
 )
 
-// The fixtures in testdata/ are the FIRST testdata/ under internal/ in this
-// repo — the ten existing httptest tests embed their JSON inline. The precedent
-// is deliberate: this is the REAL shape of /cluster/resources from this
-// hypervisor, measured live, and more than one piece of work downstream
-// consumes it.
-//
-// There are two of them, because the answer depends on WHO is asking:
-//   - cluster-resources.json ....... the root's view (pvesh, on the host): 15
-//     entries, including storage and network, which the inventory has to
-//     ignore.
-//   - cluster-resources-token.json . the view of the panel@pve!audit token, which
-//     is the one the panel actually receives: 10 entries — the token's ACL
-//     (PVEAuditor on /vms and /nodes, without /storage) filters storage and
-//     network BEFORE the response.
-//
-// Keeping only the first would make a parser test pass over data the panel
-// never sees; keeping only the second would leave the type filter with no
-// exercise at all.
 const (
 	fixtureRoot  = "testdata/cluster-resources.json"
 	fixtureToken = "testdata/cluster-resources-token.json"
 )
 
-// resource is the slice of /cluster/resources that the inventory uses. Counter
-// fields are left out on purpose: what is proved here is the SHAPE.
 type resource struct {
 	ID     string `json:"id"`
 	Type   string `json:"type"`
@@ -73,9 +53,6 @@ func guestVMIDs(rs []resource) []int {
 	return out
 }
 
-// TestFixtureShape compares SET against set — never a count. A magic number
-// would turn a new guest into a failure and a removed guest into a wrong pass;
-// the set says exactly WHO came in or went out.
 func TestFixtureShape(t *testing.T) {
 	expected := []int{100, 201, 202, 203, 204, 205, 206, 207, 208}
 
@@ -104,9 +81,6 @@ func TestFixtureShape(t *testing.T) {
 	}
 }
 
-// TestFixtureViewsDiffer pins the measured difference between the two views.
-// If the two ever become identical, one of them was re-recorded from the wrong
-// source — and the type-filter test would become decorative.
 func TestFixtureViewsDiffer(t *testing.T) {
 	root := readFixture(t, fixtureRoot)
 	tok := readFixture(t, fixtureToken)
@@ -130,10 +104,6 @@ func TestFixtureViewsDiffer(t *testing.T) {
 	}
 }
 
-// TestClientDecodesFixture closes the loop: the client's own do(), serving
-// the REAL fixture, has to return the guests. It proves that the {"data":…}
-// envelope and the field cut match the actual hypervisor, not a convenience
-// JSON written by hand.
 func TestClientDecodesFixture(t *testing.T) {
 	raw, err := os.ReadFile(fixtureToken)
 	if err != nil {
@@ -156,9 +126,6 @@ func TestClientDecodesFixture(t *testing.T) {
 	}
 }
 
-// TestMissingDataBodyFails: a 200 response without the envelope must not turn into
-// a silent "empty list" — an empty inventory presented as truth is the false
-// green the freshness criterion exists to forbid.
 func TestMissingDataBodyFails(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"other":[]}`))

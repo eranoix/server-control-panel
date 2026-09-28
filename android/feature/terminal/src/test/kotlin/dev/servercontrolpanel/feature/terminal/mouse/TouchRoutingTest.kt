@@ -18,15 +18,9 @@ private class RecordingSink : ByteSink {
     }
 }
 
-/**
- * Fake encoder that, like the real one, returns `null` until the remote program asks
- * for mouse tracking. The real encoder is covered by `MousePasteEncodingTest` in
- * `:terminal-engine`; this tests the controller's reaction.
- */
 private class FakeEncoder(var wantsMouse: Boolean) : MouseEventEncoder {
     val actions = mutableListOf<MouseAction>()
 
-    /** A 20x40 px cell, as in the rest of this module's gesture tests. */
     override fun encode(
         action: MouseAction,
         position: Offset,
@@ -43,11 +37,6 @@ private class FakeEncoder(var wantsMouse: Boolean) : MouseEventEncoder {
     }
 }
 
-/**
- * Mouse reports go out only when the remote program asked for tracking (DECSET
- * 1000/1002/1003); otherwise they reach the shell as garbage text. When requested,
- * the bytes must be what the program expects.
- */
 class TouchRoutingTest {
 
     @Test
@@ -68,9 +57,6 @@ class TouchRoutingTest {
 
     @Test
     fun noPreferenceCanOverrideRemoteProgram() {
-        // Ownership depends only on whether the remote program asked for the mouse;
-        // no app preference may contradict it. Selecting inside a full-screen
-        // program uses a long press, which is handled before routing.
         val requesting = TouchRouting { true }
         val notRequesting = TouchRouting { false }
 
@@ -83,7 +69,6 @@ class TouchRoutingTest {
 
     @Test
     fun stateIsReadOnEachQuery_notRemembered() {
-        // Programs toggle tracking without notifying the app, so it must re-read.
         var requesting = false
         val routing = TouchRouting { requesting }
 
@@ -145,8 +130,6 @@ class TouchRoutingTest {
 
     @Test
     fun doubleTapInMouseMode_isTwoClicks_notWordSelection() {
-        // When the program owns the touch, two quick taps are two clicks, not a word
-        // selection.
         val encoder = FakeEncoder(wantsMouse = true)
         val sink = RecordingSink()
         val controller = MouseReportGestureController(encoder, sink)
@@ -163,8 +146,6 @@ class TouchRoutingTest {
 
     @Test
     fun encoderReturningEmptyArray_producesNoFrame() {
-        // The native encoder returns zero bytes for movement within a cell; sending
-        // empty frames would be network noise.
         val sink = RecordingSink()
         val controller = MouseReportGestureController(
             { _, _, _, _ -> ByteArray(0) },
@@ -178,8 +159,6 @@ class TouchRoutingTest {
 
     @Test
     fun moveWithinSameCell_doesNotRepeatReport() {
-        // Deduplicate moves within a cell ourselves: libghostty-vt does not in mode
-        // 1002 (see `MousePasteEncodingTest.encoderDoesNotDedupMovesInMode1002`).
         val encoder = FakeEncoder(wantsMouse = true)
         val sink = RecordingSink()
         val controller = MouseReportGestureController(encoder, sink)
@@ -212,7 +191,6 @@ class TouchRoutingTest {
 
     @Test
     fun newDrag_doesNotInheritPreviousMemory() {
-        // Without a reset, a second drag to the same cell would lose its first move.
         val encoder = FakeEncoder(wantsMouse = true)
         val sink = RecordingSink()
         val controller = MouseReportGestureController(encoder, sink)

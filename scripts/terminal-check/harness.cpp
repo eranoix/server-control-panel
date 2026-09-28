@@ -1,9 +1,3 @@
-// Harness: runs the APP'S ENGINE (libghostty-vt, the same vendored .a) over a file
-// of raw bytes and prints the resulting grid, to compare it, with no device, with
-// what a reference emulator produces from the SAME bytes.
-//
-// Mirrors the snapshot path of ghostty_jni.cpp: begin_update/end_update, row
-// iterator, cell selection.
 #include <ghostty/vt.h>
 
 #include <cstdint>
@@ -38,7 +32,6 @@ int main(int argc, char** argv) {
     uint16_t cols = argc > 2 ? static_cast<uint16_t>(atoi(argv[2])) : 67;
     uint16_t rows = argc > 3 ? static_cast<uint16_t>(atoi(argv[3])) : 53;
     size_t window = argc > 4 ? static_cast<size_t>(atol(argv[4])) : 1500000;
-    // Write chunk size: the app replays the log IN CHUNKS.
     size_t chunk = argc > 5 ? static_cast<size_t>(atol(argv[5])) : 0;
 
     FILE* f = fopen(path, "rb");

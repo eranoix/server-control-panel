@@ -25,16 +25,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 
-/** Test tag of the connection screen. */
 internal const val TAG_CONNECTION = "jira-connection"
 
-/**
- * Jira account connection form. Not an error screen: the server returns `connected:false` with
- * HTTP 200 for the normal initial state.
- *
- * The token goes to the server's per-user vault (shared with the web panel); it is never
- * returned in a response or stored on the device.
- */
 @Composable
 internal fun ConnectionScreen(
     busy: Boolean,

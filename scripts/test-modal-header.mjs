@@ -1,15 +1,4 @@
 #!/usr/bin/env node
-// test-modal-header.mjs — a modal title has to be legible in BOTH themes,
-// and the danger colour has to survive.
-//
-// `.fm-modal-head h3` pinned color:#fff. In the light theme that is white on
-// white: the title of EVERY modal (files, confirmation, video call) simply
-// vanished. And `.fm-modal-head h3` (0,1,1) beats `.text-red-400` (0,1,0), so
-// the title of a destructive confirmation was never red — the danger colour had
-// been dead from the start.
-//
-// The pin does not read CSS: it mounts each REAL header from index.html in a
-// chromium and measures the computed contrast.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -45,9 +34,6 @@ const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
 const tail = fs.readFileSync(path.join(WEB, 'tailwind.css'), 'utf8');
 const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n');
 
-// Every modal header in the file, with the title it actually uses.
-// x-text does not change colour, so the bindings may stay inert — what matters
-// is the CSS cascade over the real markup.
 const headers = [];
 const re = /<div class="fm-modal-head">([\s\S]*?)<\/div>/g;
 let m;
@@ -102,7 +88,6 @@ for (const theme of ['dark', 'light']) {
 }
 await page.close();
 
-// Counter-check in the source: if anyone pins the colour back, the pin falls.
 const rule = (html.match(/\.fm-modal-head h3 \{[^}]*\}/) || [''])[0];
 /var\(--text-primary\)/.test(rule) ? ok('the rule uses a theme token')
                                     : no('the title rule went back to pinning a colour: ' + rule);

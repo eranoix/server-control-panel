@@ -7,7 +7,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
-/** Never-written cell: narrow with codepoint 0, the padding convention `RowDrawOps` also uses. */
 private fun blankCell(): CellSnapshot.Cell = narrowCell(0)
 
 private const val WRAPPED_FLAG = 0x01
@@ -16,8 +15,6 @@ class SelectionClipboardTest {
 
     @Test
     fun extractSelectedText_wrappedRow_joinsWithoutInsertingALineBreak() {
-        // Row 0 is "abcde" and soft-wraps into row 1 "fghij" -- one logical
-        // line split by the fixed 5-col width, not two real lines.
         val snapshot = buildSnapshot(
             cols = 5,
             rows = 2,
@@ -46,7 +43,6 @@ class SelectionClipboardTest {
 
     @Test
     fun extractSelectedText_shortRow_trimsOnlyTrailingNeverWrittenPadding() {
-        // "hi" printed, then the rest of the row was never written (codepoint 0).
         val snapshot = buildSnapshot(cols = 5, rows = 1) { _, col ->
             when (col) {
                 0 -> narrowCell('h'.code)
@@ -62,8 +58,6 @@ class SelectionClipboardTest {
 
     @Test
     fun extractSelectedText_genuineTrailingSpace_isKeptNotTrimmed() {
-        // "hi " -- the shell actually printed a real 0x20 space as the last
-        // character, followed by never-written padding. Only the padding trims.
         val snapshot = buildSnapshot(cols = 5, rows = 1) { _, col ->
             when (col) {
                 0 -> narrowCell('h'.code)
@@ -80,11 +74,9 @@ class SelectionClipboardTest {
 
     @Test
     fun extractSelectedText_doubleWidthGlyph_collapsesToOneCharacterNoExtraPadding() {
-        // A CJK-style wide glyph at col 0 occupies col 0 (WIDE) + col 1 (SPACER_TAIL),
-        // then "x" at col 2.
         val snapshot = buildSnapshot(cols = 3, rows = 1) { _, col ->
             when (col) {
-                0 -> wideCell(0x4e2d) // 中
+                0 -> wideCell(0x4e2d)
                 1 -> spacerTailCell()
                 else -> narrowCell('x'.code)
             }
@@ -103,7 +95,6 @@ class SelectionClipboardTest {
             narrowCell(text[col].code)
         }
 
-        // Dragged from bottom-right to top-left -- start/end are swapped versus reading order.
         val text = extractSelectedText(snapshot, GridSelection(startRow = 1, startCol = 2, endRow = 0, endCol = 0))
 
         assertEquals("abc\ndef", text)
@@ -185,8 +176,6 @@ class SelectionClipboardTest {
         assertEquals(listOf(multiParagraph), sent)
     }
 
-    // Paste is always on the bar, so with an empty clipboard it must tell the user.
-
     @Test
     fun pasteAction_emptyClipboard_warnsInsteadOfStayingSilent() {
         var notices = 0
@@ -252,7 +241,6 @@ class SelectionClipboardTest {
 
     @Test
     fun use_selectionOfNeverWrittenCells_doesNotOpenEmptyChooser() {
-        // A blank selection extracts "", and acting on it would look broken.
         val snapshot = buildSnapshot(cols = 4, rows = 1) { _, _ -> narrowCell(0) }
 
         SelectedText({ snapshot }, { GridSelection(0, 0, 0, 3) }).use {
@@ -262,7 +250,6 @@ class SelectionClipboardTest {
 
     @Test
     fun selectedText_readsSnapshotAtClickTime_notStaleCopy() {
-        // The program may keep printing while the bar is up; use what is on screen now.
         var current = buildSnapshot(cols = 3, rows = 1) { _, col -> narrowCell("abc"[col].code) }
         val text = SelectedText({ current }, { GridSelection(0, 0, 0, 2) })
 

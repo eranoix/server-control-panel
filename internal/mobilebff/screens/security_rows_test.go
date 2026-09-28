@@ -16,10 +16,6 @@ import (
 	"server-control-panel/internal/mobilebff"
 )
 
-// fakeSecurityRowsDeps builds a SecurityDeps with only the List* fields
-// populated — mutating closures deliberately left nil, mirroring
-// fakeDockerRowsDeps's rationale (docker_rows_test.go): the rows endpoints
-// never call a mutation closure, so a stray call panics loudly.
 func fakeSecurityRowsDeps() SecurityDeps {
 	return SecurityDeps{
 		ListUsers: func() []UserRow {
@@ -45,8 +41,6 @@ func fakeSecurityRowsDeps() SecurityDeps {
 	}
 }
 
-// fakeNetworkRowsDeps builds a NetworkDeps with only the read closures
-// populated.
 func fakeNetworkRowsDeps() NetworkDeps {
 	return NetworkDeps{
 		UFWStatus: func() (bool, string, error) {
@@ -75,11 +69,6 @@ func fakeNetworkRowsDeps() NetworkDeps {
 	}
 }
 
-// newSecurityRowsMux wires the eight registerSecurityX rows/detail functions
-// onto a throwaway huma.API — mirrors newDockerRowsMux's rationale exactly:
-// RegisterSecurity/RegisterNetwork go through the process-global sdui
-// registries (which panic on double-registration), so tests exercise the
-// rows/detail plumbing directly.
 func newSecurityRowsMux(secDeps SecurityDeps, netDeps NetworkDeps) *http.ServeMux {
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(mux, mobilebff.Prefix, huma.DefaultConfig("security-rows-test", "0"))
@@ -146,11 +135,6 @@ var securityAllDetailPaths = []string{
 	"/security/ufw/status", "/security/adguard/status",
 }
 
-// TestSecurityRows_Unauthenticated proves every one of the eight
-// rows/detail endpoints demands authentication BEFORE the admin check ever
-// runs — mobilebff.RequireAuth is the first middleware in every
-// registerSecurityX call, ahead of serveSecurityRows/serveSecurityDetail's
-// own !v.IsAdmin() gate.
 func TestSecurityRows_Unauthenticated(t *testing.T) {
 	mux := newSecurityRowsMux(fakeSecurityRowsDeps(), fakeNetworkRowsDeps())
 	for _, path := range securityAllRowsPaths {
@@ -167,11 +151,6 @@ func TestSecurityRows_Unauthenticated(t *testing.T) {
 	}
 }
 
-// TestSecurityRows_NonAdminGetsNotFound proves an AUTHENTICATED non-admin
-// caller gets 404 (never the row/detail data, never a 403) on every one of
-// the eight rows/detail endpoints — the admin-gating this package adds at
-// the HTTP layer itself (beyond docker.go's precedent, since docker's rows
-// are not whole-screen admin-gated) is what this test pins.
 func TestSecurityRows_NonAdminGetsNotFound(t *testing.T) {
 	mux := newSecurityRowsMux(fakeSecurityRowsDeps(), fakeNetworkRowsDeps())
 	for _, path := range securityAllRowsPaths {
@@ -188,8 +167,6 @@ func TestSecurityRows_NonAdminGetsNotFound(t *testing.T) {
 	}
 }
 
-// TestSecurityUsersRows_WireShape pins
-// {"rows":[{"id","username","role","is_primary","has_totp","sessions"}]}.
 func TestSecurityUsersRows_WireShape(t *testing.T) {
 	mux := newSecurityRowsMux(fakeSecurityRowsDeps(), fakeNetworkRowsDeps())
 	rec, body := doSecurityRowsRequest(t, mux, "/security/users", "sec-admin")
@@ -215,16 +192,12 @@ func TestSecurityUsersRows_WireShape(t *testing.T) {
 	if _, isString := admin["sessions"].(string); !isString {
 		t.Errorf("sessions = %v (%T), want a pre-formatted string", admin["sessions"], admin["sessions"])
 	}
-	// A second admin/user in the table proves multi-admin visibility: the
-	// table is never filtered down to one row.
 	nonAdminRow := body.Rows[1]
 	if nonAdminRow["role"] != "user" {
 		t.Errorf("second row role = %v, want \"user\"", nonAdminRow["role"])
 	}
 }
 
-// TestSecuritySecretsRows_WireShape pins {"rows":[{"id","key"}]} and proves
-// no value-shaped field ever appears.
 func TestSecuritySecretsRows_WireShape(t *testing.T) {
 	mux := newSecurityRowsMux(fakeSecurityRowsDeps(), fakeNetworkRowsDeps())
 	rec, body := doSecurityRowsRequest(t, mux, "/security/secrets", "sec-admin")
@@ -247,14 +220,6 @@ func TestSecuritySecretsRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestSecuritySessionsRows_WireShape pins
-// {"rows":[{"id","user","ip","user_agent","issued_at","last_seen","is_current"}]}
-// over a real HTTP round trip (auth.WithUser only — auth.JTIFrom's context
-// key is unexported outside internal/auth, so this request carries no JTI
-// and both rows correctly render is_current="no"; the CALLER's-own-session
-// flagging logic itself is pinned separately by
-// TestSecuritySessionRow_FlagsCallersOwnJTI below, calling securitySessionRow
-// directly with an explicit currentJTI).
 func TestSecuritySessionsRows_WireShape(t *testing.T) {
 	mux := newSecurityRowsMux(fakeSecurityRowsDeps(), fakeNetworkRowsDeps())
 	rec, body := doSecurityRowsRequest(t, mux, "/security/sessions", "sec-admin")
@@ -279,12 +244,6 @@ func TestSecuritySessionsRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestSecuritySessionRow_FlagsCallersOwnJTI proves securitySessionRow (the
-// pure row-shaping function serveSecuritySessionsRows calls per row) flags
-// exactly the row whose ID matches the caller's currentJTI, and only that
-// one — the actual JTI-threading this screen relies on for "you are about
-// to revoke your OWN session" (see SessionRow.IsCurrent's doc comment,
-// deps.go).
 func TestSecuritySessionRow_FlagsCallersOwnJTI(t *testing.T) {
 	own := SessionRow{ID: "jti-current", User: "sec-admin", IssuedAt: 1798000000, LastSeen: 1798000500}
 	other := SessionRow{ID: "jti-other", User: "sec-user", IssuedAt: 1798000100, LastSeen: 1798000600}
@@ -300,8 +259,6 @@ func TestSecuritySessionRow_FlagsCallersOwnJTI(t *testing.T) {
 	}
 }
 
-// TestSecurityAuditRows_WireShape pins
-// {"rows":[{"id","time","user","action","target","ip"}]}.
 func TestSecurityAuditRows_WireShape(t *testing.T) {
 	mux := newSecurityRowsMux(fakeSecurityRowsDeps(), fakeNetworkRowsDeps())
 	rec, body := doSecurityRowsRequest(t, mux, "/security/audit", "sec-admin")
@@ -323,8 +280,6 @@ func TestSecurityAuditRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestSecurityUFWDetail_WireShape pins {"detail":{"enabled","output"}} — the
-// FIRST production round-trip test of DetailComponent's wire shape.
 func TestSecurityUFWDetail_WireShape(t *testing.T) {
 	mux := newSecurityRowsMux(fakeSecurityRowsDeps(), fakeNetworkRowsDeps())
 	rec, body := doSecurityDetailRequest(t, mux, "/security/ufw/status", "sec-admin")
@@ -339,8 +294,6 @@ func TestSecurityUFWDetail_WireShape(t *testing.T) {
 	}
 }
 
-// TestSecurityAdGuardDetail_WireShape pins
-// {"detail":{"protection_enabled","running","version","num_queries","num_blocked","blocked_pct"}}.
 func TestSecurityAdGuardDetail_WireShape(t *testing.T) {
 	mux := newSecurityRowsMux(fakeSecurityRowsDeps(), fakeNetworkRowsDeps())
 	rec, body := doSecurityDetailRequest(t, mux, "/security/adguard/status", "sec-admin")
@@ -364,8 +317,6 @@ func TestSecurityAdGuardDetail_WireShape(t *testing.T) {
 	}
 }
 
-// TestSecurityDevicesRows_WireShape pins
-// {"rows":[{"id","name","uuid","exit","datasaver","created"}]}.
 func TestSecurityDevicesRows_WireShape(t *testing.T) {
 	mux := newSecurityRowsMux(fakeSecurityRowsDeps(), fakeNetworkRowsDeps())
 	rec, body := doSecurityRowsRequest(t, mux, "/security/devices", "sec-admin")
@@ -387,9 +338,6 @@ func TestSecurityDevicesRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestSecurityDataSaverRows_WireShape pins
-// {"rows":[{"id","name","port","total_bytes","rate_bps","active_conns"}]},
-// proving bytes/rate are pre-formatted strings, never raw numbers.
 func TestSecurityDataSaverRows_WireShape(t *testing.T) {
 	mux := newSecurityRowsMux(fakeSecurityRowsDeps(), fakeNetworkRowsDeps())
 	rec, body := doSecurityRowsRequest(t, mux, "/security/savings", "sec-admin")
@@ -414,11 +362,6 @@ func TestSecurityDataSaverRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestSecurityRows_UnavailableDoesNotBecomeEmptyTable pins the distinction this
-// error channel exists to make: "nothing happened" and "it could not be read"
-// are opposite answers for someone looking at a security screen, and both
-// arrived as the same empty list — to the point where the empty-state copy
-// had to admit the ambiguity in writing.
 func TestSecurityRows_UnavailableDoesNotBecomeEmptyTable(t *testing.T) {
 	t.Run("audit down doesn't answer 200", func(t *testing.T) {
 		sec := fakeSecurityRowsDeps()

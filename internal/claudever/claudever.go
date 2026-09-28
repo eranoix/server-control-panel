@@ -1,15 +1,3 @@
-// Package claudever answers a question the Claude Code CLI raises and does not
-// settle: "which of my sessions are running an old version?".
-//
-// The CLI downloads a new version on its own (~1 to 2 a day) and writes
-// "✓ Update installed · Restart to update" in its status bar. The notice stays
-// there until the session is restarted — and anyone working in sessions that last
-// several days sees it permanently, without knowing WHICH sessions are behind nor
-// when they can restart them without losing anything.
-//
-// Here being behind becomes a verifiable fact: the running version is read from
-// the binary the process has open (/proc/<pid>/exe), not from a state file that
-// may be lying.
 package claudever
 
 import (
@@ -19,39 +7,27 @@ import (
 	"strings"
 )
 
-// Process is a running `claude` and the version it actually loaded.
 type Process struct {
 	PID     int    `json:"pid"`
 	Version string `json:"version"`
-	Session string `json:"session,omitempty"` // owning session, when it can be known
-	Current bool   `json:"current"`           // already on the installed version?
-	Cwd     string `json:"cwd,omitempty"`     // helps tell which is which
-	// Target says HOW to restart this process when it does not belong to a panel
-	// session. "" = an ordinary session (type into the pane); "recovery" = the
-	// Claude in the recovery container, which restarts through the container.
-	Target string `json:"target,omitempty"`
-	// Ref is the version installed IN ITS OWN ENVIRONMENT, when that environment
-	// is not the host's. Only filled for external processes — see DetectExternal.
-	Ref string `json:"ref,omitempty"`
+	Session string `json:"session,omitempty"`
+	Current bool   `json:"current"`
+	Cwd     string `json:"cwd,omitempty"`
+	Target  string `json:"target,omitempty"`
+	Ref     string `json:"ref,omitempty"`
 }
 
-// State is the complete answer: what is installed and who has not taken it yet.
 type State struct {
 	Installed string    `json:"installed"`
 	Processes []Process `json:"processes"`
 	Outdated  int       `json:"outdated"`
-	Available bool      `json:"available"` // were we able to determine the installed version?
+	Available bool      `json:"available"`
 }
 
-// procRoot is injectable for tests; in production it is /proc.
 var procRoot = "/proc"
 
-// cliPath is the symlink that points at the installed version.
 var cliPath = "/root/.local/bin/claude"
 
-// InstalledVersion reads where the CLI's symlink points. The target file's name IS
-// the version (…/claude/versions/2.1.240) — that is how the official installer
-// organizes it, and reading the link avoids running the binary just to ask.
 func InstalledVersion() string {
 	target, err := filepath.EvalSymlinks(cliPath)
 	if err != nil {
@@ -60,14 +36,11 @@ func InstalledVersion() string {
 	return versionFromPath(target)
 }
 
-// versionFromPath extracts "2.1.240" from ".../claude/versions/2.1.240".
 func versionFromPath(p string) string {
 	if p == "" || !strings.Contains(p, "/claude/versions/") {
 		return ""
 	}
 	base := filepath.Base(p)
-	// A version has digits and dots; anything else is an odd path, and returning
-	// empty beats inventing a value.
 	for _, r := range base {
 		if (r < '0' || r > '9') && r != '.' {
 			return ""
@@ -76,9 +49,6 @@ func versionFromPath(p string) string {
 	return base
 }
 
-// Detect sweeps the processes and returns the state. It never fails: on a
-// screen that exists to inform, an error reading /proc counts as "don't know",
-// not as a visible error.
 func Detect(sessionOwner func(pid int) string) State {
 	e := State{Installed: InstalledVersion(), Processes: []Process{}}
 	e.Available = e.Installed != ""
@@ -94,17 +64,12 @@ func Detect(sessionOwner func(pid int) string) State {
 		}
 		target, err := os.Readlink(filepath.Join(procRoot, ent.Name(), "exe"))
 		if err != nil {
-			continue // a process of another user, or one already dead
+			continue
 		}
 		version := versionFromPath(target)
 		if version == "" {
 			continue
 		}
-		// A process from ANOTHER container does not count: it has its own Claude
-		// installation, at the same path inside its own namespace. The recovery
-		// container runs with --pid=host, so its processes show up here — and the
-		// first version of this code listed it as "behind" when it was in fact
-		// NEWER than the host.
 		if !sameMount(pid) {
 			continue
 		}
@@ -123,12 +88,6 @@ func Detect(sessionOwner func(pid int) string) State {
 	return e
 }
 
-// isOlder compares two "a.b.c" versions and says whether `v` is BEHIND `ref`.
-//
-// Comparing by equality (the first version of this) marked as behind anything
-// that was AHEAD — the recovery container, which has its own newer installation,
-// showed up on the "needs restart" list. Only what is behind actually needs a
-// restart.
 func isOlder(v, ref string) bool {
 	if v == "" || ref == "" || v == ref {
 		return false
@@ -149,14 +108,6 @@ func isOlder(v, ref string) bool {
 	return false
 }
 
-// sameMount says whether the process shares this process's mount namespace, that
-// is, whether it sees the SAME filesystem — and therefore the same Claude
-// installation. Without this check, processes from containers that run with
-// --pid=host enter the tally carrying their own installation.
-//
-// When it cannot read (permissions, a dying process), it assumes the host's: the
-// cost of listing one extra process is a line on screen; the cost of hiding a
-// genuinely outdated session is the operator believing everything is up to date.
 func sameMount(pid int) bool {
 	mine, err := os.Readlink(filepath.Join(procRoot, "self", "ns", "mnt"))
 	if err != nil {
@@ -169,11 +120,6 @@ func sameMount(pid int) bool {
 	return mine == theirs
 }
 
-// ParentOf reads the PPID from /proc/<pid>/stat.
-//
-// Field 4 of stat is the PPID, but field 2 is the executable's name IN
-// PARENTHESES and may contain spaces — splitting the whole line on spaces gets it
-// wrong in those cases. Hence the cut is made after the last ')'.
 func ParentOf(pid int) int {
 	b, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(pid), "stat"))
 	if err != nil {
@@ -184,7 +130,7 @@ func ParentOf(pid int) int {
 	if i < 0 || i+2 >= len(s) {
 		return 0
 	}
-	fields := strings.Fields(s[i+2:]) // [0]=state, [1]=ppid
+	fields := strings.Fields(s[i+2:])
 	if len(fields) < 2 {
 		return 0
 	}
@@ -195,9 +141,6 @@ func ParentOf(pid int) int {
 	return ppid
 }
 
-// AncestorIn climbs the process tree from pid and returns the first ancestor
-// present in `targets`, or 0. The hop ceiling avoids an infinite loop if /proc
-// returns something inconsistent (which has happened with a recycled PID).
 func AncestorIn(pid int, targets map[int]bool) int {
 	for hop := 0; hop < 32 && pid > 1; hop++ {
 		if targets[pid] {
@@ -212,22 +155,6 @@ func AncestorIn(pid int, targets map[int]bool) int {
 	return 0
 }
 
-// AncestorByArgv climbs the tree from pid and returns the value in `marks`
-// whose KEY appears in the /proc/<pid>/cmdline of some ancestor (or of pid
-// itself). "" when none matches.
-//
-// It exists because AncestorIn depends on knowing the session's PID, and the
-// dtach backend NEVER records a PID — the master is forked by `dtach -n` under
-// `systemd-run --scope`, so the PID the server sees when spawning dies right
-// afterwards and is useless as an anchor. Result: with dtach active, EVERY process
-// ended up session-less and the version panel's "Restart" button was born disabled
-// on every row — useless by construction, not for want of a session.
-//
-// What really anchors is the master's argv, which carries the socket path
-// (`dtach -n /…/session-sox/<name>.sock …`) — unique per session and stable for as
-// long as it lives. It matches by plain substring: the socket path is specific
-// enough not to collide, and the hop ceiling inherits the same reason as
-// AncestorIn (a recycled PID has already produced a loop here).
 func AncestorByArgv(pid int, marks map[string]string) string {
 	if len(marks) == 0 {
 		return ""
@@ -235,8 +162,6 @@ func AncestorByArgv(pid int, marks map[string]string) string {
 	for hop := 0; hop < 32 && pid > 1; hop++ {
 		b, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(pid), "cmdline"))
 		if err == nil && len(b) > 0 {
-			// cmdline is NUL-separated; it becomes spaces only so Contains does
-			// not fail on an argument glued to its neighbor.
 			line := strings.ReplaceAll(string(b), "\x00", " ")
 			for mark, value := range marks {
 				if mark != "" && strings.Contains(line, mark) {
@@ -253,15 +178,6 @@ func AncestorByArgv(pid int, marks map[string]string) string {
 	return ""
 }
 
-// DetectExternal sweeps the `claude` processes running in ANOTHER mount
-// namespace — in practice, containers — that carry `markerEnv` in their environ.
-//
-// Detect skips these on purpose: a container has its OWN CLI installation, so
-// comparing it with the host's version would be wrong. Here the reference is the
-// container's own installation: `Ref` comes from the CLI symlink inside its
-// namespace, read through /proc/<pid>/root instead of a `docker exec`.
-//
-// `target` tells the front end HOW to restart (see Process.Target).
 func DetectExternal(markerEnv, target string) []Process {
 	outside := []Process{}
 	if markerEnv == "" {
@@ -277,8 +193,6 @@ func DetectExternal(markerEnv, target string) []Process {
 		if err != nil || pid <= 0 {
 			continue
 		}
-		// Deliberate order, cheapest to costliest: one readlink on `exe` knocks out
-		// almost every process on the machine before environ is ever touched.
 		exe, err := os.Readlink(filepath.Join(procRoot, ent.Name(), "exe"))
 		if err != nil {
 			continue
@@ -302,7 +216,6 @@ func DetectExternal(markerEnv, target string) []Process {
 			continue
 		}
 		p := Process{PID: pid, Version: version, Target: target, Current: true}
-		// The CLI's symlink INSIDE its own namespace, seen from the host.
 		if ref, err := os.Readlink(filepath.Join(procRoot, ent.Name(), "root", "root", ".local", "bin", "claude")); err == nil {
 			p.Ref = versionFromPath(resolveRel(filepath.Join(procRoot, ent.Name(), "root"), ref))
 		}
@@ -317,21 +230,6 @@ func DetectExternal(markerEnv, target string) []Process {
 	return outside
 }
 
-// resolveRel re-anchors, at the process's root, the destination of a symlink read
-// from inside /proc/<pid>/root: the target is absolute in ITS namespace, and
-// without re-anchoring it points at the HOST's same-named path.
-//
-// Do NOT swap the os.Readlink above for filepath.EvalSymlinks (nor for
-// `readlink -f` in a script): FULL resolution follows the absolute target all the
-// way to the host's root and returns the host's version, silently. Measured in the
-// recovery container, which had only 2.1.241 and 2.1.243 installed:
-//
-//	docker exec … readlink /root/.local/bin/claude   → …/versions/2.1.243  (truth)
-//	readlink -f /proc/<pid>/root/root/.local/bin/claude → …/versions/2.1.246  (host!)
-//
-// 2.1.246 did not even exist inside the container. A full resolver here would make
-// the panel compare the container against itself using the host's version as the
-// reference — back to the very error sameMount was written to eliminate.
 func resolveRel(root, target string) string {
 	if strings.HasPrefix(target, "/") {
 		return filepath.Join(root, target)
@@ -339,7 +237,6 @@ func resolveRel(root, target string) string {
 	return target
 }
 
-// bytesSplitNUL slices the environ (KEY=VALUE pairs separated by NUL).
 func bytesSplitNUL(b []byte) [][]byte {
 	var out [][]byte
 	start := 0

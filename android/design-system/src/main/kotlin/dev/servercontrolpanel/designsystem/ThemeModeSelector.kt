@@ -17,19 +17,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
-/** Section title, shared by the UI and its test. */
 const val THEME_SELECTOR_LABEL = "Appearance"
 
-/** Test tag for the whole selector. */
 const val THEME_SELECTOR_TAG = "appearance-selector"
 
-/** Test tag for one option of the selector. */
 fun themeOptionTag(mode: ThemeMode): String = "appearance-${mode.id}"
 
-/**
- * The three appearances as a segmented selector: all visible at once, the
- * current one highlighted, one tap to switch.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ThemeModeSelector(
@@ -57,8 +50,6 @@ fun ThemeModeSelector(
                         index = index,
                         count = ThemeMode.entries.size,
                     ),
-                    // No check icon: it would crowd the labels in the drawer's
-                    // width; the selected segment's color already marks it.
                     icon = {},
                     modifier = Modifier.testTag(themeOptionTag(mode)).semantics {
                         contentDescription = "${mode.label} appearance"
@@ -67,8 +58,6 @@ fun ThemeModeSelector(
                     Text(
                         text = mode.label,
                         maxLines = 1,
-                        // Clip rather than ellipsis, so truncation is visible in
-                        // screenshots and tests (same rule as the drawer labels).
                         overflow = TextOverflow.Clip,
                     )
                 }

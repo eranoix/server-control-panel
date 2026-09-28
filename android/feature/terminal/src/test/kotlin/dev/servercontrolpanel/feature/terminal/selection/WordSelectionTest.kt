@@ -4,7 +4,6 @@ import dev.servercontrolpanel.terminalengine.CellSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** Writes [text] from column 0 of row [line]; the rest stays "never written" (codepoint 0). */
 private fun grid(
     cols: Int,
     rows: Int,
@@ -15,14 +14,12 @@ private fun grid(
     narrowCell(if (col < text.length) text[col].code else 0)
 }
 
-/** Double-tap (word), triple-tap (line) and select-all, as in Android text fields. */
 class WordSelectionTest {
 
     @Test
     fun tapInMiddleOfWord_selectsWholeWord() {
         val snapshot = grid(cols = 24, rows = 1, lines = arrayOf("git commit --amend"))
 
-        // The finger lands on the "m" of "commit" (columns 6..11).
         val selection = selectWord(snapshot, row = 0, col = 8)
 
         assertEquals(GridSelection(0, 4, 0, 9), selection)
@@ -40,7 +37,6 @@ class WordSelectionTest {
 
     @Test
     fun underscoreIsPartOfWord_butHyphenIsNot() {
-        // `_` is part of identifiers; `-` separates a flag from its name.
         val snapshot = grid(cols = 32, rows = 1, lines = arrayOf("PANEL_CONFIG_DIR --dry-run"))
 
         assertEquals("PANEL_CONFIG_DIR", extractSelectedText(snapshot, selectWord(snapshot, 0, 5)))
@@ -49,7 +45,6 @@ class WordSelectionTest {
 
     @Test
     fun punctuationGroupsWithPunctuation() {
-        // `--` is one run of the same character class, not a lone dash.
         val snapshot = grid(cols = 16, rows = 1, lines = arrayOf("ls --all"))
 
         assertEquals("--", extractSelectedText(snapshot, selectWord(snapshot, 0, 3)))
@@ -57,7 +52,6 @@ class WordSelectionTest {
 
     @Test
     fun tapOnSpace_selectsSpaceRun_notNothing() {
-        // Tapping just beside a word must still select something.
         val snapshot = grid(cols = 16, rows = 1, lines = arrayOf("ab    cd"))
 
         val selection = selectWord(snapshot, row = 0, col = 3)
@@ -67,7 +61,6 @@ class WordSelectionTest {
 
     @Test
     fun neverWrittenCellCountsAsSpace() {
-        // The tail of the row is renderer padding (codepoint 0), not text.
         val snapshot = grid(cols = 10, rows = 1, lines = arrayOf("ab"))
 
         val selection = selectWord(snapshot, row = 0, col = 7)
@@ -78,8 +71,6 @@ class WordSelectionTest {
 
     @Test
     fun wideChar_doesNotSplitWord() {
-        // A CJK character's second cell is SPACER_TAIL with no codepoint; classifying
-        // it alone would split the word.
         val snapshot = buildSnapshot(cols = 6, rows = 1) { _, col ->
             when (col) {
                 0 -> wideCell('世'.code)
@@ -108,8 +99,6 @@ class WordSelectionTest {
 
     @Test
     fun tripleTap_takesWholeLogicalLineWhenTerminalWrappedText() {
-        // A soft-wrapped line spans three screen rows; selecting only one would cut
-        // the path in pieces.
         val flags = byteArrayOf(0x01, 0x03, 0x02, 0x00)
         val snapshot = grid(
             cols = 8,

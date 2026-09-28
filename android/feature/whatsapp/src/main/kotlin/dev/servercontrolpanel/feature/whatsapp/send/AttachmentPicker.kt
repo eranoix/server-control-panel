@@ -34,10 +34,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * An attachment ready for [MediaUploadWorker]: a local [file] (the generated client's multipart
- * upload only accepts a [java.io.File], not a `content://` Uri) plus its metadata.
- */
 data class PickedAttachment(
     val file: File,
     val filename: String,
@@ -46,11 +42,6 @@ data class PickedAttachment(
     val msgType: String,
 )
 
-/**
- * Filename, mime type and size of an attachment, plus the `msg_type` classification the server
- * expects. The [OpenableColumns] cursor may be null or lack columns; the mime type comes from
- * [ContentResolver.getType]. Kept framework-light so it is unit-testable with a fake [Cursor].
- */
 internal data class AttachmentMetadata(
     val filename: String,
     val mimeType: String?,
@@ -74,7 +65,6 @@ internal fun resolveAttachmentMetadata(cursor: Cursor?, mimeType: String?, fallb
     return AttachmentMetadata(filename = filename, mimeType = mimeType, sizeBytes = sizeBytes, msgType = msgTypeFor(mimeType))
 }
 
-/** Maps the mime type to image, video or audio; anything else, including null, is `document`. */
 internal fun msgTypeFor(mimeType: String?): String = when {
     mimeType == null -> "document"
     mimeType.startsWith("image/") -> "image"
@@ -90,10 +80,6 @@ private fun queryMetadata(contentResolver: ContentResolver, uri: Uri): Attachmen
     return cursor.use { resolveAttachmentMetadata(it, mimeType, fallback) }
 }
 
-/**
- * Copies [uri]'s bytes into [MediaCache.directory] under a unique name, since the upload needs
- * a [java.io.File]. Retries in [MediaUploadWorker] read the same bytes back from there.
- */
 private fun copyToLocalFile(context: Context, uri: Uri, filename: String): File {
     val dest = File(MediaCache.directory(context), "${UUID.randomUUID()}-$filename")
     val opened = context.contentResolver.openInputStream(uri) ?: error("Could not read the selected file.")
@@ -101,16 +87,6 @@ private fun copyToLocalFile(context: Context, uri: Uri, filename: String): File 
     return dest
 }
 
-/**
- * The composer's attach buttons:
- * - Photo Picker for photo/video: no storage permission needed, but its grant is not
- *   persistable (persisting throws), so the bytes are copied out immediately.
- * - OpenDocument for any file: the grant is persisted synchronously in the result callback,
- *   before any background hop, or it may expire before the copy finishes.
- * - A [MediaRecorder] voice note recorded to the app's private cache.
- *
- * All are disabled while [enabled] is false, keeping one send in flight at a time.
- */
 @Composable
 fun AttachmentBar(
     enabled: Boolean,
@@ -161,8 +137,6 @@ fun AttachmentBar(
         if (granted) recording = AudioRecorderSession.start(context)
     }
 
-    // The buttons show only emoji, so each IconButton (the tap target) needs a
-    // content description or screen readers announce the emoji name.
     Row {
         IconButton(
             enabled = enabled,
@@ -204,7 +178,6 @@ fun AttachmentBar(
                     )
                 }
             },
-            // The same button records and stops, so the description must follow the state.
             modifier = Modifier.semantics {
                 contentDescription =
                     if (recording == null) "Record audio" else "Stop recording and attach"
@@ -215,10 +188,6 @@ fun AttachmentBar(
     }
 }
 
-/**
- * Records a voice note to the app's private cache so no other app can read or alter it.
- * No foreground service: recording only runs while the conversation screen is in front.
- */
 internal class AudioRecorderSession private constructor(private val recorder: MediaRecorder, private val file: File) {
     fun stop(): File {
         recorder.stop()

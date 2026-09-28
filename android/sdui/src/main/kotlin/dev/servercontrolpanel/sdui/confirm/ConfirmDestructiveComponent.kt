@@ -15,26 +15,6 @@ import androidx.compose.ui.Modifier
 import dev.servercontrolpanel.core.sdui.SduiComponent
 import dev.servercontrolpanel.sdui.actionrunner.Confirmation
 
-/**
- * The destructive-confirmation client side: a [SduiComponent.ConfirmDestructive]
- * declared on a screen is never rendered as a standalone piece of UI (see
- * `ComponentRegistry.RenderComponent`, which dispatches it to nothing). It
- * exists only to be looked up by `action_id` -- by
- * `dev.servercontrolpanel.sdui.actionrunner.ScreenState.confirmations` -- and to
- * supply the dialog this composable renders when
- * `dev.servercontrolpanel.sdui.action.ActionComponent` or
- * `dev.servercontrolpanel.sdui.form.FormComponent` is about to dispatch that exact
- * `action_id`. A row action resolves through the same index, so a row's
- * action is confirmable without the component vocabulary ever needing a
- * nested "confirm" child.
- *
- * This dialog is a courtesy, not the enforcement point: plan 07-04's server
- * refuses an unconfirmed destructive action regardless of whether this
- * dialog ever appears. Nothing in this file -- or anywhere else in this
- * module -- infers whether an action is destructive from its name; the only
- * signal is whether the server declared a [SduiComponent.ConfirmDestructive]
- * for that `action_id`.
- */
 @Composable
 fun ConfirmDestructiveComponent(
     descriptor: SduiComponent.ConfirmDestructive,
@@ -43,9 +23,6 @@ fun ConfirmDestructiveComponent(
 ) {
     val requiredTyped = descriptor.requireTypedConfirmation
     var typed by remember(descriptor.id) { mutableStateOf("") }
-    // Exact match, no trim/case-fold: the server compares `typed` the same
-    // way (plan 07-04), so the two sides can never disagree about what
-    // counts as confirmed.
     val canConfirm = requiredTyped == null || typed == requiredTyped
 
     AlertDialog(

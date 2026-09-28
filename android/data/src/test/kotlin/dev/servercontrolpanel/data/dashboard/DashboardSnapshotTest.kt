@@ -5,7 +5,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Aggregation, health rollup and the attention list on the first card. */
 class DashboardSnapshotTest {
 
     @Test
@@ -110,7 +109,6 @@ class DashboardSnapshotTest {
             "derived signals must stay in the list: ${warning.map { it.id }}",
             warning.any { it.id == "swap" } && warning.any { it.id == "cpu" },
         )
-        // Steal is information, not an alert: nothing inside the VM can fix it (see stealSignal).
         assertTrue(
             "steal must not return to the attention card",
             warning.none { it.id == "steal" },

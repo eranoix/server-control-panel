@@ -141,10 +141,6 @@ func TestFilesRead_Missing_404(t *testing.T) {
 	}
 }
 
-// TestFilesRead_Missing_404NoPathLeak proves that the 404 for a missing file
-// must not carry the server's absolute path in the body — before the fix,
-// mapFileErr echoed err.Error() of an *os.PathError, which embeds exactly
-// that path.
 func TestFilesRead_Missing_404NoPathLeak(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "nope.txt")
@@ -197,10 +193,6 @@ func TestFilesWrite_Success(t *testing.T) {
 	}
 }
 
-// TestFilesWrite_StaleMtime_409WithServerContent is the central test of the
-// no-silent-overwrite rule: a write with a stale expected_mtime is rejected
-// with 409 and the body already carries the server's current content/mtime,
-// so the app can offer reload/overwrite/cancel without a second request.
 func TestFilesWrite_StaleMtime_409WithServerContent(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "edit.txt")
@@ -212,8 +204,6 @@ func TestFilesWrite_StaleMtime_409WithServerContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A concurrent write changes the file on disk after the app "read"
-	// the old mtime.
 	if err := os.WriteFile(f, []byte("changed by someone else"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +230,6 @@ func TestFilesWrite_StaleMtime_409WithServerContent(t *testing.T) {
 		t.Fatalf("server_mtime = %d, want > 0", body.ServerMtime)
 	}
 
-	// The file on disk must not have been touched by the rejected write.
 	got, err := os.ReadFile(f)
 	if err != nil {
 		t.Fatal(err)

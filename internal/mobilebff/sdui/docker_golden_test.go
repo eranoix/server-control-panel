@@ -1,9 +1,3 @@
-// Package sdui_test wires the six Docker screens into the sdui package's own
-// golden-fixture test binary — same rationale as scheduler_golden_test.go's
-// header comment: golden_test.go's harness only sees screens registered
-// inside the SAME test binary process, and being an external test package
-// (sdui_test) is what lets this file import internal/mobilebff/screens
-// without an import cycle.
 package sdui_test
 
 import (
@@ -18,12 +12,6 @@ import (
 	"server-control-panel/internal/mobilebff/screens"
 )
 
-// dockerGoldenBackend is a small in-memory stand-in for internal/api.Router's
-// *docker.Client — enough to build all six Docker screens and their rows
-// deterministically for the golden corpus. It never touches a real Docker
-// daemon; the golden harness only calls Build (via the sdui.Screen builder),
-// never RunAction, so the mutating closures below are unreachable from the
-// harness and exist only to satisfy DockerDeps' shape.
 type dockerGoldenBackend struct{}
 
 func (dockerGoldenBackend) deps() screens.DockerDeps {
@@ -74,13 +62,6 @@ func (dockerGoldenBackend) deps() screens.DockerDeps {
 	}
 }
 
-// init registers all six Docker screens into this test binary's
-// process-global sdui registries exactly once — the same RegisterDocker(deps)
-// internal/api/api.go calls in production, fed synthetic data instead of a
-// real *docker.Client. This is what makes RegisteredScreens() (used by
-// TestGoldenScreens and its two role-omission checks) see docker.containers,
-// docker.images, docker.volumes, docker.networks, docker.compose and
-// docker.prune at all when running `go test ./internal/mobilebff/sdui/...`.
 func init() {
 	screens.RegisterDocker(dockerGoldenBackend{}.deps())
 }

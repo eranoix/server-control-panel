@@ -14,7 +14,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The four calls joined together, and what happens when each one fails. */
 class DashboardRepositoryTest {
 
     @Test
@@ -66,13 +65,12 @@ class DashboardRepositoryTest {
         val repo = DashboardRepository(
             ops = FakeOps(OpsStatusResult.Success(opsReal())),
             session = FakeSession(SessionResult.Success("tester", "t@t", isAdmin = true)),
-            rows = FakeRows(emptyMap()), // every row fetch returns null
+            rows = FakeRows(emptyMap()),
         )
 
         val snapshot = (repo.load() as DashboardResult.Success).snapshot
         assertNull(snapshot.deploys)
         assertNull(snapshot.scheduled)
-        // the rest still loads, with resources graded
         assertTrue(snapshot.resourceSignals.isNotEmpty())
     }
 

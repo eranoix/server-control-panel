@@ -11,11 +11,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Proves that [KeystoreTokenStore] fails closed. Robolectric has no `AndroidKeyStore` provider, so
- * these cases run the real degradation path. Unlike [dev.servercontrolpanel.data.config.EncryptedServerConfigStore],
- * which falls back to plaintext `SharedPreferences`, tokens must never reach disk.
- */
 @RunWith(RobolectricTestRunner::class)
 class KeystoreTokenStoreTest {
 
@@ -64,7 +59,6 @@ class KeystoreTokenStoreTest {
 
     @Test
     fun `the session stays usable in the current process without a Keystore`() {
-        // Fail-closed still works in-process; only surviving a restart is lost.
         val store = KeystoreTokenStore(context)
 
         store.save(tokens)
@@ -74,7 +68,6 @@ class KeystoreTokenStoreTest {
 
     @Test
     fun `a new instance does not see the previous session when storage is memory only`() {
-        // A fresh instance over the same Context stands in for reopening the app.
         KeystoreTokenStore(context).save(tokens)
 
         assertNull(KeystoreTokenStore(context).load())

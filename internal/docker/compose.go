@@ -66,7 +66,6 @@ func (c *Client) ListComposeProjects(ctx context.Context) ([]ComposeProject, err
 		proj.Services = append(proj.Services, svc)
 	}
 
-	// Derive project status from service states
 	result := make([]ComposeProject, 0, len(projectMap))
 	for _, proj := range projectMap {
 		proj.Status = deriveProjectStatus(proj.Services)

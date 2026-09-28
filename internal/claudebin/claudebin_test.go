@@ -13,7 +13,6 @@ func reset() {
 	mu.Unlock()
 }
 
-// writeExec creates a fake executable "binary" in dir.
 func writeExec(t *testing.T, dir, name string) string {
 	t.Helper()
 	p := filepath.Join(dir, name)
@@ -23,8 +22,6 @@ func writeExec(t *testing.T, dir, name string) string {
 	return p
 }
 
-// The "Work now" bug: with a PATH that does NOT contain claude (systemd's PATH),
-// resolution has to find the binary anyway.
 func TestPathResolvesOutsidePATH(t *testing.T) {
 	reset()
 	t.Cleanup(reset)
@@ -35,7 +32,7 @@ func TestPathResolvesOutsidePATH(t *testing.T) {
 	want := writeExec(t, filepath.Join(home, ".local", "bin"), "claude")
 
 	t.Setenv("HOME", home)
-	t.Setenv("PATH", "/usr/sbin:/usr/bin") // no ~/.local/bin, as in the service
+	t.Setenv("PATH", "/usr/sbin:/usr/bin")
 	t.Setenv(EnvOverride, "")
 
 	if got := Path(); got != want {
@@ -57,7 +54,6 @@ func TestPathPrefersOverride(t *testing.T) {
 	}
 }
 
-// A non-existent override must not hijack resolution — it falls back to the normal flow.
 func TestPathIgnoresBrokenOverride(t *testing.T) {
 	reset()
 	t.Cleanup(reset)
@@ -78,15 +74,12 @@ func TestPathEnvPrependsAndDedupes(t *testing.T) {
 		t.Fatalf("PathEnv() = %q, want %q", got, want)
 	}
 
-	// Already present → nothing to inject.
 	t.Setenv("PATH", "/usr/bin"+string(os.PathListSeparator)+dir)
 	if got := PathEnv(); got != "" {
 		t.Fatalf("PathEnv() = %q, wanted empty (dir already on PATH)", got)
 	}
 }
 
-// Fallback: with no binary anywhere, it returns a bare "claude" (the old
-// behavior) instead of "" — and PathEnv stays quiet, injecting no useless PATH.
 func TestPathFallsBackToBareName(t *testing.T) {
 	reset()
 	t.Cleanup(reset)

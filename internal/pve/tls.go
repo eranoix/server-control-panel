@@ -1,25 +1,5 @@
 package pve
 
-// TLS pinning against the hypervisor's own CA.
-//
-// A NEW PRECEDENT IN THIS REPO: until now there was no x509.NewCertPool and no
-// RootCAs anywhere in internal/ — the only client TLS configuration is
-// internal/queue/runners_security.go:90, which TURNS verification OFF on
-// purpose (it has to read an invalid certificate in order to judge its
-// validity). That is the anti-pattern this file exists in order not to repeat:
-// here the hypervisor's certificate IS verified, and verified against a single
-// anchor. The field that turns verification off does not appear in this file,
-// not by accident and not in a comment — its absence is an invariant of the
-// repo, checked by grep.
-//
-// Why pin instead of trusting the system pool: the hypervisor's certificate is
-// issued by the cluster's own CA (CN=Proxmox Virtual Environment), which is in
-// no pool at all. And its SAN lists IP:192.168.1.10 — an obsolete address —
-// while the host is reached at another LAN address and over a VPN.
-// That is why the dial goes to the IP (Resolve) while the verification stays
-// against the NAME (ServerName), exactly as the `curl --resolve --cacert`
-// already proved live.
-
 import (
 	"context"
 	"crypto/tls"
@@ -34,18 +14,10 @@ import (
 )
 
 const (
-	// dialTimeout bounds only the establishment of the connection; the ceiling
-	// for the whole call is the http.Client's Timeout (a 10 s floor, see
-	// client.go).
-	dialTimeout = 5 * time.Second
-	// tlsHandshakeTimeout: the handshake measured against this hypervisor takes
-	// ~51 ms.
+	dialTimeout         = 5 * time.Second
 	tlsHandshakeTimeout = 5 * time.Second
 )
 
-// newTransport assembles the pinned transport. caFile is mandatory: without it
-// the client would fall back to the system pool, which does not know the
-// hypervisor's CA — a silent failure today, no verification at all tomorrow.
 func newTransport(caFile, serverName, resolve string) (*http.Transport, error) {
 	caFile = strings.TrimSpace(caFile)
 	if caFile == "" {
@@ -68,17 +40,11 @@ func newTransport(caFile, serverName, resolve string) (*http.Transport, error) {
 		RootCAs:    pool,
 		ServerName: serverName,
 		MinVersion: tls.VersionTLS12,
-		// Verification stays ON by omission and that is how it has to stay: the
-		// whole package loses its meaning if it is turned off. tls_test.go asserts
-		// the field by name; here it is a deliberate absence.
 	}
 	tr.TLSHandshakeTimeout = tlsHandshakeTimeout
 	return tr, nil
 }
 
-// plainTransport is the transport without TLS, with the same address
-// redirection. It serves the loopback http path (the tests' fake server) and is
-// the base on top of which newTransport adds the pin.
 func plainTransport(resolve string) *http.Transport {
 	d := &net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}
 	return &http.Transport{
@@ -88,13 +54,10 @@ func plainTransport(resolve string) *http.Transport {
 		ForceAttemptHTTP2:     true,
 		MaxIdleConnsPerHost:   4,
 		IdleConnTimeout:       90 * time.Second,
-		ResponseHeaderTimeout: 0, // the ceiling is the http.Client's Timeout
+		ResponseHeaderTimeout: 0,
 	}
 }
 
-// redirectAddr swaps the host of the dialled address for the resolve IP,
-// keeping the port — the equivalent of `curl --resolve name:port:ip`. An
-// address with no port, or an empty resolve, passes straight through.
 func redirectAddr(addr, resolve string) string {
 	resolve = strings.TrimSpace(resolve)
 	if resolve == "" {

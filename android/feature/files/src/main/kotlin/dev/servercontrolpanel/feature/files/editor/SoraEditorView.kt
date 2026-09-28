@@ -24,30 +24,10 @@ import io.github.rosemoe.sora.widget.CodeEditor
 import io.github.rosemoe.sora.widget.subscribeAlways
 import org.eclipse.tm4e.core.registry.IThemeSource
 
-/**
- * One-time, process-wide bootstrap of sora-editor's TextMate registries
- * (theme + grammars, read from this module's bundled `assets/textmate`
- * files). The registries are static singletons inside sora-editor itself,
- * so this must run exactly once regardless of how many [SoraEditorView]
- * instances get composed/disposed across navigation.
- *
- * The bundled theme and grammars are original, minimal TextMate assets
- * authored for this project -- not copied from sora-editor's sample app or
- * any other third party -- so they carry no license obligation beyond this
- * project's own. sora-editor's LGPL-2.1 terms cover only the library code
- * itself (see OssLicensesScreen), which stays unmodified and Maven-linked.
- */
 private object TextMateSetup {
     @Volatile
     private var initialized = false
 
-    /**
-     * Maps the language string [dev.servercontrolpanel.data.files.FilesRepository]
-     * reports (mirroring the backend's `internal/files/mobile_adapter.go`
-     * extension-to-language map) to the TextMate scope name registered
-     * below. A language with no bundled grammar returns null; the caller
-     * falls back to [EmptyLanguage] rather than guessing a scope name.
-     */
     private val scopeNameByLanguage = mapOf(
         "go" to "source.go",
         "python" to "source.python",
@@ -124,15 +104,6 @@ private object TextMateSetup {
     }
 }
 
-/**
- * Compose interop wrapper around sora-editor's View-based [CodeEditor].
- * Configures TextMate syntax highlighting for [language] (the string
- * `FilesRepository.read()` reports, e.g. "go"/"python"/"json" -- see
- * [TextMateSetup.scopeNameFor]), and forwards local edits back to the
- * caller via [onContentChanged] on every content-change event. The editor
- * keeps its own text buffer; only the dirty flag/content mirror on the
- * Kotlin side updates per keystroke, not the whole Compose screen.
- */
 @Composable
 fun SoraEditorView(
     content: String,
@@ -140,10 +111,6 @@ fun SoraEditorView(
     onContentChanged: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Tracks the content this Composable itself last pushed into the
-    // editor (initial load or a conflict-reload), so `update` can tell an
-    // externally driven content change (reload) apart from the editor's
-    // own local edits and avoid clobbering the buffer mid-typing.
     var lastAppliedContent by remember { mutableStateOf(content) }
 
     AndroidView(

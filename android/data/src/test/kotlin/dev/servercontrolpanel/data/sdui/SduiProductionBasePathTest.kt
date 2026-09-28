@@ -14,20 +14,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/**
- * In production the base path already ends in `/api/mobile/v1`, while [SduiDataClient.call] takes
- * absolute paths from the server root, so the prefix must not be applied twice. This suite uses
- * that production base shape, and a routing [Dispatcher] that answers 404 off the real routes so a
- * wrong URL actually fails.
- */
 class SduiProductionBasePathTest {
 
     private lateinit var server: MockWebServer
 
-    /**
-     * The real production body of `GET /api/mobile/v1/screens/scheduler.jobs` for an admin
-     * viewer, as built by `internal/mobilebff/screens/scheduler.go`.
-     */
     private val schedulerJobsEnvelope = """
         {"sdui_version":1,
          "screen":{"id":"scheduler.jobs","title":"Scheduler",
@@ -65,7 +55,6 @@ class SduiProductionBasePathTest {
     @Before
     fun setUp() {
         server = MockWebServer()
-        // Only routes the BFF registers answer; anything else is 404, like the real server.
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
                 "/api/mobile/v1/screens/scheduler.jobs" -> json(schedulerJobsEnvelope)
@@ -87,17 +76,13 @@ class SduiProductionBasePathTest {
         server.shutdown()
     }
 
-    /** The base as `ServerConfigRepository.publishLegacyBasePathSeam` publishes it, ending in `/api/mobile/v1`. */
     private fun productionClient() = SduiDataClient(basePath = server.url("/api/mobile/v1").toString())
 
     @Test
     fun `serverRootOf strips the BFF prefix that production puts in the base`() {
         assertEquals("https://panel.northwind.example", serverRootOf("https://panel.northwind.example/api/mobile/v1"))
         assertEquals("https://panel.northwind.example", serverRootOf("https://panel.northwind.example/api/mobile/v1/"))
-        // An install under a sub-path keeps the sub-path.
         assertEquals("https://host/panel", serverRootOf("https://host/panel/api/mobile/v1"))
-        // A relative base (app not configured) yields empty, which ApiClient rejects
-        // instead of falling back to localhost.
         assertEquals("", serverRootOf("/api/mobile/v1"))
     }
 

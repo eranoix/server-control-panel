@@ -1,15 +1,3 @@
-// Package singbox manages the tunnel's devices by editing the sing-box
-// config.json on the host and reloading the container.
-//
-// The tunnel (sing-box, Docker) authenticates each device by a VLESS user
-// (uuid + name). This package is the single writer of that config: it adds,
-// renames, removes device users and moves a device between exits (VPS vs home)
-// by editing the `auth_user` route rule — then asks the caller to restart the
-// container. Every write validates, keeps a .bak, and is atomic (temp in the
-// same dir → fsync → rename → dir fsync), mirroring internal/gameservers.
-//
-// Live state (who is connected, session traffic) is NOT here — it comes from
-// the Clash API (see clash.go), merged by the handler.
 package singbox
 
 import (
@@ -26,37 +14,24 @@ import (
 	"sync"
 )
 
-// Public endpoint of this deployment's tunnel — the client-side bits of a
-// device link (not present in the sing-box config, which is server-side). The
-// path is read from the config's ws-in inbound; these stay constant.
 const (
 	tunnelIP   = "203.0.113.10"
 	tunnelHost = "tunnel.northwind.example"
 	tunnelPort = "443"
 )
 
-// Reality endpoint (probe-resistant VLESS, residential/privacy use). The
-// inbound listens on 8443 inside the container, published on the host at realityPort. The
-// public key (pbk) does not live in the sing-box config (only the private one), so it is
-// a constant here; sni/short_id are read from the inbound.
 const (
 	realityPort   = "2053"
 	realityPubkey = "znsyDY0DG7jINQhL2zLjvczS9sykeJZngKs19HGBtns"
 )
 
-// Tags of the inbounds that carry per-device users (the ones a device link can
-// reach). The legacy vless-ws-home inbound is intentionally excluded.
 var deviceInbounds = map[string]bool{"vless-ws-in": true, "vless-reality-in": true}
 
-// Exit values.
 const (
-	ExitVPS  = "vps"  // default outbound (direct) — leaves through the VPS
-	ExitHome = "home" // home outbound — leaves through the house (residential)
+	ExitVPS  = "vps"
+	ExitHome = "home"
 )
 
-// Data-saver proxy outbound tags (defined in config.json). A device with
-// datasaver on has its web traffic (80/443) routed through the proxy of its
-// exit; the proxy (mitmproxy) recompresses and leaves through the right exit.
 const (
 	outProxyVPS  = "proxy-vps"
 	outProxyHome = "proxy-home"
@@ -64,33 +39,26 @@ const (
 
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$`)
 
-// Device is one managed tunnel client.
 type Device struct {
-	Name      string `json:"name"`              // slug, unique — VLESS user name + auth_user key
-	UUID      string `json:"uuid"`              // the secret in the link
-	Exit      string `json:"exit"`              // ExitVPS | ExitHome
-	Datasaver bool   `json:"datasaver"`         // web (80/443) through the compression proxy
-	Created   int64  `json:"created,omitempty"` // unix, from the registry
+	Name      string `json:"name"`
+	UUID      string `json:"uuid"`
+	Exit      string `json:"exit"`
+	Datasaver bool   `json:"datasaver"`
+	Created   int64  `json:"created,omitempty"`
 }
 
-// Manager owns the config file + a small registry of display metadata.
 type Manager struct {
 	mu           sync.Mutex
 	configPath   string
 	registryPath string
-	restart      func(ctx context.Context) error // injected: restart the container
+	restart      func(ctx context.Context) error
 }
 
-// New builds a Manager. registryPath holds created_at metadata; restart is
-// called after every successful config write.
 func New(configPath, registryPath string, restart func(ctx context.Context) error) *Manager {
 	return &Manager{configPath: configPath, registryPath: registryPath, restart: restart}
 }
 
-// ValidName reports whether name is a usable device slug.
 func ValidName(name string) bool { return nameRe.MatchString(name) }
-
-// ---------- config load/save ----------
 
 func (m *Manager) load() (map[string]any, error) {
 	raw, err := os.ReadFile(m.configPath)
@@ -104,15 +72,11 @@ func (m *Manager) load() (map[string]any, error) {
 	return doc, nil
 }
 
-// save validates, backs up, and atomically writes doc. Guard: refuse a config
-// that would leave a device inbound with zero users (a self-lockout / broken
-// tunnel), mirroring the userGroups guard of gameservers SaveRawConfig.
 func (m *Manager) save(doc map[string]any) error {
 	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return fmt.Errorf("serializing config: %w", err)
 	}
-	// Guard: sing-box must accept it, and no device inbound may be empty.
 	var check map[string]any
 	if err := json.Unmarshal(out, &check); err != nil {
 		return fmt.Errorf("guard: generated config invalid: %w", err)
@@ -125,14 +89,11 @@ func (m *Manager) save(doc map[string]any) error {
 			}
 		}
 	}
-	// .bak (best-effort) then atomic write preserving owner+mode.
 	if cur, err := os.ReadFile(m.configPath); err == nil {
 		_ = writeAtomic(m.configPath+".bak", cur, m.configPath)
 	}
 	return writeAtomic(m.configPath, out, m.configPath)
 }
-
-// ---------- accessors over the generic doc ----------
 
 func inbounds(doc map[string]any) []map[string]any {
 	arr, _ := doc["inbounds"].([]any)
@@ -156,10 +117,6 @@ func outbounds(doc map[string]any) []map[string]any {
 	return out
 }
 
-// ProxyEndpoint returns the "host:port" of the data-saver proxy outbound for an
-// exit (proxy-vps for ExitVPS, proxy-home for ExitHome). The handler probes this
-// before turning data-saver on, so enabling never routes a device through a
-// proxy that is down/unreachable (that was the NXDOMAIN outage — PANEL-ds-safe).
 func (m *Manager) ProxyEndpoint(exit string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -188,7 +145,6 @@ func (m *Manager) ProxyEndpoint(exit string) (string, error) {
 	return "", fmt.Errorf("outbound %q does not exist in the config", tag)
 }
 
-// wsInPath returns the transport.path of the ws-in inbound (the device link path).
 func wsInPath(doc map[string]any) string {
 	for _, ib := range inbounds(doc) {
 		if tag, _ := ib["tag"].(string); tag == "vless-ws-in" {
@@ -202,8 +158,6 @@ func wsInPath(doc map[string]any) string {
 	return "/"
 }
 
-// routeRules returns the route.rules slice (read-only view), tolerating a
-// missing route/rules.
 func routeRules(doc map[string]any) []any {
 	route, _ := doc["route"].(map[string]any)
 	if route == nil {
@@ -213,9 +167,6 @@ func routeRules(doc map[string]any) []any {
 	return rules
 }
 
-// authUsersFor scans, read-only, the auth_user names of every rule matching a
-// predicate. Used to reconstruct the home/datasaver membership sets from the
-// config (config is the single source of truth, surviving registry loss).
 func authUsersFor(doc map[string]any, match func(rm map[string]any) bool) map[string]bool {
 	out := map[string]bool{}
 	for _, r := range routeRules(doc) {
@@ -233,8 +184,6 @@ func authUsersFor(doc map[string]any, match func(rm map[string]any) bool) map[st
 	return out
 }
 
-// homeMembers: names whose exit is home (auth_user in ANY rule bound to the
-// home outbound — the plain home rule or the proxy-home rule).
 func homeMembers(doc map[string]any) map[string]bool {
 	return authUsersFor(doc, func(rm map[string]any) bool {
 		out, _ := rm["outbound"].(string)
@@ -242,7 +191,6 @@ func homeMembers(doc map[string]any) map[string]bool {
 	})
 }
 
-// dsMembers: names with data-saver on (auth_user in a proxy rule, either exit).
 func dsMembers(doc map[string]any) map[string]bool {
 	return authUsersFor(doc, func(rm map[string]any) bool {
 		out, _ := rm["outbound"].(string)
@@ -250,20 +198,6 @@ func dsMembers(doc map[string]any) map[string]bool {
 	})
 }
 
-// setManagedRules rewrites the auth_user-keyed route rules deterministically
-// from the desired home/datasaver sets, preserving every other rule (the
-// leading resolve rule, the http-home-in bridge — neither carries auth_user).
-//
-// Order (first match wins), appended after the preserved rules:
-//  1. QUIC reject for datasaver devices — forces the browser to fall back to TCP,
-//     otherwise HTTP/3 escapes the transformation.
-//  2. proxy-home: web (80/443) of datasaver ∩ home.
-//  3. proxy-vps:  web (80/443) of datasaver ∩ vps.
-//  4. home: all the remaining traffic of the home devices (other ports).
-//
-// Non-web from datasaver∩home falls to rule 4 (home); non-web from datasaver∩vps
-// falls through to the end (direct). Banks/pinning go out without MITM via the proxy's own
-// ignore_hosts list — they need no rule here.
 func setManagedRules(doc map[string]any, homeSet, dsSet map[string]bool) {
 	route, _ := doc["route"].(map[string]any)
 	if route == nil {
@@ -278,7 +212,7 @@ func setManagedRules(doc map[string]any, homeSet, dsSet map[string]bool) {
 			continue
 		}
 		if _, hasUser := rm["auth_user"]; hasUser {
-			continue // managed (home/proxy/quic) — rebuilt below
+			continue
 		}
 		preserved = append(preserved, r)
 	}
@@ -315,7 +249,6 @@ func setManagedRules(doc map[string]any, homeSet, dsSet map[string]bool) {
 	route["rules"] = append(preserved, managed...)
 }
 
-// toList turns a name set into a deterministic (sorted) []any for JSON.
 func toList(set map[string]bool) []any {
 	names := make([]string, 0, len(set))
 	for n := range set {
@@ -329,11 +262,6 @@ func toList(set map[string]bool) []any {
 	return out
 }
 
-// ---------- device operations ----------
-
-// List returns the devices declared in the config (union across device
-// inbounds), with exit resolved from the home rule and created_at from the
-// registry. Deterministic order by name.
 func (m *Manager) List() ([]Device, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -358,7 +286,7 @@ func (m *Manager) List() ([]Device, error) {
 			name, _ := um["name"].(string)
 			uuid, _ := um["uuid"].(string)
 			if name == "" || uuid == "" {
-				continue // unnamed/legacy shared user is not a managed device
+				continue
 			}
 			d := seen[name]
 			d.Name = name
@@ -382,8 +310,6 @@ func (m *Manager) List() ([]Device, error) {
 	return out, nil
 }
 
-// Add creates a device with a fresh uuid on every device inbound and default
-// VPS exit. Returns the created device (with link buildable via Link).
 func (m *Manager) Add(ctx context.Context, name string) (Device, error) {
 	if !ValidName(name) {
 		return Device{}, fmt.Errorf("invalid name: use lowercase letters, digits and hyphen (e.g.: pc-sam)")
@@ -430,7 +356,6 @@ func (m *Manager) Add(ctx context.Context, name string) (Device, error) {
 	return Device{Name: name, UUID: uuid, Exit: ExitVPS, Created: m.loadRegistry()[name].Created}, nil
 }
 
-// Remove revokes a device (drops its user from every inbound + the home rule).
 func (m *Manager) Remove(ctx context.Context, uuid string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -472,7 +397,6 @@ func (m *Manager) Remove(ctx context.Context, uuid string) error {
 	return m.restart(ctx)
 }
 
-// SetExit moves a device between VPS and home by editing the home auth_user list.
 func (m *Manager) SetExit(ctx context.Context, uuid, exit string) error {
 	if exit != ExitVPS && exit != ExitHome {
 		return fmt.Errorf("invalid exit: use %q or %q", ExitVPS, ExitHome)
@@ -500,9 +424,6 @@ func (m *Manager) SetExit(ctx context.Context, uuid, exit string) error {
 	return m.restart(ctx)
 }
 
-// SetDatasaver turns a device's compression (data-saver) on/off: on →
-// web traffic (80/443) goes through the proxy of its exit; off → it leaves directly through the
-// exit (VPS/home) with no transformation.
 func (m *Manager) SetDatasaver(ctx context.Context, uuid string, on bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -527,7 +448,6 @@ func (m *Manager) SetDatasaver(ctx context.Context, uuid string, on bool) error 
 	return m.restart(ctx)
 }
 
-// Rename changes a device's slug (VLESS name + auth_user membership).
 func (m *Manager) Rename(ctx context.Context, uuid, newName string) error {
 	if !ValidName(newName) {
 		return fmt.Errorf("invalid name")
@@ -591,7 +511,6 @@ func (m *Manager) Rename(ctx context.Context, uuid, newName string) error {
 	return m.restart(ctx)
 }
 
-// Link builds the vless:// URI for a device (ws-in path, VPS entry, TLS).
 func (m *Manager) Link(d Device) (string, error) {
 	m.mu.Lock()
 	doc, err := m.load()
@@ -613,10 +532,6 @@ func (m *Manager) Link(d Device) (string, error) {
 		d.UUID, tunnelIP, tunnelPort, q.Encode(), url.PathEscape(d.Name)), nil
 }
 
-// LinkReality builds the vless:// URI for a device's Reality profile (TCP,
-// security=reality, fp=chrome, xtls-rprx-vision). sni/short_id come from the
-// reality inbound; pbk/port are deployment constants. It is the residential profile:
-// the ISP cannot even confirm that it is a VPN.
 func (m *Manager) LinkReality(d Device, port int) (string, error) {
 	m.mu.Lock()
 	doc, err := m.load()
@@ -658,8 +573,6 @@ func (m *Manager) LinkReality(d Device, port int) (string, error) {
 		d.UUID, tunnelIP, rport, q.Encode(), url.PathEscape(d.Name+"-reality")), nil
 }
 
-// ---------- helpers ----------
-
 func (m *Manager) nameForUUID(doc map[string]any, uuid string) string {
 	for _, ib := range inbounds(doc) {
 		if tag, _ := ib["tag"].(string); !deviceInbounds[tag] {
@@ -689,8 +602,6 @@ func newUUID() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
-// ---------- registry (display metadata) ----------
-
 type regEntry struct {
 	Created int64 `json:"created"`
 }
@@ -701,7 +612,7 @@ func (m *Manager) loadRegistry() map[string]regEntry {
 	if err != nil {
 		return out
 	}
-	_ = json.Unmarshal(raw, &out) // tolerate corruption
+	_ = json.Unmarshal(raw, &out)
 	return out
 }
 
@@ -735,7 +646,6 @@ func (m *Manager) registryDel(name string) {
 	}
 }
 
-// NormalizeName lowercases and slugs a free-text name into a valid device slug.
 func NormalizeName(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = regexp.MustCompile(`[^a-z0-9-]+`).ReplaceAllString(s, "-")

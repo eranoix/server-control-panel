@@ -21,15 +21,8 @@ import dev.servercontrolpanel.data.offline.DeviceNetwork
 import dev.servercontrolpanel.designsystem.panelStatusColors
 import java.util.Locale
 
-/** Text of the banner when there has been no contact at all in this run. */
 internal const val OFFLINE_NO_CONTACT = "Offline — nothing has loaded yet"
 
-/**
- * Labels cached data as possibly stale, since unlabeled stale data is worse than an error.
- * Shown only without a validated network (or with queued actions), it says how long ago the
- * server last responded; that timestamp is app-wide ([DataAge]), so it never claims a specific
- * screen's data age. Yellow, not red: nothing has failed.
- */
 @Composable
 fun OfflineBanner(modifier: Modifier = Modifier) {
     val state by DeviceNetwork.state.collectAsStateWithLifecycle()
@@ -38,7 +31,6 @@ fun OfflineBanner(modifier: Modifier = Modifier) {
     val rejected by Outbox.rejected.collectAsStateWithLifecycle()
     val warning = panelStatusColors.warning
 
-    // Also shown online while actions are queued or refused, which is when the queue is flushed.
     val visible = state == NetworkState.OFFLINE || pending.isNotEmpty() || rejected.isNotEmpty()
 
     AnimatedVisibility(visible = visible, modifier = modifier) {
@@ -61,10 +53,6 @@ fun OfflineBanner(modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * The banner text, kept separate so plain tests can cover it. The unit follows the age
- * (minutes, then hours, then "over a day").
- */
 internal fun bannerText(lastMs: Long?, nowMs: Long): String {
     if (lastMs == null) return OFFLINE_NO_CONTACT
     val minutes = ((nowMs - lastMs) / 60_000L).coerceAtLeast(0)
@@ -77,10 +65,6 @@ internal fun bannerText(lastMs: Long?, nowMs: Long): String {
     return "Offline — last server response $whenText"
 }
 
-/**
- * Text about the outbox queue, or null when there is nothing to report. Refusals come first
- * and alone: unlike waiting actions they will not happen, and the user must redo them.
- */
 internal fun queueText(pending: Int, rejected: List<String>): String? = when {
     rejected.isNotEmpty() -> {
         val which = rejected.take(2).joinToString("; ")

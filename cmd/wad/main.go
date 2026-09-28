@@ -1,13 +1,3 @@
-// Command wad is the server-control-panel WhatsApp daemon: a persistent process that
-// embeds whatsmeow (the same library WAHA's GOWS engine wraps) to send/receive
-// WhatsApp messages for free, replacing the paywalled WAHA media endpoints.
-//
-// It hosts one whatsmeow client per server-control-panel user, each reusing the device
-// already paired in a COPY of WAHA's gows.db (so no re-pairing). It exposes a
-// loopback HTTP API for the server-control-panel server to send through, and pushes
-// inbound events back to the server in WAHA-compatible webhook envelopes.
-//
-// Survives server-control-panel deploys: runs under its own systemd unit (Restart=always).
 package main
 
 import (
@@ -84,8 +74,6 @@ func envOr(k, d string) string {
 	return d
 }
 
-// loadAll scans the state dir for <user>/session.db + <user>/meta.json and
-// connects a whatsmeow session for each.
 func (m *manager) loadAll(ctx context.Context) error {
 	entries, err := os.ReadDir(m.stateDir)
 	if err != nil {
@@ -118,23 +106,18 @@ func (m *manager) loadUser(ctx context.Context, user string) error {
 		return fmt.Errorf("invalid meta: %w", err)
 	}
 	sess := newSession(user, dbPath, m.push)
-	go sess.pruneMediaStash() // prunes the media stash persisted at boot (bounded)
+	go sess.pruneMediaStash()
 
 	m.mu.Lock()
-	old := m.sessions[user] // may already exist across a reload
+	old := m.sessions[user]
 	m.metadata[user] = meta
 	m.sessions[user] = sess
 	m.mu.Unlock()
 
-	// Close the old client/websocket + DB BEFORE reconnecting — otherwise two
-	// whatsmeow clients fight over the same device/SQLite (goroutine/fd leak).
 	if old != nil {
 		old.close()
 	}
 
-	// context.Background(): the connect runs in the background and must NOT die
-	// with the request ctx (handleReload) — otherwise Upgrade/GetFirstDevice abort
-	// halfway through.
 	go func() {
 		if err := sess.connect(context.Background()); err != nil {
 			log.Printf("wad: connect %s: %v", user, err)
@@ -149,16 +132,6 @@ func (m *manager) hmacSecretOf(user string) string {
 	return m.metadata[user].HMACSecret
 }
 
-// reloadMeta re-reads meta.json from disk and refreshes the in-memory
-// secret. Returns the new secret and whether it CHANGED.
-//
-// It exists because of an observed failure mode: the in-memory secret (read at
-// daemon boot) can drift from the one the panel uses, and then EVERY webhook
-// comes back 401 and the message is dropped — whatsmeow does not redeliver, it
-// is gone for good. Since the file on disk is usually already correct (the
-// panel rewrites it on every boot), re-reading it on a 401 fixes by itself what
-// used to require noticing the outage and restarting the daemon by hand. Over
-// 36h that cost 63 real messages.
 func (m *manager) reloadMeta(user string) (string, bool) {
 	raw, err := os.ReadFile(filepath.Join(m.stateDir, user, "meta.json"))
 	if err != nil {
@@ -186,7 +159,6 @@ func (m *manager) sessionOf(user string) *session {
 	return m.sessions[user]
 }
 
-// auth wraps a handler with per-user Bearer-token check against meta.api_key.
 func (m *manager) auth(h func(http.ResponseWriter, *http.Request, *session)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user := r.PathValue("user")
@@ -252,7 +224,7 @@ func (m *manager) handleProfilePic(w http.ResponseWriter, r *http.Request, sess 
 	defer cancel()
 	url, err := sess.profilePic(ctx, r.URL.Query().Get("jid"))
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"url": ""}) // no avatar is not an error
+		writeJSON(w, http.StatusOK, map[string]any{"url": ""})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"url": url})
@@ -285,7 +257,7 @@ func (m *manager) handleContacts(w http.ResponseWriter, r *http.Request, sess *s
 	defer cancel()
 	list, err := sess.contacts(ctx)
 	if err != nil {
-		writeJSON(w, http.StatusOK, []any{}) // empty is not fatal
+		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
@@ -299,11 +271,6 @@ func (m *manager) handleMedia(w http.ResponseWriter, r *http.Request, sess *sess
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	// Hardening: the mimetype is attacker-controlled (declared by the message
-	// sender). This endpoint is loopback + authenticated and consumed server-side
-	// (written to a file, not rendered), but we defend in depth anyway: clamp the
-	// Content-Type to a safe allowlist, never sniff, and force attachment so this
-	// can never execute as HTML/SVG if ever fetched in a browser context.
 	safe := "application/octet-stream"
 	switch strings.ToLower(strings.TrimSpace(strings.SplitN(mime, ";", 2)[0])) {
 	case "image/png", "image/jpeg", "image/webp", "image/gif",
@@ -332,7 +299,6 @@ func (m *manager) handleQR(w http.ResponseWriter, r *http.Request, sess *session
 }
 
 func (m *manager) handleReload(w http.ResponseWriter, r *http.Request, sess *session) {
-	// Reconnect / reload meta for this user (best-effort).
 	if err := m.loadUser(r.Context(), sess.user); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
 		return

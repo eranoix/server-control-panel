@@ -11,8 +11,6 @@ import (
 	"syscall"
 )
 
-// ─── PROPERTIES ────────────────────────────────────────────────
-
 type properties struct {
 	Path      string `json:"path"`
 	Name      string `json:"name"`
@@ -20,8 +18,8 @@ type properties struct {
 	IsDir     bool   `json:"is_dir"`
 	IsLink    bool   `json:"is_link"`
 	LinkTo    string `json:"link_to,omitempty"`
-	ModeStr   string `json:"mode_str"`   // e.g. "-rw-r--r--"
-	ModeOctal string `json:"mode_octal"` // e.g. "0644"
+	ModeStr   string `json:"mode_str"`
+	ModeOctal string `json:"mode_octal"`
 	Modified  int64  `json:"modified"`
 	Accessed  int64  `json:"accessed"`
 	Changed   int64  `json:"changed"`
@@ -29,8 +27,8 @@ type properties struct {
 	GID       uint32 `json:"gid"`
 	Owner     string `json:"owner"`
 	Group     string `json:"group"`
-	Files     int64  `json:"files,omitempty"`   // only if dir
-	Subdirs   int64  `json:"subdirs,omitempty"` // only if dir
+	Files     int64  `json:"files,omitempty"`
+	Subdirs   int64  `json:"subdirs,omitempty"`
 }
 
 func handleProperties(w http.ResponseWriter, r *http.Request) {
@@ -99,8 +97,6 @@ func handleProperties(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, prop)
 }
 
-// ─── DU (total size of a folder) ───────────────────────────────
-
 func handleDirSize(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeErr(w, http.StatusBadRequest, "method not allowed")
@@ -116,7 +112,7 @@ func handleDirSize(w http.ResponseWriter, r *http.Request) {
 	var count int64
 	err := filepath.WalkDir(p, func(sub string, d os.DirEntry, werr error) error {
 		if werr != nil {
-			return nil // ignore isolated errors (perms etc)
+			return nil
 		}
 		if !d.IsDir() {
 			if info, e := d.Info(); e == nil {
@@ -133,8 +129,6 @@ func handleDirSize(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"path": p, "size": total, "files": count})
 }
 
-// ─── SEARCH (name and/or content) ─────────────────────────────
-
 type searchHit struct {
 	Path    string `json:"path"`
 	Snippet string `json:"snippet,omitempty"`
@@ -149,8 +143,8 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	root := r.URL.Query().Get("root")
-	name := r.URL.Query().Get("name")       // substring (case-insensitive) or empty
-	content := r.URL.Query().Get("content") // substring in the body (case-sensitive)
+	name := r.URL.Query().Get("name")
+	content := r.URL.Query().Get("content")
 	maxStr := r.URL.Query().Get("max")
 	max := 200
 	if maxStr != "" {
@@ -174,7 +168,6 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		if werr != nil || stop {
 			return nil
 		}
-		// Skip obviously expensive folders (light heuristic).
 		if d.IsDir() {
 			base := filepath.Base(sub)
 			if base == "node_modules" || base == ".git" || base == ".next" || base == "pg_wal" {
@@ -199,7 +192,6 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if content != "" && info.Size() > 0 && info.Size() < 2*1024*1024 {
-			// Only search content inside small files (<2MB).
 			b, err := os.ReadFile(sub)
 			if err == nil {
 				if idx := strings.Index(string(b), content); idx >= 0 {
@@ -223,7 +215,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 						Line:    line,
 						Size:    info.Size(),
 					})
-					matched = false // already added
+					matched = false
 				}
 			}
 		}

@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# scripts/whatsapp/uninstall.sh — removes the WAHA gateway from this host.
-# By default keeps data (session blob, message media) so re-install resumes
-# without re-pairing. Pass --purge to wipe data too.
-#
-# WARNING: --purge deletes /var/lib/panel-whatsapp entirely (sessions + media).
-# After --purge the device has to scan a fresh QR.
 
 set -euo pipefail
 

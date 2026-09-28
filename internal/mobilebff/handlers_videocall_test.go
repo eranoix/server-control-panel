@@ -13,9 +13,6 @@ import (
 	"server-control-panel/internal/videocall"
 )
 
-// fakeVideocallRoomLister is a double of *videocall.Service — it tests
-// exactly the boundary this package depends on (videocallRoomLister), without
-// having to open a real Service (flush/heartbeat goroutines + disk).
 type fakeVideocallRoomLister struct {
 	byUser map[string][]videocall.Room
 }
@@ -107,10 +104,6 @@ func TestHandleVideocallRooms_Unauthenticated401(t *testing.T) {
 	}
 }
 
-// TestVideocallWSTicket_AuthenticatedUser_IssuesTicket proves the Android
-// data layer has a BFF route to mint a /ws/videocall ticket
-// through — it is forbidden from calling /api/auth/ws-ticket directly,
-// exactly like /terminal/ws-ticket and /events/ws-ticket already require.
 func TestVideocallWSTicket_AuthenticatedUser_IssuesTicket(t *testing.T) {
 	_, mux := newVideocallTestAPI(&fakeVideocallRoomLister{})
 

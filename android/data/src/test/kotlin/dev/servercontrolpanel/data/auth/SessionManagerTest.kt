@@ -13,10 +13,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Pins the session behaviour every screen depends on: storing the token pair, renewing
- * through a single queue, and tearing the session down when renewal is impossible.
- */
 class SessionManagerTest {
 
     private var clock = 1_000_000L
@@ -87,9 +83,6 @@ class SessionManagerTest {
 
     @Test
     fun `concurrent 401 responses trigger a single renewal`() = runTest {
-        // The BFF rotates refresh tokens, so concurrent renewals would kill the session.
-        // The gate holds the first renewal until all callers arrive, otherwise the test
-        // would pass even without a queue.
         val gate = CompletableDeferred<Unit>()
         val refresher = CountingRefresher(
             outcome = { n -> RefreshOutcome.Renewed("a-new-$n", "r-new-$n", 900) },
@@ -98,7 +91,6 @@ class SessionManagerTest {
         val manager = manager(InMemoryTokenStore(tokens()), refresher)
 
         val requests = List(8) { async { manager.refreshAfterUnauthorized("a1") } }
-        // All 8 are now blocked (one on the gate, seven on the mutex), none finished.
         advanceUntilIdle()
         assertEquals("one renewal per expiry, never one per call", 1, refresher.calls.get())
 
@@ -116,7 +108,6 @@ class SessionManagerTest {
         val manager = manager(InMemoryTokenStore(tokens()), refresher)
 
         assertEquals("a-new-1", manager.refreshAfterUnauthorized("a1"))
-        // A late call still presenting the old token.
         assertEquals("a-new-1", manager.refreshAfterUnauthorized("a1"))
 
         assertEquals(1, refresher.calls.get())
@@ -136,7 +127,6 @@ class SessionManagerTest {
 
     @Test
     fun `a transient network failure does not end the session`() = runTest {
-        // A brief network drop must not cost a login: Unavailable differs from Rejected.
         val store = InMemoryTokenStore(tokens())
         val manager = manager(store, CountingRefresher({ RefreshOutcome.Unavailable }))
 
@@ -149,7 +139,6 @@ class SessionManagerTest {
     @Test
     fun `an expiring token is renewed before the request goes out`() = runTest {
         val refresher = CountingRefresher({ RefreshOutcome.Renewed("a2", "r2", 900) })
-        // 30s of validity is inside the EXPIRY_SKEW_MILLIS margin (60s).
         val manager = manager(InMemoryTokenStore(tokens(ttlSeconds = 30)), refresher)
 
         assertEquals("a2", manager.accessTokenForRequest())
@@ -191,7 +180,6 @@ class SessionManagerTest {
 
     @Test
     fun `by default the access token is mirrored to ApiClient for media and the WhatsApp socket`() {
-        // MediaNetwork and OkHttpWhatsAppWsFactory read the token from ApiClient.
         val manager = SessionManager(
             tokenStore = InMemoryTokenStore(),
             refresher = CountingRefresher({ RefreshOutcome.Unavailable }),

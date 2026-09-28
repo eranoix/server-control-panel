@@ -29,15 +29,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import dev.servercontrolpanel.terminalengine.TerminalScrollState
 
-/** Test tags: the UI is checked through them, never through loose text. */
 internal const val TAG_POSITION_BAR = "terminal-position-bar"
 internal const val TAG_BACK_TO_END = "terminal-back-to-end"
 
-/**
- * Shows where the user is while reading history and how to get back: a position
- * bar on the right and a "back to the end" button that also announces new output
- * (the screen never jumps to it on its own). Hidden when pinned to the bottom.
- */
 @Composable
 internal fun ScrollPositionOverlay(
     state: TerminalScrollState,
@@ -72,10 +66,6 @@ internal fun ScrollPositionOverlay(
     }
 }
 
-/**
- * The position bar is an indicator, not a control: dragging works on the whole
- * grid, which is a better target than a 4 dp handle.
- */
 @Composable
 private fun PositionBar(state: TerminalScrollState) {
     val relativeHeight = if (state.total > 0) {
@@ -110,7 +100,6 @@ private fun PositionBar(state: TerminalScrollState) {
     }
 }
 
-/** The way back, within thumb reach, showing how many lines up the user is. */
 @Composable
 private fun BackToEndButton(
     rowsBack: Long,

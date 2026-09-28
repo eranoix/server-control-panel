@@ -7,8 +7,6 @@ import (
 	"server-control-panel/internal/mobilebff/sdui"
 )
 
-// Action ids the four Security screens reference from their tables'
-// row_actions and their forms' submit_action.
 const (
 	securityActionUserSave          = "security.user.save"
 	securityActionUserDelete        = "security.user.delete"
@@ -20,7 +18,6 @@ const (
 	securityActionSessionRevoke = "security.session.revoke"
 )
 
-// Action ids the four Network screens reference.
 const (
 	securityActionUFWApply             = "security.ufw.apply"
 	securityActionAdGuardSetProtection = "security.adguard.set_protection"
@@ -32,15 +29,8 @@ const (
 	securityActionDeviceSetDatasaver = "security.device.set_datasaver"
 )
 
-// securityAdminViewer is the RegisterAction authorize gate for every one of
-// these twelve actions: all eight Security/Network screens are whole-screen
-// admin-only (see security.go's buildXScreenForViewer functions), so no
-// action reachable from them is ever authenticated-but-non-admin.
 func securityAdminViewer(v sdui.Viewer) bool { return v.IsAdmin() }
 
-// registerSecurityActions registers the six security.* mutations
-// (user.save/delete/reset_password, secret.set/delete, session.revoke).
-// Called once by RegisterSecurity (security.go).
 func registerSecurityActions(deps SecurityDeps) {
 	sdui.RegisterAction(
 		sdui.ActionDescriptor{
@@ -59,10 +49,6 @@ func registerSecurityActions(deps SecurityDeps) {
 			Endpoint:    "/api/mobile/v1/actions/" + securityActionUserDelete,
 			Permission:  "admin",
 			Destructive: true,
-			// RequireTypedConfirmation deliberately empty: Destructive:true
-			// plus the guards inside handleSecurityUserDelete (self-delete,
-			// then Primary-protection) already make this proportional —
-			// same posture as docker.container.remove.
 		},
 		securityAdminViewer,
 		handleSecurityUserDelete(deps),
@@ -74,10 +60,6 @@ func registerSecurityActions(deps SecurityDeps) {
 			Endpoint:    "/api/mobile/v1/actions/" + securityActionUserResetPassword,
 			Permission:  "admin",
 			Destructive: true,
-			// Password reset is a SEPARATE action id from security.user.save
-			// (see UserInput's doc comment in deps.go) — Destructive:true
-			// here is what forces its own confirm step, distinct from the
-			// save form's.
 		},
 		securityAdminViewer,
 		handleSecurityUserResetPassword(deps),
@@ -112,18 +94,12 @@ func registerSecurityActions(deps SecurityDeps) {
 			Endpoint:    "/api/mobile/v1/actions/" + securityActionSessionRevoke,
 			Permission:  "admin",
 			Destructive: true,
-			// The confirm message (security.go's buildSecuritySessionsScreen)
-			// already covers "this may be your own current session" — see
-			// SessionRow.IsCurrent's doc comment for why that is a row flag
-			// rather than a second static message.
 		},
 		securityAdminViewer,
 		handleSecuritySessionRevoke(deps),
 	)
 }
 
-// registerNetworkActions registers the six security.ufw/adguard/device
-// mutations. Called once by RegisterNetwork (security.go).
 func registerNetworkActions(deps NetworkDeps) {
 	sdui.RegisterAction(
 		sdui.ActionDescriptor{
@@ -132,11 +108,6 @@ func registerNetworkActions(deps NetworkDeps) {
 			Endpoint:    "/api/mobile/v1/actions/" + securityActionUFWApply,
 			Permission:  "admin",
 			Destructive: true,
-			// A misapplied rule (or "disable") can sever the operator's own
-			// SSH access — Destructive:true is a Rule 2 deviation from the
-			// plan's baseline, since NetworkDeps.UFWApplyRule itself has no
-			// such gate (see security.go's buildSecurityUFWScreen doc
-			// comment).
 		},
 		securityAdminViewer,
 		handleSecurityUFWApply(deps),
@@ -148,8 +119,6 @@ func registerNetworkActions(deps NetworkDeps) {
 			Method:     "POST",
 			Endpoint:   "/api/mobile/v1/actions/" + securityActionAdGuardSetProtection,
 			Permission: "admin",
-			// Non-destructive: pausing/resuming DNS filtering is reversible
-			// in seconds and carries no lockout risk, unlike UFW.
 		},
 		securityAdminViewer,
 		handleSecurityAdGuardSetProtection(deps),
@@ -202,34 +171,18 @@ func registerNetworkActions(deps NetworkDeps) {
 			Method:     "POST",
 			Endpoint:   "/api/mobile/v1/actions/" + securityActionDeviceSetDatasaver,
 			Permission: "admin",
-			// Non-destructive by SDUI's own definition (reversible, no data
-			// loss) even though it carries a real outage risk — the risk is
-			// mitigated by the ca_ack + health-probe gate inside the handler
-			// below, not by a destructive-confirm round trip.
 		},
 		securityAdminViewer,
 		handleSecurityDeviceSetDatasaver(deps),
 	)
 }
 
-// --- security.user.* handlers -----------------------------------------
-
-// securityUserSaveInput is the body security.user.save decodes — mirrors
-// UserInput exactly (deps.go): password is only meaningful on CREATE, never
-// read on an edit of an existing username (see UserInput's doc comment for
-// why password reset is a wholly separate action).
 type securityUserSaveInput struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Admin    bool   `json:"admin"`
 }
 
-// handleSecurityUserSave implements security.user.save — create or edit,
-// one entry point, exactly like scheduler.job.save. Field-level validation
-// mirrors handleUserCreate's rules (username charset/length, password
-// length on create) so the mobile surface rejects the same malformed input
-// the web panel already does, as sdui.FieldErrors rather than an opaque
-// 500.
 func handleSecurityUserSave(deps SecurityDeps) sdui.ActionHandler {
 	return func(_ context.Context, v sdui.Viewer, _ map[string]string, input json.RawMessage) (sdui.ActionResult, error) {
 		var in securityUserSaveInput
@@ -255,9 +208,6 @@ func handleSecurityUserSave(deps SecurityDeps) sdui.ActionHandler {
 
 		row, err := deps.SaveUser(UserInput{Username: in.Username, Password: in.Password, Admin: in.Admin})
 		if err != nil {
-			// Surfaces internal/config.SetAdmin's own Primary-protection
-			// rejection (e.g. demoting the last admin) as a field error —
-			// never a reimplemented count check, per the plan's mandate.
 			return sdui.ActionResult{}, sdui.FieldErrors{}.Add("admin", err.Error())
 		}
 		if deps.AuditEvent != nil {
@@ -267,8 +217,6 @@ func handleSecurityUserSave(deps SecurityDeps) sdui.ActionHandler {
 	}
 }
 
-// isValidSecurityUsername mirrors handleUserCreate's charset check
-// ([a-zA-Z0-9_-]) without pulling in a regexp for one call site.
 func isValidSecurityUsername(s string) bool {
 	if s == "" {
 		return false
@@ -283,22 +231,10 @@ func isValidSecurityUsername(s string) bool {
 	return true
 }
 
-// securityUserDeleteInput is the body security.user.delete decodes.
 type securityUserDeleteInput struct {
 	Username string `json:"username"`
 }
 
-// handleSecurityUserDelete implements security.user.delete. Two guards, in
-// this exact order, both BEFORE deps.DeleteUser is ever called:
-//
-//  1. Self-delete: unconditional, mirrors handlers_users.go's
-//     handleUserDelete 403 on deleting the currently logged-in user;
-//     checked first and independent of admin count.
-//  2. Primary-protection / last-admin lockout: NOT a count check here —
-//     deps.DeleteUser wraps internal/config.RemoveUser, whose own
-//     Primary-branch rejection is surfaced below as a field error on the
-//     error return path. This handler never re-derives "is this the last
-//     admin" itself.
 func handleSecurityUserDelete(deps SecurityDeps) sdui.ActionHandler {
 	return func(_ context.Context, v sdui.Viewer, params map[string]string, input json.RawMessage) (sdui.ActionResult, error) {
 		username := params["id"]
@@ -313,13 +249,10 @@ func handleSecurityUserDelete(deps SecurityDeps) sdui.ActionHandler {
 			return sdui.ActionResult{}, sdui.ErrActionNotFound
 		}
 
-		// Guard 1 — self-delete, unconditional, checked first.
 		if username == v.Username {
 			return sdui.ActionResult{}, sdui.FieldErrors{}.Add("username", "cannot delete your own user (logged in right now)")
 		}
 
-		// Guard 2 — RemoveUser's own Primary-protection rejection, surfaced
-		// as a field error, never reimplemented here.
 		if err := deps.DeleteUser(username); err != nil {
 			return sdui.ActionResult{}, sdui.FieldErrors{}.Add("username", err.Error())
 		}
@@ -331,16 +264,11 @@ func handleSecurityUserDelete(deps SecurityDeps) sdui.ActionHandler {
 	}
 }
 
-// securityUserResetPasswordInput is the body
-// security.user.reset_password decodes.
 type securityUserResetPasswordInput struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
-// handleSecurityUserResetPassword implements security.user.reset_password —
-// mirrors handleUserResetPassword's exact validation (username non-empty,
-// password >= 8 chars) and calls deps.ResetPassword, NEVER deps.SaveUser.
 func handleSecurityUserResetPassword(deps SecurityDeps) sdui.ActionHandler {
 	return func(_ context.Context, v sdui.Viewer, params map[string]string, input json.RawMessage) (sdui.ActionResult, error) {
 		var in securityUserResetPasswordInput
@@ -375,11 +303,6 @@ func handleSecurityUserResetPassword(deps SecurityDeps) sdui.ActionHandler {
 	}
 }
 
-// --- security.secret.* handlers -----------------------------------------
-
-// securitySecretSetInput is the body security.secret.set decodes. Value
-// never appears in ANY response this handler returns (Patch/Invalidate are
-// both value-blind — see securitySecretRow's doc comment in security.go).
 type securitySecretSetInput struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
@@ -408,8 +331,6 @@ func handleSecuritySecretSet(deps SecurityDeps) sdui.ActionHandler {
 			return sdui.ActionResult{}, err
 		}
 		if deps.AuditEvent != nil {
-			// Target is the KEY name only — never the value, in the audit
-			// line or anywhere else.
 			deps.AuditEvent(v.Username, "security.secret.set", in.Key)
 		}
 		return sdui.ActionResult{Invalidate: []string{"secrets-table"}}, nil
@@ -432,15 +353,6 @@ func handleSecuritySecretDelete(deps SecurityDeps) sdui.ActionHandler {
 	}
 }
 
-// --- security.session.revoke ---------------------------------------------
-
-// handleSecuritySessionRevoke implements security.session.revoke — a real
-// tombstone write (sessions.Store.Revoke via deps.RevokeSession), checked by
-// auth's Touch/HasTombstone on every subsequent request for that JTI. No
-// self-protection guard here: revoking one's OWN current session is
-// explicitly allowed (unlike deleting one's own account) — the confirm
-// message already warns the caller they will be logged out if the row they
-// picked is their current one.
 func handleSecuritySessionRevoke(deps SecurityDeps) sdui.ActionHandler {
 	return func(_ context.Context, v sdui.Viewer, params map[string]string, _ json.RawMessage) (sdui.ActionResult, error) {
 		sessionID := params["id"]
@@ -457,10 +369,6 @@ func handleSecuritySessionRevoke(deps SecurityDeps) sdui.ActionHandler {
 	}
 }
 
-// --- security.ufw.apply ---------------------------------------------------
-
-// securityUFWApplyInput is the body security.ufw.apply decodes — mirrors
-// handleUFWRule's body exactly (action + spec).
 type securityUFWApplyInput struct {
 	Action string `json:"action"`
 	Spec   string `json:"spec"`
@@ -470,9 +378,6 @@ var securityUFWValidActions = map[string]bool{
 	"allow": true, "deny": true, "reject": true, "delete": true, "enable": true, "disable": true,
 }
 
-// securityUFWActionsRequiringSpec are the actions handleUFWRule itself
-// treats as needing a non-empty rule spec — enable/disable act on the
-// firewall as a whole and take none.
 var securityUFWActionsRequiringSpec = map[string]bool{
 	"allow": true, "deny": true, "reject": true, "delete": true,
 }
@@ -503,8 +408,6 @@ func handleSecurityUFWApply(deps NetworkDeps) sdui.ActionHandler {
 	}
 }
 
-// --- security.adguard.set_protection ---------------------------------------
-
 type securityAdGuardSetProtectionInput struct {
 	Enabled    bool `json:"enabled"`
 	DurationMs int  `json:"duration_ms"`
@@ -531,8 +434,6 @@ func handleSecurityAdGuardSetProtection(deps NetworkDeps) sdui.ActionHandler {
 		return sdui.ActionResult{Invalidate: []string{"adguard-status-detail"}}, nil
 	}
 }
-
-// --- security.device.* handlers -------------------------------------------
 
 type securityDeviceAddInput struct {
 	Name string `json:"name"`
@@ -635,30 +536,11 @@ func handleSecurityDeviceSetExit(deps NetworkDeps) sdui.ActionHandler {
 	}
 }
 
-// securityDeviceSetDatasaverInput is the body security.device.set_datasaver
-// decodes. CaAck mirrors handleTunnelDeviceAction's own confirmation
-// checkbox for this exact toggle ("it has broken the tunnel repeatedly" — see
-// NetworkDeps.SetDeviceDatasaver's doc comment): required whenever `on` is
-// true, never checked when turning datasaver off.
 type securityDeviceSetDatasaverInput struct {
 	On    bool `json:"on"`
 	CaAck bool `json:"ca_ack"`
 }
 
-// handleSecurityDeviceSetDatasaver implements security.device.set_datasaver,
-// reproducing handleTunnelDeviceAction's two-gate safety pair (Rule 2 — a
-// missing critical safety check, since NetworkDeps.SetDeviceDatasaver itself
-// performs neither):
-//
-//  1. ca_ack must be explicitly true before turning datasaver ON — a
-//     lightweight confirmation that the caller understands the
-//     compression proxy's CA cert must already be trusted on the device.
-//  2. A live health probe of the exit's compression proxy
-//     (ProbeDatasaverHealthy) must succeed before the toggle is applied —
-//     turning this on against an unhealthy proxy is the documented outage
-//     this pair exists to prevent.
-//
-// Neither gate applies when turning datasaver OFF (on == false).
 func handleSecurityDeviceSetDatasaver(deps NetworkDeps) sdui.ActionHandler {
 	return func(ctx context.Context, v sdui.Viewer, params map[string]string, input json.RawMessage) (sdui.ActionResult, error) {
 		uuid := params["id"]

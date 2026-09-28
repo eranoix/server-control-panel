@@ -21,12 +21,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The Home dashboard under Robolectric: loading, error, content and calm
- * states, thresholds, and each card's navigation.
- *
- * The virtual screen is tall so the lower cards of the `LazyColumn` get composed.
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w411dp-h2200dp")
 class HomeScreenTest {
@@ -39,7 +33,6 @@ class HomeScreenTest {
         composeRule.dashboard(HomeUiState.Loading)
 
         composeRule.onNodeWithText("Loading the dashboard…").assertIsDisplayed()
-        // "Quick actions" needs no server data, so it is a stable landmark.
         composeRule.onNodeWithText("Quick actions").assertIsDisplayed()
     }
 
@@ -80,11 +73,8 @@ class HomeScreenTest {
     fun `the real machine does not look all fine, swap and load rise to the top`() {
         composeRule.dashboard(HomeUiState.Success(snapshotReal()))
 
-        // The attention card shows even with no alerts and health_ok = true.
         composeRule.onNodeWithText("3 things need attention").assertIsDisplayed()
-        // The crossed signal appears with the sentence explaining its threshold.
         composeRule.onAllNodesWithText("Swap").assertCountAtLeast(1)
-        // CPU steal is not an alert (nothing can be done inside the VM); it stays in the grid only.
         composeRule.onNodeWithText("CPU steal  37%").assertDoesNotExist()
         composeRule.onNodeWithText(
             "8.0 GiB of 8.0 GiB — no room left to page; a memory spike goes straight to the OOM killer",
@@ -95,7 +85,6 @@ class HomeScreenTest {
     fun `a bad value has a text label, not only a color`() {
         composeRule.dashboard(HomeUiState.Success(snapshotReal()))
 
-        // Color alone fails color-blind users, sunlight and screen readers.
         composeRule.onAllNodesWithText("WARNING").assertCountAtLeast(1)
     }
 
@@ -112,7 +101,6 @@ class HomeScreenTest {
 
     @Test
     fun `on a calm machine the attention card disappears, with no good-news message`() {
-        // Silence is the good news: no warning card at all.
         composeRule.dashboard(HomeUiState.Success(calmSnapshot()))
 
         composeRule.onAllNodesWithText("No alerts firing right now.").assertCountEquals(0)
@@ -135,21 +123,17 @@ class HomeScreenTest {
     fun `the grid shows the initial tiles when nothing has been chosen yet`() {
         composeRule.dashboard(HomeUiState.Success(snapshotReal()))
 
-        // `onAllNodes`: a crossed signal appears both in the grid and on the attention card.
         composeRule.onNodeWithText("Dashboard").assertExists()
         composeRule.onAllNodesWithText("CPU").assertCountAtLeast(1)
         composeRule.onAllNodesWithText("MEMORY").assertCountAtLeast(1)
         composeRule.onNodeWithText("Customize").assertExists()
     }
 
-    /** The dashboard must never hide a fire: a CRITICAL tile shows even if not chosen. */
     @Test
     fun `a CRITICAL tile appears in the grid even if not chosen`() {
-        // Memory at 97% makes swap CRITICAL (see swapSignal).
         val ops = opsReal(systemReal(memUsedPercent = 97.0))
         composeRule.dashboard(HomeUiState.Success(snapshotReal(ops = ops)))
 
-        // Swap is not in INITIAL_TILES, so only the critical rule can bring it in.
         composeRule.onAllNodesWithText("SWAP").assertCountAtLeast(1)
     }
 
@@ -178,7 +162,6 @@ class HomeScreenTest {
 
     @Test
     fun `server clock drift is reported`() {
-        // Device 10 minutes ahead of the server.
         val snapshot = snapshotReal(fetchedAtEpochMs = (1_788_678_502L + 600) * 1_000)
         composeRule.dashboard(HomeUiState.Success(snapshot))
 
@@ -191,7 +174,6 @@ class HomeScreenTest {
         var target: DashboardTarget? = null
         composeRule.dashboard(HomeUiState.Success(snapshotReal()), onTarget = { target = it })
 
-        // Index 0 is the attention card's row, at the top.
         composeRule.onAllNodesWithText("Swap")[0].performClick()
         assertEquals(DashboardTarget.PROCESSES, target)
     }
@@ -210,7 +192,6 @@ class HomeScreenTest {
         var target: DashboardTarget? = null
         composeRule.dashboard(HomeUiState.Success(snapshotReal()), onTarget = { target = it })
 
-        // Uppercase because `TileGrid` renders labels uppercased.
         composeRule.scrollTo("QUEUE")
         composeRule.onNodeWithText("QUEUE").performClick()
         assertEquals(DashboardTarget.QUEUE, target)
@@ -239,7 +220,6 @@ class HomeScreenTest {
 
     @Test
     fun `every emitted section exists on the server, no destination is dangling`() {
-        // The 25 SDUI screens served by the BFF; any other id would open a missing-section screen.
         val serverSections = setOf(
             "alerts.rules", "deploy.apps", "docker.compose", "docker.containers", "docker.images",
             "docker.networks", "docker.prune", "docker.volumes", "ai.settings", "jira.issues",
@@ -259,7 +239,6 @@ class HomeScreenTest {
         val vm = HomeViewModel(FakeDashboardSource { DashboardResult.Success(snapshotReal()) })
         composeRule.setContent {
             PanelTheme {
-                // Auto-refresh off: its infinite `delay` would keep `waitForIdle` waiting forever.
                 HomeScreen(viewModel = vm, autoRefreshMillis = 0)
             }
         }
@@ -326,7 +305,6 @@ class HomeScreenTest {
     }
 }
 
-/** Composes the content only, without a ViewModel; every state is a parameter. */
 private fun ComposeContentTestRule.dashboard(
     state: HomeUiState,
     onRetry: () -> Unit = {},
@@ -341,7 +319,6 @@ private fun ComposeContentTestRule.dashboard(
     waitForIdle()
 }
 
-/** Scrolls the `LazyColumn` down to the item containing [text]. */
 private fun ComposeContentTestRule.scrollTo(text: String) {
     onNode(hasScrollAction()).performScrollToNode(hasText(text, substring = true))
     waitForIdle()

@@ -1,10 +1,3 @@
-// wad.go — panelctl whatsapp wad-migrate/wad-rollback: cut a user over from the
-// paywalled WAHA backend to the free whatsmeow daemon (cmd/wad), and back.
-//
-// The cutover is done here (not by the agent) because it must read the user's
-// waha_hmac_secret from the vault — the daemon pushes inbound events to the
-// server's existing webhook signed with that exact secret, so server-side
-// validation keeps working unchanged.
 package main
 
 import (
@@ -31,12 +24,6 @@ func wahaGowsDB(user string) string {
 	return filepath.Join("/var/lib/panel-whatsapp", user, "sessions/gows/default/gows.db")
 }
 
-// whatsappWadMigrate performs the per-user cutover: stop WAHA (frees the device
-// + quiesces gows.db), copy the paired session into the daemon's own dir, write
-// meta.json (hmac from vault + a fresh api key) and the `enabled` flag, then
-// restart the daemon so it loads the user. The running server picks up the flag
-// and routes the user through the daemon on its next Service rebuild (restart
-// server-control-panel to apply immediately).
 func whatsappWadMigrate(args []string) error {
 	if len(args) < 1 || args[0] == "" {
 		return fmt.Errorf("usage: panelctl whatsapp wad-migrate <user>")
@@ -47,7 +34,6 @@ func whatsappWadMigrate(args []string) error {
 		return fmt.Errorf("invalid user %q: %w", user, err)
 	}
 
-	// 1) read the per-user webhook HMAC from the vault.
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -70,14 +56,10 @@ func whatsappWadMigrate(args []string) error {
 		return fmt.Errorf("gows.db not found at %s: %w", src, err)
 	}
 
-	// 2) stop WAHA for this user — one device, one connection. Frees the device
-	//    for the daemon and quiesces the sqlite WAL before we copy it.
 	fmt.Printf("→ making sure user %s's WAHA is stopped (best-effort; WAHA was removed)...\n", user)
-	// best-effort: WAHA has been removed; if a unit still exists, stop+mask it.
 	_, _ = exec.Command("systemctl", "stop", "panel-whatsapp@"+user+".service").CombinedOutput()
 	_, _ = exec.Command("systemctl", "mask", "panel-whatsapp@"+user+".service").CombinedOutput()
 
-	// 3) copy the paired session into the daemon's per-user dir.
 	dir := filepath.Join(wadStateRoot, user)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -93,7 +75,6 @@ func whatsappWadMigrate(args []string) error {
 	}
 	fmt.Printf("→ session copied to %s\n", dst)
 
-	// 4) write meta.json (hmac from vault + fresh api key).
 	apiKey, err := randomHex(24)
 	if err != nil {
 		return err
@@ -102,12 +83,10 @@ func whatsappWadMigrate(args []string) error {
 	if err := os.WriteFile(filepath.Join(dir, "meta.json"), meta, 0o600); err != nil {
 		return fmt.Errorf("write meta.json: %w", err)
 	}
-	// 5) enable flag (server's buildService routes this user to the daemon).
 	if err := os.WriteFile(filepath.Join(dir, "enabled"), []byte("1\n"), 0o600); err != nil {
 		return fmt.Errorf("write enabled flag: %w", err)
 	}
 
-	// 6) restart the daemon so it loads this user (rescans state dir on boot).
 	fmt.Println("→ restarting the panel-wad daemon...")
 	if out, err := exec.Command("systemctl", "restart", "panel-wad.service").CombinedOutput(); err != nil {
 		return fmt.Errorf("restart panel-wad (install the unit first?): %w: %s", err, out)
@@ -119,8 +98,6 @@ func whatsappWadMigrate(args []string) error {
 	return nil
 }
 
-// whatsappWadRollback reverts a user to WAHA: drop the flag, restart the daemon
-// (drops the session), restart WAHA on the original (untouched) gows.db.
 func whatsappWadRollback(args []string) error {
 	if len(args) < 1 || args[0] == "" {
 		return fmt.Errorf("usage: panelctl whatsapp wad-rollback <user>")
@@ -130,7 +107,6 @@ func whatsappWadRollback(args []string) error {
 	_ = os.Remove(filepath.Join(dir, "enabled"))
 	fmt.Printf("→ flag removed; restarting the daemon and turning WAHA back on for %s...\n", user)
 	_, _ = exec.Command("systemctl", "restart", "panel-wad.service").CombinedOutput()
-	// Re-enable the unit (the migration had disabled it) and bring the container up.
 	_, _ = exec.Command("systemctl", "enable", "panel-whatsapp@"+user+".service").CombinedOutput()
 	if out, err := exec.Command("systemctl", "start", "panel-whatsapp@"+user+".service").CombinedOutput(); err != nil {
 		return fmt.Errorf("start WAHA: %w: %s", err, out)
@@ -140,16 +116,6 @@ func whatsappWadRollback(args []string) error {
 	return nil
 }
 
-// whatsappWadFixMeta re-syncs the daemon's per-user meta.json `hmac_secret` to
-// the CANONICAL value in the server's vault, then reloads only that user's
-// session in the daemon. Fixes the failure mode where the daemon signs live
-// webhook pushes with a stale secret (e.g. meta.json clobbered by a non-
-// canonical worktree) → server 401s every push → whatsmeow never re-delivers →
-// messages silently lost (only manual "full sync" works, since that path is a
-// server→daemon pull that doesn't use the webhook HMAC).
-//
-// Surgical: rewrites ONLY hmac_secret (api_key and session.db untouched → no
-// re-pair), and reconnects just this user via the daemon's /reload endpoint.
 func whatsappWadFixMeta(args []string) error {
 	if len(args) < 1 || args[0] == "" {
 		return fmt.Errorf("usage: panelctl whatsapp wad-fixmeta <user>")
@@ -159,7 +125,6 @@ func whatsappWadFixMeta(args []string) error {
 		return fmt.Errorf("invalid user %q: %w", user, err)
 	}
 
-	// 1) canonical secret from the server's vault (opened exactly as the server does).
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -178,7 +143,6 @@ func whatsappWadFixMeta(args []string) error {
 		return fmt.Errorf("user %s has no waha_hmac_secret in vault", user)
 	}
 
-	// 2) rewrite ONLY hmac_secret in meta.json (preserve api_key + any other field).
 	metaPath := filepath.Join(wadStateRoot, user, "meta.json")
 	raw, err := os.ReadFile(metaPath)
 	if err != nil {
@@ -204,8 +168,6 @@ func whatsappWadFixMeta(args []string) error {
 		fmt.Printf("→ %s: hmac_secret re-synced with the vault.\n", user)
 	}
 
-	// 3) reload just this user's session in the daemon (re-reads meta.json,
-	//    reconnects; session.db untouched). Best-effort via the loopback API.
 	if apiKey := meta["api_key"]; apiKey != "" {
 		req, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1:8769/u/"+user+"/reload", bytes.NewReader(nil))
 		req.Header.Set("Authorization", "Bearer "+apiKey)

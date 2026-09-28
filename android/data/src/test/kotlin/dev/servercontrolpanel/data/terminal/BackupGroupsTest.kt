@@ -4,7 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Backups are grouped by session, since people look for a session's earlier version, not for an archive. */
 class BackupGroupsTest {
 
     private fun backup(
@@ -21,7 +20,6 @@ class BackupGroupsTest {
         sessions = sessions.map { (name, summary) -> BackupSession(name, summary, 0) },
     )
 
-    /** One snapshot with several sessions becomes one group per session. */
     @Test
     fun `a snapshot with several sessions becomes one group per session`() {
         val groups = groupBySession(
@@ -30,11 +28,9 @@ class BackupGroupsTest {
 
         assertEquals(3, groups.size)
         assertEquals(listOf("main", "proxy", "Web"), groups.map { it.session })
-        // Each group has one version, from the snapshot the session was in.
         assertTrue(groups.all { it.versions.size == 1 })
     }
 
-    /** The same session in three snapshots becomes three versions of a single group. */
     @Test
     fun `the same session in several snapshots becomes versions of one group`() {
         val groups = groupBySession(
@@ -49,7 +45,6 @@ class BackupGroupsTest {
         assertEquals(3, groups.single().versions.size)
     }
 
-    /** The newest version goes on top. */
     @Test
     fun `versions go from newest to oldest`() {
         val groups = groupBySession(
@@ -63,7 +58,6 @@ class BackupGroupsTest {
         assertEquals(listOf(300L, 200L, 100L), groups.single().versions.map { it.createdAt })
     }
 
-    /** Case-insensitive alphabetical order; plain `compareTo` would put "Web" before "main". */
     @Test
     fun `groups are alphabetical ignoring case`() {
         val groups = groupBySession(
@@ -73,7 +67,6 @@ class BackupGroupsTest {
         assertEquals(listOf("App", "main", "Web"), groups.map { it.session })
     }
 
-    /** The summary identifies a session with an unhelpful name, so an empty newest summary must not hide it. */
     @Test
     fun `the group summary comes from the newest version that has one`() {
         val groups = groupBySession(
@@ -87,10 +80,6 @@ class BackupGroupsTest {
         assertEquals("running the deploy", groups.single().summary)
     }
 
-    /**
-     * `sessionsInBackup` drives the "from a backup with N sessions" size label and the
-     * "restore all" button, so the size is not attributed to a single session.
-     */
     @Test
     fun `each version knows how many sessions its snapshot had`() {
         val groups = groupBySession(
@@ -101,7 +90,6 @@ class BackupGroupsTest {
         assertEquals(89_000L, groups.first().versions.single().bytes)
     }
 
-    /** An empty name does not become a ghost group. */
     @Test
     fun `a session without a name is dropped`() {
         val groups = groupBySession(listOf(backup("b1", 100, "" to "", "main" to "")))

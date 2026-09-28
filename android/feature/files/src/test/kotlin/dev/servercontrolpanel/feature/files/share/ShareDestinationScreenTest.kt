@@ -17,13 +17,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders [ShareDestinationScreen] under Robolectric. Shared items often resolve to
- * the same `displayName`, which must not crash the keyed `LazyColumn`.
- *
- * The ViewModels are built directly with [FakeFilesRepository], and WorkManager uses
- * [WorkManagerTestInitHelper]'s synchronous instance, so no real network or executor runs.
- */
 @RunWith(RobolectricTestRunner::class)
 class ShareDestinationScreenTest {
 
@@ -39,7 +32,6 @@ class ShareDestinationScreenTest {
         WorkManagerTestInitHelper.initializeTestWorkManager(application, config)
     }
 
-    /** The regression: duplicate `displayName`s across shared items must not crash the list. */
     @Test
     fun `two items sharing the same display name render without crashing`() {
         val duplicateNamedItems = listOf(
@@ -58,7 +50,6 @@ class ShareDestinationScreenTest {
             )
         }
 
-        // disambiguateSharedItems renamed the second one, and both rows rendered.
         composeRule.onNodeWithText("file").assertExists()
         composeRule.onNodeWithText("file (2)").assertExists()
     }
@@ -110,7 +101,6 @@ class ShareDestinationScreenTest {
     }
 }
 
-/** Fake [FilesRepository], like the one in [dev.servercontrolpanel.feature.files.browse.FileBrowserViewModelTest]. */
 private class FakeFilesRepository(
     private val onInboxPath: suspend () -> InboxDirResult = { InboxDirResult.Success("/srv/inbox") },
 ) : FilesRepository() {

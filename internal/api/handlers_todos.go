@@ -1,19 +1,3 @@
-// handlers_todos.go — HTTP layer for the per-user maintenance checklist.
-//
-// All endpoints require auth; the JWT sub becomes the scope and decides
-// which todos.json file is read. Primary doesn't get cross-user view here
-// — every operator manages their own checklist.
-//
-// Routes wired in NewRouter:
-//
-//	GET    /api/todos                       list + summary
-//	POST   /api/todos                       create
-//	PATCH  /api/todos/{id}                  update fields
-//	DELETE /api/todos/{id}                  delete
-//	POST   /api/todos/{id}/done             mark done (rolls recurring)
-//	POST   /api/todos/{id}/snooze           body {until_unix}
-//	GET    /api/todos/seed                  suggested seed from host state
-//	POST   /api/todos/seed                  persist suggested items
 package api
 
 import (
@@ -82,7 +66,6 @@ func (r *Router) handleTodos(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// handleTodoByID dispatches /api/todos/{id}[/done|/snooze]
 func (r *Router) handleTodoByID(w http.ResponseWriter, req *http.Request) {
 	store, _, _, err := r.todoStoreFor(req)
 	if err != nil {
@@ -103,7 +86,6 @@ func (r *Router) handleTodoByID(w http.ResponseWriter, req *http.Request) {
 
 	switch action {
 	case "":
-		// PATCH or DELETE on bare /api/todos/{id}
 		switch req.Method {
 		case http.MethodPatch, http.MethodPut:
 			var in todos.Todo
@@ -180,7 +162,6 @@ func (r *Router) handleTodoByID(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// handleTodosSeed: GET returns the SuggestSeed candidates; POST inserts them.
 func (r *Router) handleTodosSeed(w http.ResponseWriter, req *http.Request) {
 	store, _, _, err := r.todoStoreFor(req)
 	if err != nil {

@@ -14,14 +14,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-/** One item from the incoming share [android.content.Intent], with its display name and size. */
 data class SharedItem(val uri: String, val displayName: String, val sizeBytes: Long)
 
-/**
- * Renames repeated display names to `"name (2).ext"`, `"name (3).ext"` and so on. Duplicates are
- * common (items without `DISPLAY_NAME` share a fallback name), and would crash the keyed
- * `LazyColumn` and make `ExistingWorkPolicy.KEEP` silently drop uploads with the same work name.
- */
 fun disambiguateSharedItems(items: List<SharedItem>): List<SharedItem> {
     val seenCounts = HashMap<String, Int>()
     return items.map { item ->
@@ -40,19 +34,12 @@ private fun suffixedName(displayName: String, occurrence: Int): String {
     }
 }
 
-/** Which step of the share flow [ShareDestinationScreen] currently renders. */
 sealed interface DestinationStep {
     data object ChooseDestination : DestinationStep
     data object PickFolder : DestinationStep
     data class Uploading(val destDir: String) : DestinationStep
 }
 
-/**
- * Chooses the share destination: the default inbox or a folder picked in the embedded browser.
- * Uploading itself stays with [dev.servercontrolpanel.feature.files.transfer.TransferViewModel].
- *
- * An `AndroidViewModel` because [uploadWorkInfo] needs a Context for [WorkManager.getInstance].
- */
 class ShareDestinationViewModel(
     application: Application,
     private val filesRepository: FilesRepository = FilesRepository(),
@@ -75,7 +62,6 @@ class ShareDestinationViewModel(
         _step.value = DestinationStep.ChooseDestination
     }
 
-    /** Resolves the default inbox directory, then moves straight to uploading. */
     fun sendToInbox() {
         viewModelScope.launch {
             when (val result = filesRepository.inboxPath()) {
@@ -85,15 +71,10 @@ class ShareDestinationViewModel(
         }
     }
 
-    /** A folder was picked via the embedded `FileBrowserScreen(pickMode = true)`. */
     fun folderPicked(destDir: String) {
         _step.value = DestinationStep.Uploading(destDir)
     }
 
-    /**
-     * Observes the upload's unique work by name. Must match the `"upload:$destDir/$filename"`
-     * convention of `TransferViewModel.startUpload`.
-     */
     fun uploadWorkInfo(destDir: String, filename: String): Flow<WorkInfo?> =
         workManager.getWorkInfosForUniqueWorkFlow(uploadWorkName(destDir, filename)).map { it.firstOrNull() }
 }

@@ -18,25 +18,8 @@ import (
 	"server-control-panel/internal/whatsapp"
 )
 
-// notify_wire.go is the seam between the notification spine (internal/notify,
-// which knows nothing of jobs/queue/config) and the app. It builds the Router,
-// maps a finished queue.Job into a notify.Event, wires the queue terminal hook,
-// and seeds a first-run rule so the core case (alerting on job errors and
-// completions) works out of the box.
-
-// fcmServiceAccountSecret is the vault key (internal/secrets) holding the FCM
-// service-account JSON credential. Provisioned by a human via
-// `panelctl secrets set --user sam fcm_service_account` — never generated,
-// printed, or hardcoded here. Absent secret ⇒ initFCMSender logs and returns
-// nil, and native Android push degrades to zero deliveries (webpush keeps
-// working) instead of panicking, matching every other channel's degrade-on-
-// missing-config behavior in this file.
 const fcmServiceAccountSecret = "fcm_service_account"
 
-// initFCMSender loads the FCM service-account credential from the vault and
-// builds a *fcmpush.Sender backed by deviceStore. Returns nil (not an error)
-// when the secret is absent or r.secrets itself is nil — this is an expected,
-// diagnosable degrade, not a boot failure.
 func (r *Router) initFCMSender(deviceStore fcmpush.DeviceStore) *fcmpush.Sender {
 	if r.secrets == nil {
 		return nil
@@ -54,42 +37,19 @@ func (r *Router) initFCMSender(deviceStore fcmpush.DeviceStore) *fcmpush.Sender 
 	return sender
 }
 
-// initNotify constructs the Router, registers channels, seeds defaults, and
-// wires the queue terminal-job hook. Non-fatal: on failure the app still boots
-// and the hook stays nil (fail closed — nothing notifies, nothing breaks).
 func (r *Router) initNotify() {
-	// Registered Android devices — the SAME pair of stores that
-	// push_devices.go/notify_prefs.go use through the mobile BFF's Deps
-	// (see mobileDeps further down, in api.go), built here exactly once
-	// because both the FCM pushSender and the "push" channel's
-	// DevicePrefsResolver need it.
 	r.pushDevices = mobilebff.NewDeviceTokenStore(r.cfg.DataDir)
 	r.pushDevicePrefs = mobilebff.NewDevicePrefsStore(r.cfg.DataDir)
 
-	// r.fcmSender is kept on the Router (not merely in a local variable) so that
-	// videocall.Open (further down in NewRouter) reuses this SAME instance in
-	// Options.FCM — never a second fcmpush.NewSender(...), which would require a
-	// second read of the credential and create two HTTP clients for the same
-	// destination.
 	r.fcmSender = r.initFCMSender(r.pushDevices)
 
 	rt, err := notify.New(notify.Options{
 		DataDir: r.cfg.DataDir,
 		Channels: map[string]notify.Channel{
-			// Lazy provider: r.whatsappMgr is assigned a few lines later in
-			// NewRouter, after this runs. Resolving it at send time avoids any
-			// boot-ordering fragility.
 			wachannel.Type:      wachannel.New(func() *whatsapp.Manager { return r.whatsappMgr }),
 			notify.TypeTelegram: notify.NewTelegramChannel(),
 			notify.TypeEmail:    notify.NewEmailChannel(),
 			notify.TypeWebhook:  notify.NewWebhookChannel(),
-			// r.webpush may be nil (VAPID keygen failed at boot); r.fcmSender
-			// may be nil (no FCM credential yet) — NewWebpushSender/
-			// NewFCMSender both tolerate that and degrade to "delivers
-			// nothing" instead of panicking, same as every other channel
-			// degrades on missing config. r.pushDevicePrefs implements
-			// notify.DevicePrefsResolver structurally (the per-device/
-			// per-Rule filter).
 			notify.TypePush: notify.NewPushChannel(
 				notify.FanOutSenders(notify.NewWebpushSender(r.webpush), notify.NewFCMSender(r.fcmSender)),
 				r.pushDevicePrefs,
@@ -101,12 +61,6 @@ func (r *Router) initNotify() {
 		return
 	}
 	r.notify = rt
-	// In-app channel needs the Router (its sink is InboxAdd) — wire after New.
-	// Also bridges every in-app event onto /ws/mobile-events' "notify.inbox"
-	// channel so a connected app sees it live, not only via the
-	// existing GET /api/notify/inbox poll. r.mobileHub is assigned later in
-	// NewRouter (mux setup); bridgeNotifyInboxToHub tolerates it still being
-	// nil at any given Send (no subscriber can exist before the Hub does).
 	rt.AddChannelImpl(notify.TypeInApp, notify.NewInAppChannel(func(ev notify.Event) {
 		rt.InboxAdd(ev)
 		r.bridgeNotifyInboxToHub(ev)
@@ -114,12 +68,8 @@ func (r *Router) initNotify() {
 	r.seedNotifyDefaults()
 
 	if r.queue != nil {
-		// SetNotifier installs the hook the 5 terminal sites call. Dispatch is
-		// non-blocking and never touches queue.mu, so this closure is safe to
-		// invoke directly under the lock.
 		r.queue.SetNotifier(func(j *queue.Job) {
 			r.notify.Dispatch(jobEvent(j))
-			// Chaining + notify-on-completion through the chosen channel.
 			if r.scheduler != nil {
 				r.scheduler.OnQueueTerminal(j.Source, string(j.Status))
 				if id := schedSourceID(j.Source); id != "" {
@@ -137,16 +87,6 @@ func (r *Router) initNotify() {
 	}
 }
 
-// bridgeNotifyInboxToHub forwards an in-app notify Event onto
-// /ws/mobile-events' "notify.inbox" channel, so a connected app
-// sees a new notification live instead of only via the existing GET
-// /api/notify/inbox poll. No-op if r.mobileHub isn't wired yet (it is
-// assigned later in NewRouter's mux setup — before the mux ever serves a
-// request, so no live connection can miss this) or the event fails to
-// marshal. Visible to the event's Owner (or every connected user, for
-// system-wide events with no Owner) or an admin — the same shape
-// bridgeSelfDeployJob/StartOpsHealthPublisher already use for their own Hub
-// publishes.
 func (r *Router) bridgeNotifyInboxToHub(ev notify.Event) {
 	if r.mobileHub == nil {
 		return
@@ -161,9 +101,6 @@ func (r *Router) bridgeNotifyInboxToHub(ev notify.Event) {
 	})
 }
 
-// jobEvent maps a finished job to a notification Event. The Labels expose the
-// discriminators rules route by: kind (which runner), origin (user/scheduler/
-// ai, normalized from Source), and the raw job_id/source.
 func jobEvent(j *queue.Job) notify.Event {
 	sev := notify.SeverityInfo
 	switch j.Status {
@@ -190,9 +127,6 @@ func jobEvent(j *queue.Job) notify.Event {
 	}
 }
 
-// mapSeverity converts a rule's severity string into a notify severity.
-// Empty/unknown defaults to Warning, preserving the legacy behavior for rules
-// created before per-rule severity existed.
 func mapSeverity(s string) string {
 	switch s {
 	case "info":
@@ -204,17 +138,6 @@ func mapSeverity(s string) string {
 	}
 }
 
-// metricEvent maps a metrics Fire to a notification Event. Fires are now edge
-// transitions in the Engine (one crossing, one recovery per episode),
-// so the "notify once" correctness lives at the source — the Router throttle is
-// just fan-out + a backstop. The DedupKey is keyed per EPISODE (the ActiveSince
-// that opened it), not per rule, so a fresh episode after a recovery is never
-// swallowed by the previous episode's throttle window.
-//
-// A Resolved fire becomes a distinct metric.resolved info event so an operator
-// can opt into "tell me when it recovers" via a rule, while threshold rules that
-// only want the crossing are unaffected (exact "metric.threshold" rules do not
-// match "metric.resolved"; broad "metric." prefix rules receive both).
 func metricEvent(f metrics.Fire) notify.Event {
 	ep := strconv.FormatInt(f.Episode, 10)
 	if f.Resolved {
@@ -229,11 +152,6 @@ func metricEvent(f metrics.Fire) notify.Event {
 			DedupKey: "metric-res:" + f.Rule + ":" + ep,
 		}
 	}
-	// A RenotifySec reminder reuses the open episode but fires at a later Time;
-	// keying it by Time keeps each reminder a distinct event so the Router's
-	// throttle window (which would otherwise cap one-per-300s per episode) lets
-	// the operator-requested cadence through. The initial crossing has
-	// Time == Episode, so its key stays the stable per-episode "metric:<rule>:<ep>".
 	key := "metric:" + f.Rule + ":" + ep
 	if f.Episode != 0 && f.Time != f.Episode {
 		key += ":r" + strconv.FormatInt(f.Time, 10)
@@ -250,9 +168,6 @@ func metricEvent(f metrics.Fire) notify.Event {
 	}
 }
 
-// originOf normalizes a job Source string into a coarse origin label for rule
-// routing. Catalogue of sources (closed): "user", "user:ai-analyze:<key>",
-// "scheduler:<id>", "scheduler-manual:<id>".
 func originOf(source string) string {
 	switch {
 	case strings.HasPrefix(source, "scheduler:"), strings.HasPrefix(source, "scheduler-manual:"):
@@ -264,7 +179,6 @@ func originOf(source string) string {
 	}
 }
 
-// jobTitle builds a short headline for the event.
 func jobTitle(j *queue.Job) string {
 	switch j.Status {
 	case queue.StatusDone:
@@ -280,25 +194,19 @@ func jobTitle(j *queue.Job) string {
 	}
 }
 
-// seedNotifyDefaults makes the ticket functional on first run AND migrates the
-// legacy single global WhatsApp destination (config.Alerting) into a channel +
-// rule. It is conservative: it only acts on a PRISTINE config (zero channels and
-// zero rules), so it never clobbers operator edits. If config.Alerting has no
-// WhatsApp destination configured, it seeds nothing — the operator wires a
-// channel in the Alerts tab instead (no half-baked state).
 func (r *Router) seedNotifyDefaults() {
 	if r.notify == nil {
 		return
 	}
 	if len(r.notify.Rules()) > 0 || len(r.notify.ChannelDefs()) > 0 {
-		return // already configured — respect existing state
+		return
 	}
 
 	r.cfgMu.Lock()
 	al := r.cfg.Alerting
 	r.cfgMu.Unlock()
 	if al.FromUser == "" || al.ChatJID == "" {
-		return // no legacy destination to migrate; nothing to seed
+		return
 	}
 
 	ch, err := r.notify.UpsertChannel(notify.ChannelDef{
@@ -317,9 +225,6 @@ func (r *Router) seedNotifyDefaults() {
 	}
 }
 
-// schedSourceID extracts the scheduler job id from a queue Source of the form
-// "scheduler:<id>" or "scheduler-manual:<id>". Returns "" for chained or
-// non-scheduler sources (so per-job notify only fires for the original run).
 func schedSourceID(source string) string {
 	if s, ok := strings.CutPrefix(source, "scheduler:"); ok {
 		return s

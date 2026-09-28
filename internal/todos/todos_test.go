@@ -57,8 +57,6 @@ func TestRecurringRoll(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	originalDue := got.Due
-	// MarkDone bumps Due by IntervalDays from time.Now() — sleep ≥1s to
-	// guarantee the next second tick so the comparison is meaningful.
 	time.Sleep(1100 * time.Millisecond)
 
 	done, err := s.MarkDone(got.ID)

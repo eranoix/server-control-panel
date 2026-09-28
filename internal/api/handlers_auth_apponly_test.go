@@ -1,24 +1,5 @@
 package api
 
-// handlers_auth_apponly_test.go — the "app-only" gate (config.User.AppOnly).
-//
-// What these tests prove, and why each one exists:
-//
-//   - A marked account is REFUSED on the web panel, with the SAME response as
-//     a wrong password (byte for byte). If somebody swaps the message for a
-//     specific one ("app-only account"), the test breaks — the generic message
-//     is a security requirement, not a matter of style: a message of its own
-//     would confirm to the attacker that the user exists.
-//   - The same account GETS IN through the app (MobileLogin) — the gate must
-//     not have closed the door that should stay open.
-//   - /recovery/auth (the panel's other way in) also refuses — a gate with a
-//     back door is worse than no gate at all.
-//   - A normal account keeps getting in through BOTH paths — the gate only
-//     acts on whoever carries the mark.
-//
-// The infrastructure (fakeGoTrue, newLoginTestRouter, doLogin) is the same as
-// the characterisation suite in handlers_auth_test.go.
-
 import (
 	"encoding/json"
 	"net/http"
@@ -27,8 +8,6 @@ import (
 	"testing"
 )
 
-// markAppOnly turns the app-only mark on for the test router's account, under
-// the same cfgMu the handlers use to read.
 func markAppOnly(t *testing.T, r *Router, username string) {
 	t.Helper()
 	r.cfgMu.Lock()
@@ -42,9 +21,6 @@ func markAppOnly(t *testing.T, r *Router, username string) {
 	t.Fatalf("user %q is not in the test router's config", username)
 }
 
-// TestHandleLogin_AppOnly_RejectedOnPanel proves the heart of the gate: a
-// CORRECT password + a marked account -> 401 with no token, indistinguishable
-// from a wrong password.
 func TestHandleLogin_AppOnly_RejectedOnPanel(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "app@test.local", password: testPassword})
@@ -59,9 +35,6 @@ func TestHandleLogin_AppOnly_RejectedOnPanel(t *testing.T) {
 		t.Fatalf("app-only account must not receive a token from the panel: %v", out)
 	}
 
-	// Indistinguishability: the response has to equal the wrong-password response
-	// of an account that is NOT app-only — otherwise the message becomes an
-	// account-enumeration oracle.
 	gt2 := newFakeGoTrue()
 	gt2.addUser(&fakeGoTrueUser{email: "normal@test.local", password: testPassword})
 	r2 := newLoginTestRouter(t, gt2, "normal", "normal@test.local")
@@ -71,9 +44,6 @@ func TestHandleLogin_AppOnly_RejectedOnPanel(t *testing.T) {
 	}
 }
 
-// TestHandleLogin_AppOnly_AlsoRejectedByEmail proves that the gate sits
-// AFTER the email→canonical-username normalisation: logging in with the email
-// is not a way around it.
 func TestHandleLogin_AppOnly_AlsoRejectedByEmail(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "app@test.local", password: testPassword})
@@ -89,8 +59,6 @@ func TestHandleLogin_AppOnly_AlsoRejectedByEmail(t *testing.T) {
 	}
 }
 
-// TestMobileLogin_AppOnly_EntersThroughApp proves that the gate did NOT close the
-// app's door: the same account refused above authenticates through MobileLogin.
 func TestMobileLogin_AppOnly_EntersThroughApp(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "app@test.local", password: testPassword})
@@ -110,8 +78,6 @@ func TestMobileLogin_AppOnly_EntersThroughApp(t *testing.T) {
 	}
 }
 
-// TestHandleRecoveryAuth_AppOnly_Rejected closes the back door: /recovery is a
-// panel entrance (root PTY) and has a credential check of its own.
 func TestHandleRecoveryAuth_AppOnly_Rejected(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "app@test.local", password: testPassword})
@@ -137,8 +103,6 @@ func TestHandleRecoveryAuth_AppOnly_Rejected(t *testing.T) {
 	}
 }
 
-// TestLogin_NormalAccount_EntersBothPaths is the counterweight: without the
-// mark, the old behaviour stays intact at both doors.
 func TestLogin_NormalAccount_EntersBothPaths(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "normal@test.local", password: testPassword})

@@ -1,8 +1,3 @@
-// :terminal-engine — the JNI boundary to libghostty-vt. write(bytes) goes in, a
-// grid snapshot() comes out; no Compose, no network. The native shim
-// (src/main/cpp/ghostty_jni.cpp) is the ONLY translation unit allowed to
-// reference ghostty_* types/enums — the C ABI vendored in vendor/include is
-// explicitly unstable and pinned to a single commit.
 plugins {
     alias(libs.plugins.android.library)
 }

@@ -14,15 +14,6 @@ import (
 	"server-control-panel/internal/mobilebff"
 )
 
-// newSchedulerRowsMux wires ONLY registerSchedulerRows onto a throwaway
-// huma.API — never through screens.Register or mobilebff.Mount's global
-// registrar list. Those two go through the process-global sdui.Register /
-// sdui.RegisterAction registries (which panic on a second registration of
-// the same id — see scheduler_actions_test.go's registerSchedulerActionsForTest),
-// so a test file that ran them again here would collide with that file's
-// Test 6. registerSchedulerRows itself has no such global state: it only
-// registers onto the *local* huma.API instance passed to it, so this helper
-// can be called freely, once per test.
 func newSchedulerRowsMux(deps SchedulerDeps) *http.ServeMux {
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(mux, mobilebff.Prefix, huma.DefaultConfig("scheduler-rows-test", "0"))
@@ -63,8 +54,6 @@ func doSchedulerRowsRequest(t *testing.T, mux *http.ServeMux, username string) s
 	return body
 }
 
-// Test 1 (RBAC by omission, non-vacuity): an admin sees every job, including
-// run_as_root of a job owned by someone else.
 func TestSchedulerRows_AdminSeesEveryJobIncludingRunAsRoot(t *testing.T) {
 	backend := newFakeSchedulerBackend()
 	mux := newSchedulerRowsMux(backend.deps())
@@ -88,9 +77,6 @@ func TestSchedulerRows_AdminSeesEveryJobIncludingRunAsRoot(t *testing.T) {
 	}
 }
 
-// Test 2 (RBAC by omission): a non-admin sees only their own jobs, and never
-// the run_as_root key — not even in the response's raw bytes, not just in the
-// decoded value.
 func TestSchedulerRows_NonAdminSeesOnlyOwnJobsWithoutRunAsRoot(t *testing.T) {
 	backend := newFakeSchedulerBackend()
 	mux := newSchedulerRowsMux(backend.deps())
@@ -116,7 +102,6 @@ func TestSchedulerRows_NonAdminSeesOnlyOwnJobsWithoutRunAsRoot(t *testing.T) {
 	if err := json.Unmarshal([]byte(rawBody), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	// sched-user owns job-user-owned and job-orphaned-kind.
 	if len(body.Rows) != 2 {
 		t.Fatalf("non-admin saw %d row(s), want 2 (only their own): %+v", len(body.Rows), body.Rows)
 	}
@@ -127,10 +112,6 @@ func TestSchedulerRows_NonAdminSeesOnlyOwnJobsWithoutRunAsRoot(t *testing.T) {
 	}
 }
 
-// Test 3 (wire format — pinned here, see registerSchedulerRows' comment in
-// scheduler.go): {"rows":[{...}]}, one object per job with exactly the
-// documented keys, timestamps already formatted as text (never a raw
-// epoch).
 func TestSchedulerRows_WireShape(t *testing.T) {
 	backend := newFakeSchedulerBackend()
 	mux := newSchedulerRowsMux(backend.deps())
@@ -181,9 +162,6 @@ func TestSchedulerRows_WireShape(t *testing.T) {
 	}
 }
 
-// Test 4: a job with next_fire/last_fire zeroed (never fired) becomes an
-// empty string, never "0" or null — the same rule as formatSchedulerTimestamp,
-// already covered in isolation by TestFormatSchedulerTimestamp_ZeroIsEmpty.
 func TestSchedulerRows_NeverFiredJobHasEmptyTimestamps(t *testing.T) {
 	backend := newFakeSchedulerBackend()
 	mux := newSchedulerRowsMux(backend.deps())
@@ -198,8 +176,6 @@ func TestSchedulerRows_NeverFiredJobHasEmptyTimestamps(t *testing.T) {
 	if orphan == nil {
 		t.Fatal("job-orphaned-kind missing")
 	}
-	// newFakeSchedulerBackend's fixture does not set LastFire/NextFire for
-	// job-orphaned-kind — they must arrive as "".
 	if orphan["last_fire"] != "" {
 		t.Errorf("last_fire = %v, want \"\" (job never ran)", orphan["last_fire"])
 	}

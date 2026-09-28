@@ -10,20 +10,6 @@ import android.graphics.Typeface
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
-/**
- * Rasterized-glyph cache backing [TerminalCanvas]. Two fixed-size ARGB_8888
- * bitmaps (one grid of narrow-cell slots, one grid of double-width-cell
- * slots) back every glyph the renderer draws; [GlyphSlotAllocator] decides
- * which slot a [GlyphKey] owns and evicts the least-recently-used glyph when
- * full, so [byteSize] never changes after construction no matter how many
- * distinct glyphs a session paints.
- *
- * Rasterization (an `android.graphics.Canvas` + `Paint.drawText` call) only
- * happens on a slot miss; a hit is a single `Rect` lookup. Glyphs are drawn
- * once in plain white so the same slot can be tinted to any foreground color
- * at draw time via `BlendMode`/`ColorFilter` in [TerminalCanvas], instead of
- * needing one cached slot per (codepoint, color) pair.
- */
 class GlyphAtlas(
     private val cellWidthPx: Int,
     private val cellHeightPx: Int,
@@ -55,16 +41,9 @@ class GlyphAtlas(
     private val wideCanvas = Canvas(wideBitmap)
     private val paintCache = HashMap<Pair<Boolean, Boolean>, Paint>()
 
-    /**
-     * Total bytes of atlas pixel storage, fixed for the instance's lifetime:
-     * `4 bytes/px * (narrow area + wide area)`. With the defaults (384 narrow ->
-     * 400 slots, 128 wide -> 132 slots) and a 16x28 px cell this is about 1.13 MB,
-     * regardless of scrollback or glyph variety.
-     */
     fun byteSize(): Long =
         4L * narrowBitmap.width * narrowBitmap.height + 4L * wideBitmap.width * wideBitmap.height
 
-    /** Source bitmap + rect to draw for [key], rasterizing into that slot first on a cache miss. */
     fun slotFor(key: GlyphKey): Slot {
         val allocator = if (key.wide) wideAllocator else narrowAllocator
         val cols = if (key.wide) wideCols else narrowCols
@@ -85,10 +64,6 @@ class GlyphAtlas(
             val text = String(Character.toChars(key.codepoint))
             val metrics = paint.fontMetrics
             val baselineY = rect.top + (rect.height() - metrics.ascent - metrics.descent) / 2f
-            // Centre the glyph in the slot: a no-op for true monospace, but the
-            // advance may be fractional or a fallback glyph (emoji, symbols) may
-            // not match the cell, and centring keeps the clipRect from cutting
-            // only one side.
             val advance = paint.measureText(text)
             val glyphX = rect.left + (rect.width() - advance) / 2f
             canvas.drawText(text, glyphX, baselineY, paint)
@@ -98,7 +73,6 @@ class GlyphAtlas(
         return Slot(bitmap, rect)
     }
 
-    /** Number of distinct glyphs currently resident, for diagnostics/tests. */
     fun residentCount(): Int = narrowAllocator.size() + wideAllocator.size()
 
     private fun paintFor(bold: Boolean, italic: Boolean): Paint = paintCache.getOrPut(bold to italic) {
@@ -108,9 +82,6 @@ class GlyphAtlas(
             italic -> Typeface.ITALIC
             else -> Typeface.NORMAL
         }
-        // Resolve `Typeface.create` outside `apply { }`: inside it, `typeface`
-        // would resolve to `Paint.getTypeface()` (null on a new Paint), giving the
-        // proportional default face and glyphs clipped by the monospace grid.
         val resolved = Typeface.create(typeface, style)
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             this.typeface = resolved

@@ -10,10 +10,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders the stateless [DeployTriggerScreen] under Robolectric for each
- * `isAdmin` value and every [DeployTriggerUiState].
- */
 @RunWith(RobolectricTestRunner::class)
 class DeployTriggerScreenTest {
 
@@ -37,7 +33,6 @@ class DeployTriggerScreenTest {
     fun `while the admin check is in flight, only a spinner shows and no button leaks`() {
         setContent(uiState = DeployTriggerUiState.Idle, isAdmin = null)
 
-        // The app bar title shares the button text, so match only the clickable node.
         composeRule.onNode(hasText("Trigger deploy") and hasClickAction()).assertDoesNotExist()
     }
 
@@ -53,7 +48,6 @@ class DeployTriggerScreenTest {
         var requested = false
         setContent(uiState = DeployTriggerUiState.Idle, isAdmin = true, onRequest = { requested = true })
 
-        // The app bar title shares the button text, so match only the clickable node.
         composeRule.onNode(hasText("Trigger deploy") and hasClickAction()).performClick()
         assert(requested) { "expected onRequestConfirmation to fire" }
     }

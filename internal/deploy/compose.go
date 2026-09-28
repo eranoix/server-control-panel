@@ -10,9 +10,6 @@ import (
 	"path/filepath"
 )
 
-// ComposeDown brings a stack down. It tries `compose down` with the file
-// (removing the project's anonymous networks and volumes); if the work-tree or
-// the file is gone, it falls back to tearing down by compose project label.
 func ComposeDown(ctx context.Context, project, workdir, composeFile string, w io.Writer) error {
 	if composeFile == "" {
 		composeFile = "docker-compose.yml"
@@ -27,7 +24,6 @@ func ComposeDown(ctx context.Context, project, workdir, composeFile string, w io
 			return nil
 		}
 	}
-	// Fallback: remove the project's containers by label, then the default network.
 	fmt.Fprintf(w, "→ teardown by label (project=%s)\n", project)
 	ids, _ := exec.CommandContext(ctx, "docker", "ps", "-aq",
 		"--filter", "label=com.docker.compose.project="+project).Output()
@@ -40,7 +36,6 @@ func ComposeDown(ctx context.Context, project, workdir, composeFile string, w io
 	return nil
 }
 
-// ComposePS returns the output of `compose ps` (used by health checks and the UI).
 func ComposePS(ctx context.Context, project, workdir, composeFile string) (string, error) {
 	if composeFile == "" {
 		composeFile = "docker-compose.yml"
@@ -50,8 +45,6 @@ func ComposePS(ctx context.Context, project, workdir, composeFile string) (strin
 	return string(out), err
 }
 
-// previewPort maps (app, preview) → a deterministic port in 20000-29999.
-// Deterministic so redeploys of the same PR reuse the port (a stable nginx).
 func previewPort(name, preview string) int {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(name + "\x00" + preview))

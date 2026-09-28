@@ -39,15 +39,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/**
- * State rendered by [PasskeyRegisterFlow]. [PendingApproval] is deliberately
- * a dead end here — this screen never polls `login/finish` to "wait out"
- * the approval. Registration and login are two separate ceremonies against
- * two separate endpoints (`register/finish` vs `login/finish`); a login
- * attempt belongs to the passkey-first login screen, which will naturally
- * see `pending_approval` on its own terms once the desktop approves this
- * device.
- */
 sealed interface PasskeyRegisterUiState {
     data object Scanning : PasskeyRegisterUiState
     data object Processing : PasskeyRegisterUiState
@@ -55,18 +46,6 @@ sealed interface PasskeyRegisterUiState {
     data class Error(val message: String, val retryable: Boolean) : PasskeyRegisterUiState
 }
 
-/**
- * Drives the pair-to-registration chain end to end, starting from the
- * scanned QR envelope rather than a bare ticket: first
- * [ServerConfigRepository.configure] applies [PairingPayload.serverUrl] —
- * NEVER with `allowRepoint = true`, so a QR can configure a fresh install
- * but can never silently repoint an already-paired device at another host
- * (see [ConfigureServerResult.RepointBlocked]) — then
- * [PairingRepository.consume] (ticket -> `reg_token`, never itself a
- * credential — see [PairingResult.Authorized]) then
- * [PasskeyRepository.register] (`reg_token` -> Credential Manager ceremony ->
- * `pending_approval`). The `reg_token` never leaves this ViewModel.
- */
 class PasskeyRegisterViewModel(
     private val serverConfigRepository: ServerConfigRepository,
     private val pairingRepository: PairingRepository,
@@ -121,21 +100,11 @@ class PasskeyRegisterViewModel(
         }
     }
 
-    /** Returns to the QR scanner — used by every retryable error state. */
     fun retry() {
         _uiState.value = PasskeyRegisterUiState.Scanning
     }
 }
 
-/**
- * Builds the default [PasskeyRegisterViewModel] with a
- * [ServerConfigRepository] read from [LocalContext] — there is no DI
- * framework in this app, so composable call sites wire dependencies
- * themselves (see `PanelApplication`'s own doc comment). The
- * `viewModel = ...` default parameter above remains a real injection
- * point: tests (and future call sites) can still pass their own
- * [PasskeyRegisterViewModel] directly instead of going through this.
- */
 @Composable
 private fun passkeyRegisterViewModel(): PasskeyRegisterViewModel {
     val context = LocalContext.current
@@ -154,35 +123,8 @@ private fun passkeyRegisterViewModel(): PasskeyRegisterViewModel {
     return viewModel(factory = factory)
 }
 
-/**
- * A [RpIdMismatch][PasskeyError.RpIdMismatch] is a build/environment
- * misconfiguration, not a transient failure — rescanning the same QR code
- * against the same misconfigured app would fail the exact same way, so it is
- * the one error this screen does not offer a retry for.
- */
 private fun PasskeyError.isRetryable(): Boolean = this !is PasskeyError.RpIdMismatch
 
-/**
- * Composes [PairingScanScreen] with the registration ceremony it feeds:
- * scan -> configure server from the envelope -> consume ticket -> Credential
- * Manager ceremony -> distinct pending-approval / error states. Registration
- * success is never rendered as a logged-in state — see
- * [PasskeyRegisterUiState.PendingApproval].
- *
- * This is the first-run path for a device with no server yet (see
- * [AuthGateScreen]): [onManualSetupRequested], shown only during
- * [PasskeyRegisterUiState.Scanning], is the escape hatch to
- * [ServerSetupScreen] for a device that cannot scan (no camera, no admin
- * physically present with the panel) — manual entry is the fallback, never
- * the default.
- *
- * [onLoginRequested] closes the dead end this flow used to have: registration
- * ALWAYS ends in `pending_approval` (the passkey is born inert, see
- * `auth_passkey.go`) and, with no way out of here, the operator was left
- * staring at an informational card with nothing to tap. Now that same card
- * leads to the login screen, where they can get in by password while the
- * approval is outstanding.
- */
 @Composable
 fun PasskeyRegisterFlow(
     modifier: Modifier = Modifier,
@@ -194,12 +136,6 @@ fun PasskeyRegisterFlow(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     when (val current = state) {
-        // The exits ("Set up manually" / "I already have access") are drawn
-        // INSIDE PairingScanScreen: only it knows whether it is showing the
-        // camera — where they stay discreet over the video — or a degraded
-        // state, where they are the card's primary action. With the exits out
-        // here, a white text button ended up over the degraded state's light
-        // card, illegible.
         PasskeyRegisterUiState.Scanning -> PairingScanScreen(
             modifier = modifier,
             onPairingScanned = { payload -> viewModel.onPairingScanned(context, payload) },
@@ -280,8 +216,6 @@ private fun RegisterErrorContent(
                         Text(text = "Scan again")
                     }
                 }
-                // Even a NON-retryable error has to lead somewhere — without
-                // this, an RpIdMismatch left the screen with no action at all.
                 if (onLoginRequested != null) {
                     TextButton(onClick = onLoginRequested) {
                         Text(text = "Go to sign-in")

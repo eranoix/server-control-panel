@@ -12,13 +12,11 @@ import (
 	"time"
 )
 
-// fakeRunner just emits N progress steps then either succeeds, fails, or
-// blocks until ctx is cancelled.
 type fakeRunner struct {
 	kind     string
-	mode     string // "ok" | "fail" | "block"
+	mode     string
 	steps    int
-	primary  bool // true → primary-only
+	primary  bool
 	called   int
 	mu       sync.Mutex
 	authzReq bool
@@ -87,17 +85,6 @@ func TestEnqueueAndRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// ACCEPTED, and not "still in the queue".
-	//
-	// Enqueue calls dispatch BEFORE taking the snapshot it returns (see
-	// queue.go): when the machine is busy, the worker has already picked the job
-	// up and the snapshot comes back as `running`. Demanding `queued` here was
-	// demanding of the API a promise it never made — and the test only failed
-	// under load, which is exactly when nobody wants to be chasing a flaky test.
-	//
-	// What actually matters to prove is that the job was ACCEPTED: neither
-	// refused nor already failed. The final outcome stays covered by the waitFor
-	// just below.
 	if j.Status != StatusQueued && j.Status != StatusRunning {
 		t.Errorf("initial status: got %s want queued or running", j.Status)
 	}
@@ -136,7 +123,7 @@ func TestCancelBlocking(t *testing.T) {
 	q := newTmpQueue(t)
 	q.Register(&fakeRunner{kind: "block", mode: "block"})
 	j, _ := q.Enqueue("block", nil, "a", "user")
-	time.Sleep(30 * time.Millisecond) // let it transition to running
+	time.Sleep(30 * time.Millisecond)
 	if err := q.Cancel(j.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +177,6 @@ func TestPersistAcrossRestart(t *testing.T) {
 	_ = waitFor(t, q, j.ID, StatusDone)
 	q.Shutdown(context.Background())
 
-	// re-open; the finished job should still be there
 	q2, err := NewQueue(Options{DataDir: dir, Workers: 1, MaxKeep: 50})
 	if err != nil {
 		t.Fatal(err)
@@ -208,9 +194,6 @@ func TestPersistAcrossRestart(t *testing.T) {
 
 func TestRunningInterruptedOnReload(t *testing.T) {
 	dir := t.TempDir()
-	// Hand-craft state.json with a 'running' job — simulates a crash. Kind
-	// "x" is unknown → not SafeToResume → it becomes the HONEST terminal
-	// "interrupted" (not the old red "failed"), recoverable via Rerun.
 	state := `{"jobs":[{"id":"j_x","kind":"x","status":"running","queued":1,"log_path":""}],"order":["j_x"]}`
 	if err := os.MkdirAll(filepath.Join(dir, "queue", "runs"), 0o700); err != nil {
 		t.Fatal(err)
@@ -236,7 +219,6 @@ func TestDelete(t *testing.T) {
 	q := newTmpQueue(t)
 	q.Register(&fakeRunner{kind: "test_ok", mode: "ok", steps: 1})
 
-	// Finished job: deletable, and its log file is removed from disk.
 	j, _ := q.Enqueue("test_ok", nil, "alice", "user")
 	final := waitFor(t, q, j.ID, StatusDone)
 	if final.LogPath == "" {
@@ -260,12 +242,10 @@ func TestDelete(t *testing.T) {
 		}
 	}
 
-	// Unknown id → ErrNotFound.
 	if err := q.Delete("nope"); err != ErrNotFound {
 		t.Errorf("delete unknown: got %v want ErrNotFound", err)
 	}
 
-	// Active (running) job → ErrConflict; must cancel first.
 	q.Register(&fakeRunner{kind: "block", mode: "block"})
 	bj, _ := q.Enqueue("block", nil, "alice", "user")
 	waitFor(t, q, bj.ID, StatusRunning)
@@ -288,7 +268,6 @@ func TestRerun(t *testing.T) {
 	j, _ := q.Enqueue("test_ok", nil, "alice", "scheduler:s_1")
 	waitFor(t, q, j.ID, StatusDone)
 
-	// Rerun keeps the SAME id and source, and resets run state.
 	nj, err := q.Rerun(j.ID)
 	if err != nil {
 		t.Fatalf("rerun: %v", err)
@@ -303,18 +282,15 @@ func TestRerun(t *testing.T) {
 		t.Errorf("rerun did not reset run state: finished=%d err=%q", nj.Finished, nj.Error)
 	}
 
-	// It actually runs again and reaches done.
 	final := waitFor(t, q, j.ID, StatusDone)
 	if final.Progress != 100 {
 		t.Errorf("rerun final progress: got %d want 100", final.Progress)
 	}
 
-	// Unknown id → ErrNotFound.
 	if _, err := q.Rerun("nope"); err != ErrNotFound {
 		t.Errorf("rerun unknown: got %v want ErrNotFound", err)
 	}
 
-	// Active job → ErrConflict.
 	q.Register(&fakeRunner{kind: "block", mode: "block"})
 	bj, _ := q.Enqueue("block", nil, "alice", "user")
 	waitFor(t, q, bj.ID, StatusRunning)

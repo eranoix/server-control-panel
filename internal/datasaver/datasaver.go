@@ -1,14 +1,3 @@
-// Package datasaver manages the content-transformation proxy's shared state on
-// the host: the tunable settings (quality/maxdim/greyscale/tracker-strip), the
-// bypass list (banks/pinning that must NOT be MITM'd), the CA cert offered for
-// download, and the cumulative bytes-saved counters written by each proxy
-// instance.
-//
-// The proxy itself is mitmproxy (Docker, one instance per exit: vps and home). This
-// package is only the host-side file plane the panel (Security → Data saver)
-// reads and edits — it does not talk to the proxy over the network. Settings
-// are hot-reloaded by the addon on every request; the bypass list is read at
-// container start, so changing it needs a proxy restart (the caller does that).
 package datasaver
 
 import (
@@ -20,26 +9,23 @@ import (
 	"strings"
 )
 
-// Settings are the addon's tunables (mirrors state/settings.json).
 type Settings struct {
-	Enabled       bool `json:"enabled"`        // feature: images → WebP
-	Quality       int  `json:"quality"`        // WebP quality 1..100 (lower = more saving)
-	Maxdim        int  `json:"maxdim"`         // downscale of the longest side, px (0 = none)
-	StripTrackers bool `json:"strip_trackers"` // feature: cuts tracker domains + Referer
-	Greyscale     bool `json:"greyscale"`      // feature: greyscale (extreme saving)
-	VideoLow      bool `json:"video_low"`      // feature: forces low resolution on video (HLS/DASH)
+	Enabled       bool `json:"enabled"`
+	Quality       int  `json:"quality"`
+	Maxdim        int  `json:"maxdim"`
+	StripTrackers bool `json:"strip_trackers"`
+	Greyscale     bool `json:"greyscale"`
+	VideoLow      bool `json:"video_low"`
 }
 
-// Stats is the cumulative saving counter one proxy instance writes.
 type Stats struct {
-	Orig    int64 `json:"orig"`     // original bytes of the transcoded images
-	Out     int64 `json:"out"`      // bytes after WebP
-	Imgs    int64 `json:"imgs"`     // number of compressed images
-	ReqsCut int64 `json:"reqs_cut"` // tracker requests cut (204)
-	Since   int64 `json:"since"`    // unix time when counting started
+	Orig    int64 `json:"orig"`
+	Out     int64 `json:"out"`
+	Imgs    int64 `json:"imgs"`
+	ReqsCut int64 `json:"reqs_cut"`
+	Since   int64 `json:"since"`
 }
 
-// Status is the whole panel payload.
 type Status struct {
 	Settings Settings `json:"settings"`
 	Bypass   []string `json:"bypass"`
@@ -47,16 +33,14 @@ type Status struct {
 	HasCA    bool     `json:"has_ca"`
 }
 
-// Saved is the aggregate of every instance's Stats.
 type Saved struct {
 	Orig    int64   `json:"orig"`
 	Out     int64   `json:"out"`
 	Imgs    int64   `json:"imgs"`
 	ReqsCut int64   `json:"reqs_cut"`
-	Pct     float64 `json:"pct"` // 1 - out/orig, in %
+	Pct     float64 `json:"pct"`
 }
 
-// Manager owns the state directory + CA path.
 type Manager struct {
 	stateDir string
 	caPath   string
@@ -69,25 +53,18 @@ func New(stateDir, caPath string) *Manager {
 func (m *Manager) settingsPath() string { return filepath.Join(m.stateDir, "settings.json") }
 func (m *Manager) bypassPath() string   { return filepath.Join(m.stateDir, "bypass.txt") }
 
-// defaults are born OFF on purpose: saving turns on the compression MITM on the
-// device's web path, and without the data-saver CA installed ON IT all HTTPS
-// breaks (TLS handshake rejected). Being born on has already taken the tunnel down — the
-// data-saver only comes into play by an explicit act (toggle with ca_ack).
 var defaults = Settings{Enabled: false, Quality: 40, Maxdim: 1280, StripTrackers: true, Greyscale: false, VideoLow: true}
 
-// LoadSettings reads settings.json, falling back to defaults per-field.
 func (m *Manager) LoadSettings() Settings {
 	s := defaults
 	raw, err := os.ReadFile(m.settingsPath())
 	if err != nil {
 		return s
 	}
-	_ = json.Unmarshal(raw, &s) // tolerate partial/corrupt
+	_ = json.Unmarshal(raw, &s)
 	return s
 }
 
-// SaveSettings validates and atomically writes settings.json. The addon
-// hot-reloads it per request, so no proxy restart is needed.
 func (m *Manager) SaveSettings(s Settings) error {
 	if s.Quality < 1 || s.Quality > 100 {
 		return fmt.Errorf("quality outside 1..100")
@@ -102,7 +79,6 @@ func (m *Manager) SaveSettings(s Settings) error {
 	return atomicWrite(m.settingsPath(), data, 0o644)
 }
 
-// Bypass reads the bypass host list (skips blanks/comments).
 func (m *Manager) Bypass() []string {
 	raw, err := os.ReadFile(m.bypassPath())
 	if err != nil {
@@ -120,8 +96,6 @@ func (m *Manager) Bypass() []string {
 	return out
 }
 
-// SetBypass rewrites bypass.txt from a clean host list (a header comment is
-// preserved). The proxies read this at start — the caller must restart them.
 func (m *Manager) SetBypass(hosts []string) error {
 	seen := map[string]bool{}
 	var clean []string
@@ -131,7 +105,6 @@ func (m *Manager) SetBypass(hosts []string) error {
 		if h == "" || strings.HasPrefix(h, "#") || seen[h] {
 			continue
 		}
-		// rudimentary host sanity: no scheme, no slash, has a dot or is a TLD-ish token
 		if strings.ContainsAny(h, "/ :") {
 			return fmt.Errorf("invalid host: %q", h)
 		}
@@ -149,7 +122,6 @@ func (m *Manager) SetBypass(hosts []string) error {
 	return atomicWrite(m.bypassPath(), []byte(b.String()), 0o644)
 }
 
-// Saved aggregates every stats-*.json in the state dir.
 func (m *Manager) SavedTotals() Saved {
 	var agg Saved
 	entries, _ := os.ReadDir(m.stateDir)
@@ -177,7 +149,6 @@ func (m *Manager) SavedTotals() Saved {
 	return agg
 }
 
-// Status assembles the full panel payload.
 func (m *Manager) Status() Status {
 	return Status{
 		Settings: m.LoadSettings(),
@@ -195,7 +166,6 @@ func (m *Manager) caExists() bool {
 	return err == nil && fi.Mode().IsRegular()
 }
 
-// CACert returns the CA certificate bytes to hand the browser for download.
 func (m *Manager) CACert() ([]byte, error) {
 	if m.caPath == "" {
 		return nil, fmt.Errorf("CA path not configured")
@@ -203,7 +173,6 @@ func (m *Manager) CACert() ([]byte, error) {
 	return os.ReadFile(m.caPath)
 }
 
-// atomicWrite writes via temp-in-same-dir + rename.
 func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")

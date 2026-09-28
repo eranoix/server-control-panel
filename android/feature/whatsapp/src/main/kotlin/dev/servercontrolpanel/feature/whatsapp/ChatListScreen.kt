@@ -34,13 +34,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import dev.servercontrolpanel.core.model.WhatsAppChat
 
-/**
- * Renders [ChatListUiState] as it comes back from [ChatListViewModel], which
- * in turn calls the generated mobile BFF client via
- * `WhatsAppRepository.chats()`. Every state below is real, distinct UI -- a
- * failed load, an empty inbox and a loading spinner never look the same as
- * each other or as a blank screen.
- */
 @Composable
 fun ChatListScreen(
     modifier: Modifier = Modifier,
@@ -54,10 +47,6 @@ fun ChatListScreen(
     val counts = all?.let(::countsByFilter)
 
     Column(modifier = modifier.fillMaxSize()) {
-        // The chips live OUTSIDE the `when`: they exist in every state, with a
-        // dash in place of the number while it is not yet known. Making them
-        // vanish on error would make the bar appear and disappear on every
-        // reload, and a bar that flickers is a bar nobody trusts.
         FilterChips(
             selected = filter,
             counts = counts,
@@ -71,11 +60,6 @@ fun ChatListScreen(
                 is ChatListUiState.Success -> {
                     val visible = filterChats(current.chats, filter)
                     if (visible.isEmpty()) {
-                        // THREE different empty states, three different
-                        // screens. This is the FILTER one: there are chats, it
-                        // is the slice that has none. Showing the same "no chats
-                        // yet" sentence here would repeat this screen's most
-                        // expensive defect.
                         FilterWithoutResults(filter = filter, onShowAll = { filter = ChatFilter.ALL })
                     } else {
                         ChatListContent(chats = visible, onOpenChat = onOpenChat)
@@ -86,13 +70,6 @@ fun ChatListScreen(
     }
 }
 
-/**
- * The emptiness of a FILTER — never confused with the emptiness of the inbox.
- *
- * The sentence names the filter that hid everything and the button undoes the
- * slice. Without that, whoever tapped "Unread" on a fully read inbox finds a
- * blank screen and concludes the list is broken.
- */
 @Composable
 private fun FilterWithoutResults(filter: ChatFilter, onShowAll: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -141,13 +118,6 @@ private fun EmptyContent() {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(text = "No chats", style = MaterialTheme.typography.titleMedium)
-            // THE SECOND SENTENCE IS THE FIX FOR A REAL DEFECT. This screen
-            // has said "No chats yet" with the WhatsApp bridge DOWN on the
-            // server: an assertion about the inbox when what there really was
-            // was the absence of any answer about it. The server replied with
-            // an empty list; from here the app has no way to tell "there are no
-            // chats" from "the integration is not up" — so it says both, rather
-            // than picking the wrong one.
             Text(
                 text = "The server returned no chats. If you expected " +
                     "to see chats here, check that the WhatsApp integration " +
@@ -209,10 +179,6 @@ private fun ChatRow(chat: WhatsAppChat, onClick: () -> Unit) {
             ) {
                 Text(
                     text = chat.unread.toString(),
-                    // `onPrimary`, never a hard-coded white: in the DARK theme
-                    // Material 3's `primary` is a LIGHT lilac, and the number in
-                    // white over it all but disappeared. The right partner for a
-                    // background is the colour the scheme itself names for it.
                     color = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                 )

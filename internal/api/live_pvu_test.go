@@ -2,17 +2,6 @@
 
 package api
 
-// live_pvu_test.go — the LIVE proof of the per-guest counters against the home
-// hypervisor.
-//
-// DOUBLE LOCK, like the earlier passes: the `live` build tag AND the
-// LAB_PVU_LIVE=1 variable. Unlike the first pass, this proof is READ-ONLY: it
-// neither creates nor deletes anything. What is being proved is that the
-// dashboard now carries data it used to throw away — and that is measured by
-// looking, not by touching.
-//
-//	run: LAB_PVU_LIVE=1 go test -tags=live -run TestLivePVU ./internal/api/ -v
-
 import (
 	"context"
 	"encoding/json"
@@ -62,11 +51,6 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 		t.Fatal("no nodes — the proof has nothing to talk about")
 	}
 
-	// ── 1. the counters arrived, and arrived STAMPED ────────────────────────
-	//
-	// The assertion is about the SET and the shape, never about an exact value: RAM
-	// changes between two ticks, and a nailed-down number would turn a healthy lab
-	// into a failure.
 	fields := []string{"cpu_frac", "cpu_cores", "mem_used", "mem_total", "mem_host",
 		"disk_used", "disk_total", "net_in", "net_out", "disk_read", "disk_write",
 		"net_in_rate", "net_out_rate"}
@@ -112,12 +96,6 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 		t.Fatalf("%d guests, %d with a memory stamp — all of them should have one", guests, stamped)
 	}
 
-	// ── 2. 🔴 QEMU's disk shows up as ABSENCE, not as zero ──────────────────
-	//
-	// This is the assertion that matters most here: the hypervisor's `disk: 0` had
-	// to become -1 (NotReported) and not 0. If the guest agent is ever installed on
-	// the VMs this test fails — and that is what is wanted: the rule needs revising,
-	// not to go on lying quietly.
 	qemus, lxcs := 0, 0
 	for _, raw := range nodes {
 		n, _ := raw.(map[string]any)
@@ -148,7 +126,6 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 		t.Fatal("the proof needs both kinds to be worth anything")
 	}
 
-	// ── 3. 🔴 the TWO clocks exist and are independent ──────────────────────
 	poll, ok := out["poll"].(map[string]any)
 	if !ok {
 		t.Fatal("payload without `poll` — the screen is left with only one clock")
@@ -167,12 +144,6 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 	}
 	t.Logf("two clocks: poller attempt = %.0fs · node ages = %v", attemptAge, nodeAges)
 
-	// ── 4. NEGATIVE control for the second clock ────────────────────────────
-	//
-	// A clock that moves on its own proves nothing. Here the attempt's stamp is
-	// PUSHED into the past in the store and the route has to show the larger age —
-	// without the nodes' age moving along with it. If the two were glued together,
-	// this block fails.
 	if err := r.inventoryStore.Replace(func(iv *inventory.Inventory) {
 		iv.LastPollAt = iv.LastPollAt - 3600
 		iv.LastPollError = "negative control of the live probe (not a real failure)"
@@ -199,11 +170,6 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 	t.Logf("negative control: attempt %.0fs → %.0fs, and no node aged along with it",
 		attemptAge, poll2["age_seconds"].(float64))
 
-	// ── 5. network rate: either derivable, or a declared absence ────────────
-	//
-	// On the first tick of a fresh store there IS no earlier observation, so -1 is
-	// the right answer. What this block forbids is 0: a zero rate reads as "no
-	// traffic", which is a claim about minutes nobody looked at.
 	noBaseline, withRate := 0, 0
 	for _, raw := range nodes {
 		n, _ := raw.(map[string]any)
@@ -225,17 +191,6 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 	t.Logf("proof window: [t0=%s t1=%s]", t0.Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339))
 }
 
-// 🔴 TestLivePVURateDerivesFromTWORealObservations — the proof the first test
-// cannot give.
-//
-// With a freshly created store there is ONE observation, and the correct rate is
-// -1 ("nothing to derive it from"). That proves the defensive half of the rule
-// and none of the useful half: an implementation that ALWAYS returned -1 would
-// pass that test.
-//
-// Here the poller really runs against the hypervisor on a short interval, and the
-// wait is ACTIVE on an EVENT (the second tick having stamped), with a deadline —
-// it is not a clock wait, and the test dies in 25 s instead of hanging.
 func TestLivePVURateDerivesFromTWORealObservations(t *testing.T) {
 	if os.Getenv("LAB_PVU_LIVE") != "1" {
 		t.Skip("live proof disabled — run with LAB_PVU_LIVE=1")
@@ -262,8 +217,6 @@ func TestLivePVURateDerivesFromTWORealObservations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// TEMPORARY store: writing into the production data/inventory would put two
-	// processes (this test and the live dashboard) writing the same document.
 	st, err := inventory.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -305,8 +258,6 @@ func TestLivePVURateDerivesFromTWORealObservations(t *testing.T) {
 	}
 	t.Logf("%d guests with a rate, %d still without a baseline", len(withBaseline), len(noBaseline))
 
-	// And the NEGATIVE control for the same rule, with no waiting: an artificial
-	// hole in the previous stamp has to erase the rate on the next tick.
 	inv, _ := st.Snapshot()
 	target := ""
 	for _, n := range inv.Nodes {
@@ -321,8 +272,6 @@ func TestLivePVURateDerivesFromTWORealObservations(t *testing.T) {
 	if err := st.Replace(func(iv *inventory.Inventory) {
 		for i := range iv.Nodes {
 			if iv.Nodes[i].ID == target {
-				// The previous counter's stamp moves back an hour: the next tick
-				// sees a 3600 s "hole" with a 2 s interval configured.
 				iv.Nodes[i].NetIn.ObservedAt -= 3600
 			}
 		}

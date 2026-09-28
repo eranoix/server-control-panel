@@ -13,12 +13,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// THE SIZE RULE, IN UNIT FORM.
-//
-// The minimum did not disappear — it became a ceiling for clients that do not
-// accept frames. With nobody who accepts them, this has to degenerate into
-// exactly the old rule, which is what makes the change safe for a client that has
-// not been updated yet.
 func TestSessionSizeIsLargestAmongFrameClients(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -67,7 +61,6 @@ func TestSessionSizeIsLargestAmongFrameClients(t *testing.T) {
 	}
 }
 
-// frameClient is a test client that accepts a rendered crop.
 type frameClient struct {
 	conn *websocket.Conn
 	t    *testing.T
@@ -113,12 +106,6 @@ func (c *frameClient) send(v any) {
 	_ = c.conn.WriteMessage(websocket.TextMessage, b)
 }
 
-// THE REPORT THIS TEST CLOSES: "the phone still shrinks the desktop".
-//
-// Two clients on the same session, both accepting frames. The program has to see
-// the LARGER one's window, and the smaller one has to keep seeing the session —
-// through a rendered crop, not through the raw stream, which at that width would
-// land entirely in the wrong place.
 func TestE2EFrame_PhoneNoLongerShrinksDesktop(t *testing.T) {
 	if _, err := exec.LookPath("dtach"); err != nil {
 		t.Skip("no dtach on this machine")
@@ -150,25 +137,19 @@ func TestE2EFrame_PhoneNoLongerShrinksDesktop(t *testing.T) {
 			t.Fatalf("dial: %v", err)
 		}
 		c := &frameClient{conn: conn, t: t}
-		// Closing at the end of the test matters: the registry of live connections
-		// (`registerLive`, used by the restart notice) belongs to the PACKAGE, and a
-		// connection left open here shows up in another test's count.
 		t.Cleanup(func() { _ = conn.Close() })
 		go c.listen()
 		return c
 	}
 
-	// The desktop arrives first, big, and accepts frames.
 	desktop := dial("&frame=1")
 	desktop.send(map[string]any{"type": "resize", "cols": 120, "rows": 40})
 	time.Sleep(1800 * time.Millisecond)
 
-	// The phone arrives later, small, and accepts frames too.
 	phone := dial("&frame=1")
 	phone.send(map[string]any{"type": "resize", "cols": 53, "rows": 20})
 	time.Sleep(2000 * time.Millisecond)
 
-	// The question is put to the PROGRAM, not to our own bookkeeping.
 	desktop.send(map[string]any{"type": "input", "data": "stty size\r"})
 	time.Sleep(1500 * time.Millisecond)
 
@@ -180,10 +161,6 @@ func TestE2EFrame_PhoneNoLongerShrinksDesktop(t *testing.T) {
 		t.Errorf("with the phone attached the program sees %sx%s; wanted 40x120 — the phone went back to shrinking the desktop", m[1], m[2])
 	}
 
-	// AND THE PHONE KEEPS SEEING THE SESSION. This is the other half: it is no use
-	// for the desktop to grow if the smaller one turns into a dead screen. What
-	// reaches it is the RENDERED crop — the raw stream, at that width, would land
-	// entirely in the wrong place.
 	desktop.send(map[string]any{"type": "input", "data": "echo FRAME_MARKER\r"})
 	time.Sleep(2 * time.Second)
 	if txt := phone.text(); !strings.Contains(txt, "FRAME_MARKER") {
@@ -191,10 +168,6 @@ func TestE2EFrame_PhoneNoLongerShrinksDesktop(t *testing.T) {
 			len(txt), txt)
 	}
 
-	// The phone must NOT have been told to draw the session's grid: it draws ITS
-	// OWN WINDOW, and the server composes the crop. The notice exists and carries
-	// its size — that is how a client already told the session's grid leaves it
-	// when it shrinks.
 	warnings := phone.receivedNotices()
 	if len(warnings) == 0 {
 		t.Error("the phone received no notice at all — it would get stuck on the last grid it knew")

@@ -6,7 +6,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/** Parsing `google-services.json`: a mistake here fails silently, the push just never arrives. */
 @RunWith(RobolectricTestRunner::class)
 class FirebaseBootstrapTest {
 
@@ -32,8 +31,6 @@ class FirebaseBootstrapTest {
 
     @Test
     fun `picks the client for OUR package, not the first in the list`() {
-        // The file lists every app in the project; the first one would register under
-        // another identity and pushes would silently never arrive.
         val options = FirebaseBootstrap.optionsFrom(
             json("com.other.app", "tech.northwind.servercontrolpanel"),
             "tech.northwind.servercontrolpanel",
@@ -50,7 +47,6 @@ class FirebaseBootstrapTest {
 
     @Test
     fun `a corrupt file does not break startup`() {
-        // Runs during app bootstrap: an exception would block launch over an optional feature.
         assertNull(FirebaseBootstrap.optionsFrom("{ this is not json", "tech.northwind.servercontrolpanel"))
         assertNull(FirebaseBootstrap.optionsFrom("{}", "tech.northwind.servercontrolpanel"))
     }

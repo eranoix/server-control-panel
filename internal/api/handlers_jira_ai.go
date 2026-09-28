@@ -1,17 +1,3 @@
-// handlers_jira_ai.go — wires the "Start AI" button to the queue.
-//
-// One endpoint:
-//
-//	POST /api/jira/issue/{key}/ai-analyze    → enqueues a jira_ai_analysis
-//	                                            job; returns {job_id}
-//
-// The actual work happens in internal/jiraai/runner.go, executed by the
-// F3 queue worker pool. The UI subscribes to /ws/queue/{job_id} for the
-// live audit transcript.
-//
-// Per-owner mapping: project_key → repo path is stored in the user's
-// vault under `jira_project_repos` as JSON. handlers_jira.go's existing
-// vault helpers do the read/write.
 package api
 
 import (
@@ -30,9 +16,6 @@ import (
 	"server-control-panel/internal/scope"
 )
 
-// jiraRepoMapFor returns the per-user project_key → repo_path map from
-// the vault. nil/empty map = caller hasn't configured anything; the AI
-// runner will still execute but without a cwd (generic advice).
 func (r *Router) jiraRepoMapFor(owner string) map[string]string {
 	if r.secrets == nil {
 		return nil
@@ -52,8 +35,6 @@ func (r *Router) jiraRepoMapFor(owner string) map[string]string {
 	return m
 }
 
-// handleJiraAIAnalyze enqueues an AI audit of the issue. Routed via
-// handleJiraIssue dispatch (action="ai-analyze").
 func (r *Router) handleJiraAIAnalyze(w http.ResponseWriter, req *http.Request, key string) {
 	if r.queue == nil {
 		writeErr(w, 503, "queue unavailable")
@@ -68,8 +49,6 @@ func (r *Router) handleJiraAIAnalyze(w http.ResponseWriter, req *http.Request, k
 		writeErr(w, 401, "unauthorized")
 		return
 	}
-	// Validate caller can talk to Jira before enqueuing — avoids stale
-	// jobs piling up when credentials are missing/expired.
 	if _, _, err := r.jiraClientFor(req); err != nil {
 		writeErr(w, 400, err.Error())
 		return
@@ -84,14 +63,6 @@ func (r *Router) handleJiraAIAnalyze(w http.ResponseWriter, req *http.Request, k
 	writeJSON(w, map[string]string{"job_id": j.ID, "issue_key": key})
 }
 
-// handleJiraAIWork creates a dtach session "panel-<user>-jira-<KEY>" with
-// claude already running, cwd=mapped repo, and the ticket context pasted
-// as the first prompt. Returns the session name so the UI can open the
-// terminal page directly on it.
-//
-// Synchronous (no queue): dtach create + dtach -p paste is fast, ~3s.
-// Idempotent: if the session already exists, returns its name without
-// re-creating (so the user reattaches to their existing work).
 func (r *Router) handleJiraAIWork(w http.ResponseWriter, req *http.Request, key string) {
 	if req.Method != http.MethodPost {
 		writeErr(w, 405, "method not allowed")
@@ -112,7 +83,6 @@ func (r *Router) handleJiraAIWork(w http.ResponseWriter, req *http.Request, key 
 		writeErr(w, 502, err.Error())
 		return
 	}
-	// Resolve repo path from per-user map
 	repoPath := ""
 	if issue.Project != nil {
 		if m := r.jiraRepoMapFor(owner); m != nil {
@@ -122,10 +92,6 @@ func (r *Router) handleJiraAIWork(w http.ResponseWriter, req *http.Request, key 
 
 	sessionName := "panel-" + owner + "-jira-" + strings.ReplaceAll(strings.ToLower(key), "_", "-")
 
-	// Auto-transition to "In Progress", best-effort, does not block the spawn.
-	// Done in the background so it does not delay the response (the Jira call takes ~600ms).
-	// Silently skipped if the issue is already in that category or if there is no
-	// mapped transition — that is no reason to fail.
 	go func() {
 		from, to, err := tryJiraTransition(context.Background(), cli, key, "indeterminate")
 		if err == nil && from != to {
@@ -133,14 +99,6 @@ func (r *Router) handleJiraAIWork(w http.ResponseWriter, req *http.Request, key 
 		}
 	}()
 
-	// Idempotent: if the session is already alive, claim ownership
-	// (in case caller is primary and old owner moved on) and return.
-	//
-	// SELF-HEALING: a live session that never received a message is a leftover of the
-	// paste bug (session created, claude running, empty input). Reattaching to it would
-	// just drop the user back into the same stalled terminal, so it is killed here and
-	// the normal flow just below recreates it with the prompt in argv. Since the gate is
-	// "zero messages", recreating never discards work.
 	if sessionExists(sessionName) {
 		healCwd := r.agentCWD.Get(sessionName)
 		if healCwd == "" {
@@ -148,7 +106,7 @@ func (r *Router) handleJiraAIWork(w http.ResponseWriter, req *http.Request, key 
 		}
 		if !claudeProjectHasMessages(r.forkConfigDir(), healCwd) {
 			_ = ptysvc.SessionKill(sessionName)
-			time.Sleep(200 * time.Millisecond) // let the socket go away before recreating
+			time.Sleep(200 * time.Millisecond)
 			r.auditEvent(req, owner, "jira.ai.work.selfheal",
 				key+" → "+sessionName+" (empty session, recreated with the prompt)")
 		}
@@ -157,11 +115,7 @@ func (r *Router) handleJiraAIWork(w http.ResponseWriter, req *http.Request, key 
 		if r.sessionOwn != nil {
 			_ = r.sessionOwn.Claim(sessionName, owner)
 		}
-		// Reattach: make sure the watcher runs (the server may have restarted
-		// between clicks).
 		r.startJiraWorkWatcher(owner, key, sessionName)
-		// Best-effort: re-establishes the name→cwd map if it was
-		// lost (e.g. the sidecar was deleted). The worktree is deterministic and idempotent.
 		if r.agentCWD != nil && r.agentCWD.Get(sessionName) == "" {
 			cwd, _ := ensureTicketWorktree(req.Context(), repoPath, key)
 			r.agentCWD.Put(sessionName, cwd)
@@ -173,8 +127,6 @@ func (r *Router) handleJiraAIWork(w http.ResponseWriter, req *http.Request, key 
 		return
 	}
 
-	// #2: dedicated git worktree per agent (guarded/idempotent; falls back to
-	// the shared repo when repoPath isn't a git repo).
 	agentCwd, usedWorktree := ensureTicketWorktree(req.Context(), repoPath, key)
 	prompt := r.buildWorkPromptFromDetail(issue, agentCwd)
 	created, err := ptysvc.SpawnJiraWorkSession(sessionName, agentCwd, prompt, r.forkConfigDir(), r.interactiveModel(""))
@@ -185,11 +137,7 @@ func (r *Router) handleJiraAIWork(w http.ResponseWriter, req *http.Request, key 
 	if r.sessionOwn != nil {
 		_ = r.sessionOwn.Claim(created, owner)
 	}
-	// Registers name→cwd so the hook + aggregator can resolve the
-	// session from Claude Code's project-dir.
 	r.agentCWD.Put(created, agentCwd)
-	// Starts the watcher that will monitor the dtach session and detect when the
-	// user signals "it's working" — at which point it moves to Done.
 	r.startJiraWorkWatcher(owner, key, created)
 	r.auditEvent(req, owner, "jira.ai.work.start", key+" → "+created+" cwd="+agentCwd)
 	writeJSON(w, map[string]any{
@@ -197,16 +145,6 @@ func (r *Router) handleJiraAIWork(w http.ResponseWriter, req *http.Request, key 
 	})
 }
 
-// handleAIPrompts — manages the runtime-editable AI prompts.
-//
-//	GET  /api/ai/prompts → lists each prompt (default + current value + contract)
-//	PUT  /api/ai/prompts → saves an override {id, value} after the guard
-//
-// Admin-only (mustPrimary): editing these prompts changes how EVERY user's AS
-// analysis behaves. The PUT runs the conformance guard
-// (aiprompts.Validate via Set) and returns 422 + the list of failures if the template
-// removes the {{OUTPUT_CONTRACT}} marker — without which the verification loop
-// would never converge (runner.go's parsers read the managed contract).
 func (r *Router) handleAIPrompts(w http.ResponseWriter, req *http.Request) {
 	owner, ok := r.mustPrimary(w, req)
 	if !ok {
@@ -234,7 +172,7 @@ func (r *Router) handleAIPrompts(w http.ResponseWriter, req *http.Request) {
 		}
 		if fails := r.aiPrompts.Set(aiprompts.ID(body.ID), body.Value); len(fails) > 0 {
 			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnprocessableEntity) // 422
+			w.WriteHeader(http.StatusUnprocessableEntity)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"error":   "prompt rejected by the compliance guard",
 				"reasons": fails,
@@ -248,14 +186,6 @@ func (r *Router) handleAIPrompts(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// tryJiraTransition applies the first transition whose target category
-// matches targetCat ("new"/"indeterminate"/"done"). Idempotent: if the
-// issue is already in that category, it returns (oldName, oldName, nil) without
-// calling the API.
-//
-// Best-effort by design — if the project's workflow has no transition
-// for the requested category (e.g. a kanban with no "In Progress"), it returns an
-// error but the caller may ignore it.
 func tryJiraTransition(ctx context.Context, cli *jira.Client, key, targetCat string) (oldStatus, newStatus string, err error) {
 	issue, err := cli.GetIssue(ctx, key)
 	if err != nil {
@@ -280,11 +210,6 @@ func tryJiraTransition(ctx context.Context, cli *jira.Client, key, targetCat str
 	return oldStatus, "", fmt.Errorf("no transition for category %q", targetCat)
 }
 
-// buildWorkPromptFromDetail: short, action-oriented prompt fed to the
-// Claude session right after spawn. Carries the full ticket context
-// (title + description — which already has the AI analysis block
-// appended from earlier "Start AI" runs) so the assistant has zero
-// guesswork about what's being asked.
 func (r *Router) buildWorkPromptFromDetail(d *jira.IssueDetail, repoPath string) string {
 	var b strings.Builder
 	b.WriteString("I am working on Jira ticket ")
@@ -325,21 +250,15 @@ func (r *Router) buildWorkPromptFromDetail(d *jira.IssueDetail, repoPath string)
 		b.WriteString(d.Description)
 		b.WriteString("\n")
 	}
-	// The trailer (final instruction) comes from the runtime-editable registry.
 	b.WriteString("\n---\n\n")
 	b.WriteString(strings.TrimSpace(r.aiPrompts.WorkTrailer()))
 	b.WriteString("\n")
 	return b.String()
 }
 
-// sessionExists returns true when a live session named exactly `name`
-// exists. Backend-aware via ptysvc.SessionHas (dtach: live socket). Exact
-// match by name — no prefix aliasing like the old has-session behaviour.
 func sessionExists(name string) bool {
-	// The engine is dtach: existence is the live socket (session.go).
 	alive, _ := ptysvc.SessionHas(name)
 	return alive
 }
 
-// fmt and other imports used above — keeps go vet happy if pruned during refactor.
 var _ = fmt.Sprintf

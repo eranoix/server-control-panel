@@ -1,9 +1,3 @@
-// Package netusage measures the REAL per-device consumption of the tunnel, in real time,
-// reading the kernel's conntrack (read-only, via the conntrack CLI) and summing bytes
-// by destination port — each device has a Reality port of its own
-// (device→port in .device-ports). No firewall rule, no touching the tunnel:
-// it only observes. It accumulates a monotonic total per device (via connection id) and the
-// instantaneous rate.
 package netusage
 
 import (
@@ -21,26 +15,24 @@ import (
 
 const pollInterval = 2 * time.Second
 
-// DeviceUsage is one device's consumption.
 type DeviceUsage struct {
 	Name        string  `json:"name"`
 	Port        int     `json:"port"`
-	TotalBytes  int64   `json:"total_bytes"`  // accumulated since the tracker booted
-	RateBps     float64 `json:"rate_bps"`     // bytes/s in the last cycle
-	ActiveConns int     `json:"active_conns"` // connections active right now
+	TotalBytes  int64   `json:"total_bytes"`
+	RateBps     float64 `json:"rate_bps"`
+	ActiveConns int     `json:"active_conns"`
 }
 
-// Tracker follows consumption per port.
 type Tracker struct {
 	mu          sync.Mutex
 	portMapPath string
-	statePath   string // persists the running total across restarts
-	pollN       int    // counts cycles so it saves periodically
+	statePath   string
+	pollN       int
 	port2name   map[int]string
-	cum         map[string]int64   // name → accumulated bytes
-	rate        map[string]float64 // name → bytes/s
-	conns       map[string]int     // name → active connections
-	lastByID    map[string]int64   // connection id → last bytes seen
+	cum         map[string]int64
+	rate        map[string]float64
+	conns       map[string]int
+	lastByID    map[string]int64
 }
 
 func New(portMapPath, statePath string) *Tracker {
@@ -56,7 +48,6 @@ func New(portMapPath, statePath string) *Tracker {
 	return t
 }
 
-// loadState reloads the per-device running total from disk (tolerates absence).
 func (t *Tracker) loadState() {
 	if t.statePath == "" {
 		return
@@ -71,7 +62,6 @@ func (t *Tracker) loadState() {
 	}
 }
 
-// saveState writes the running total (called with t.mu already held).
 func (t *Tracker) saveState() {
 	if t.statePath == "" {
 		return
@@ -86,7 +76,6 @@ func (t *Tracker) saveState() {
 	}
 }
 
-// loadPortMap re-reads device→port (cheap, tolerates absence).
 func (t *Tracker) loadPortMap() map[int]string {
 	out := map[int]string{}
 	raw, err := os.ReadFile(t.portMapPath)
@@ -103,8 +92,6 @@ func (t *Tracker) loadPortMap() map[int]string {
 	return out
 }
 
-// Start fires the polling loop. Bulletproof: recover per cycle — a meter
-// may never take the process down.
 func (t *Tracker) Start(ctx context.Context) {
 	if _, err := exec.LookPath("conntrack"); err != nil {
 		log.Printf("netusage: conntrack missing — per-device measurement turned off (%v)", err)
@@ -151,7 +138,6 @@ func (t *Tracker) poll() {
 	if err := cmd.Start(); err != nil {
 		return
 	}
-	// Accumulate deltas per id in this round; count active connections and bytes.
 	deltaByName := map[string]int64{}
 	connsByName := map[string]int{}
 	seen := map[string]bool{}
@@ -159,7 +145,7 @@ func (t *Tracker) poll() {
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
 	for sc.Scan() {
 		line := sc.Text()
-		mDport := reDport.FindStringSubmatch(line) // the first dport = the original tuple
+		mDport := reDport.FindStringSubmatch(line)
 		if mDport == nil {
 			continue
 		}
@@ -168,7 +154,6 @@ func (t *Tracker) poll() {
 		if !ok {
 			continue
 		}
-		// sum the two bytes= (out + back) = the connection's total
 		var total int64
 		for _, b := range reBytes.FindAllStringSubmatch(line, -1) {
 			v, _ := strconv.ParseInt(b[1], 10, 64)
@@ -185,7 +170,7 @@ func (t *Tracker) poll() {
 			if total >= prev {
 				deltaByName[name] += total - prev
 			} else {
-				deltaByName[name] += total // id reused/reset
+				deltaByName[name] += total
 			}
 			t.lastByID[id] = total
 		}
@@ -195,13 +180,11 @@ func (t *Tracker) poll() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.port2name = port2name
-	// prune ids that vanished (their final delta was already counted while they existed)
 	for id := range t.lastByID {
 		if !seen[id] {
 			delete(t.lastByID, id)
 		}
 	}
-	// apply: running total += delta; rate = delta/interval
 	names := map[string]bool{}
 	for _, n := range port2name {
 		names[n] = true
@@ -212,14 +195,12 @@ func (t *Tracker) poll() {
 		t.rate[n] = float64(d) / pollInterval.Seconds()
 		t.conns[n] = connsByName[n]
 	}
-	// persist the running total every ~30s (15 cycles of 2s)
 	t.pollN++
 	if t.pollN%15 == 0 {
 		t.saveState()
 	}
 }
 
-// Snapshot returns the current consumption of every mapped device.
 func (t *Tracker) Snapshot() []DeviceUsage {
 	t.mu.Lock()
 	defer t.mu.Unlock()

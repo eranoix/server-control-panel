@@ -18,9 +18,6 @@ import (
 	"server-control-panel/internal/mobilebff/sdui"
 )
 
-// Screen ids for the four Security screens — also the golden fixture
-// filename stems (security.users.*, etc, see
-// contracts/sdui/fixtures/screens/).
 const (
 	securityUsersScreenID    = "security.users"
 	securitySecretsScreenID  = "security.secrets"
@@ -28,10 +25,6 @@ const (
 	securityAuditScreenID    = "security.audit"
 )
 
-// Screen ids for the four Network screens — registered under the same
-// "security." prefix as the four screens above even though the backing seam
-// is NetworkDeps, a separate struct (see deps.go's NetworkDeps doc comment):
-// the network area is four distinct subsystems, not one screen.
 const (
 	securityUFWScreenID       = "security.ufw"
 	securityAdGuardScreenID   = "security.adguard"
@@ -39,9 +32,6 @@ const (
 	securityDataSaverScreenID = "security.savings"
 )
 
-// Rows/detail endpoints — one per table or detail screen. Absolute paths
-// (carry mobilebff.Prefix), same convention as schedulerJobsRowsEndpoint /
-// dockerContainersRowsEndpoint.
 const (
 	securityUsersRowsEndpoint    = mobilebff.Prefix + "/security/users"
 	securitySecretsRowsEndpoint  = mobilebff.Prefix + "/security/secrets"
@@ -54,21 +44,8 @@ const (
 	securityDataSaverRowsEndpoint = mobilebff.Prefix + "/security/savings"
 )
 
-// securityTimestampFormat mirrors dockerTimestampFormat/schedulerTimestampFormat
-// — every timestamp in these eight screens is rendered server-side, never a
-// raw epoch.
 const securityTimestampFormat = "2006-01-02 15:04 UTC"
 
-// --- RegisterSecurity --------------------------------------------------
-
-// RegisterSecurity wires the four Security screens (users, secrets, sessions,
-// audit), their actions and their rows endpoints. Called explicitly by
-// internal/api/api.go, mirroring RegisterDocker/RegisterSystem. All four
-// screens are admin-only for their WHOLE envelope — see
-// buildSecurity*ScreenForViewer below — because every one of them exposes
-// either credentials, secret metadata, live session control or the full
-// system-wide audit trail, none of which the web panel shows to a non-admin
-// either.
 func RegisterSecurity(deps SecurityDeps) {
 	sdui.Register(securityUsersScreenID, func(_ context.Context, v sdui.Viewer) (*sdui.Envelope, error) {
 		return buildSecurityUsersScreenForViewer(v)
@@ -83,10 +60,6 @@ func RegisterSecurity(deps SecurityDeps) {
 		return buildSecurityAuditScreenForViewer(v)
 	})
 
-	// Catalog entries. All four are adminOnly because the four builders
-	// above are `...ForViewer` — they refuse a non-admin with
-	// ErrScreenNotFound, so for a non-admin these items simply do not exist
-	// in the picker (omission, never a disabled item).
 	sdui.RegisterCatalog(securityUsersScreenID, sdui.GroupSecurity, "Users", adminOnly)
 	sdui.RegisterCatalog(securitySecretsScreenID, sdui.GroupSecurity, "Vault secrets", adminOnly)
 	sdui.RegisterCatalog(securitySessionsScreenID, sdui.GroupSecurity, "Active sessions", adminOnly)
@@ -107,12 +80,6 @@ func RegisterSecurity(deps SecurityDeps) {
 		registerSecurityAuditRows(api, deps, mbDeps)
 	})
 
-	// Forbidden-for-non-admin ledger: all four screens are whole-screen
-	// admin-only (ErrScreenNotFound above), so there is no non-admin
-	// envelope to omit anything FROM — each entry only needs to cover the
-	// case where the harness still probes an action id directly (see
-	// TestGoldenScreens_NonAdminNeverContainsForbiddenStrings and
-	// docker.go's dockerPruneScreenID entry for the same reasoning).
 	sdui.RegisterForbiddenForNonAdmin(securityUsersScreenID, func() []string {
 		return []string{securityActionUserSave, securityActionUserDelete, securityActionUserResetPassword}
 	})
@@ -123,21 +90,10 @@ func RegisterSecurity(deps SecurityDeps) {
 		return []string{securityActionSessionRevoke}
 	})
 	sdui.RegisterForbiddenForNonAdmin(securityAuditScreenID, func() []string {
-		// security.audit has no actions at all — the forbidden set is the
-		// screen's own id, so a non-admin envelope can never even claim to
-		// be the audit screen (belt-and-suspenders on top of
-		// ErrScreenNotFound, matching docker.prune's reasoning).
 		return []string{securityAuditScreenID}
 	})
 }
 
-// --- security.users ------------------------------------------------------
-
-// buildSecurityUsersScreenForViewer applies the admin-only gate (non-admin
-// Build returns ErrScreenNotFound, the 404-never-403 posture every admin-only
-// surface in this package uses) and delegates to buildSecurityUsersScreen.
-// Split out, like buildDockerPruneScreenForViewer, so tests can exercise the
-// gate directly without going through the global registry.
 func buildSecurityUsersScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	if !v.IsAdmin() {
 		return nil, sdui.ErrScreenNotFound
@@ -145,13 +101,6 @@ func buildSecurityUsersScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	return buildSecurityUsersScreen(), nil
 }
 
-// buildSecurityUsersScreen builds the users-table + user-form + password-
-// reset-form screen. One entry point (security.user.save) handles BOTH
-// create and edit, exactly like scheduler.job.save — the client populates
-// user-form's fields from a selected row to edit, or leaves it blank to
-// create. Password reset is a SEPARATE form/action
-// (security.user.reset_password), never a field folded into user-form — see
-// UserInput's doc comment in deps.go for why.
 func buildSecurityUsersScreen() *sdui.Envelope {
 	table := sdui.TableComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeTable, ID: "users-table"},
@@ -197,10 +146,6 @@ func buildSecurityUsersScreen() *sdui.Envelope {
 		Message:       "This user will be removed permanently, together with their active sessions. You cannot remove yourself or the primary user.",
 	}
 
-	// RequireTypedConfirmation empty: a password is recreatable (just set it
-	// again), but the confirmation step itself (Destructive:true) is already
-	// the separation the plan demands between "saving the user's data" and
-	// "changing their password" — see security_actions.go.
 	resetConfirm := sdui.ConfirmDestructiveComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeConfirmDestructive, ID: "user-password-reset-confirm"},
 		ActionID:      securityActionUserResetPassword,
@@ -233,13 +178,6 @@ func registerSecurityUsersRows(api huma.API, deps SecurityDeps, mbDeps mobilebff
 		})
 }
 
-// securityUserRow shapes one UserRow into the row wire format. Wire shape:
-// {"id","username","role","has_totp","sessions"} — role collapses
-// IsPrimary/IsAdmin into a single badge value ("admin" covers both: the
-// primary is always an admin, see config.Config.IsAdmin), matching the
-// binary admin/non-admin model this whole surface uses. "id" is the
-// username: every action in security_actions.go reads params["id"] for the
-// row it was invoked on, same convention as dockerComposeRow.
 func securityUserRow(u UserRow) map[string]any {
 	role := "user"
 	if u.IsAdmin {
@@ -259,8 +197,6 @@ func securityUserRow(u UserRow) map[string]any {
 	}
 }
 
-// --- security.secrets -----------------------------------------------------
-
 func buildSecuritySecretsScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	if !v.IsAdmin() {
 		return nil, sdui.ErrScreenNotFound
@@ -268,10 +204,6 @@ func buildSecuritySecretsScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) 
 	return buildSecuritySecretsScreen(), nil
 }
 
-// buildSecuritySecretsScreen builds the secrets-table + secret-form screen.
-// The table carries ONLY key names (SecretKeyRow has no Value field — see
-// deps.go); the form's value field is write-only, submitted straight to
-// security.secret.set and never echoed back in any Patch/Invalidate result.
 func buildSecuritySecretsScreen() *sdui.Envelope {
 	table := sdui.TableComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeTable, ID: "secrets-table"},
@@ -320,8 +252,6 @@ func registerSecuritySecretsRows(api huma.API, deps SecurityDeps, mbDeps mobileb
 		})
 }
 
-// --- security.sessions -----------------------------------------------------
-
 func buildSecuritySessionsScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	if !v.IsAdmin() {
 		return nil, sdui.ErrScreenNotFound
@@ -329,15 +259,6 @@ func buildSecuritySessionsScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error)
 	return buildSecuritySessionsScreen(), nil
 }
 
-// buildSecuritySessionsScreen builds the sessions-table screen: one row per
-// LIVE session across every user (admin console, not the self-service list —
-// see SessionRow's doc comment in deps.go). revoke is a real tombstone write
-// (sessions.Store.Revoke), never a cosmetic row removal. The confirm message
-// is deliberately worded to cover BOTH "someone else's session" and "my own
-// current session" in one static string — ConfirmDestructiveComponent
-// carries one message per action id, not a per-row variant — while the
-// is_current column lets the client highlight the caller's own row distinctly
-// before they tap revoke on it.
 func buildSecuritySessionsScreen() *sdui.Envelope {
 	table := sdui.TableComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeTable, ID: "sessions-table"},
@@ -372,12 +293,6 @@ func buildSecuritySessionsScreen() *sdui.Envelope {
 	return &sdui.Envelope{Screen: screen}
 }
 
-// registerSecurityUsersRows and its siblings resolve the Viewer from the
-// request themselves (serveSecurityRows), but is_current on a session row
-// depends on the CALLER's own session id, not just their username (a user
-// can be logged in from several devices at once) — so this rows handler is
-// the one place in this package that reads auth.JTIFrom(req) directly,
-// instead of going through the generic serveSecurityRows fetch closure.
 func registerSecuritySessionsRows(api huma.API, deps SecurityDeps, mbDeps mobilebff.Deps) {
 	cfg := mbDeps.Cfg
 	huma.Register(api, huma.Operation{
@@ -423,12 +338,6 @@ func serveSecuritySessionsRows(cfg *config.Config, deps SecurityDeps) func(huma.
 	}
 }
 
-// securitySessionRow shapes one SessionRow into the row wire format. Wire
-// shape: {"id","user","ip","user_agent","issued_at","last_seen","is_current"}.
-// expires_at is intentionally not a column (admin console cares about who is
-// live and from where, not TTL bookkeeping) but is still read by
-// security_actions.go's revoke handler indirectly through deps.ListSessions
-// if ever needed — this row shaper only controls what the TABLE shows.
 func securitySessionRow(s SessionRow, currentJTI string) map[string]any {
 	isCurrent := "no"
 	if currentJTI != "" && s.ID == currentJTI {
@@ -445,8 +354,6 @@ func securitySessionRow(s SessionRow, currentJTI string) map[string]any {
 	}
 }
 
-// --- security.audit ---------------------------------------------------------
-
 func buildSecurityAuditScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	if !v.IsAdmin() {
 		return nil, sdui.ErrScreenNotFound
@@ -454,10 +361,6 @@ func buildSecurityAuditScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	return buildSecurityAuditScreen(), nil
 }
 
-// buildSecurityAuditScreen builds the audit-table screen: read-only, no row
-// actions, no form, no confirm — the audit trail itself is never mutated
-// through this surface. System-wide (AuditRow's doc comment in deps.go), not
-// per-tenant filtered — this is the admin console, not a self-service view.
 func buildSecurityAuditScreen() *sdui.Envelope {
 	table := sdui.TableComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeTable, ID: "audit-table"},
@@ -475,9 +378,6 @@ func buildSecurityAuditScreen() *sdui.Envelope {
 	return &sdui.Envelope{Screen: screen}
 }
 
-// securityAuditRowsLimit is the fixed page size ListAuditEvents is always
-// called with — see AuditFilter's doc comment in deps.go for why v1 never
-// takes a client-supplied limit.
 const securityAuditRowsLimit = 200
 
 func registerSecurityAuditRows(api huma.API, deps SecurityDeps, mbDeps mobilebff.Deps) {
@@ -485,8 +385,6 @@ func registerSecurityAuditRows(api huma.API, deps SecurityDeps, mbDeps mobilebff
 		func(_ context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list, err := deps.ListAuditEvents(AuditFilter{Limit: securityAuditRowsLimit})
 			if err != nil {
-				// 500 and not an empty list: the client shows a load error, which
-				// is the truth. An empty table would say "nothing happened".
 				return nil, err
 			}
 			rows := make([]map[string]any, 0, len(list))
@@ -497,11 +395,6 @@ func registerSecurityAuditRows(api huma.API, deps SecurityDeps, mbDeps mobilebff
 		})
 }
 
-// securityAuditRow shapes one AuditRow into the row wire format. Wire shape:
-// {"id","time","user","action","target","ip"}. auth.Event has no natural id
-// (it is an append-only log line, not a keyed entity), so "id" is synthesized
-// from time+user+action — stable enough for client-side row keys, never
-// persisted or compared against anything server-side.
 func securityAuditRow(e AuditRow) map[string]any {
 	return map[string]any{
 		"id":     fmt.Sprintf("%d:%s:%s", e.Time, e.User, e.Action),
@@ -513,14 +406,6 @@ func securityAuditRow(e AuditRow) map[string]any {
 	}
 }
 
-// --- RegisterNetwork ---------------------------------------------------
-
-// RegisterNetwork wires the four Network screens (ufw, adguard, devices,
-// data saver), their actions and their rows/detail endpoints. Called
-// explicitly by internal/api/api.go. All four screen ids carry the
-// "security." prefix even though the seam is NetworkDeps, a separate struct
-// (see NetworkDeps' doc comment in deps.go). All four
-// are whole-screen admin-only, same posture as the four Security screens.
 func RegisterNetwork(deps NetworkDeps) {
 	sdui.Register(securityUFWScreenID, func(_ context.Context, v sdui.Viewer) (*sdui.Envelope, error) {
 		return buildSecurityUFWScreenForViewer(v)
@@ -535,9 +420,6 @@ func RegisterNetwork(deps NetworkDeps) {
 		return buildSecurityDataSaverScreenForViewer(v)
 	})
 
-	// Catalog entries: the same four network screens, all `...ForViewer` and
-	// therefore adminOnly. The data saver screen keeps its historical id
-	// (security.savings) but is labelled "Network usage".
 	sdui.RegisterCatalog(securityUFWScreenID, sdui.GroupSecurity, "Firewall (UFW)", adminOnly)
 	sdui.RegisterCatalog(securityAdGuardScreenID, sdui.GroupSecurity, "AdGuard DNS", adminOnly)
 	sdui.RegisterCatalog(securityDevicesScreenID, sdui.GroupSecurity, "Devices (VLESS)", adminOnly)
@@ -571,13 +453,9 @@ func RegisterNetwork(deps NetworkDeps) {
 		}
 	})
 	sdui.RegisterForbiddenForNonAdmin(securityDataSaverScreenID, func() []string {
-		// The data saver screen has no actions at all; same belt-and-suspenders
-		// reasoning as security.audit above.
 		return []string{securityDataSaverScreenID}
 	})
 }
-
-// --- security.ufw -----------------------------------------------------------
 
 func buildSecurityUFWScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	if !v.IsAdmin() {
@@ -586,15 +464,6 @@ func buildSecurityUFWScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	return buildSecurityUFWScreen(), nil
 }
 
-// buildSecurityUFWScreen builds the ufw detail+form screen — the FIRST
-// production use of DetailComponent in this codebase (see deps.go's
-// NetworkDeps doc comment). The detail shows the raw `ufw status numbered`
-// output; the form mirrors handleUFWRule's body (action select +
-// verbatim spec text). Applying a firewall rule is admin-only and destructive
-// — a bad rule (or a mistaken "disable") can lock the operator out of the
-// VPS over SSH, so this screen requires confirmation even though
-// NetworkDeps.UFWApplyRule itself performs no such gate (Rule 2: missing
-// critical safety confirmation for a genuinely lockout-capable action).
 func buildSecurityUFWScreen() *sdui.Envelope {
 	detail := sdui.DetailComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeDetail, ID: "ufw-status-detail"},
@@ -650,8 +519,6 @@ func registerSecurityUFWDetail(api huma.API, deps NetworkDeps, mbDeps mobilebff.
 		})
 }
 
-// --- security.adguard --------------------------------------------------
-
 func buildSecurityAdGuardScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	if !v.IsAdmin() {
 		return nil, sdui.ErrScreenNotFound
@@ -659,10 +526,6 @@ func buildSecurityAdGuardScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) 
 	return buildSecurityAdGuardScreen(), nil
 }
 
-// buildSecurityAdGuardScreen builds the adguard detail+form screen: current
-// protection status plus query stats (detail — mirrors adguard.Status
-// exactly) and a form to toggle protection, mirroring
-// adguard.Client.SetProtection's (enabled, durationMs) signature exactly.
 func buildSecurityAdGuardScreen() *sdui.Envelope {
 	detail := sdui.DetailComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeDetail, ID: "adguard-status-detail"},
@@ -727,8 +590,6 @@ func registerSecurityAdGuardDetail(api huma.API, deps NetworkDeps, mbDeps mobile
 		})
 }
 
-// --- security.devices ----------------------------------------------------
-
 func buildSecurityDevicesScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	if !v.IsAdmin() {
 		return nil, sdui.ErrScreenNotFound
@@ -736,13 +597,6 @@ func buildSecurityDevicesScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) 
 	return buildSecurityDevicesScreen(), nil
 }
 
-// buildSecurityDevicesScreen builds the devices-table + add-device-form
-// screen. rename/set_exit/set_datasaver are non-destructive row actions that
-// return a Patch of the updated row (see security_actions.go); remove is
-// destructive. set_datasaver additionally requires a health-probe + CA-ack
-// gate server-side (deps.go's SetDeviceDatasaver doc comment) — not
-// expressed in this screen because SDUI has no eighth "gated toggle"
-// component; the gate lives entirely in the action handler.
 func buildSecurityDevicesScreen() *sdui.Envelope {
 	table := sdui.TableComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeTable, ID: "devices-table"},
@@ -803,9 +657,6 @@ func registerSecurityDevicesRows(api huma.API, deps NetworkDeps, mbDeps mobilebf
 		})
 }
 
-// securityDeviceRow shapes one DeviceRow into the row wire format. Wire
-// shape: {"id","name","uuid","exit","datasaver","created"}. "id" is the
-// device UUID: every device action in security_actions.go reads params["id"].
 func securityDeviceRow(d DeviceRow) map[string]any {
 	datasaver := "no"
 	if d.Datasaver {
@@ -821,8 +672,6 @@ func securityDeviceRow(d DeviceRow) map[string]any {
 	}
 }
 
-// security.savings (data saver) screen.
-
 func buildSecurityDataSaverScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	if !v.IsAdmin() {
 		return nil, sdui.ErrScreenNotFound
@@ -830,8 +679,6 @@ func buildSecurityDataSaverScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error
 	return buildSecurityDataSaverScreen(), nil
 }
 
-// buildSecurityDataSaverScreen builds the usage-table screen: read-only,
-// conntrack-derived per-device usage — no actions, no form, no confirm.
 func buildSecurityDataSaverScreen() *sdui.Envelope {
 	table := sdui.TableComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeTable, ID: "usage-table"},
@@ -864,10 +711,6 @@ func registerSecurityDataSaverRows(api huma.API, deps NetworkDeps, mbDeps mobile
 		})
 }
 
-// securityUsageRow shapes one UsageRow into the row wire format. Wire shape:
-// {"id","name","port","total_bytes","rate_bps","active_conns"} — bytes and
-// rate are rendered as display-ready strings, never raw numbers, same
-// convention as formatDockerBytes.
 func securityUsageRow(u UsageRow) map[string]any {
 	return map[string]any{
 		"id":           u.Name,
@@ -879,13 +722,6 @@ func securityUsageRow(u UsageRow) map[string]any {
 	}
 }
 
-// --- Shared rows/detail plumbing --------------------------------------------
-
-// registerSecurityRows is the shared plumbing for every table-shaped
-// endpoint in this file (both Security and Network screens): authenticate,
-// resolve Viewer, call fetch, wrap as {"rows":[...]} — the same wire shape
-// registerDockerRows/registerSystemRows established, duplicated here per this
-// package's one-helper-per-file convention (see docker.go/system.go).
 func registerSecurityRows(api huma.API, opID, path, summary string, cfg *config.Config, fetch func(context.Context, sdui.Viewer) ([]map[string]any, error)) {
 	huma.Register(api, huma.Operation{
 		OperationID: opID,
@@ -942,13 +778,6 @@ func serveSecurityRows(cfg *config.Config, fetch func(context.Context, sdui.View
 	}
 }
 
-// registerSecurityDetail is the shared plumbing for the two DetailComponent
-// endpoints in this file (ufw, adguard): authenticate, resolve Viewer, call
-// fetch, wrap as {"detail": {...}} — the wire shape this plan establishes for
-// DetailComponent.DataSource, the first production use of that component
-// type (see buildSecurityUFWScreen's doc comment). Pinned by a real HTTP
-// round-trip test in security_test.go, never a hand-authored fixture, same
-// posture as every rows endpoint.
 func registerSecurityDetail(api huma.API, opID, path, summary string, cfg *config.Config, fetch func(context.Context, sdui.Viewer) (map[string]any, error)) {
 	huma.Register(api, huma.Operation{
 		OperationID: opID,
@@ -1005,11 +834,6 @@ func serveSecurityDetail(cfg *config.Config, fetch func(context.Context, sdui.Vi
 	}
 }
 
-// --- formatting helpers ------------------------------------------------
-
-// formatSecurityTimestamp renders a Unix epoch as the server-formatted
-// display string every timestamp in these eight screens uses — mirrors
-// formatDockerTimestamp's zero-is-empty rule.
 func formatSecurityTimestamp(epoch int64) string {
 	if epoch == 0 {
 		return ""
@@ -1017,9 +841,6 @@ func formatSecurityTimestamp(epoch int64) string {
 	return time.Unix(epoch, 0).UTC().Format(securityTimestampFormat)
 }
 
-// formatSecurityBytes mirrors formatDockerBytes — negative values (no
-// equivalent "not calculated" sentinel exists for netusage, but the
-// convention is kept for consistency) render as empty.
 func formatSecurityBytes(n int64) string {
 	if n < 0 {
 		return ""
@@ -1036,8 +857,6 @@ func formatSecurityBytes(n int64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
-// formatSecurityRate renders a bytes-per-second float as a human-readable
-// display string.
 func formatSecurityRate(bps float64) string {
 	if bps < 0 {
 		return ""

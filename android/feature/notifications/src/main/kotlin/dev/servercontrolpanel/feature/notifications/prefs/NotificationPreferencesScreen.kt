@@ -39,12 +39,6 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.servercontrolpanel.data.push.DeviceIdProvider
 import dev.servercontrolpanel.data.push.NotifyRule
 
-/**
- * Entry point wired into `AppNavHost`. Resolves THIS device's `device_id` via
- * [DeviceIdProvider] — never a second, screen-local identity — before constructing
- * [NotificationPreferencesViewModel], since every preference read/write is scoped to this one
- * device.
- */
 @Composable
 fun NotificationPreferencesRoute(
     modifier: Modifier = Modifier,
@@ -57,11 +51,6 @@ fun NotificationPreferencesRoute(
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // An EXPLICIT factory: the default factory only knows how to construct an
-    // AndroidViewModel whose constructor takes exactly (Application).
-    // With the repository as a second parameter — even with a default
-    // value — reflection does not find the constructor and the screen dies
-    // with "Cannot create an instance of class". A test caught this.
     val inbox: AlertInboxViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
@@ -73,18 +62,6 @@ fun NotificationPreferencesRoute(
     val seen by inbox.seen.collectAsStateWithLifecycle()
     val inboxFailed by inbox.failed.collectAsStateWithLifecycle()
 
-    // TWO TABS, and not a single scroll.
-    //
-    // The first version stacked the inbox on top of the rules in one scroll.
-    // They are two tasks with opposite rhythms: triage is daily and urgent,
-    // configuration is rare and slow. Stacked, whoever opens in a hurry scrolls
-    // past the rules every time, and whoever came to configure walks through
-    // the inbox without needing to. Tabs also preserve the POSITION of each
-    // side — going back to the rules does not lose where you were.
-    //
-    // The count on the label is the reason tabs work here: without it,
-    // switching tabs would be the only way to know whether anything is firing,
-    // and a tab that has to be opened in order to inform does not inform.
     var selectedTab by rememberSaveable { mutableStateOf(0) }
     val pending = alerts.count { SeenAlerts.keyOf(it) !in seen }
 
@@ -115,9 +92,6 @@ fun NotificationPreferencesRoute(
                     modifier = Modifier.padding(16.dp),
                 )
                 if (inboxFailed) {
-                    // A read failure is stated, never silenced: "no alerts"
-                    // is the one sentence this screen may never say by
-                    // mistake.
                     Text(
                         text = "Could not read the alerts right now. The list above may be out of date.",
                         style = MaterialTheme.typography.bodySmall,
@@ -135,19 +109,6 @@ fun NotificationPreferencesRoute(
     }
 }
 
-/**
- * Stateless — every dependency is a parameter, so this renders/tests without a real ViewModel.
- *
- * ## No bar of its own (on purpose)
- * Notifications is a top-level destination — a drawer item — and its header is
- * drawn by the shell (`AppNavHost`). This screen used to carry its own
- * [androidx.compose.material3.TopAppBar] ("Notifications for this device")
- * right below the shell's ("Notifications"), with a "Back" that called
- * `popBackStack` from a navigation ROOT: there was nowhere to go back to, and
- * the button did not do what it promised. The header and the phantom "back"
- * went together; the screen had no other bar action to preserve (the "Try
- * again" of the error state is content, and it is still here).
- */
 @Composable
 fun NotificationPreferencesScreen(
     uiState: NotificationPreferencesUiState,

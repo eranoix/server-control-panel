@@ -1,19 +1,11 @@
 package api
 
-// handlers_wellknown_test.go — /.well-known/assetlinks.json has to be public,
-// with no redirect, Content-Type application/json, and has to serve an empty
-// manifest (not 404/500) for as long as the real fingerprint has not been
-// populated.
-
 import (
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
 )
 
-// TestAssetLinksPublicEmptyConfig — with no AndroidPackageName/Fingerprints
-// configured (the current state), the route must answer 200 with an empty JSON
-// array, demanding no Authorization and issuing no redirect.
 func TestAssetLinksPublicEmptyConfig(t *testing.T) {
 	r := newSmokeRouter(t)
 
@@ -39,13 +31,10 @@ func TestAssetLinksPublicEmptyConfig(t *testing.T) {
 	}
 }
 
-// TestAssetLinksUnauthenticated — the route must not sit under auth.Middleware:
-// a request with no cookie/Authorization at all has to be 200, never 401/403.
 func TestAssetLinksUnauthenticated(t *testing.T) {
 	r := newSmokeRouter(t)
 
 	req := httptest.NewRequest("GET", "/.well-known/assetlinks.json", nil)
-	// Explicitly NO auth header.
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -57,7 +46,6 @@ func TestAssetLinksUnauthenticated(t *testing.T) {
 	}
 }
 
-// TestAssetLinksMethodNotAllowed — only GET is accepted.
 func TestAssetLinksMethodNotAllowed(t *testing.T) {
 	r := newSmokeRouter(t)
 
@@ -70,9 +58,6 @@ func TestAssetLinksMethodNotAllowed(t *testing.T) {
 	}
 }
 
-// TestAssetLinksPopulatedConfig — when AndroidPackageName and
-// AndroidSigningFingerprints are filled in, the route must assemble the
-// spec-correct Digital Asset Links entry.
 func TestAssetLinksPopulatedConfig(t *testing.T) {
 	r := newSmokeRouter(t)
 

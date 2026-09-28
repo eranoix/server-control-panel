@@ -4,11 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * A 401 from `POST /auth/login` means either a wrong password or a wrong second factor, which need
- * opposite reactions. Blaming the password at the code step sends the user retyping it, and every
- * failure counts towards the server's 5-attempt lockout.
- */
 class PasswordLoginFailureTest {
 
     private val rejectedCodeBody =
@@ -33,10 +28,6 @@ class PasswordLoginFailureTest {
         assertEquals(PasswordLoginResult.Failed("Invalid username or password."), result)
     }
 
-    /**
-     * The operator edits the password at the code step and gets "invalid credentials": the
-     * password is blamed even though a code was sent.
-     */
     @Test
     fun `a password edited at the code step blames the password, not the code`() {
         val result = translateLoginFailure(401, rejectedCredentialBody, sentCode = true)
@@ -44,7 +35,6 @@ class PasswordLoginFailureTest {
         assertEquals(PasswordLoginResult.Failed("Invalid username or password."), result)
     }
 
-    /** Without an error body (e.g. a proxy swallowed it), having sent a code means the 401 is about the code. */
     @Test
     fun `without an error body, having sent a code means the code was wrong`() {
         assertTrue(translateLoginFailure(401, null, sentCode = true) is PasswordLoginResult.InvalidCode)
@@ -59,7 +49,6 @@ class PasswordLoginFailureTest {
         )
     }
 
-    /** 423 is the attempt lockout, and the message must say that wrong codes count too. */
     @Test
     fun `a 423 explains that wrong codes also count towards the lockout`() {
         val result = translateLoginFailure(423, null, sentCode = true)

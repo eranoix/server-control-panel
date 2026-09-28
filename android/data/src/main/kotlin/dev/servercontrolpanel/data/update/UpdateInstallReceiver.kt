@@ -6,13 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.util.Log
 
-/**
- * Receives `PackageInstaller` results. Declared in the manifest because
- * installing our own APK kills this process: a runtime receiver would die with it
- * and lose the failure message, while the system recreates the process to
- * deliver a manifest receiver's broadcast and [UpdateDiagnostics] writes it to
- * disk. Not exported: only the system, answering our explicit `PendingIntent`, gets here.
- */
 class UpdateInstallReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -24,8 +17,6 @@ class UpdateInstallReceiver : BroadcastReceiver() {
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
 
         if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-            // The system wants to show its confirmation dialog. Not an outcome:
-            // the real result comes in a second broadcast, so nothing goes on the bus.
             val confirmation = confirmationIntent(intent)
             if (confirmation == null) {
                 UpdateDiagnostics.record(
@@ -65,8 +56,6 @@ class UpdateInstallReceiver : BroadcastReceiver() {
 
     @Suppress("DEPRECATION")
     private fun confirmationIntent(intent: Intent): Intent? =
-        // The @Suppress covers the deprecated signature some compile SDKs still
-        // flag; minSdk 34 has the typed overload.
         intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
 
     companion object {

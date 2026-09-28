@@ -11,8 +11,6 @@ func adminViewer() Viewer              { return Viewer{Username: "admin", isAdmi
 func plainViewer() Viewer              { return Viewer{Username: "plain", isAdmin: false} }
 func adminOnlyAuthorize(v Viewer) bool { return v.IsAdmin() }
 
-// Test 1: RegisterAction + RunAction invokes the handler and returns its
-// ActionResult.
 func TestRunAction_InvokesHandlerAndReturnsResult(t *testing.T) {
 	calls := 0
 	RegisterAction(
@@ -37,7 +35,6 @@ func TestRunAction_InvokesHandlerAndReturnsResult(t *testing.T) {
 	}
 }
 
-// Test 2: RunAction on an id that was never registered returns ErrActionNotFound.
 func TestRunAction_UnregisteredID_ErrActionNotFound(t *testing.T) {
 	_, err := RunAction(context.Background(), "test.registry.does.not.exist", adminViewer(), nil, nil, Confirmation{})
 	if !errors.Is(err, ErrActionNotFound) {
@@ -45,8 +42,6 @@ func TestRunAction_UnregisteredID_ErrActionNotFound(t *testing.T) {
 	}
 }
 
-// Test 3 (the gate): a Destructive action invoked without confirmation
-// returns FieldErrors keyed _confirmation and does NOT invoke the handler.
 func TestRunAction_DestructiveWithoutConfirmation_RefusesBeforeHandler(t *testing.T) {
 	calls := 0
 	RegisterAction(
@@ -74,8 +69,6 @@ func TestRunAction_DestructiveWithoutConfirmation_RefusesBeforeHandler(t *testin
 	}
 }
 
-// Test 4: the same destructive action invoked with confirmed: true runs the
-// handler.
 func TestRunAction_DestructiveWithConfirmation_RunsHandler(t *testing.T) {
 	res, err := RunAction(context.Background(), "test.registry.destructive", adminViewer(), nil, nil, Confirmation{Confirmed: true})
 	if err != nil {
@@ -86,8 +79,6 @@ func TestRunAction_DestructiveWithConfirmation_RunsHandler(t *testing.T) {
 	}
 }
 
-// Test 5: RequireTypedConfirmation demands an EXACT comparison — no trim, no
-// case-fold.
 func TestRunAction_RequireTypedConfirmation_ExactMatchOnly(t *testing.T) {
 	RegisterAction(
 		ActionDescriptor{ActionID: "test.registry.typed", Destructive: true, RequireTypedConfirmation: "prod-db"},
@@ -97,20 +88,16 @@ func TestRunAction_RequireTypedConfirmation_ExactMatchOnly(t *testing.T) {
 		},
 	)
 
-	// confirmed: true on its own, without typed, is refused.
 	_, err := RunAction(context.Background(), "test.registry.typed", adminViewer(), nil, nil, Confirmation{Confirmed: true})
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("confirmed on its own: err = %v, want ErrValidation", err)
 	}
 
-	// typed with different capitalization is refused — the comparison is not
-	// case-folded.
 	_, err = RunAction(context.Background(), "test.registry.typed", adminViewer(), nil, nil, Confirmation{Confirmed: true, Typed: "prod-DB"})
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("typed=prod-DB: err = %v, want ErrValidation", err)
 	}
 
-	// typed exactly equal is accepted.
 	res, err := RunAction(context.Background(), "test.registry.typed", adminViewer(), nil, nil, Confirmation{Confirmed: true, Typed: "prod-db"})
 	if err != nil {
 		t.Fatalf("typed=prod-db: err = %v, want nil", err)
@@ -120,9 +107,6 @@ func TestRunAction_RequireTypedConfirmation_ExactMatchOnly(t *testing.T) {
 	}
 }
 
-// Test 6 (anti-enumeration parity): an action whose Authorize refuses the
-// Viewer returns the SAME ErrActionNotFound as a nonexistent id — the caller
-// cannot tell "does not exist" from "exists but is not yours".
 func TestRunAction_UnauthorizedViewer_SameErrorAsUnregistered(t *testing.T) {
 	RegisterAction(
 		ActionDescriptor{ActionID: "test.registry.adminonly"},
@@ -145,7 +129,6 @@ func TestRunAction_UnauthorizedViewer_SameErrorAsUnregistered(t *testing.T) {
 		t.Fatalf("the two errors diverge: unauthorized=%v, unregistered=%v", unauthorizedErr, unregisteredErr)
 	}
 
-	// Proof of non-vacuity: an admin DOES run the same action.
 	res, err := RunAction(context.Background(), "test.registry.adminonly", adminViewer(), nil, nil, Confirmation{})
 	if err != nil {
 		t.Fatalf("admin: RunAction: %v — without this, the test above would be vacuous", err)
@@ -155,7 +138,6 @@ func TestRunAction_UnauthorizedViewer_SameErrorAsUnregistered(t *testing.T) {
 	}
 }
 
-// Test 7: a duplicate RegisterAction for the same id panics.
 func TestRegisterAction_DuplicateID_Panics(t *testing.T) {
 	RegisterAction(
 		ActionDescriptor{ActionID: "test.registry.dup"},
@@ -179,9 +161,6 @@ func TestRegisterAction_DuplicateID_Panics(t *testing.T) {
 	)
 }
 
-// TestRegisterAction_NilAuthorize_Panics proves the structural property: an
-// action without authorize cannot be registered — it is not a code-review
-// convention, it is impossible to compile a valid registration without it.
 func TestRegisterAction_NilAuthorize_Panics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
@@ -197,9 +176,6 @@ func TestRegisterAction_NilAuthorize_Panics(t *testing.T) {
 	)
 }
 
-// TestActionsFor_OnlyAuthorizedDescriptors proves that ActionsFor returns
-// exactly the set RunAction would execute — the same source of truth on both
-// sides (see the ActionsFor comment).
 func TestActionsFor_OnlyAuthorizedDescriptors(t *testing.T) {
 	descs := ActionsFor(adminViewer())
 	foundAdminOnly := false

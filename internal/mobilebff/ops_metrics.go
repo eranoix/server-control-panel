@@ -1,41 +1,5 @@
 package mobilebff
 
-// ops_metrics.go — the "server resources" half of GET /ops/status
-// (CPU, memory, swap, disk, uptime, clock and network).
-//
-// WHY HERE, INSIDE /ops/status, AND NOT ON A NEW ROUTE
-// The home screen's dashboard needs, in a single paint, health + queue +
-// alerts + resources. Creating /ops/metrics alongside it would mean: a second
-// identical admin gate, a second WS channel for the live version (or a
-// dashboard half of whose numbers freeze after the first paint), and two
-// sources of "operational state" that drift apart over time — exactly the
-// surface divergence this BFF exists to prevent (see the header of
-// mobilebff.go). OpsStatus already is, by definition, "an aggregated,
-// screen-shaped snapshot of operational state, admin-only"; machine resources
-// are operational state. So it grows one field, and the shape stays ONE —
-// served over HTTP and published on the "ops.health" channel by the same
-// builder (events_bridge_ops.go).
-//
-// WHERE THE NUMBERS COME FROM (no new collector)
-// Everything comes out of deps.SysStats, which internal/api wires to the SAME
-// collectStatsCached that serves the web panel's GET /api/stats — which in
-// turn calls internal/system.Collect (gopsutil), the same collection that
-// feeds the alert engine's systemCollector (internal/api/metrics_collectors.go).
-// Not a byte of /proc is read by this file.
-//
-// COST
-// system.Collect is expensive: it blocks ~200ms sampling CPU and sweeps ALL of
-// /proc. That is why the injected dependency is NOT system.Collect but the
-// panel's cached wrapper: 3s TTL + singleflight under a mutex. Consequences:
-//   - an app polling /ops/status every 2s pays for ONE collection every 3s;
-//   - if the web panel is open (5s poll), the app pays nothing at all — the
-//     two share the SAME cache, not two competing caches;
-//   - the 12s tick of the "ops.health" channel only collects when somebody is
-//     subscribed (a guard that already existed in StartOpsHealthPublisher).
-// A second cache was deliberately NOT created here: two TTLs over the same
-// collection would only produce different staleness windows for the same
-// number, without saving a single read of /proc.
-
 import (
 	"context"
 	"fmt"
@@ -47,43 +11,20 @@ import (
 	"server-control-panel/internal/system"
 )
 
-// SystemMetrics is the screen-shaped projection of internal/system.Stats —
-// only what a phone dashboard draws in the first few seconds. Stats's heavy
-// fields (per-core percentage, top processes, Go runtime) are left out on
-// purpose: none of them fits in a phone card, and all of them would also
-// fatten every tick of the "ops.health" channel.
-//
-// Value/text pair convention: every number a human reads comes in TWO fields —
-// the raw one (for the client to draw a bar/chart and compare) and the
-// already-formatted `*_text` one (so the client can paint without
-// reimplementing byte formatting in Kotlin). The same convention as
-// formatDockerBytes/formatSecurityBytes in internal/mobilebff/screens.
 type SystemMetrics struct {
-	Hostname string `json:"hostname,omitempty"`
-	Platform string `json:"platform,omitempty"`
-	// ServerTime/ServerTimeEpoch are the instant THIS response was assembled
-	// (not the sample's, which may be up to 3s behind because of the cache
-	// described in the header). It is the "server clock" the app shows and uses
-	// to detect a skewed clock.
-	ServerTime      string `json:"server_time"`
-	ServerTimeEpoch int64  `json:"server_time_epoch"`
-	// UptimeSeconds is the raw value; UptimeText is the same value as "18d 5h 3m".
-	UptimeSeconds uint64        `json:"uptime_seconds"`
-	UptimeText    string        `json:"uptime_text"`
-	CPU           CPUMetrics    `json:"cpu"`
-	Memory        MemoryMetrics `json:"memory"`
-	// Swap always comes through; a host without swap returns total=0, which is
-	// the honest answer ("it exists and is worth zero"), not the field's absence.
-	Swap  MemoryMetrics `json:"swap"`
-	Disks []DiskMetrics `json:"disks"`
-	// Net is omitted when no uplink interface was identified — see pickUplink.
-	// Absent is honest; zeroed would be a lie.
-	Net *NetMetrics `json:"net,omitempty"`
+	Hostname        string        `json:"hostname,omitempty"`
+	Platform        string        `json:"platform,omitempty"`
+	ServerTime      string        `json:"server_time"`
+	ServerTimeEpoch int64         `json:"server_time_epoch"`
+	UptimeSeconds   uint64        `json:"uptime_seconds"`
+	UptimeText      string        `json:"uptime_text"`
+	CPU             CPUMetrics    `json:"cpu"`
+	Memory          MemoryMetrics `json:"memory"`
+	Swap            MemoryMetrics `json:"swap"`
+	Disks           []DiskMetrics `json:"disks"`
+	Net             *NetMetrics   `json:"net,omitempty"`
 }
 
-// CPUMetrics mirrors the names of internal/system.CPUInfo (used_percent is its
-// `overall`, renamed to match memory's and disk's used_percent — within ONE
-// response, "percentage in use" has to have a single name).
 type CPUMetrics struct {
 	Model       string  `json:"model,omitempty"`
 	Cores       int     `json:"cores"`
@@ -91,14 +32,10 @@ type CPUMetrics struct {
 	Load1       float64 `json:"load1"`
 	Load5       float64 `json:"load5"`
 	Load15      float64 `json:"load15"`
-	// Steal = % of CPU time stolen by the hypervisor; Iowait = % waiting on
-	// disk. The same fields the web panel already exposes, the same names.
-	Steal  float64 `json:"steal"`
-	Iowait float64 `json:"iowait"`
+	Steal       float64 `json:"steal"`
+	Iowait      float64 `json:"iowait"`
 }
 
-// MemoryMetrics mirrors internal/system.MemInfo (bytes) and adds the formatted
-// pairs. It serves both memory and swap.
 type MemoryMetrics struct {
 	Total       uint64  `json:"total"`
 	Used        uint64  `json:"used"`
@@ -108,8 +45,6 @@ type MemoryMetrics struct {
 	UsedText    string  `json:"used_text"`
 }
 
-// DiskMetrics mirrors internal/system.DiskInfo for the mounts that survive
-// relevantDisks.
 type DiskMetrics struct {
 	Mount       string  `json:"mount"`
 	FSType      string  `json:"fstype,omitempty"`
@@ -121,36 +56,16 @@ type DiskMetrics struct {
 	UsedText    string  `json:"used_text"`
 }
 
-// NetMetrics is the rate of ONE interface — the uplink one (see pickUplink) —
-// never the sum of all of them.
-//
-// Why not the sum: `sys.net.sent_rate` in the metrics catalogue
-// (internal/api/metrics_collectors.go) sums ALL interfaces, including `lo`, the
-// `br-*` bridges and Docker's `veth*`. On this host that counts the same
-// container packet three times and the whole of loopback — a number good enough
-// for a relative alert rule, and terrible for a card telling a human
-// "↓ 12 MiB/s". Here the interface is chosen, named in the payload itself
-// (Interface), and the rate is derived from the cumulative counters the
-// collection already brought back — without a single extra read of the system.
 type NetMetrics struct {
-	Interface string `json:"interface"`
-	BytesSent uint64 `json:"bytes_sent"`
-	BytesRecv uint64 `json:"bytes_recv"`
-	// SentRate/RecvRate (bytes/s) stay ABSENT until a second sample exists to
-	// derive the rate from — a zero on the first call would be
-	// indistinguishable from "network idle". The client draws "—" while they
-	// are null, and the second call (or the next ops.health tick) fills them in.
+	Interface    string   `json:"interface"`
+	BytesSent    uint64   `json:"bytes_sent"`
+	BytesRecv    uint64   `json:"bytes_recv"`
 	SentRate     *float64 `json:"sent_rate,omitempty"`
 	RecvRate     *float64 `json:"recv_rate,omitempty"`
 	SentRateText string   `json:"sent_rate_text,omitempty"`
 	RecvRateText string   `json:"recv_rate_text,omitempty"`
 }
 
-// buildSystemMetrics shapes an already-collected *system.Stats. It returns nil
-// when the dependency is not wired or the collection failed — the caller then
-// omits the whole `system` field instead of publishing a block of zeros the app
-// would paint as "CPU 0%, disk 0/0" (a lie indistinguishable from an idle
-// server).
 func buildSystemMetrics(ctx context.Context, deps Deps) *SystemMetrics {
 	if deps.SysStats == nil {
 		return nil
@@ -196,11 +111,6 @@ func memoryMetrics(mi system.MemInfo) MemoryMetrics {
 	}
 }
 
-// ignoredDiskFSTypes are filesystems that ALWAYS show up 100% full by
-// construction (read-only mounted images: each snap is a squashfs the exact size
-// of its contents) or that do not represent persistent storage. Without this
-// filter, this host would return 16 mounts of which 14 are snaps at 100% — a
-// phone dashboard that opens shouting "disk full" fourteen times over.
 var ignoredDiskFSTypes = map[string]bool{
 	"squashfs":  true,
 	"overlay":   true,
@@ -212,10 +122,6 @@ var ignoredDiskFSTypes = map[string]bool{
 	"fuse.snap": true,
 }
 
-// relevantDisks filters and orders the mounts a dashboard should show.
-// Order: "/" first (it is the disk the VPS owner thinks of as "the disk"), then
-// the rest from fullest to emptiest — whoever is about to fill up shows up
-// before you have to scroll.
 func relevantDisks(in []system.DiskInfo) []DiskMetrics {
 	out := make([]DiskMetrics, 0, len(in))
 	for _, d := range in {
@@ -242,18 +148,11 @@ func relevantDisks(in []system.DiskInfo) []DiskMetrics {
 	return out
 }
 
-// virtualIfacePrefixes are interfaces that do NOT represent the server's real
-// bandwidth: loopback, Docker's bridges and veths (container traffic already
-// goes through the physical one) and tunnels (tailscale/wireguard/tun/tap travel
-// INSIDE the physical one — counting them would double the same byte).
 var virtualIfacePrefixes = []string{
 	"lo", "docker", "br-", "veth", "virbr", "tun", "tap", "wg", "tailscale",
 	"cni", "flannel", "kube", "dummy", "gre", "sit", "bond-",
 }
 
-// pickUplink chooses the physical interface with the most cumulative traffic —
-// on the VPS, the public NIC. It returns ok=false when there are only virtual
-// interfaces (e.g. a CI container), and then the `net` field drops out entirely.
 func pickUplink(ifaces []system.NetInfo) (system.NetInfo, bool) {
 	var best system.NetInfo
 	found := false
@@ -277,15 +176,6 @@ func isVirtualIface(name string) bool {
 	return false
 }
 
-// netRateTracker derives bytes/s from the CUMULATIVE counters the collection
-// already returned — it reads nothing itself. It keeps the previous sample
-// because a rate requires two samples and the collection only hands over totals.
-//
-// Package state (like systemMetricsWindowByUser in screens/system.go): there is
-// a single server per process and the series belongs to the host, not to the
-// user. Tests that depend on a rate MUST use a tracker of their own (sample is a
-// method precisely for that) rather than the singleton, or one test's sample
-// leaks into another's assertion.
 type netRateTracker struct {
 	mu       sync.Mutex
 	have     bool
@@ -299,15 +189,6 @@ type netRateTracker struct {
 
 var netRates = &netRateTracker{}
 
-// sample records the current sample and returns the matching NetMetrics.
-//
-// Three guards, all because of the collection's 3s cache:
-//  1. counters identical to the previous sample's ⇒ it is the SAME collection
-//     being served again; recomputing would give a false rate of 0, so the
-//     previous rates are repeated and the baseline does not move.
-//  2. the interface changed or a counter went backwards (NIC/host restart) ⇒
-//     rebaseline without publishing a rate.
-//  3. first sample of the process ⇒ no rate (fields absent).
 func (t *netRateTracker) sample(ifaces []system.NetInfo, now time.Time) *NetMetrics {
 	up, ok := pickUplink(ifaces)
 	if !ok {
@@ -319,17 +200,10 @@ func (t *netRateTracker) sample(ifaces []system.NetInfo, now time.Time) *NetMetr
 	defer t.mu.Unlock()
 	switch {
 	case t.have && t.iface == up.Name && t.sent == up.BytesSent && t.recv == up.BytesRecv:
-		// (1) the same collection served from the cache: repeat what we already
-		// knew and do NOT touch the baseline — advancing `at` without advancing
-		// the bytes would shrink the next real sample's dt and inflate the rate.
 	case !t.have || t.iface != up.Name || up.BytesSent < t.sent || up.BytesRecv < t.recv:
-		// (2)/(3) no usable baseline: record it and wait for the next one.
 		t.sentRate, t.recvRate = nil, nil
 		t.iface, t.sent, t.recv, t.at, t.have = up.Name, up.BytesSent, up.BytesRecv, now, true
 	default:
-		// Fresh pointers on every computation (never a write through the pointer
-		// already handed out), so a response being serialized never sees the
-		// value change underneath it.
 		if dt := now.Sub(t.at).Seconds(); dt > 0 {
 			sr := float64(up.BytesSent-t.sent) / dt
 			rr := float64(up.BytesRecv-t.recv) / dt
@@ -347,8 +221,6 @@ func (t *netRateTracker) sample(ifaces []system.NetInfo, now time.Time) *NetMetr
 	return out
 }
 
-// platformLabel joins platform and version into a header label
-// ("ubuntu 24.04"), empty when the collection could not tell.
 func platformLabel(h system.HostInfo) string {
 	switch {
 	case h.Platform == "":
@@ -360,9 +232,6 @@ func platformLabel(h system.HostInfo) string {
 	}
 }
 
-// formatUptime renders seconds as "18d 5h 3m" — descending units, at most
-// three, without seconds (an uptime of days does not need them) except when the
-// server came up less than a minute ago.
 func formatUptime(secs uint64) string {
 	if secs < 60 {
 		return fmt.Sprintf("%ds", secs)
@@ -383,11 +252,6 @@ func formatUptime(secs uint64) string {
 	return strings.Join(parts, " ")
 }
 
-// formatBytes renders bytes in binary units, the same output as
-// formatDockerBytes/formatSecurityBytes (internal/mobilebff/screens) — the app
-// must not see "1.2 GiB" on one screen and "1.29 GB" on another for the same
-// number. The signature takes uint64 because the sources here (gopsutil's
-// mem/disk/net) have no negative sentinel, unlike Docker's sizes.
 func formatBytes(n uint64) string {
 	const unit = 1024
 	if n < unit {
@@ -401,7 +265,6 @@ func formatBytes(n uint64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
-// formatRate renders bytes/s, the same output as formatSecurityRate.
 func formatRate(bps float64) string {
 	if bps < 0 {
 		return ""

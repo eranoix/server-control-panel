@@ -14,11 +14,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * An admin's catalog: five sections in three groups, in server order. It
- * includes a section the app has never seen ("future.invented"), which must
- * still be shown.
- */
 private val ADMIN_CATALOG = listOf(
     SduiSection("docker.containers", "Docker", "Containers"),
     SduiSection("docker.prune", "Docker", "Docker cleanup"),
@@ -27,10 +22,6 @@ private val ADMIN_CATALOG = listOf(
     SduiSection("future.invented", "System", "A section this app has never seen"),
 )
 
-/**
- * The same server for a non-admin: admin sections are omitted, not marked
- * unavailable (the BFF filters by omission to prevent enumeration).
- */
 private val NON_ADMIN_CATALOG = listOf(
     SduiSection("docker.containers", "Docker", "Containers"),
     SduiSection("system.processes", "System", "Processes"),
@@ -59,7 +50,6 @@ class AdminCatalogViewModelTest {
         )
     }
 
-    /** The app never re-adds sections the server omitted for this user. */
     @Test
     fun `a section without permission is absent because the server did not send it`() = runTest {
         val vm = AdminCatalogViewModel(
@@ -98,7 +88,6 @@ class AdminCatalogViewModelTest {
         vm.backToLauncher()
         assertNull((vm.uiState.value as AdminCatalogState.Ready).selectedId)
 
-        // A reload must not reopen the section just closed.
         vm.load()
         assertNull((vm.uiState.value as AdminCatalogState.Ready).selectedId)
     }
@@ -140,7 +129,6 @@ class AdminCatalogViewModelTest {
         assertEquals(listOf("docker.containers", "scheduler.jobs"), ready.recentIds)
     }
 
-    /** A stored id no longer in the catalog must not become a shortcut to a 404. */
     @Test
     fun `a recent that left the catalog is dropped instead of becoming a broken shortcut`() = runTest {
         val vm = AdminCatalogViewModel(
@@ -153,7 +141,6 @@ class AdminCatalogViewModelTest {
         assertEquals(listOf("docker.containers"), ready.recents.map { it.id })
     }
 
-    /** A deep link to a concrete section (e.g. from a notification) opens that section. */
     @Test
     fun `a concrete section in the route wins over the automatic choice`() = runTest {
         val vm = AdminCatalogViewModel(
@@ -164,10 +151,6 @@ class AdminCatalogViewModelTest {
         assertEquals("security.audit", (vm.uiState.value as AdminCatalogState.Ready).selectedId)
     }
 
-    /**
-     * The catalog is a hint, not a gate: `/screens/{id}` decides, so a stale
-     * catalog cannot swallow a valid deep link.
-     */
     @Test
     fun `a section outside the catalog is still attempted, the fetch authorizes`() = runTest {
         val vm = AdminCatalogViewModel(
@@ -241,7 +224,6 @@ class AdminCatalogViewModelTest {
     }
 }
 
-/** The launcher's rendered grid, search and no-results state. */
 @RunWith(RobolectricTestRunner::class)
 class AdminLauncherTest {
 
@@ -262,7 +244,6 @@ class AdminLauncherTest {
 
         composeRule.onNodeWithText("Containers").assertExists()
         composeRule.onNodeWithText("Audit log").assertExists()
-        // A section unknown to this release must still appear.
         composeRule.onNodeWithText("A section this app has never seen").assertExists()
     }
 
@@ -282,7 +263,6 @@ class AdminLauncherTest {
         composeRule.onNodeWithText("Containers").assertDoesNotExist()
     }
 
-    /** No results must state the term so it is not mistaken for a missing catalog. */
     @Test
     fun `a search with no results states the term and the section count`() {
         composeRule.setContent {
@@ -317,7 +297,6 @@ class AdminLauncherTest {
     }
 }
 
-/** Separate class because the compose rule allows only one `setContent` per test. */
 @RunWith(RobolectricTestRunner::class)
 class AdminLauncherSearchTest {
 
@@ -340,9 +319,6 @@ class AdminLauncherSearchTest {
     }
 }
 
-/**
- * The filter shared by the launcher and the palette.
- */
 class SectionFilterTest {
 
     @Test

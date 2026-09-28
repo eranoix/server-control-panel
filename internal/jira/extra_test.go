@@ -10,8 +10,6 @@ import (
 
 func strptr(s string) *string { return &s }
 
-// Editing the issue type from the detail view → UpdateIssue must emit
-// fields["issuetype"]={"name":...}. The type never "clears" (nil/"" = no-op).
 func TestUpdateIssueSetsIssueType(t *testing.T) {
 	var body map[string]any
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -38,7 +36,6 @@ func TestUpdateIssueOmitsIssueTypeWhenNil(t *testing.T) {
 		_ = json.Unmarshal(data, &body)
 		w.WriteHeader(http.StatusNoContent)
 	})
-	// IssueType nil but some other field present → PUT without the issuetype key.
 	if err := c.UpdateIssue(context.Background(), "X-1", UpdateIssueRequest{
 		Summary: strptr("only the summary"),
 	}); err != nil {
@@ -56,7 +53,6 @@ func TestUpdateIssueEmptyNoPut(t *testing.T) {
 		called = true
 		w.WriteHeader(http.StatusNoContent)
 	})
-	// A wholly empty request (and IssueType:"" is a no-op too) → no PUT at all.
 	if err := c.UpdateIssue(context.Background(), "X-1", UpdateIssueRequest{
 		IssueType: strptr(""),
 	}); err != nil {

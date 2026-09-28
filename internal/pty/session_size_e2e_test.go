@@ -14,17 +14,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// THESE TESTS ASK THE PROGRAM, NOT OUR OWN BOOKKEEPING.
-//
-// The defect survived a battery of green unit tests — including one called
-// "a client that leaves stops shrinking the session", which measured the RETURN
-// of `forgetSize` while the caller threw that return away. The bookkeeping
-// was right and the terminal was wrong.
-//
-// So here a real `HostShell` comes up, with real websockets, and the question is
-// put to the session's shell: `stty size`. It is the only answer that cannot
-// agree with us and be wrong at the same time.
-
 var reProgramSize = regexp.MustCompile(`(?m)^\s*(\d{1,3}) (\d{1,3})\s*$`)
 
 type testClient struct {
@@ -47,8 +36,6 @@ func (c *testClient) resize(cols, rows int) {
 	c.send(map[string]any{"type": "resize", "cols": cols, "rows": rows})
 }
 
-// programSize asks the session's shell what its terminal size is —
-// `rows cols`, the way `stty size` answers.
 func (c *testClient) programSize() (rows, cols string) {
 	c.t.Helper()
 	c.send(map[string]any{"type": "input", "data": "stty size\r"})
@@ -81,7 +68,6 @@ func (c *testClient) receivedNotices() []sizeNotice {
 	return append([]sizeNotice(nil), c.warnings...)
 }
 
-// testSession brings up a real HostShell and returns how to dial into it.
 func testSession(t *testing.T, name string) func() *testClient {
 	t.Helper()
 	if _, err := exec.LookPath("dtach"); err != nil {
@@ -113,50 +99,36 @@ func testSession(t *testing.T, name string) func() *testClient {
 	}
 }
 
-// THE REPORT, IN FULL: two PCs on the same session, the one with the smaller
-// window closes, and the one left has to go back to its own size.
-//
-// Before the fix the program kept painting 24x80 while the browser drew 38x110 —
-// forever, because the per-connection dedup blocked the heartbeat's re-assertion
-// before it reached the session. That is where both complaints came from at once:
-// "I only see one page" (the program paints fewer lines than the window shows)
-// and "the text duplicates" (it wraps lines at one width while the xterm draws
-// at another).
 func TestE2E_SessionNotStuckAtDepartedClientSize(t *testing.T) {
 	dial := testSession(t, "e2e-stuck")
 
-	big := dial() // the new PC
+	big := dial()
 	big.resize(120, 40)
 	time.Sleep(1600 * time.Millisecond)
 	if r, c := big.programSize(); r != "40" || c != "120" {
 		t.Fatalf("with a single client, the program sees %sx%s; wanted 40x120", r, c)
 	}
 
-	small := dial() // the tab left open on the old PC
+	small := dial()
 	small.resize(80, 24)
 	time.Sleep(1600 * time.Millisecond)
 	if r, c := big.programSize(); r != "24" || c != "80" {
 		t.Fatalf("with both attached, the program sees %sx%s; wanted the SMALLER one, 24x80", r, c)
 	}
 
-	// The new PC touches its window while both are attached. It is this step that
-	// put the big client's pty at the minimum and sprang the trap.
 	big.resize(110, 38)
 	time.Sleep(1600 * time.Millisecond)
 	if r, c := big.programSize(); r != "24" || c != "80" {
 		t.Fatalf("the smaller one still rules: program sees %sx%s; wanted 24x80", r, c)
 	}
 
-	_ = small.conn.Close() // close the tab on the old PC
+	_ = small.conn.Close()
 	time.Sleep(2500 * time.Millisecond)
 	if r, c := big.programSize(); r != "38" || c != "110" {
 		t.Errorf("after the small client left, the program sees %sx%s; wanted 38x110 — the session stayed stuck at the size of whoever closed", r, c)
 	}
 }
 
-// The other half of the minimum rule: whoever ends up LARGER needs to be told the
-// session's grid, and told again when it changes. Without the re-notice, the big
-// client draws a grid the program is not painting for.
 func TestE2E_LargeClientNotifiedWhenSmallJoinsAndLeaves(t *testing.T) {
 	dial := testSession(t, "e2e-notices")
 
@@ -167,7 +139,7 @@ func TestE2E_LargeClientNotifiedWhenSmallJoinsAndLeaves(t *testing.T) {
 	small := dial()
 	small.resize(80, 24)
 	time.Sleep(1500 * time.Millisecond)
-	big.programSize() // drains the socket, collecting notices
+	big.programSize()
 
 	warnings := big.receivedNotices()
 	if len(warnings) == 0 {
@@ -187,10 +159,6 @@ func TestE2E_LargeClientNotifiedWhenSmallJoinsAndLeaves(t *testing.T) {
 	}
 }
 
-// A client arriving mid-session gets ITS pty sized even when the session's size
-// does not change. `pty.Start` creates the pty at 0x0; before, the only path that
-// fixed that was the repaint-wobble, by accident — and the wobble leaves the
-// stage for a client that primes its own screen (`replay=0`).
 func TestE2E_NewcomerIsSizedWithoutWobble(t *testing.T) {
 	dial := testSession(t, "e2e-arrival")
 
@@ -199,7 +167,7 @@ func TestE2E_NewcomerIsSizedWithoutWobble(t *testing.T) {
 	time.Sleep(1500 * time.Millisecond)
 
 	second := dial()
-	second.resize(90, 28) // same size: the session does NOT change
+	second.resize(90, 28)
 	time.Sleep(1500 * time.Millisecond)
 	if r, c := second.programSize(); r != "28" || c != "90" {
 		t.Errorf("the second client sees %sx%s; wanted 28x90", r, c)

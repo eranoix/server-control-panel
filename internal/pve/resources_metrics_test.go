@@ -8,24 +8,6 @@ import (
 	"testing"
 )
 
-// resources_metrics_test.go — the pin for the per-guest COUNTERS.
-//
-// # Why they come in now, after having been excluded on purpose
-//
-// The original comment in resources.go said counters were left out because
-// "the inventory publishes IDENTITY and STATE, not telemetry; whoever wants a
-// time series has Prometheus". The sentence is still right about the SERIES. It
-// was wrong about STATE: how much RAM a guest is using RIGHT NOW is state, not
-// series — and it was exactly that state the screen did not have.
-//
-// The measurement that decided it (audit token, the home hypervisor): qemu/208
-// `dev` was sitting at 7.19 GB of 8.59 GB of RAM — 83.7% — and no screen in the
-// panel showed it. This is not a layout preference: it is data the hypervisor
-// delivers in every response and that the panel threw away on every tick.
-
-// TestClusterResourcesBringsPerGuestCounters proves that the parser stopped
-// discarding what the hypervisor sends. The assertion is on the TOKEN fixture —
-// the view the panel actually receives.
 func TestClusterResourcesBringsPerGuestCounters(t *testing.T) {
 	raw, err := os.ReadFile(fixtureToken)
 	if err != nil {
@@ -45,7 +27,6 @@ func TestClusterResourcesBringsPerGuestCounters(t *testing.T) {
 		byID[r.ID] = r
 	}
 
-	// What the fixture (measured live) says about the lxc/201 `games`.
 	g, ok := byID["lxc/201"]
 	if !ok {
 		t.Fatal("lxc/201 disappeared from the fixture")
@@ -78,13 +59,6 @@ func TestClusterResourcesBringsPerGuestCounters(t *testing.T) {
 	}
 }
 
-// 🔴 TestQemuDiskIsZeroAtSource is the pin for the TRAP, and it lives here
-// on purpose: if one day the hypervisor starts reporting QEMU disk (guest agent
-// installed), this test fails and forces a REVIEW of the "not reported" rule
-// instead of leaving it lying in silence.
-//
-// Measured on both QEMU guests of this house (qemu/100 `panel` and qemu/208
-// `dev`): `disk: 0` with a real `maxdisk`. On the EIGHT LXC, real disk.
 func TestQemuDiskIsZeroAtSource(t *testing.T) {
 	raw, err := os.ReadFile(fixtureToken)
 	if err != nil {

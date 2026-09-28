@@ -1,14 +1,4 @@
 #!/usr/bin/env node
-// test-recovery-tabs.mjs — the two tabs of /recovery must never be on screen
-// at the same time.
-//
-// What the user saw (screenshot): the host terminal rendered on top AND the
-// Claude notice underneath, with the host action bar visible in the wrong tab.
-// Two screens splitting the height, neither of them usable.
-//
-// This is CSS semantics, not expression: only EXECUTION in a browser proves it.
-// The pin renders the REAL page (the same HTML the server embeds), with the
-// WebSockets neutralised, and measures visibility with checkVisibility().
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -30,9 +20,6 @@ const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
 console.log('=== test-recovery-tabs ===');
 
-// The real page, with the WebSocket stubbed (the pin tests LAYOUT, not the
-// transport — the transport has its own suite in test-recovery-term.mjs) and the
-// container status answering whatever each scenario needs.
 const pageHtml = fs.readFileSync(path.join(WEB, 'recovery-term.html'), 'utf8');
 let containerRunning = false;
 
@@ -46,9 +33,6 @@ const srv = http.createServer((req, res) => {
       window.WebSocket.prototype.readyState = 0;
     </script></head>`));
   }
-  // The page renews the session on its own (the recovery one lasts 30 min, and
-  // expiring in the middle of a repair is the worst possible moment). The stub
-  // answers so the pin can measure LAYOUT without renewal becoming 404 noise.
   if (u === '/recovery/renew') {
     res.setHeader('content-type', 'application/json');
     return res.end(JSON.stringify({ ok: true, remaining_sec: 8 * 3600 }));
@@ -87,11 +71,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push('pageerror: ' + ((e && e.message) || e)));
-// The browser asks for the favicon on its own and this test server does not
-// serve it; counting that 404 as a page error would be noise masking signal.
 page.on('console', (m) => {
-  // The console "Failed to load resource" does not say WHICH resource; the URL
-  // comes from the response handler below. Reporting both duplicates the failure.
   if (m.type() === 'error' && !/Failed to load resource/i.test(m.text())) errors.push('console: ' + m.text());
 });
 page.on('requestfailed', (r) => { if (!/favicon/i.test(r.url())) errors.push('resource failed: ' + r.url()); });
@@ -106,16 +86,12 @@ const click = async (sel) => { await page.click(sel); await page.waitForTimeout(
 await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(400);
 
-// ── 1. initial state: the host only ─────────────────────────────────────────
 {
   const t = await visible('#term'), c = await visible('#term-claude'), off = await visible('#claude-off');
   (t && !c && !off) ? ok('boot shows only the host terminal')
                     : no(`boot with overlapping screens (host=${t} claude=${c} notice=${off})`);
 }
 
-// ── 2. the reported bug: Claude tab with the container DOWN ─────────────────
-// The screenshot showed the host terminal AND the Claude notice splitting the
-// height, with the host action bar present in the wrong tab.
 await click('#tab-claude');
 {
   const t = await visible('#term'), off = await visible('#claude-off');
@@ -128,7 +104,6 @@ await click('#tab-claude');
          : no('host action bar visible in the Claude tab — an author `display:flex` beats the browser [hidden]');
 }
 
-// ── 3. back to the host ─────────────────────────────────────────────────────
 await click('#tab-host');
 {
   const t = await visible('#term'), off = await visible('#claude-off'), bar = await visible('.action-bar');
@@ -136,7 +111,6 @@ await click('#tab-host');
                        : no(`broken return (host=${t} notice=${off} bar=${bar})`);
 }
 
-// ── 4. with the container UP, the tab shows the Claude terminal ─────────────
 containerRunning = true;
 await click('#tab-claude');
 await page.waitForTimeout(400);
@@ -146,9 +120,6 @@ await page.waitForTimeout(400);
                     : no(`wrong Claude tab with the container up (claude=${c} notice=${off} host=${t})`);
 }
 
-// ── 5. the active terminal must FILL the area — not half a screen ──────────
-// Without this, "visible" would pass at 20px tall, which is what the overlap
-// produced in practice.
 {
   const heights = await page.evaluate(() => {
     const r = (s) => { const e = document.querySelector(s); return e ? e.getBoundingClientRect().height : 0; };

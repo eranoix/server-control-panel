@@ -1,43 +1,9 @@
 #!/usr/bin/env node
-// test-proxmox-render.mjs — RENDERS the Proxmox tab in a real browser.
-//
-// ────────────────────────────────────────────────────────────────────────────
-// 🔴 WHY THIS PIN EXISTS, AND WHY THE OTHERS WERE NOT ENOUGH
-//
-// The other two screen harnesses EVALUATE EXPRESSIONS: they take every `x-text`,
-// `x-show`, `:attr` and run it against a hand-built state. That catches an
-// expression that blows up — and that is how the "state is born null" class was
-// closed out.
-//
-// But they went GREEN, twice, over a screen the operator watched break. The
-// defect was in no expression at all: it was in DOM SEMANTICS. Inside `<svg>`
-// the parser does not create an HTMLTemplateElement — it creates an unknown SVG
-// element, which has no `.content` and is NOT inert. Alpine's `x-for` blew up in
-// `importNode` and the children of the fake template were rendered anyway, with
-// the loop variable out of scope. No isolated expression evaluation could see
-// that, because the expressions were all correct.
-//
-// The lesson, the same one as always on this project: only EXECUTION proves
-// behaviour. Here the execution is the browser drawing.
-//
-// 🔴 ABSENCE OF AN ERROR IS NOT APPROVAL. A `<path d="">` does not error and does
-// not paint anything — which was exactly the outcome of the crash. So each step
-// may demand a MEASUREMENT of what reached the DOM: how many charts, how many
-// subpaths, whether the last point has a numeric coordinate, whether the "no
-// sample" notice is VISIBLE. Without that the pin would approve a blank screen.
-//
-// 🔴 VISIBILITY IS MEASURED WITH checkVisibility(), NEVER WITH offsetParent.
-// `offsetParent` is an HTMLElement property and does NOT exist on an SVG element:
-// `svg.offsetParent !== null` is ALWAYS true. That hole has lied once in here
-// already, in exactly the place where the charts live.
-// ────────────────────────────────────────────────────────────────────────────
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
-// .tools/ is not versioned, so its absence has to say what to do — otherwise a
-// clean clone fails with "Cannot find module" and nobody knows why.
 const require_ = createRequire(path.join(path.resolve(path.dirname(new URL(import.meta.url).pathname), '..'), '.tools/'));
 let chromium;
 try {
@@ -52,9 +18,6 @@ try {
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const WEB = path.join(ROOT, 'internal', 'webassets', 'web');
 
-// ── browser: resolved by SEARCH, not by a matched version ──────────────────
-// Tying the playwright-core version to the downloaded chromium turns an
-// `npm update` into a broken pin. The search takes the first one that exists.
 function findBrowser() {
   const cands = [];
   if (process.env.PANEL_CHROMIUM) cands.push(process.env.PANEL_CHROMIUM);
@@ -69,23 +32,8 @@ function findBrowser() {
   return null;
 }
 
-// ── the harness page: the REAL SECTION of index.html, the REAL BUNDLES ──────
-// Cutting by line number would rot on the first edit. The section is found by
-// the very marker that defines it.
-//
-// The tab stopped being a loose <section x-show="currentView==='proxmox'">:
-// today it lazy-mounts via <template x-if>, in TWO sibling blocks, both gated on
-// currentView==='proxmox' — the real content (once 41-proxmox.js has spread
-// pvxStaleStyle over app()) and a safety net (a "reload" card for when the module
-// never arrived). Extracting only the inner part would lose exactly that gate,
-// which IS production behaviour; so both <template> blocks go in whole, and it is
-// Alpine itself — with 41-proxmox.js loaded in the harness — that decides at
-// runtime which of the two mounts.
 const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
 
-// Each <template> can nest others (x-for, x-if of sub-blocks); an indexOf for the
-// nearest '</template>' would close too early. Count depth to find the
-// </template> that actually matches the opening.
 function extractBalancedTemplate(html, literalOpening, startingFrom) {
   const iOpen = html.indexOf(literalOpening, startingFrom);
   if (iOpen < 0) return null;
@@ -122,12 +70,8 @@ if (section.length < 20000) { console.error(`FAILED: the extracted section is on
 
 const fixture = fs.readFileSync(path.join(ROOT, 'scripts', 'proxmox-render-fixture.js'), 'utf8');
 
-// Which bundle to render: `min` (what production serves) or `src` (the source).
 const BUNDLE = process.env.PANEL_RENDER_BUNDLE === 'src' ? 'src' : 'min';
 
-// 🔴 A STALE .min.js IS WORSE THAN A MISSING ONE: the server serves the old file
-// without a word, so the screen in the air lags behind the repository code and
-// every test that reads the source passes green over the top of it.
 if (BUNDLE === 'min') {
   const dirApp = path.join(WEB, 'vendor', 'panel', 'app');
   const stale = [];
@@ -144,11 +88,6 @@ if (BUNDLE === 'min') {
   }
 }
 
-// 🔴 THE PANEL CSS LIVES IN <style> INSIDE index.html, not in a file.
-// Without bringing it along, the harness renders the section WITHOUT `.btn`,
-// `.pvx-chip` and the rest — and then it can judge no styling at all: every
-// button would look "background-less". That is exactly what the first version of
-// the styling pin did.
 const styles = [...html.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/g)].map((m) => m[0]).join('\n');
 if (styles.length < 5000) {
   console.error(`FAILED: only ${styles.length} bytes of <style> extracted from index.html — the styling pin would be measuring the void`);
@@ -175,18 +114,9 @@ const srv = http.createServer((req, res) => {
   const u = req.url.split('?')[0];
   if (u === '/') { res.setHeader('content-type', 'text/html'); return res.end(pageHtml); }
   if (u === '/__fixture.js') { res.setHeader('content-type', 'application/javascript'); return res.end(fixture); }
-  // The harness does not test the network layer: any /api/ answers empty, and the
-  // service worker is served blank. Without this the 404 noise would hide the
-  // signal that matters.
   if (u.startsWith('/api/') ) { res.setHeader('content-type', 'application/json'); return res.end('{}'); }
   if (u === '/sw.js') { res.setHeader('content-type', 'application/javascript'); return res.end(''); }
-  // the browser asks for it on its own; without this its 404 becomes noise in the first step
   if (u === '/favicon.ico') { res.setHeader('content-type', 'image/x-icon'); return res.end(''); }
-  // 🔴 MIRRORS THE SERVER RULE (internal/api/api.go): in production,
-  // `/vendor/.../x.js` serves `x.min.js` when it exists. Testing only the source
-  // would leave out exactly the artifact that goes live — and a stale `.min.js`
-  // (minification fails silently and the old one keeps being served) would pass
-  // green. That is why the pin runs on BOTH bundles.
   let f = path.join(WEB, u);
   if (BUNDLE === 'min' && u.endsWith('.js') && !u.endsWith('.min.js')) {
     const m = f.slice(0, -3) + '.min.js';
@@ -214,7 +144,6 @@ const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') { const l = m.location(); errors.push('console: ' + m.text() + ' @ ' + (l ? l.url + ':' + l.lineNumber : '?')); } });
 page.on('pageerror', (e) => errors.push('pageerror: ' + ((e && e.message) || e) + (process.env.PANEL_RENDER_DEBUG && e && e.stack ? '\n          ' + String(e.stack).split('\n').slice(0,4).join('\n          ') : '')));
 page.on('response', (r) => { if (r.status() >= 400) errors.push('HTTP ' + r.status() + ': ' + r.url()); });
-// says WHICH resource was missing, instead of the console's opaque 'Failed to load resource'
 page.on('requestfailed', (r) => errors.push('resource failed: ' + r.url()));
 if (process.env.PANEL_RENDER_DEBUG) page.on('request', (r) => console.log('    req ' + r.url()));
 
@@ -248,7 +177,6 @@ for (let i = 0; i < total; i++) {
 await browser.close();
 srv.close();
 
-// Double vacuity guard: steps actually run AND steps that MEASURED the DOM.
 if (measured < 8) { console.error(`FAILED: only ${measured} steps measured the DOM — the rest only checked for the absence of an error`); process.exit(1); }
 if (rejected) { console.error(`\nFAILED: ${rejected} of ${total} steps failed`); process.exit(1); }
 console.log(`\nPASS — bundle ${BUNDLE}: ${total} steps rendered in the browser, ${measured} of them measuring the DOM, 0 console errors`);

@@ -1,18 +1,3 @@
-// jira.go — panelctl jira-seed: write Atlassian Cloud credentials into a
-// user's vault from the CLI. Useful when you already have an API token
-// from a sister project (e.g. GitHub secret) and don't want to re-type
-// it through the web UI.
-//
-//	panelctl jira-seed --user=sam \
-//	    --site=example.atlassian.net \
-//	    --email=sam@northwind.example \
-//	    --token=ATATT... \
-//	    --project=TTW \
-//	    --board-jql='project = TTW AND statusCategory != Done ORDER BY rank' \
-//	    --board-columns='[{"label":"To Do","status_names":["To Do"]}, ...]'
-//
-// Any flag left empty leaves the existing vault key untouched (so you
-// can rotate just the token without re-passing the email).
 package main
 
 import (

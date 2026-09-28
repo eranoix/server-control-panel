@@ -18,28 +18,6 @@ import (
 	"server-control-panel/internal/pve"
 )
 
-// proxmox_console_test.go — the pins for /ws/proxmox/console.
-//
-// ─────────────────────────────────────────────────────────────────────────────
-// 🔴 THE CONSOLE IS THE CONSCIOUS EXCEPTION TO THIS PROJECT'S RULE, "named
-// operations, never exec(cmd)" — and the price of the exception is the TRAIL.
-//
-// An endpoint that hands out a shell is, by definition, the widest surface in
-// the dashboard. It exists because the operator works fully remotely and cannot
-// reach the Proxmox UI; and it is only justified if every session leaves a record
-// of who opened it, on which guest, and when it closed. A console with no trace
-// is the opposite of the agent's reason to exist.
-//
-// That is why three tests in this file are not about the terminal working: they
-// are about the trail existing at both ends, about the secret not crossing the
-// boundary, and about the token not travelling in the URL.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ----------------------------------------------------------------- doubles --
-
-// fakeConsole is the double for the connection internal/pve returns. It keeps
-// EVERYTHING the bridge wrote to the hypervisor — which is how the protocol
-// translation becomes verifiable without standing up a PVE.
 type fakeConsole struct {
 	mu      sync.Mutex
 	written [][]byte
@@ -92,9 +70,6 @@ func (c *fakeConsole) seen() []string {
 	return out
 }
 
-// waitFrames waits ACTIVELY for the frames to arrive, with a deadline. It is
-// not a clock wait: what is being awaited is an event — the bridge finishing its
-// translation — and the test dies in 3 s instead of hanging.
 func (c *fakeConsole) waitFrames(n int) []string {
 	deadline := time.Now().Add(3 * time.Second)
 	for {
@@ -106,16 +81,9 @@ func (c *fakeConsole) waitFrames(n int) []string {
 	}
 }
 
-// ------------------------------------------------------------- scaffolding --
-
-// panelConsoleServer brings the handler up behind a real httptest.Server
-// — WebSocket demands a real handshake, and httptest.NewRecorder does not upgrade.
 func panelConsoleServer(t *testing.T, r *Router) (*httptest.Server, string) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		// auth.WithUser is the scaffolding the package already sanctions: this
-		// work does not deliver authentication, and pretending otherwise would be
-		// the mistake refused earlier. The real gate is the mux's `protected` (auth.Middleware).
 		r.handleProxmoxConsole(w, req.WithContext(auth.WithUser(req.Context(), "sam")))
 	}))
 	t.Cleanup(srv.Close)
@@ -133,10 +101,6 @@ func consoleRouter(t *testing.T, fake *fakePVE) (*Router, *auth.AuditLog) {
 	return r, al
 }
 
-// consoleEvents returns the console events in CHRONOLOGICAL order.
-// `Tail` delivers newest to oldest (which is what the /audit page
-// shows); asserting "opened before closed" over that order would prove
-// the opposite of what is wanted.
 func consoleEvents(al *auth.AuditLog) []auth.Event {
 	var out []auth.Event
 	tail := al.Tail(50)
@@ -148,12 +112,6 @@ func consoleEvents(al *auth.AuditLog) []auth.Event {
 	return out
 }
 
-// ------------------------------------------------------------------- tests --
-
-// 🔴 TestConsoleTranslatesProtocolOnSERVER is the pin for the MEASURED pitfall:
-// termproxy reads N BYTES after "0:N:", and `data.length` in JavaScript counts
-// UTF-16 units. If the frame were assembled in the browser, "ñ" would arrive cut
-// in half — measured against CT 204.
 func TestConsoleTranslatesProtocolOnSERVER(t *testing.T) {
 	fake := &fakePVE{console: newFakeConsole(), upid: "UPID:pve:x:vncproxy:204:panel@pve!node-lab:"}
 	r, _ := consoleRouter(t, fake)
@@ -184,10 +142,6 @@ func TestConsoleTranslatesProtocolOnSERVER(t *testing.T) {
 	}
 }
 
-// TestConsoleDeliversTerminalOutput closes the loop in the other direction:
-// what the hypervisor spits out reaches the browser as BINARY, without passing
-// through a string (transcoding here would break ANSI sequences and UTF-8 split
-// across frames).
 func TestConsoleDeliversTerminalOutput(t *testing.T) {
 	fake := &fakePVE{console: newFakeConsole(), upid: "UPID:x"}
 	r, _ := consoleRouter(t, fake)
@@ -206,7 +160,7 @@ func TestConsoleDeliversTerminalOutput(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read: %v", err)
 		}
-		if mt == websocket.TextMessage { // control ({"type":"ready"}) — move on
+		if mt == websocket.TextMessage {
 			continue
 		}
 		if mt != websocket.BinaryMessage {
@@ -219,11 +173,6 @@ func TestConsoleDeliversTerminalOutput(t *testing.T) {
 	}
 }
 
-// 🔴 TestConsoleRejectsTokenInURL. The precedent is explicit in the dashboard
-// (00-shell.js: "we do NOT pass the JWT in the URL (?token=) — the query lands in
-// the proxy/server access log = a replayable shell credential"). Accepting
-// `?token=` here would reopen exactly the hole the terminal's WS already closed,
-// and in an endpoint that also hands out a shell.
 func TestConsoleRejectsTokenInURL(t *testing.T) {
 	fake := &fakePVE{console: newFakeConsole(), upid: "UPID:x"}
 	r, _ := consoleRouter(t, fake)
@@ -241,9 +190,6 @@ func TestConsoleRejectsTokenInURL(t *testing.T) {
 	}
 }
 
-// 🔴 TestConsoleWithoutCredentialExplainsInsteadOfFailing is CT 202 (`pbs`): it has no
-// node token, so it gets no console. The screen has to SAY that — a 409 naming
-// the key that is missing — instead of spinning or showing "error".
 func TestConsoleWithoutCredentialExplainsInsteadOfFailing(t *testing.T) {
 	fake := &fakePVE{console: newFakeConsole(), upid: "UPID:x"}
 	r, _ := consoleRouter(t, fake)
@@ -270,9 +216,6 @@ func TestConsoleWithoutCredentialExplainsInsteadOfFailing(t *testing.T) {
 	}
 }
 
-// TestConsoleAuditsOpenAndClose: the price of that conscious exception.
-// A single event, at open time, would say who came in and never when they left; a
-// session opened and forgotten would be indistinguishable from a two-second one.
 func TestConsoleAuditsOpenAndClose(t *testing.T) {
 	fake := &fakePVE{console: newFakeConsole(), upid: "UPID:pve:x:vncproxy:204:panel@pve!node-lab:"}
 	r, al := consoleRouter(t, fake)
@@ -308,10 +251,6 @@ func TestConsoleAuditsOpenAndClose(t *testing.T) {
 	}
 }
 
-// 🔴 TestConsoleNeverLeaksSecretToBrowser: nothing the bridge sends to the
-// browser may contain the vault's value. The termproxy ticket never even gets
-// here (it stays locked inside internal/pve), but the node token passes through
-// this handler — and it is the one that would open a shell on any guest of that node.
 func TestConsoleNeverLeaksSecretToBrowser(t *testing.T) {
 	fake := &fakePVE{console: newFakeConsole(), upid: "UPID:x"}
 	r, _ := consoleRouter(t, fake)
@@ -343,16 +282,6 @@ func TestConsoleNeverLeaksSecretToBrowser(t *testing.T) {
 	}
 }
 
-// TestConsoleRejectsNonGuestTarget: only a guest and the hypervisor itself have a console.
-//
-// 🔴 THIS TEST USED TO CLAIM THE HOST WOULD NEVER GET A SHELL — "Sys.Console is
-// out of scope forever". The "forever" lasted until the operator granted full
-// access; the test then failed over a screen that had improved, which is exactly
-// the right behaviour for it.
-//
-// What still holds: a target that is NEITHER a guest NOR the hypervisor has no
-// console at all, and an unknown id is a 404. A generic 400 would hide the
-// reason, and that is why this test was born.
 func TestConsoleRejectsNonGuestTarget(t *testing.T) {
 	fake := &fakePVE{console: newFakeConsole(), upid: "UPID:x"}
 	r, _ := consoleRouter(t, fake)
@@ -369,8 +298,6 @@ func TestConsoleRejectsNonGuestTarget(t *testing.T) {
 		target string
 		want   int
 	}{
-		// An external node (the VPS) is neither a guest of the
-		// hypervisor nor the hypervisor itself: there is no termproxy for it anywhere.
 		{"vps-187", http.StatusBadRequest},
 		{"lxc/999", http.StatusNotFound},
 		{"", http.StatusBadRequest},
@@ -388,10 +315,6 @@ func TestConsoleRejectsNonGuestTarget(t *testing.T) {
 	}
 }
 
-// TestConsoleUsesNodeToken: the token rule applied to the console. What opens
-// a console on a guest is THAT node's credential, never the audit one: the `audit`
-// token gets a 403 (measured: "Permission check failed (/vms/204, VM.Console)"),
-// and the dashboard would show "no permission" on a guest it CAN open.
 func TestConsoleUsesNodeToken(t *testing.T) {
 	vault := defaultVault()
 	fake := &fakePVE{console: newFakeConsole(), upid: "UPID:x"}
@@ -414,11 +337,6 @@ func TestConsoleUsesNodeToken(t *testing.T) {
 	}
 }
 
-// 🔴 TestNoHandlerReturnsConsoleTicket is the structural pin for the
-// invariant: `ticket` and `port` may not exist in internal/api's vocabulary. If
-// somebody one day "improves" the design by exposing the ticket so the browser
-// can open the WebSocket straight against the hypervisor, the secret starts living
-// in DevTools — and this test fails before the deploy.
 func TestNoHandlerReturnsConsoleTicket(t *testing.T) {
 	forbiddenBins := []string{"vncticket", "vncwebsocket", "PVEVNC"}
 	entries, err := os.ReadDir(".")
@@ -442,9 +360,6 @@ func TestNoHandlerReturnsConsoleTicket(t *testing.T) {
 	}
 }
 
-// TestConsoleTellsBrowserWhenHypervisorRefuses: after the upgrade there is no
-// HTTP status left to return. The error has to become a control frame, otherwise
-// the screen just spins — the symptom the operator saw on CT 204's vncproxy.
 func TestConsoleTellsBrowserWhenHypervisorRefuses(t *testing.T) {
 	fake := &fakePVE{console: newFakeConsole(), consoleErr: &pve.Error{Kind: pve.KindForbidden, Status: 403,
 		Path: "/api2/json/nodes/pve/lxc/204/termproxy", Body: "Permission check failed (/vms/204, VM.Console)"}}

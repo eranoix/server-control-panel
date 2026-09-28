@@ -13,21 +13,8 @@ import (
 	"server-control-panel/internal/files"
 )
 
-// registerFiles registers the three routes of the app's file editor — the
-// backend for listing, opening (with a language hint) and editing/saving
-// without a silent overwrite. This file holds no path-validation logic and
-// no file I/O of its own: all of that comes from
-// internal/files.Mobile(List|Read|Write), which already reuses the same
-// denylist (validatePath) as the desktop panel. All that lives here is HTTP
-// translation: parsing the input, calling the domain package directly, and
-// mapping errors to statuses.
 func init() { Register("files", registerFiles) }
 
-// FileEntry mirrors the fields of internal/files' `entry` type (unexported,
-// which is why it cannot be referenced by name here) that matter to the app:
-// name, size, whether it is a directory, and mtime. Mode/IsLink/Target are
-// preserved when present so the app can show a link icon and the
-// "(protected)" warning the desktop panel already computes.
 type FileEntry struct {
 	Name     string `json:"name"`
 	Size     int64  `json:"size"`
@@ -86,13 +73,6 @@ type filesWriteOutput struct {
 	Body FileWriteResponse
 }
 
-// FileConflictResponse is the error body returned with 409 when the
-// expected_mtime sent does not match the file's current mtime on disk — the
-// mechanism that prevents a silent overwrite. It implements
-// huma.StatusError (Error/GetStatus) so that huma.Register serves this type
-// as the response body when the handler returns it as an error; the server
-// has already re-read the current content from disk (files.MobileRead) so
-// the app can offer reload/overwrite/cancel without a second request.
 type FileConflictResponse struct {
 	Reason        string `json:"error"`
 	ServerContent string `json:"server_content"`
@@ -103,11 +83,6 @@ func (e *FileConflictResponse) Error() string  { return e.Reason }
 func (e *FileConflictResponse) GetStatus() int { return http.StatusConflict }
 
 func registerFiles(api huma.API, deps Deps) {
-	// The 409 body schema is registered by hand in Components — the same
-	// mechanism huma uses internally to document the default ErrorModel
-	// (defineErrors in huma.go), only for our own type rather than the
-	// generic one, because the conflict body carries server_content/
-	// server_mtime and ErrorModel has no field to hold them.
 	registry := api.OpenAPI().Components.Schemas
 	conflictSchema := registry.Schema(reflect.TypeOf(FileConflictResponse{}), true, "FileConflictResponse")
 
@@ -190,14 +165,8 @@ func writeFileHandler(_ context.Context, input *filesWriteInput) (*filesWriteOut
 	mtime, err := files.MobileWrite(input.Body.Path, input.Body.Content, input.Body.ExpectedMtime)
 	if err != nil {
 		if errors.Is(err, files.ErrConflict) {
-			// One extra round-trip, deliberately: re-read the current content
-			// from disk so the app does not need a second request just to build
-			// the "reload / overwrite / cancel" screen.
 			current, readErr := files.MobileRead(input.Body.Path)
 			if readErr != nil {
-				// The file vanished between the conflict check and this re-read (or
-				// became binary/too large) — it is still a conflict, we just cannot
-				// attach the current content.
 				return nil, &FileConflictResponse{Reason: "conflict"}
 			}
 			return nil, &FileConflictResponse{
@@ -211,16 +180,6 @@ func writeFileHandler(_ context.Context, input *filesWriteInput) (*filesWriteOut
 	return &filesWriteOutput{Body: FileWriteResponse{OK: true, Mtime: mtime}}, nil
 }
 
-// mapFileErr translates internal/files' errors (sentinels + os.IsNotExist)
-// into the matching HTTP status. files.ErrConflict is handled separately in
-// writeFileHandler because it carries a body of its own
-// (FileConflictResponse). The sentinels (ErrBinary/ErrTooLarge) have fixed
-// messages owned by this package — no risk of leaking a server detail. The
-// branches below cover *os.PathError coming straight out of os.Stat/os.Open
-// and by their nature carry the server's absolute path — never echo
-// err.Error() to the client here, the same stance as
-// handlers_screens.go/handlers_actions.go: a generic message for the client,
-// the full error only in the server log.
 func mapFileErr(err error) error {
 	switch {
 	case errors.Is(err, files.ErrBinary):

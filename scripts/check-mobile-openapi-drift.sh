@@ -1,16 +1,4 @@
 #!/usr/bin/env bash
-# check-mobile-openapi-drift.sh: the committed mobile contract
-# (android/data/mobile-api-client/openapi/mobile-v1.yaml) must stay exactly what
-# `make mobile-openapi-spec` would generate from today's huma registry in
-# internal/mobilebff.
-#
-# Catches a BFF handler whose struct tag (or registry field/route) changed without
-# regenerating the spec: the generated Kotlin client would compile against a
-# contract the server no longer honours.
-#
-# The generator only writes to the fixed path above (see cmd/mobile-openapi-gen),
-# so the original file is restored on exit, success or failure, to never leave the
-# working tree dirty.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

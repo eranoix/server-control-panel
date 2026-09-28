@@ -18,10 +18,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Hand-written fake of [SduiScreenPort] (the repo uses no mocking library).
- * [action] always fails: these tests cover rendering, not action dispatch.
- */
 private class FakeScreenPort(private val outcome: suspend () -> SduiScreenResult) : SduiScreenPort {
     override suspend fun screen(sectionId: String): SduiScreenResult = outcome()
 
@@ -29,12 +25,6 @@ private class FakeScreenPort(private val outcome: suspend () -> SduiScreenResult
         SduiActionHttpResult.Error("no action is dispatched in these rendering tests")
 }
 
-/**
- * Renders the SDUI section host under Robolectric for every [AdminUiState].
- *
- * Fakes at the data boundary ([SduiScreenPort]) so no okhttp3 enters a feature
- * module; the HTTP to [SduiScreenResult] mapping is covered by `SduiRepositoryTest` in `:data`.
- */
 @RunWith(RobolectricTestRunner::class)
 class AdminScreenTest {
 
@@ -50,7 +40,6 @@ class AdminScreenTest {
 
     private fun renderWith(outcome: suspend () -> SduiScreenResult) {
         composeRule.setContent {
-            // Only the section host, so these tests need no fake catalog.
             AdminSectionContent(sectionId = "scheduler.jobs", viewModel = viewModelFor(outcome))
         }
         composeRule.waitForIdle()
@@ -58,16 +47,11 @@ class AdminScreenTest {
 
     @Test
     fun `loading state shows while the fetch is still in flight`() {
-        // The fetch never resolves, so the initial state stays visible.
         renderWith { awaitCancellation() }
 
         composeRule.onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)).assertExists()
     }
 
-    /**
-     * A 404 means "not your section" (the server hides forbidden screens), so it
-     * shows a calm notice and never the generic error's "Try again".
-     */
     @Test
     fun `a not-found section reads as unavailable, never as a scary error`() {
         renderWith { SduiScreenResult.NotFound }

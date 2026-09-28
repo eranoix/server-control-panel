@@ -21,13 +21,6 @@ import dev.servercontrolpanel.core.shell.TerminalBridge
 import dev.servercontrolpanel.data.ops.OpsAlert
 import dev.servercontrolpanel.designsystem.panelStatusColors
 
-/**
- * Alert triage inbox: one primary action per alert. The empty state is shown as good news, not
- * as a grey list that looks like a failure.
- *
- * The primary action opens the alert as a terminal command, since a real acknowledge has no
- * server API (see [SeenAlerts]).
- */
 @Composable
 internal fun AlertInbox(
     alerts: List<OpsAlert>,
@@ -49,7 +42,6 @@ internal fun AlertInbox(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
-            // Only shown when something is silenced, so it is never an inert control.
             if (alerts.size > pending.size) {
                 TextButton(onClick = onUnmarkAll) { Text(text = "Show seen") }
             }
@@ -65,7 +57,6 @@ internal fun AlertInbox(
     }
 }
 
-/** Empty state that distinguishes "nothing firing" from "everything already marked seen". */
 @Composable
 private fun AllQuiet(hadAlerts: Boolean) {
     val statusColors = panelStatusColors
@@ -110,7 +101,6 @@ private fun AlertRow(alert: OpsAlert, onMarkSeen: () -> Unit) {
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                // Text label alongside colour, for colour blindness, glare and screen readers.
                 text = if (critical) "CRITICAL · ${alert.name}" else "WARNING · ${alert.name}",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
@@ -128,7 +118,6 @@ private fun AlertRow(alert: OpsAlert, onMarkSeen: () -> Unit) {
                     },
                 ) { Text(text = "View in terminal") }
                 TextButton(onClick = onMarkSeen) {
-                    // Never "Acknowledge": this is local, not shared state (see SeenAlerts).
                     Text(text = "Seen on this device")
                 }
             }
@@ -139,6 +128,5 @@ private fun AlertRow(alert: OpsAlert, onMarkSeen: () -> Unit) {
 private fun suffix(alert: OpsAlert): String =
     alert.unit?.takeIf { it.isNotBlank() }?.let { " $it" } ?: ""
 
-/** Drops a pointless decimal zero (`92.0` becomes "92"); other values keep one decimal. */
 private fun number(value: Double): String =
     if (value == Math.round(value).toDouble()) Math.round(value).toString() else "%.1f".format(value)

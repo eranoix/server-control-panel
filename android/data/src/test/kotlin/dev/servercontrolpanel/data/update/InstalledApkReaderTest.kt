@@ -12,7 +12,6 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/** Identifies the installed APK; its hash becomes `base_sha256`, which decides whether a patch is available. */
 @RunWith(RobolectricTestRunner::class)
 class InstalledApkReaderTest {
 
@@ -40,7 +39,6 @@ class InstalledApkReaderTest {
         assertEquals(apk.path, result.file.path)
     }
 
-    /** Hashing a 31 MB APK takes 0.2 to 0.5 s, so it is done once. */
     @Test
     fun `the hash is cached and the second read does not rehash`() {
         val apk = fakeApk("base.apk", ByteArray(1024) { 7 })
@@ -55,10 +53,6 @@ class InstalledApkReaderTest {
         assertEquals((first as InstalledApkResult.Ok).sha256, (second as InstalledApkResult.Ok).sha256)
     }
 
-    /**
-     * The cache is keyed by the APK path, which Android randomizes on every install, so a stale
-     * hash can never request a patch against the previous version.
-     */
     @Test
     fun `a new path invalidates the cache and never returns the previous APK hash`() {
         val old = fakeApk("base.apk", ByteArray(1024) { 1 })
@@ -76,7 +70,6 @@ class InstalledApkReaderTest {
         assertTrue("the cache must not survive a reinstall", oldHash != newHash)
     }
 
-    /** An unidentifiable base is fine: without one the server sends only the full artifact. */
     @Test
     fun `an unreadable APK degrades to unavailable instead of crashing`() {
         context.applicationInfo.sourceDir = File(temp.newFolder(), "does-not-exist.apk").path

@@ -10,9 +10,6 @@ import (
 	"time"
 )
 
-// seedState writes a state.json into a fresh DataDir so a subsequent
-// NewQueue reconciles exactly these jobs. Mirrors persistLocked's on-disk
-// shape (jobs + order under <DataDir>/queue/state.json).
 func seedState(t *testing.T, jobs []*Job) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -38,20 +35,16 @@ func seedState(t *testing.T, jobs []*Job) string {
 	return dir
 }
 
-// stubbornRunner ignores ctx cancellation and sleeps, so we can exercise the
-// Shutdown deadline cap (a well-behaved runner returns on cancel instantly).
 type stubbornRunner struct{ kind string }
 
 func (s stubbornRunner) Kind() string                        { return s.kind }
 func (s stubbornRunner) AuthorizedFor(_ string, _ bool) bool { return true }
 func (s stubbornRunner) Run(_ context.Context, _ json.RawMessage, w io.Writer, _ func(int), _ func(string)) error {
 	io.WriteString(w, "stubborn start\n")
-	time.Sleep(10 * time.Second) // deliberately ignores ctx
+	time.Sleep(10 * time.Second)
 	return nil
 }
 
-// (a) A SafeToResume kind that was running at crash must be RESUMED (re-queued),
-// never marked interrupted.
 func TestReconcileSafeKindResumes(t *testing.T) {
 	if !SafeToResume("apt_upgrade") {
 		t.Fatal("apt_upgrade should be SafeToResume")
@@ -68,9 +61,6 @@ func TestReconcileSafeKindResumes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// It must NOT have been interrupted. Without a registered runner the
-	// worker will fail it as "unknown kind" — that's fine; the discriminator
-	// is that the reconcile chose the resume branch, not interrupted.
 	if j.Status == StatusInterrupted {
 		t.Fatalf("safe kind became interrupted; want resumed")
 	}
@@ -79,8 +69,6 @@ func TestReconcileSafeKindResumes(t *testing.T) {
 	}
 }
 
-// (b) jira_ai_analysis is NOT SafeToResume → running must become interrupted,
-// NOT queued (auto-rerun would post a duplicate Jira comment).
 func TestReconcileJiraAIInterrupted(t *testing.T) {
 	if SafeToResume("jira_ai_analysis") {
 		t.Fatal("jira_ai_analysis must NOT be SafeToResume")
@@ -105,7 +93,6 @@ func TestReconcileJiraAIInterrupted(t *testing.T) {
 	}
 }
 
-// (c) shell is NOT SafeToResume → interrupted.
 func TestReconcileShellInterrupted(t *testing.T) {
 	jobs := []*Job{{ID: "j_sh", Kind: "shell", Status: StatusRunning, Started: 1}}
 	dir := seedState(t, jobs)
@@ -121,8 +108,6 @@ func TestReconcileShellInterrupted(t *testing.T) {
 	}
 }
 
-// (d) Rerun(interrupted) must succeed — interrupted is terminal, so it passes
-// the Queued||Running block guard for free.
 func TestRerunInterrupted(t *testing.T) {
 	jobs := []*Job{{ID: "j_int", Kind: "shell", Status: StatusInterrupted, Finished: 1, Error: "x"}}
 	dir := seedState(t, jobs)
@@ -142,18 +127,6 @@ func TestRerunInterrupted(t *testing.T) {
 		t.Fatal("Rerun returned nil job")
 	}
 
-	// 🔴 We deliberately do NOT assert "status == queued" here.
-	//
-	// Rerun calls dispatch(j) and only THEN takes the snapshot (queue.go:826-827).
-	// Between those two lines a worker can pick the job up and carry it through to
-	// the end, so "queued" is a TRANSIENT state the code never promised to return.
-	// This assertion failed with status="failed" only when the machine was under
-	// load — the whole suite running — and passed 5 out of 5 on its own. A pin that
-	// flips with machine load is noise in the gate, and a noisy gate is how you
-	// learn to ignore red.
-	//
-	// What Rerun really promises, and what is stable: the job LEFT the terminal
-	// state it was in and has been RE-QUEUED now.
 	if cp.Status == StatusInterrupted {
 		t.Fatalf("reran job status = %q; the job did not leave the terminal state", cp.Status)
 	}
@@ -162,7 +135,6 @@ func TestRerunInterrupted(t *testing.T) {
 	}
 }
 
-// (e) Delete(interrupted) must succeed.
 func TestDeleteInterrupted(t *testing.T) {
 	jobs := []*Job{{ID: "j_int", Kind: "shell", Status: StatusInterrupted, Finished: 1}}
 	dir := seedState(t, jobs)
@@ -180,8 +152,6 @@ func TestDeleteInterrupted(t *testing.T) {
 	}
 }
 
-// (f) Shutdown(ctx) must honour the deadline cap and mark survivors
-// interrupted, even when a runner ignores ctx.
 func TestShutdownCapsAndInterrupts(t *testing.T) {
 	dir := t.TempDir()
 	q, err := NewQueue(Options{DataDir: dir, Workers: 1, MaxKeep: 50})
@@ -211,7 +181,6 @@ func TestShutdownCapsAndInterrupts(t *testing.T) {
 	if got.Status != StatusInterrupted {
 		t.Fatalf("survivor status = %q; want interrupted", got.Status)
 	}
-	// Persisted: a fresh queue over the same dir must still see interrupted.
 	q2, err := NewQueue(Options{DataDir: dir, Workers: 1, MaxKeep: 50})
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +192,6 @@ func TestShutdownCapsAndInterrupts(t *testing.T) {
 	}
 }
 
-// (g) Counts() reports running + queued accurately.
 func TestCounts(t *testing.T) {
 	dir := t.TempDir()
 	q, err := NewQueue(Options{DataDir: dir, Workers: 1, MaxKeep: 50})
@@ -235,10 +203,8 @@ func TestCounts(t *testing.T) {
 
 	j1, _ := q.Enqueue("stubborn", json.RawMessage(`{}`), "u", "user")
 	waitFor(t, q, j1.ID, StatusRunning)
-	// Second job can't get a worker (workers=1) → stays queued.
 	j2, _ := q.Enqueue("stubborn", json.RawMessage(`{}`), "u", "user")
 	_ = j2
-	// Give the queue a beat to settle the second enqueue.
 	time.Sleep(50 * time.Millisecond)
 
 	running, queued := q.Counts()

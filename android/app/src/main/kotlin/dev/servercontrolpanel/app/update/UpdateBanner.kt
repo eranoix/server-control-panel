@@ -22,35 +22,6 @@ import dev.servercontrolpanel.data.update.UpdateState
 import dev.servercontrolpanel.data.update.formatDownloadSize
 import dev.servercontrolpanel.designsystem.panelStatusColors
 
-/**
- * The update banner, right below the `TopAppBar`.
- *
- * ### Why the size appears in the main text
- * "Version 0.1.7 available — 1.4 MB". On the owner's connection, that
- * number is the most important information on the screen: it is the
- * difference between tapping now and waiting until you get home. It is the
- * size of what TRAVELS (the patch, when there is one), never that of the
- * rebuilt APK — saying 31 MB when 1.4 will go over the wire would be lying
- * in the direction that makes the owner put it off.
- *
- * ### Why it imitates `ConnectionBanner`
- * There is no banner component in the design system; the nearest is
- * `ConnectionBanner` (`:feature-terminal`), and its shape is followed here
- * on purpose — the same `AnimatedVisibility`, the same `Row` with a flat
- * background instead of a `Card`, the same absence of a shadow — so that
- * the app's two banners read as the same thing. The colour is
- * `panelStatusColors.warning`: it is an actionable notice, not an error.
- *
- * ### Why a failure can have two buttons
- * On a failure, "what to do now" and "try again" are almost never the same
- * thing: freeing space is not retrying, looking at the diagnostics is not
- * retrying. A single button would force a choice between hiding the way
- * out and hiding the retry.
- *
- * Stateless throughout: it takes [state] and hands back taps. That is what
- * makes it possible to pin every rung of the ladder in a Compose test with
- * no network, no `PackageInstaller` and no emulator.
- */
 @Composable
 fun UpdateBanner(
     state: UpdateState,
@@ -93,11 +64,6 @@ fun UpdateBanner(
                     TextButton(
                         onClick = {
                             when (action) {
-                                // "Update" and "Try again" are the SAME path:
-                                // the coordinator resumes the partial download
-                                // left on disk instead of starting over. Two
-                                // labels because the two situations are
-                                // different for whoever reads them.
                                 is UpdateBannerAction.Update, is UpdateBannerAction.Retry -> onUpdateClick()
                                 is UpdateBannerAction.Cancel,
                                 is UpdateBannerAction.LabeledCancel,
@@ -123,7 +89,6 @@ fun UpdateBanner(
     }
 }
 
-/** What the banner shows in a given state. `null` means "show nothing". */
 internal data class UpdateBannerContent(
     val text: String,
     val actions: List<UpdateBannerAction> = emptyList(),
@@ -131,7 +96,6 @@ internal data class UpdateBannerContent(
     val spinner: Boolean = false,
 )
 
-/** The banner's possible buttons. */
 internal sealed interface UpdateBannerAction {
     val label: String
 
@@ -147,29 +111,14 @@ internal sealed interface UpdateBannerAction {
         override val label = "Cancel"
     }
 
-    /**
-     * The same Cancel with a different label. "Cancel" fits a download in
-     * progress; in a sentence that only informs, "Cancel" asks the reader
-     * what exactly they would be cancelling.
-     */
     data class LabeledCancel(override val label: String) : UpdateBannerAction
 
     data class Recover(override val label: String, val recovery: UpdateRecovery) : UpdateBannerAction
 }
 
-/** Reading sugar for the two answer states. */
 internal fun UpdateBannerAction.Cancel.withLabel(label: String): UpdateBannerAction =
     UpdateBannerAction.LabeledCancel(label)
 
-/**
- * The state-to-banner translation, split from the drawing so it can be
- * pinned by a test with no Compose tree.
- *
- * [UpdateState.Checking] does NOT appear: checking the manifest is
- * background routine, and a banner that blinks "checking…" on every launch
- * becomes noise the owner learns to ignore — including when it finally has
- * something to say.
- */
 internal fun bannerContentFor(state: UpdateState): UpdateBannerContent? = when (state) {
     is UpdateState.Idle, is UpdateState.Checking -> null
 
@@ -199,10 +148,6 @@ internal fun bannerContentFor(state: UpdateState): UpdateBannerContent? = when (
         spinner = true,
     )
 
-    // The two answers to a REQUESTED check. They carry "Close" because
-    // whoever asked may want the answer out of the way before the 6 s are up
-    // — and "Close" here is the same old `cancel()`, which returns the banner
-    // to the state the manifest describes (none, when there is no news).
     is UpdateState.UpToDate -> UpdateBannerContent(
         text = "You already have the latest version (${state.versionName}).",
         actions = listOf(UpdateBannerAction.Cancel.withLabel("Close")),
@@ -227,9 +172,6 @@ internal fun bannerContentFor(state: UpdateState): UpdateBannerContent? = when (
                     add(UpdateBannerAction.Recover("Diagnostics", UpdateRecovery.SHOW_DIAGNOSTICS))
                 UpdateRecovery.NONE -> Unit
             }
-            // "How to install" is the end of the line: the device refused
-            // this path, and offering "try again" there would push the owner
-            // into the same wall all over again.
             if (state.canRetry && state.recovery != UpdateRecovery.USE_BROWSER) {
                 add(UpdateBannerAction.Retry)
             }

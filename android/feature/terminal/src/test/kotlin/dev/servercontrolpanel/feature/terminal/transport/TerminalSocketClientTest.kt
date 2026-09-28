@@ -13,7 +13,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Hands out queued tickets, so a reconnect can be shown to never reuse a consumed one. */
 private class FakeTicketSource(private val tickets: MutableList<String>) : TerminalTicketSource {
     val requestedNames = mutableListOf<String>()
     var callCount = 0
@@ -27,7 +26,6 @@ private class FakeTicketSource(private val tickets: MutableList<String>) : Termi
     }
 }
 
-/** Records every frame it is asked to send, with no real socket. */
 private class RecordingWebSocket : TerminalWebSocket {
     val binaryFrames = mutableListOf<ByteArray>()
     val textFrames = mutableListOf<String>()
@@ -49,7 +47,6 @@ private class RecordingWebSocket : TerminalWebSocket {
     }
 }
 
-/** Records the URL of every open() call and returns a [RecordingWebSocket], with no network. */
 private class FakeWebSocketFactory : TerminalWebSocketFactory {
     val openedUrls = mutableListOf<String>()
     val sockets = mutableListOf<RecordingWebSocket>()
@@ -82,7 +79,6 @@ class TerminalSocketClientTest {
         )
         client.connect()
         runCurrent()
-        // Open the socket: sending on a created but unopened socket silently drops bytes.
         factory.listeners[0].onOpen()
         runCurrent()
 
@@ -159,7 +155,6 @@ class TerminalSocketClientTest {
         client.connect()
         runCurrent()
         assertFalse("the first connection never carries attach=1", factory.openedUrls[0].contains("attach=1"))
-        // Without `frame=1` the phone would cap the session size and shrink the desktop.
         assertTrue("every connection requests frame", factory.openedUrls[0].contains("frame=1"))
 
         factory.listeners[0].onOpen()
@@ -186,7 +181,6 @@ class TerminalSocketClientTest {
         factory.listeners[0].onOpen()
         assertEquals(ConnectionState.Live, client.state.value)
 
-        // Unexpected drop, not a 4404: must retry, never settle on SessionEnded.
         factory.listeners[0].onClosed(1006, "connection lost")
         runCurrent()
 
@@ -199,7 +193,6 @@ class TerminalSocketClientTest {
         assertEquals(ConnectionState.Reconnecting(1), client.state.value)
         assertEquals(listOf(500L), delays)
 
-        // The fake factory's second attempt finally succeeds.
         factory.listeners[1].onOpen()
         assertEquals(ConnectionState.Live, client.state.value)
     }
@@ -221,7 +214,6 @@ class TerminalSocketClientTest {
 
         client.connect()
         runCurrent()
-        // Fail the next 6 attempts in a row without ever reaching Live.
         repeat(6) { index ->
             factory.listeners[index].onFailure("simulated drop")
             runCurrent()
@@ -251,8 +243,6 @@ class TerminalSocketClientTest {
         client.connect()
         runCurrent()
 
-        // Three connect-then-drop cycles, as Android 15+ causes by cutting network in the
-        // background; each successful connection must reset the backoff.
         repeat(3) { index ->
             factory.listeners[index].onOpen()
             assertEquals(ConnectionState.Live, client.state.value)
@@ -274,7 +264,6 @@ class TerminalSocketClientTest {
             wsBaseUrl = "wss://panel.example",
             scope = backgroundScope,
             onBytes = {},
-            // A real delayer on virtual time, so the loop actually sleeps through the backoff.
             delayer = { delay(it) },
         )
 
@@ -295,7 +284,6 @@ class TerminalSocketClientTest {
             factory.openedUrls[1].contains("attach=1"),
         )
 
-        // A live connection is left alone.
         factory.listeners[1].onOpen()
         client.reconnectNow()
         runCurrent()
@@ -318,7 +306,6 @@ class TerminalSocketClientTest {
         client.connect()
         runCurrent()
         factory.listeners[0].onOpen()
-        // Until the next open there is no socket, so `send` must queue.
         factory.listeners[0].onFailure("network cut when going to the background")
 
         client.send(byteArrayOf('l'.code.toByte()))
@@ -355,7 +342,6 @@ class TerminalSocketClientTest {
 
         client.send(ByteArray(MAX_PENDING_SEND_BYTES))
         assertFalse(client.typingDiscarded.value)
-        // This one does not fit: the whole queue is dropped and the warning is set.
         client.send(byteArrayOf(1))
         assertTrue("the cap was exceeded, so the user must be warned", client.typingDiscarded.value)
 
@@ -388,7 +374,6 @@ class TerminalSocketClientTest {
         assertEquals(ConnectionState.SessionEnded, client.state.value)
         assertEquals("no new attempt after 4404", 1, factory.openedUrls.size)
 
-        // Confirm it really stopped: advancing further time still makes no new attempt.
         runCurrent()
         assertEquals(1, factory.openedUrls.size)
     }
@@ -445,11 +430,6 @@ class TerminalSocketClientTest {
         assertEquals(1, factory.openedUrls.size)
     }
 
-    /**
-     * The server changes the PTY size during the attach repaint wobble and restores the
-     * last size the client reported, which may be stale. Every new connection must
-     * therefore resend the current grid size even if it did not change locally.
-     */
     @Test
     fun `a reconnect reasserts the grid size without being asked again`() = runTest {
         val factory = FakeWebSocketFactory()
@@ -469,7 +449,6 @@ class TerminalSocketClientTest {
         client.sendResize(67, 53)
         runCurrent()
 
-        // The connection drops and returns without anyone calling sendResize again.
         factory.listeners[0].onClosed(1006, "network cut in the background")
         runCurrent()
         factory.listeners[1].onOpen()
@@ -487,7 +466,6 @@ class TerminalSocketClientTest {
         )
     }
 
-    /** With no known size yet, nothing is reasserted; an invented resize would be worse. */
     @Test
     fun `without a known size the connection does not invent a resize`() = runTest {
         val factory = FakeWebSocketFactory()
@@ -512,8 +490,6 @@ class TerminalSocketClientTest {
     }
     @Test
     fun `typing during a reconnect is not lost because an attempt in flight is not a connection`() = runTest {
-        // `webSocketFactory.open` returns before `onOpen`; a created but unopened socket
-        // silently drops sends, so input must be queued until the socket really opens.
         val factory = FakeWebSocketFactory()
         val client = TerminalSocketClient(
             name = "main",
@@ -530,7 +506,6 @@ class TerminalSocketClientTest {
         factory.listeners[0].onOpen()
         factory.listeners[0].onFailure("network cut")
 
-        // The next attempt's socket exists but has not opened yet.
         runCurrent()
         assertEquals("the second attempt must be in flight", 2, factory.sockets.size)
 

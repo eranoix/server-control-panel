@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// buildExternal writes a fake /proc with a process in ANOTHER mount namespace
-// (which is what marks a container), with its environ and its root at <pid>/root.
 func buildExternal(t *testing.T, pid int, exe, env, refSymlink string, sameNS bool) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -15,7 +13,6 @@ func buildExternal(t *testing.T, pid int, exe, env, refSymlink string, sameNS bo
 	procRoot = dir
 	t.Cleanup(func() { procRoot = anterior })
 
-	// /proc/self/ns/mnt — the "server's" namespace
 	self := filepath.Join(dir, "self", "ns")
 	if err := os.MkdirAll(self, 0o755); err != nil {
 		t.Fatal(err)
@@ -32,7 +29,6 @@ func buildExternal(t *testing.T, pid int, exe, env, refSymlink string, sameNS bo
 	if err := os.MkdirAll(filepath.Join(d, "ns"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// same ns → points at the same file; different → another file
 	theirTarget := selfTarget
 	if !sameNS {
 		theirTarget = filepath.Join(dir, "ns-container")
@@ -66,8 +62,6 @@ func buildExternal(t *testing.T, pid int, exe, env, refSymlink string, sameNS bo
 
 const verDir = "/root/.local/share/claude/versions/"
 
-// The point of the feature: the container's reference is ITS OWN installation,
-// not the host's. A process on 2.1.241 with the container on 2.1.246 = really behind.
 func TestDetectExternalComparesWithContainerInstall(t *testing.T) {
 	buildExternal(t, 900, verDir+"2.1.241", "PANEL_RECOVERY=1\x00HOME=/root\x00", verDir+"2.1.246", false)
 
@@ -87,9 +81,6 @@ func TestDetectExternalComparesWithContainerInstall(t *testing.T) {
 	}
 }
 
-// The regression sameMount had already fixed and that this code must NOT
-// reintroduce: a container NEWER than the host is not behind. Here the host does
-// not even enter the tally — the reference is the container's own.
 func TestDetectExternalDoesNotFlagUpToDate(t *testing.T) {
 	buildExternal(t, 901, verDir+"2.1.246", "PANEL_RECOVERY=1\x00", verDir+"2.1.246", false)
 
@@ -102,8 +93,6 @@ func TestDetectExternalDoesNotFlagUpToDate(t *testing.T) {
 	}
 }
 
-// A HOST process must not leak in here — Detect takes care of it, with the
-// host's reference. Listing it twice would give two rows for the same Claude.
 func TestDetectExternalIgnoresSameNamespaceProcess(t *testing.T) {
 	buildExternal(t, 902, verDir+"2.1.241", "PANEL_RECOVERY=1\x00", verDir+"2.1.246", true)
 
@@ -112,8 +101,6 @@ func TestDetectExternalIgnoresSameNamespaceProcess(t *testing.T) {
 	}
 }
 
-// A container WITHOUT the marker is not the recovery one — restarting the wrong
-// container would take something else down.
 func TestDetectExternalRequiresMarker(t *testing.T) {
 	buildExternal(t, 903, verDir+"2.1.241", "HOME=/root\x00OTHER=1\x00", verDir+"2.1.246", false)
 
@@ -122,8 +109,6 @@ func TestDetectExternalRequiresMarker(t *testing.T) {
 	}
 }
 
-// With no readable reference symlink there is no way to assert being behind — and
-// asserting "behind" with no basis would make the panel ask for a pointless restart.
 func TestDetectExternalNoReferenceReportsNoLag(t *testing.T) {
 	buildExternal(t, 904, verDir+"2.1.241", "PANEL_RECOVERY=1\x00", "", false)
 

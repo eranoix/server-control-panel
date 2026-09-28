@@ -22,13 +22,6 @@ import kotlinx.serialization.json.jsonPrimitive
 
 private const val CHART_HEIGHT_DP = 200
 
-/**
- * Renders a [SduiComponent.Chart] with a hand-drawn Compose [Canvas] — line
- * or bar only (T-07-SC accepted this instead of pulling in a charting
- * library). Each row's [SduiComponent.Chart.yKey] value becomes one plotted
- * point/bar, in the order the server returned the rows; [SduiComponent.Chart.xKey]
- * only labels the axis, it never reorders or aggregates the series.
- */
 @Composable
 fun ChartComponent(component: SduiComponent.Chart) {
     when (val state = rememberComponentDataState(component.seriesSource).value) {
@@ -42,7 +35,7 @@ fun ChartComponent(component: SduiComponent.Chart) {
             } else {
                 when (component.chartKind) {
                     "bar" -> BarChart(values)
-                    else -> LineChart(values) // "line" and any other value default to line.
+                    else -> LineChart(values)
                 }
             }
         }

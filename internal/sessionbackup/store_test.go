@@ -8,9 +8,6 @@ import (
 	ptysvc "server-control-panel/internal/pty"
 )
 
-// The id validator is what blocks directory traversal on the restore and
-// delete routes, which take the id straight from the client: the id becomes a
-// file name. A `../` here is reading (and removing) an arbitrary file.
 func TestValidID(t *testing.T) {
 	valid := []string{"0", "1781093279761", "42"}
 	invalid := []string{"", "../etc/passwd", "1781/../x", "abc", "12a", "1.2", "-1", "12 ", " 12"}
@@ -57,7 +54,6 @@ func TestWriteListRead(t *testing.T) {
 	if len(list) != 2 {
 		t.Fatalf("expected 2 backups, got %d", len(list))
 	}
-	// Newest first: it is the order the screen shows, and it comes from here.
 	if list[0].ID != "200" {
 		t.Errorf("expected the newest first, got %q", list[0].ID)
 	}
@@ -72,8 +68,6 @@ func TestWriteListRead(t *testing.T) {
 	}
 }
 
-// A user must never see, restore or delete another's backup: the paths are
-// derived from the user name and cannot cross.
 func TestOneUsersBackupDoesNotShowForAnother(t *testing.T) {
 	s := store(t)
 	if err := s.Write("sam", backup("100", 100, SourceManual, "web")); err != nil {
@@ -87,9 +81,6 @@ func TestOneUsersBackupDoesNotShowForAnother(t *testing.T) {
 	}
 }
 
-// Deleting ONE session from inside a backup preserves the others — the backup
-// is a bundle, and losing the whole bundle because of a single session would be
-// destructive beyond what was asked.
 func TestDeletingOneSessionKeepsTheRest(t *testing.T) {
 	s := store(t)
 	if err := s.Write("sam", backup("100", 100, SourceManual, "web", "api")); err != nil {
@@ -107,8 +98,6 @@ func TestDeletingOneSessionKeepsTheRest(t *testing.T) {
 	}
 }
 
-// A backup left with no sessions disappears: a file with an empty list would
-// show up on screen promising to restore nothing.
 func TestBackupWithoutSessionsIsDeleted(t *testing.T) {
 	s := store(t)
 	if err := s.Write("sam", backup("100", 100, SourceManual, "web")); err != nil {
@@ -122,9 +111,6 @@ func TestBackupWithoutSessionsIsDeleted(t *testing.T) {
 	}
 }
 
-// The global pruning must NOT touch the scheduled backups: they have their own
-// per-session retention, and a workday with many scheduled sessions would
-// silently erase the history just created if both tracks shared one limit.
 func TestGlobalPruneKeepsScheduled(t *testing.T) {
 	s := store(t)
 	for i := 1; i <= 5; i++ {
@@ -146,13 +132,11 @@ func TestGlobalPruneKeepsScheduled(t *testing.T) {
 	if !seen["900"] {
 		t.Error("the global prune deleted a scheduled backup")
 	}
-	if len(seen) != 3 { // 2 automatic ones + the scheduled one, untouched
+	if len(seen) != 3 {
 		t.Errorf("expected 3 backups after the prune, got %d: %v", len(seen), seen)
 	}
 }
 
-// The per-session retention looks only at its own session — it must not touch
-// bundles nor scheduled backups of another session.
 func TestPerSessionPruneTouchesOnlyItsSession(t *testing.T) {
 	s := store(t)
 	for i := 1; i <= 3; i++ {
@@ -188,8 +172,6 @@ func TestPerSessionPruneTouchesOnlyItsSession(t *testing.T) {
 	}
 }
 
-// The write is atomic: the `.tmp` must never survive as if it were a backup,
-// nor show up in the listing.
 func TestWriteLeavesNoTempFileInListing(t *testing.T) {
 	s := store(t)
 	if err := s.Write("sam", backup("100", 100, SourceManual, "web")); err != nil {
@@ -207,9 +189,6 @@ func TestWriteLeavesNoTempFileInListing(t *testing.T) {
 	}
 }
 
-// An idle session is a pile of prompts with no command at all. Summarizing
-// that spends two lines of the screen to say "it is idle" — which is what the
-// absence of a summary already says for free.
 func TestSummaryIgnoresEmptyPrompt(t *testing.T) {
 	snap := ptysvc.SessionSnapshot{
 		Windows: []ptysvc.WindowSnapshot{{
@@ -225,7 +204,6 @@ func TestSummaryIgnoresEmptyPrompt(t *testing.T) {
 	}
 }
 
-// The prompt WITH a command is exactly what the summary exists to show.
 func TestSummaryKeepsPromptWithCommand(t *testing.T) {
 	snap := ptysvc.SessionSnapshot{
 		Windows: []ptysvc.WindowSnapshot{{
@@ -240,8 +218,6 @@ func TestSummaryKeepsPromptWithCommand(t *testing.T) {
 	}
 }
 
-// A line ending in `$` without looking like a prompt (`total: 12$`) must not
-// be discarded — the filter requires the user@host:path shape.
 func TestSummaryDoesNotMistakeDollarForPrompt(t *testing.T) {
 	snap := ptysvc.SessionSnapshot{
 		Windows: []ptysvc.WindowSnapshot{{
@@ -253,8 +229,6 @@ func TestSummaryDoesNotMistakeDollarForPrompt(t *testing.T) {
 	}
 }
 
-// The claude headline (`※ recap: ...`) takes precedence over the last line:
-// it is the sentence that describes the whole session.
 func TestSummaryPrefersHeadline(t *testing.T) {
 	snap := ptysvc.SessionSnapshot{
 		Windows: []ptysvc.WindowSnapshot{{

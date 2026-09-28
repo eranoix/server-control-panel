@@ -13,10 +13,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// unwrapMsg unwraps "view once" messages, exposing the real inner media/
-// content. WhatsApp wraps the content in a FutureProofMessage in three variants
-// (legacy, V2 and the V2 extension); all of them keep the real Message inside.
-// Returns m unchanged when it is not view-once.
 func unwrapMsg(m *waE2E.Message) *waE2E.Message {
 	if m == nil {
 		return nil
@@ -33,8 +29,6 @@ func unwrapMsg(m *waE2E.Message) *waE2E.Message {
 	return m
 }
 
-// replyContext builds the ContextInfo for a reply to quotedID (nil if not a
-// reply / unknown). Needs the quoted message + its author to render the quote.
 func (s *session) replyContext(quotedID string) *waE2E.ContextInfo {
 	if quotedID == "" {
 		return nil
@@ -57,7 +51,6 @@ type contactOut struct {
 	PushName string `json:"pushname"`
 }
 
-// contacts returns all known contacts (for the server's name refresh).
 func (s *session) contacts(ctx context.Context) ([]contactOut, error) {
 	cli := s.cli()
 	if cli == nil {
@@ -84,14 +77,12 @@ func (s *session) cli() *whatsmeow.Client {
 	return s.client
 }
 
-// downloadMedia fetches an inbound media message's bytes via whatsmeow (which
-// downloads by media keys, not a URL). The message was stashed in onMessage.
 func (s *session) downloadMedia(ctx context.Context, msgID string) ([]byte, string, error) {
 	sm := s.getStashed(msgID)
 	if sm == nil || sm.msg == nil {
 		return nil, "", fmt.Errorf("media not found (id=%s)", msgID)
 	}
-	m := unwrapMsg(sm.msg) // unwraps view-once before the media type switch
+	m := unwrapMsg(sm.msg)
 	cli := s.cli()
 	if cli == nil {
 		return nil, "", fmt.Errorf("not connected")
@@ -119,19 +110,18 @@ func (s *session) downloadMedia(ctx context.Context, msgID string) ([]byte, stri
 	return data, mime, nil
 }
 
-// actionReq is the body for non-message ops.
 type actionReq struct {
-	Action string `json:"action"` // react/delete/typing/subscribe/markread/forward/pin/archive/star/mute/block/edit/logout
+	Action string `json:"action"`
 	ChatID string `json:"chatId"`
 	MsgID  string `json:"msgId"`
 	Emoji  string `json:"emoji"`
 	Typing bool   `json:"typing"`
-	Mode   string `json:"mode"`   // delete: "me" | "everyone"
-	On     bool   `json:"on"`     // pin/archive/star/mute/block toggle
-	Text   string `json:"text"`   // edit: the new text content
-	Sender string `json:"sender"` // react/star: author of the target msg (from the server store)
-	TS     int64  `json:"ts"`     // histsync: timestamp of the reference message
-	Count  int    `json:"count"`  // histsync: how many old messages to request
+	Mode   string `json:"mode"`
+	On     bool   `json:"on"`
+	Text   string `json:"text"`
+	Sender string `json:"sender"`
+	TS     int64  `json:"ts"`
+	Count  int    `json:"count"`
 }
 
 func (s *session) action(ctx context.Context, r actionReq) error {
@@ -140,7 +130,7 @@ func (s *session) action(ctx context.Context, r actionReq) error {
 		return fmt.Errorf("not connected")
 	}
 	if r.Action == "logout" {
-		return cli.Logout(ctx) // does not use chat; unlinks the device
+		return cli.Logout(ctx)
 	}
 	chat, err := normalizeJID(r.ChatID)
 	if err != nil {
@@ -152,11 +142,6 @@ func (s *session) action(ctx context.Context, r actionReq) error {
 	}
 	switch r.Action {
 	case "react":
-		// sender = the REAL author of the reacted-to message. In a group, passing
-		// the chat as sender breaks the reaction (key.Participant becomes the
-		// group's JID). We prefer the sender coming from the server's STORE
-		// (r.Sender, authoritative and survives a restart); then the in-memory
-		// stash and, last, the chat (fine for 1:1 / our own).
 		sender := chat
 		if r.Sender != "" {
 			if sj, err := normalizeJID(r.Sender); err == nil {
@@ -171,20 +156,11 @@ func (s *session) action(ctx context.Context, r actionReq) error {
 		if _, err := cli.SendMessage(ctx, chat, msg); err != nil {
 			return err
 		}
-		// Echo of our OWN reaction: WhatsApp does NOT redeliver your own reaction,
-		// so without this it never shows up in the panel. Push it as if it had
-		// arrived (fromJID = self) — the frontend applies it through the same
-		// reaction handler. An empty emoji means removal (the frontend handler
-		// takes care of the splice).
 		if self.User != "" {
 			s.push.reaction(s.user, r.ChatID, r.MsgID, self.ToNonAD().String(), r.Emoji, time.Now().Unix())
 		}
 		return nil
 	case "histsync":
-		// Recovers history/media keys ON DEMAND: asks WhatsApp for the `Count`
-		// messages BEFORE the reference message (the newest in the chat). The
-		// answer arrives as events.HistorySync (onHistorySync) carrying the protos
-		// + media keys → old images become downloadable again.
 		if r.MsgID == "" {
 			return fmt.Errorf("histsync: no reference msg")
 		}
@@ -206,11 +182,6 @@ func (s *session) action(ctx context.Context, r actionReq) error {
 		s.log.Infof("histsync: request sent chat=%s ref=%s count=%d id=%s err=%v", chat, r.MsgID, count, resp.ID, err)
 		return err
 	case "resendmsg":
-		// Asks the primary device to RESEND one specific message
-		// (PLACEHOLDER_MESSAGE_RESEND). The answer arrives as a normal
-		// events.Message (via handlePlaceholderResendResponse → onMessage) ALREADY
-		// CARRYING the media keys → recovers old images whose key the daemon lost.
-		// It is per-message and precise (unlike history sync, which only pulls OLDER msgs).
 		if r.MsgID == "" {
 			return fmt.Errorf("resendmsg: no msg")
 		}
@@ -229,8 +200,6 @@ func (s *session) action(ctx context.Context, r actionReq) error {
 		s.log.Infof("resendmsg: request chat=%s msg=%s sender=%s reqid=%s err=%v", chat, r.MsgID, sender, resp.ID, err)
 		return err
 	case "delete":
-		// "delete for me" is local only (the server hides it via Store.MarkDeleted) —
-		// nothing goes on the wire. "delete for everyone" = revoke (only on YOUR msgs → self).
 		if r.Mode == "me" {
 			return nil
 		}
@@ -264,16 +233,14 @@ func (s *session) action(ctx context.Context, r actionReq) error {
 	case "subscribe":
 		return cli.SubscribePresence(ctx, chat)
 	case "markread":
-		// chat = destination; marks ALL tracked unread inbound messages (not just the
-		// last one). lastIn still resolves the sender (in a group, MarkRead needs the author).
 		chatKey := chat.ToNonAD().String()
 		s.mediaMu.Lock()
 		ids := s.unread[chatKey]
 		li := s.lastIn[chatKey]
-		delete(s.unread, chatKey) // clear the marked batch
+		delete(s.unread, chatKey)
 		s.mediaMu.Unlock()
 		if len(ids) == 0 {
-			return nil // nothing to mark
+			return nil
 		}
 		sender := chat
 		if li.sender != "" {
@@ -283,7 +250,6 @@ func (s *session) action(ctx context.Context, r actionReq) error {
 		}
 		return cli.MarkRead(ctx, ids, time.Now(), chat, sender)
 	case "forward":
-		// MsgID = source (looked up in the global stash); chat = destination.
 		sm := s.getStashed(r.MsgID)
 		if sm == nil || sm.msg == nil {
 			return fmt.Errorf("original message not found (forward)")
@@ -292,13 +258,9 @@ func (s *session) action(ctx context.Context, r actionReq) error {
 		if err != nil {
 			return err
 		}
-		// Persist in the server's Store (same as a normal send).
 		s.pushOwnSent(resp.ID, chat, sendReq{}, sm.msg)
 		return nil
 	case "block":
-		// Block/unblock the contact. r.On = block, !r.On = unblock. The updated
-		// *Blocklist that comes back is ignored (the state is reflected by
-		// whatsmeow's BlocklistChange events).
 		action := events.BlocklistChangeActionUnblock
 		if r.On {
 			action = events.BlocklistChangeActionBlock
@@ -306,7 +268,6 @@ func (s *session) action(ctx context.Context, r actionReq) error {
 		_, err := cli.UpdateBlocklist(ctx, chat, action)
 		return err
 	case "edit":
-		// Edits an already-sent message, replacing the text with r.Text.
 		newContent := &waE2E.Message{Conversation: proto.String(r.Text)}
 		msg := cli.BuildEdit(chat, types.MessageID(r.MsgID), newContent)
 		_, err := cli.SendMessage(ctx, chat, msg)
@@ -316,7 +277,6 @@ func (s *session) action(ctx context.Context, r actionReq) error {
 	}
 }
 
-// profilePic returns the avatar URL for a JID ("" if none).
 func (s *session) profilePic(ctx context.Context, jidStr string) (string, error) {
 	cli := s.cli()
 	if cli == nil {
@@ -333,15 +293,11 @@ func (s *session) profilePic(ctx context.Context, jidStr string) (string, error)
 	return info.URL, nil
 }
 
-// checkOut is checkNumber's response: whether the phone number is on WhatsApp
-// plus the canonical JID.
 type checkOut struct {
 	JID  string `json:"jid"`
 	OnWA bool   `json:"onWA"`
 }
 
-// checkNumber checks whether a phone number (digits only, international format)
-// is registered on WhatsApp, returning the canonical JID.
 func (s *session) checkNumber(ctx context.Context, phone string) (checkOut, error) {
 	cli := s.cli()
 	if cli == nil {
@@ -357,21 +313,17 @@ func (s *session) checkNumber(ctx context.Context, phone string) (checkOut, erro
 	return checkOut{JID: res[0].JID.ToNonAD().String(), OnWA: res[0].IsIn}, nil
 }
 
-// groupParticipantOut is a group participant in the shape the API exposes.
 type groupParticipantOut struct {
 	JID     string `json:"jid"`
 	IsAdmin bool   `json:"isAdmin"`
 }
 
-// groupInfoOut is groupInfo's response: the group's name, topic (description)
-// and participants.
 type groupInfoOut struct {
 	Name         string                `json:"name"`
 	Topic        string                `json:"topic"`
 	Participants []groupParticipantOut `json:"participants"`
 }
 
-// groupInfo fetches a group's basic metadata (name, topic, participants).
 func (s *session) groupInfo(ctx context.Context, jidStr string) (groupInfoOut, error) {
 	cli := s.cli()
 	if cli == nil {

@@ -1,14 +1,4 @@
 #!/usr/bin/env node
-// test-vc-mic-volume.mjs: the mic volume must reach THE OTHER SIDE, and the
-// transcription must read the raw mic.
-//
-// Reading the source cannot prove this, so the pin makes a REAL WebRTC call
-// between two tabs (signalling relay in Node, Chromium fake mic playing a
-// steady tone) and MEASURES in dB, in tab B, the audio that arrived from A.
-//
-// Covers: saved initial volume, live volume (±6 dB), limiter, mic switch
-// keeping the volume, processing switch without dropping audio, and the
-// transcription source (raw, volume-independent, silent when muted).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -33,8 +23,6 @@ const near = (v, target, tol) => Math.abs(v - target) <= tol;
 const srcVC = fs.readFileSync(path.join(WEB, 'vendor', 'panel', 'videocall.js'), 'utf8');
 const srcSTT = fs.readFileSync(path.join(WEB, 'vendor', 'panel', 'stt.js'), 'utf8');
 
-// Steady 440 Hz tone at -10 dBFS: a stable tone is what makes a dB volume
-// difference measurable (Chromium's default fake audio is beeps).
 function writeTone(arq) {
   const sr = 48000, seg = 4, n = sr * seg, amp = Math.pow(10, -10 / 20);
   const b = Buffer.alloc(44 + n * 2);
@@ -57,10 +45,6 @@ function findBrowser() {
   return null;
 }
 
-// Fake WebSocket: everything the engine sends goes out via __wsOut (Node
-// relay); relay deliveries come in via __wsIn. Same contract as the Go
-// server: `joined` with the snapshot, `peer-joined` to the others, forwarding
-// by `to` with `from` stamped.
 const INIT = `
   class FakeWS {
     constructor(url) {
@@ -150,7 +134,6 @@ const exe = findBrowser();
 if (!exe) { console.error('FAILED: no Chromium found; skipping would be faking coverage.'); process.exit(1); }
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vc-micvol-'));
 const tom = path.join(tmp, 'tone.wav');
-// localhost is a secure context (about:blank is not: no navigator.mediaDevices).
 const PAGE = 'http://localhost:9/vc';
 writeTone(tom);
 
@@ -169,9 +152,6 @@ async function open(id, lock) {
   const page = await ctx.newPage();
   if (lock) await page.addInitScript('window.__lockFirstPC = true;');
   page.on('pageerror', (e) => console.log('  [' + id + ' pageerror] ' + e.message));
-  // Single queue: the real server delivers in order (one WS per client).
-  // Without it each __wsOut is a loose async call and offer/ICE/answer could
-  // arrive out of order.
   await page.exposeFunction('__wsOut', (s) => { queue = queue.then(() => relay(id, s)).catch(() => {}); });
   const relay = async (id, s) => {
     let m; try { m = JSON.parse(s); } catch { return; }
@@ -204,15 +184,8 @@ async function connect(page, id, extra) {
   }, { id, extra });
 }
 
-// Processing off: noise suppression would eat the steady tone and automatic
-// gain would drift, and the measurement needs a stable signal.
 const SEM_PROC = { noiseSuppression: false, echoCancellation: false, autoGainControl: false };
 
-// Sets up the A↔B call and waits for A's AUDIO to sound in B (not just a live
-// track: a remote track is born 'live' and silent before any RTP arrives).
-// No retries: negotiation must resolve by itself, including simultaneous
-// offers and a peer connection stalled without ICE candidates (the engine
-// recreates the pair). `lock` forces that stall in A.
 async function buildCall(lock) {
   if (ctx) await ctx.close().catch(() => {});
   ctx = await browser.newContext();
@@ -230,9 +203,6 @@ async function buildCall(lock) {
   return null;
 }
 
-// ── 0. A stalled connection recovers by itself ──────────────────────────
-// ICE stuck in 'new' never reaches 'failed', so the stalled side must
-// recreate its pair and ask the other (a `reset` message) to do the same.
 {
   const m = await buildCall(true);
   const pcs = m ? await m.A.evaluate(() => window.__pcsCreated) : 0;
@@ -252,10 +222,6 @@ ok(`call: real WebRTC between the tabs, A's audio sounding in B after ${mounted.
 const received = () => B.evaluate(() => window.__levelDb(window.__remote(), 2500));
 const aLocal = (fn, arg) => A.evaluate(fn, arg);
 
-// ── 1. The saved volume is applied to the call ──────────────────────────
-// Joined with micGain=2. (a) On the SENT track, before any setMicGain: the
-// tone is -13 dBFS RMS, so 200% must come out at ~-7. (b) On the other side:
-// lowering to 100% drops the received level by ~6 dB.
 {
   const r = await aLocal(async () => {
     const ref = await window.__refMic();
@@ -267,7 +233,7 @@ const aLocal = (fn, arg) => A.evaluate(fn, arg);
     ? ok(`saved volume: 200% applied from connect (sent +${r.diff.toFixed(2)} dB over the mic)`)
     : no(`saved volume: sent ${r.diff.toFixed(2)} dB over the mic at connect, expected +6.0 (200%)`);
 }
-await new Promise((r) => setTimeout(r, 3000)); // let the Opus/jitter buffer settle
+await new Promise((r) => setTimeout(r, 3000));
 const at200 = await received();
 await aLocal(() => window.PanelVideoCall.setMicGain(1));
 const at100 = await received();
@@ -275,16 +241,12 @@ near(at200 - at100, 6.02, 1.5)
   ? ok(`live volume: 200% arrives ${(at200 - at100).toFixed(1)} dB above 100% on the other side`)
   : no(`live volume: 200% vs 100% gave ${(at200 - at100).toFixed(1)} dB at the receiver (expected ~6)`);
 
-// ── 2. Live volume down ─────────────────────────────────────────────────
 await aLocal(() => window.PanelVideoCall.setMicGain(0.5));
 const at50 = await received();
 near(at100 - at50, 6.02, 1.5)
   ? ok(`live volume: 50% arrives ${(at100 - at50).toFixed(1)} dB below 100%`)
   : no(`live volume: 50% vs 100% gave ${(at100 - at50).toFixed(1)} dB (expected ~6)`);
 
-// ── 3. Limiter ──────────────────────────────────────────────────────────
-// Tone at -10 dBFS × 400% = +2 dBFS would clip without a limiter. With it,
-// the meter reports `limiting` and the sent peak stays below 0 dBFS.
 await aLocal(() => window.PanelVideoCall.setMicGain(4));
 await new Promise((r) => setTimeout(r, 400));
 const lim = await aLocal(async () => {
@@ -300,8 +262,6 @@ lim.limiting ? ok('limiter: 400% on a strong signal lights the "limiting" warnin
 lim.peak < 1.0 ? ok(`limiter: peak sent ${lim.peak.toFixed(2)} < 1.0 (no clipping)`) : no(`limiter: peak sent ${lim.peak.toFixed(2)}, clipping`);
 await aLocal(() => window.PanelVideoCall.setMicGain(2));
 
-// ── 4. Switching mics keeps the volume ──────────────────────────────────
-// The new track must go through the gain chain, not RAW to the senders.
 const beforeSwap = await received();
 const swapped = await aLocal(() => window.PanelVideoCall.setMicDevice('default'));
 const afterSwap = await received();
@@ -310,7 +270,6 @@ near(afterSwap, beforeSwap, 1.5)
   ? ok(`mic switch: volume kept on the other side (${beforeSwap.toFixed(1)} → ${afterSwap.toFixed(1)} dBFS)`)
   : no(`mic switch: received level went from ${beforeSwap.toFixed(1)} to ${afterSwap.toFixed(1)} dBFS, volume lost in the switch`);
 
-// ── 5. Switching processing does not drop the audio ─────────────────────
 const proc = await aLocal(() => window.PanelVideoCall.setMicProcessing({ echoCancellation: true }));
 proc && proc.echoCancellation === true && proc.noiseSuppression === false
   ? ok('processing: setMicProcessing applied only the requested key')
@@ -319,9 +278,6 @@ const withEcho = await received();
 withEcho > -40 ? ok(`processing: audio keeps arriving after reopening the mic (${withEcho.toFixed(1)} dBFS)`) : no(`processing: audio gone after setMicProcessing (${withEcho.toFixed(1)} dBFS)`);
 await aLocal((p) => window.PanelVideoCall.setMicProcessing(p), SEM_PROC);
 
-// ── 5b. 100% is neutral ─────────────────────────────────────────────────
-// The Web Audio compressor adds automatic makeup gain (+1.7 dB here) and the
-// pipeline compensates; otherwise "100%" would be louder than the mic itself.
 {
   await aLocal(() => window.PanelVideoCall.setMicGain(1));
   await aLocal(() => { window.PanelVideoCall.setSubtitles(true, { backend: 'web-speech', lang: 'en-US' }); });
@@ -332,14 +288,13 @@ await aLocal((p) => window.PanelVideoCall.setMicProcessing(p), SEM_PROC);
     return window.__diffDb(raw, sent, 1200);
   });
   await aLocal(() => { window.PanelVideoCall.setSubtitles(false); });
-  await new Promise((r) => setTimeout(r, 600)); // fast-toggle guard (500 ms)
+  await new Promise((r) => setTimeout(r, 600));
   near(n.diff, 0, 0.3)
     ? ok(`neutral: 100% sends the same level as the mic (${n.diff >= 0 ? '+' : ''}${n.diff.toFixed(2)} dB)`)
     : no(`neutral: at 100% the sent level was ${n.diff.toFixed(2)} dB off the mic (limiter makeup gain?)`);
   await aLocal(() => window.PanelVideoCall.setMicGain(2));
 }
 
-// ── 6. Transcription reads the raw mic ──────────────────────────────────
 await aLocal(() => { window.PanelVideoCall.setSubtitles(true, { backend: 'web-speech', lang: 'en-US' }); });
 await new Promise((r) => setTimeout(r, 400));
 const stt = await aLocal(async () => {
@@ -358,9 +313,6 @@ near(stt.dbStt, -13, 2)
   ? ok('stt: raw level matches the mic tone (~-13 dBFS RMS)')
   : no(`stt: raw level ${stt.dbStt.toFixed(1)} dBFS, expected ~-13`);
 
-// ── 7. Muted is not transcribed ─────────────────────────────────────────
-// The raw track must be disabled on mute, or speech while muted would be
-// transcribed and sent as captions.
 const mute = await aLocal(async () => {
   window.PanelVideoCall.setMuted(true);
   const t = window.__sttStarts[window.__sttStarts.length - 1].getAudioTracks()[0];
@@ -375,7 +327,6 @@ mute.enabled === false ? ok('mute: the transcription track goes off') : no('mute
 mute.level === 0 ? ok('mute: the outgoing level meter drops to zero') : no('mute: meter at ' + mute.level + ' with the mic muted');
 mute.recovered === true ? ok('mute: unmuting turns the transcription track back on') : no('mute: unmuting did not turn the transcription track back on');
 
-// ── 8. Switching mics restarts transcription on the new track ───────────
 const restart = await aLocal(async () => {
   const before = window.__sttStarts.length;
   const old = window.__sttStarts[before - 1].getAudioTracks()[0];
@@ -389,9 +340,6 @@ const restart = await aLocal(async () => {
   : no('stt: after the mic switch transcription stayed on the ' + restart.oldState + ' track (' + JSON.stringify(restart) + ')');
 await aLocal(() => { window.PanelVideoCall.setSubtitles(false); });
 
-// ── 9. Web Speech recognizes the handed-over track ──────────────────────
-// SpeechRecognition.start(track) (Chrome 135+); where start(track) throws,
-// it falls back to start() with no argument.
 {
   const page = await ctx.newPage();
   await page.addInitScript(`

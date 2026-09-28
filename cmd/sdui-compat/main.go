@@ -1,32 +1,3 @@
-// Command sdui-compat freezes the SDUI vocabulary manifest per versionCode of
-// an already published Android app, and checks whether the server's current
-// contract/fixtures are still compatible with EACH frozen manifest.
-//
-// Why this exists: the app is distributed through its own F-Droid repository,
-// with no forced update — an installed build can sit still for months while the
-// server keeps changing. The whole point of SDUI (shipping new UI without an app
-// release) is exactly what removes the compile error that would normally catch a
-// contract change breaking that old build. This command replaces that compile
-// error.
-//
-// Subcommands:
-//
-//	sdui-compat freeze -version <versionCode> [-force]
-//	  Writes the Contract generated right now to
-//	  contracts/sdui/client-support/android-<versionCode>.json. A frozen
-//	  manifest describes an app build that already exists out in the world —
-//	  overwriting it is falsifying history, which is why freeze refuses to
-//	  overwrite without -force (which should essentially never be used).
-//
-//	sdui-compat check
-//	  Loads every contracts/sdui/client-support/android-*.json, runs
-//	  Compat(frozen, current-contract) for each, runs FixtureRenderable for
-//	  every fixture under contracts/sdui/fixtures/ (including
-//	  fixtures/screens/) against each frozen manifest, prints a report grouped
-//	  by versionCode and exits != 0 if any Break has Severity==breaking. With
-//	  zero frozen manifests it prints "no shipped client versions frozen yet"
-//	  and exits 0 — the gate stays inert until the first build is frozen, and
-//	  becomes live automatically afterwards.
 package main
 
 import (
@@ -184,21 +155,6 @@ func runCheck(_ []string) {
 	}
 }
 
-// collectFixturePaths walks dir recursively (contracts/sdui/fixtures,
-// including fixtures/screens/) and returns every *.json in deterministic order
-// — without treating a missing directory as silent success beyond the obvious
-// "there is nothing here yet" of a first checkout.
-//
-// Fixtures whose name starts with "unknown-" are EXCLUDED on purpose — the same
-// reason TestFixtureRoundTripMatchesRealMarshaller (contract_test.go) already
-// excludes them: they carry a "type" (e.g. "gantt") the Go server is
-// structurally incapable of emitting (outside the 7 closed types of the
-// vocabulary) and exist only to exercise the Kotlin client's TOLERANCE of an
-// unknown type, never as a real screen payload. Without this exclusion,
-// unknown-critical.json (which carries "critical": true on purpose, to prove the
-// "update the app" card) would fail `check` against ANY frozen manifest, for
-// ever — a permanently red gate is the same "decoration" failure as a gate that
-// always skips, only in the opposite direction.
 func collectFixturePaths(dir string) ([]string, error) {
 	var out []string
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {

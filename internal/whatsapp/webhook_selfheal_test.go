@@ -14,11 +14,6 @@ func subscribe(secret string, body []byte) string {
 	return hex.EncodeToString(m.Sum(nil))
 }
 
-// The hole that was still open: the secret stayed cached on the *Service
-// FOREVER. Once it diverged from the daemon, EVERY incoming message was
-// discarded until someone restarted server-control-panel — in silence, with the panel
-// still saying "connected". It happened in the wild: both sides stable, no
-// restart, two real messages lost.
 func TestWebhookReloadsStaleSecretInsteadOfDropping(t *testing.T) {
 	body := []byte(`{"event":"message"}`)
 	fresh := "new-secret-from-vault"
@@ -30,15 +25,11 @@ func TestWebhookReloadsStaleSecretInsteadOfDropping(t *testing.T) {
 	if !s.hmacMatches(body, subscribe(fresh, body)) {
 		t.Fatal("it refused a valid signature: the vault reload did not run")
 	}
-	// And it adopts the new value, so we do not pay for the reload on every
-	// message that follows.
 	if s.currentHMAC() != fresh {
 		t.Fatalf("secret in use = %q, want %q (the new one has to be adopted)", s.currentHMAC(), fresh)
 	}
 }
 
-// Reloading must NOT turn into "accepts anything": a signature from a secret
-// that is neither the cached one nor the vault's stays refused.
 func TestWebhookRejectsSignatureFromUnknownSecret(t *testing.T) {
 	body := []byte(`{"event":"message"}`)
 	s := &Service{
@@ -53,7 +44,6 @@ func TestWebhookRejectsSignatureFromUnknownSecret(t *testing.T) {
 	}
 }
 
-// The happy path pays for no reload at all.
 func TestWebhookDoesNotReloadWhenCachedSecretWorks(t *testing.T) {
 	body := []byte(`{"event":"message"}`)
 	called := 0
@@ -69,7 +59,6 @@ func TestWebhookDoesNotReloadWhenCachedSecretWorks(t *testing.T) {
 	}
 }
 
-// With no reloader (nil) the old behaviour holds — no panic.
 func TestWebhookWithoutReloaderDoesNotBreak(t *testing.T) {
 	body := []byte(`x`)
 	s := &Service{hmacSecret: "a"}
@@ -81,12 +70,6 @@ func TestWebhookWithoutReloaderDoesNotBreak(t *testing.T) {
 	}
 }
 
-// Rotating the secret is a WRITE on the *Service, and HandleWebhook runs in a
-// goroutine PER REQUEST — two messages arriving together with a rotation were a
-// write concurrent with a read, that is, a data race under Go's memory model.
-// The other tests in this file are sequential, which is why -race passed
-// without exposing anything. This one exercises the real case; it runs under
-// `go test -race`.
 func TestWebhookConcurrentRotationIsNotDataRace(t *testing.T) {
 	body := []byte(`{"event":"message"}`)
 	fresh := "new-secret-from-vault"

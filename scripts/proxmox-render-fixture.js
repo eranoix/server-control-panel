@@ -1,4 +1,3 @@
-// Fixture for the Proxmox tab rendering harness.
 (function () {
   const origApp = window.app;
   window.app = function () {
@@ -14,11 +13,6 @@
     c.showToast = () => {};
     c.askConfirm = async () => false;
     c.pvxLiveCycle = function () {};
-    // The harness renders the PROXMOX SECTION, not the PWA. The service worker
-    // registration runs in the app’s init and fails here for want of a real
-    // scope; the error shows up in the console and would bury the very signal
-    // this check exists to see. Switching it off is honest — there is nothing
-    // of Proxmox in it.
     c.installPWA = function () {};
     return c;
   };
@@ -49,26 +43,18 @@
     '/api/nodes/canary/note': { node: 'canary', markdown: '', origin: 'outside-pve',
                                  reason: 'this node is not a guest of this hypervisor, so the PVE note does not apply to it' },
     '/api/nodes/node/pve/note': { node: 'node/pve', markdown: '# pve: the home server\n\n**What it is:** the physical machine that runs everything.', origin: 'pve-notes' },
-    // RUNNING CT with a snapshot: the hypervisor only clones a running container
-    // from a snapshot — a rule discovered by the live proof, not from the source.
     '/api/nodes/lxc/204/clone': { origin: 'lxc/204', origin_name: 'lab', type: 'lxc',
                                   next_id: 991, suggestion: 'lab-copy', on: true,
                                   needs_snapshot: true, snapshots: ['before-upgrade', 'base'] },
-    // RUNNING CT with NO snapshot: the case where there is nothing to offer.
     '/api/nodes/lxc/202/clone': { origin: 'lxc/202', origin_name: 'pbs', type: 'lxc',
                                   next_id: 993, suggestion: 'pbs-copy', on: true,
                                   needs_snapshot: true, snapshots: [] },
-    // STOPPED guest: no requirement at all.
     '/api/nodes/lxc/205/clone': { origin: 'lxc/205', origin_name: 'observ', type: 'lxc',
                                   next_id: 992, suggestion: 'observ-copy', on: false,
                                   needs_snapshot: false, snapshots: [] },
   };
 
   const C = () => document.body._x_dataStack[0];
-  // 🔴 Do NOT use offsetParent: it is a property of HTMLElement and does NOT
-  // exist on an SVG element, so `sv.offsetParent !== null` is ALWAYS true and
-  // the visibility measurement lies exactly where the charts live.
-  // checkVisibility() holds for both and considers the whole ancestor chain.
   const visible = (el) => !!el && typeof el.checkVisibility === 'function' &&
     el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
 
@@ -102,19 +88,6 @@
     return { points: points, scope: opts.scope || 'hypervisor', window: 'hour' };
   };
 
-  // 🔴 NODES WITH THE REAL SHAPE, COPIED FROM THE LIVE /api/nodes RESPONSE.
-  //
-  // The previous version of this fixture invented `{id, kind, status:{value}}`
-  // and nothing else. The result was worse than useless: ALL the buttons came up
-  // disabled, because `pvxActionState` requires `credential.state === 'ok'`, and I
-  // nearly concluded the whole panel was dead. Live, 9 of the 11 nodes have an ok
-  // credential. A poor fixture is not "a simpler test" — it is a test that lies,
-  // and it lies in the most expensive direction: inventing a defect that is not
-  // there.
-  //
-  // The three cases below are the three that really exist in this lab: a guest
-  // with an ok credential, a guest with NO credential (lxc/202 is like that
-  // today) and the external node `canary`, which is no hypervisor’s guest.
   const stamp = (v) => ({ value: v, observed_at: 1787256260 });
   const guest = (id, name, vmid, st, cred) => ({
     id, name: name, transport: 'pve-api', address: '192.168.1.1', kind: 'guest', vmid,
@@ -139,18 +112,8 @@
       disk_read: stamp(0), disk_write: stamp(0), net_in_rate: stamp(0), net_out_rate: stamp(0),
       template: false, credential: { token_id: 'panel@pve!audit', expire: 1802645875, state: 'ok' },
       age_seconds: 1, stale: false },
-    // 🔴 The node the hypervisor no longer lists. It is NOT deleted (a guest
-    // disappears for being stopped, migrated or having its ACL withdrawn), but
-    // neither can it be confused with "stale" (expired), which means the panel
-    // failed to look.
     Object.assign(guest('lxc/101', 'clone-proof', 101, 'stopped', CRED_MISSING),
                   { absent_since: 1787200000, stale: true, age_seconds: 56260 }),
-    // 🔴 THE SECOND CASE, and it is the one that makes this check NON-VACUOUS:
-    // absent with FRESH data. It is the real window right after the poller marks
-    // the absence — the last `status` is still recent and says "running", but the
-    // hypervisor already does not list the node. Without this case the `stale`
-    // guard covers on its own and the `absent_since` guard could be removed
-    // without a single check biting (measured).
     Object.assign(guest('lxc/102', 'just-deleted', 102, 'running', CRED_OK),
                   { absent_since: 1787256000, stale: false, age_seconds: 30 }),
     { id: 'canary', name: 'canary', transport: 'agent', address: '127.0.0.1:9', kind: 'external', vmid: 0,
@@ -161,16 +124,6 @@
       template: false, credential: CRED_MISSING, age_seconds: -1, stale: true },
   ];
 
-  // 🔴 Opens through the screen’s REAL path, not by writing into pvx.open.
-  // A shortcut is not fidelity: `pvxSelect` also sets `pvx.guestSel`, and the
-  // whole Copies tab depends on it. Pinning only `pvx.open`, the harness
-  // reported "there is no clone button" for a screen that has the button.
-  // 🔴 THE SERIES GOES TO BOTH PLACES.
-  //
-  // Once `open()` started using the real path, `pvxGoTo('charts')` fires
-  // `pvxLoadSeries()` — which is ASYNCHRONOUS and resolves LATER, overwriting
-  // anything pinned into `pvx.series`. Teaching the stub to return the same
-  // series makes the state survive the load, instead of the test racing it.
   const putSeries = (d) => {
     window.__responses['/api/proxmox/rrd'] = d;
     C().pvx.series = d;
@@ -180,11 +133,6 @@
     const n = C().pvxNodes().find((x) => x.id === id);
     if (!n) throw new Error('node not in the fixture: ' + id);
     C().pvx.open = '';
-    // 🔴 Open EXACTLY the way a click does, and nothing more: clicking a node
-    // calls `pvxSelect` (which pins the summary tab and calls `pvxOpen`), clicking
-    // a TAB calls `pvxGoTo`. Always calling `pvxGoTo` is kinder than reality and
-    // hid a real defect: the note was loaded only from `pvxGoTo`, so clicking a
-    // node showed an EMPTY "What this box does" block.
     C().pvxSelect(n);
     if (tab !== 'summary') C().pvxGoTo(tab);
   };
@@ -257,8 +205,6 @@
       }, expect: () => (svgs().length ? { error: 'a missing metric should not draw' } : { note: 'nothing drawn' }) },
 
     { name: 'guest opened — switches to the 7 guest metrics', step: () => {
-        // The stub goes in BEFORE opening: `pvxGoTo('charts')` fires the load,
-        // and it has to find the right series already there.
         putSeries(series(30, { scope: 'lxc/204' }));
         open('lxc/204', 'charts');
       }, expect: expectCharts(7, (p) => {
@@ -280,14 +226,9 @@
       expect: () => (svgs().length ? { error: 'a null series should not draw' } : { note: 'nothing drawn, no crash' }) },
   ];
 
-  // ── the BUTTONS: existing in the HTML is not being on screen ────────────
   const buttons = () => Array.from(document.querySelectorAll('button')).filter(visible)
     .map((b) => (b.textContent || '').replace(/\s+/g, ' ').trim()).filter((t) => t);
 
-  // 🔴 A button is identified by its ACTION (`@click`), never by its label: the
-  // screen has two button sets with the same words (the BULK ones, disabled when
-  // nothing is selected, and the open node's), so a text search finds the wrong
-  // one. It also keeps a label rename from breaking the pin.
   const byAction = (excerpt) => Array.from(document.querySelectorAll('button'))
     .filter((b) => (b.getAttribute('@click') || '').includes(excerpt))
     .filter(visible)
@@ -338,25 +279,12 @@
         const reb = byAction("pvxHostPower('reboot')"), des = byAction("pvxHostPower('shutdown')");
         if (!reb || !des) return { error: 'hypervisor without restart/turnOff' };
         if (reb.off || des.off) return { error: 'hypervisor power locked' };
-        // On the hypervisor, powering a GUEST on/off makes no sense and has to be locked.
         const l = NO.turnOn();
         if (l && !l.off) return { error: 'the hypervisor offers "turnOn guest": ' + snapshot() };
         return { note: 'restart and turnOff enabled; guest power locked' };
       } },
   );
 
-  // 🔴 EVERY :disabled EXPRESSION HAS TO RETURN A STRICT BOOLEAN.
-  //
-  // This closes the CLASS of defect that left the operator with no buttons.
-  // Alpine, on a boolean attribute, only REMOVES it when the value is null,
-  // undefined or false — anything else SETS it, the empty string included. So an
-  // expression that returns `''` to mean "not busy" disables the button forever,
-  // silently, and the operator sees a screen of dead buttons with no error
-  // message to investigate.
-  //
-  // The check evaluates EVERY `:disabled` in the section against the current
-  // state and demands `true` or `false`. It is not text analysis: it is the
-  // value Alpine is going to use.
   window.__script.push({
     name: ':disabled · every expression returns a strict boolean',
     step: () => { open('lxc/204', 'summary'); },
@@ -377,7 +305,6 @@
     },
   });
 
-  // ══ THE NOTE: the Summary has to SUMMARISE ══════════════════════════════
   const noteVisible = () => Array.from(document.querySelectorAll('.pvx-md')).filter(visible)[0] || null;
 
   window.__script.push(
@@ -390,9 +317,6 @@
         if (!el) return { error: 'the node note is NOT visible in the Summary: the summary does not summarise' };
         const t = el.innerText;
         if (t.indexOf('What it does') < 0) return { error: 'the note body did not arrive: ' + t.slice(0, 80) };
-        // Rendered, not dumped as raw text.
-        // Any level will do: the level depends on how many `#` the note uses, and
-        // pinning h3 would be pinning the prose of whoever wrote the note.
         if (!el.querySelector('h3,h4,h5,h6')) return { error: 'the note title did not become a heading: Markdown was not rendered' };
         if (!el.querySelector('strong')) return { error: 'bold did not render' };
         if (!el.querySelector('code')) return { error: 'code did not render' };
@@ -403,17 +327,6 @@
         return { note: el.querySelectorAll('h3,h4,h5,h6,strong,code,li,hr').length + ' elements rendered' };
       } },
 
-    // 🔴 THIS CHECK WAS INVERTED, and the history stays here.
-    //
-    // It used to assert that the explanation came BEFORE the numbers — my design,
-    // argued with "whoever clicks a node asks what this is before how it is".
-    // The operator, who uses the screen every day and already knows what each box
-    // is, decided the opposite: the top is the place for numbers, and the
-    // explanation is reference.
-    //
-    // The check was not DELETED: the position is still pinned, only at the other
-    // end. Deleting it would leave the order free to drift back on its own in the
-    // next edit — and the operator’s decision would become an accident.
     { name: 'SUMMARY · the explanation comes LAST', step: () => {}, expect: () => {
         const el = noteVisible();
         if (!el) return { error: 'no note' };
@@ -422,7 +335,6 @@
         if (!consumption) return { error: 'could not find the Usage block to compare against' };
         const after = consumption.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING;
         if (!after) return { error: 'the explanation went back to BEFORE the numbers' };
-        // And it is the LAST thing in the panel: nothing visible about the node comes after it.
         const panel = el.closest('[x-show]') && el.closest('div[class*="rounded"]');
         const actions = Array.from(document.querySelectorAll('button')).filter(visible)
           .find(b => (b.getAttribute('@click') || '').indexOf("pvxPower(pvxOpenNode(),'start')") >= 0);
@@ -483,29 +395,17 @@
       } },
   );
 
-  // ══ 🔴 "RUNNING" DEMANDS AN OBSERVATION FROM NOW ════════════════════════
-  //
-  // With the hypervisor unreachable, the panel said "9 / 10 running" about a
-  // house it had not seen for nearly an hour. Counting zero would be the opposite
-  // lie. The only truthful answer is "I do not know".
   window.__script.push(
     { name: 'RUNNING · fresh data counts normally', step: () => {
         C().pvxClearSelection();
       }, expect: () => {
         const r = C().pvxLabSummary();
-        // The fixture has ONE guest absent on purpose (lxc/101). The others are
-        // fresh and have to be counted — demanding "0 unknown" would be demanding
-        // that the fixture not reproduce the real case.
         if (r.running < 2) return { error: 'fresh guests were not counted: ' + JSON.stringify(r) };
-        // Two absentees in the fixture: one stale and one FRESH. The fresh one is
-        // what proves the absence guard does work of its own.
         if (r.unknown !== 2) return { error: 'expected 2 unknowns (the two missing ones): ' + JSON.stringify(r) };
         return { note: r.running + '/' + r.guests + ' running, ' + r.unknown + ' unknown' };
       } },
 
     { name: 'RUNNING · a guest with STALE data is not counted as running', step: () => {
-        // Exactly the state of the house today: the last known value says
-        // "running", but the observation has aged.
         C().nodes.list = C().nodes.list.map(n => Object.assign({}, n, { stale: true, age_seconds: 2760 }));
       }, expect: () => {
         const r = C().pvxLabSummary();
@@ -526,14 +426,11 @@
         const lab = C().pvxNodes().find(x => x.id === 'lxc/204');
         if (!lab || !lab.absent_since) return { error: 'the fixture did not mark the node as absent' };
         if (r.unknown < 1) return { error: 'absent node counted as if it were observable: ' + JSON.stringify(r) };
-        // GIVES BACK the original list: a step that dirties the next one is the
-        // defect that already broke the console proof this morning.
         C().nodes.list = NODES;
         return { note: r.running + ' running, ' + r.unknown + ' unknown(s)' };
       } },
   );
 
-  // ══ THE NODE THAT LEFT THE HYPERVISOR ════════════════════════════════════
   window.__script.push(
     { name: 'GONE · a node that left the hypervisor is not counted as "expired"', step: () => {
         open('node/pve', 'summary');
@@ -543,17 +440,10 @@
         if (!n) return { error: 'the fixture lost the absent node' };
         const e = c.pvxNodeState(n);
         if (e !== 'gone') return { error: 'state = ' + e + ', want "gone": it has an absence stamp' };
-        // It is `stale` TOO, and even so it must not fall into "stale": the
-        // order of the checks is what separates "I did not look" from "I looked
-        // and did not find".
         if (!n.stale) return { error: 'the fixture does not reproduce the real case (the absent node is also stale)' };
         const segs = {};
         c.pvxScreenSegments().forEach(x => { segs[x.key] = x.n; });
         if (segs.gone !== 2) return { error: 'the band does not count the two absent ones: ' + JSON.stringify(segs) };
-        // 🔴 The exact property is the ORDER of the checks: the SAME node, without
-        // the absence stamp, would fall into "stale". Asserting "stale === 0"
-        // on the band would be crude — `canary` is legitimately stale, and the
-        // check would fail over a node that has nothing to do with this.
         const noStamp = Object.assign({}, n, { absent_since: 0 });
         if (c.pvxNodeState(noStamp) !== 'stale') {
           return { error: 'without the stamp it should be "stale": the fixture does not reproduce the real ambiguity' };
@@ -564,8 +454,6 @@
     { name: 'GONE · does not count as an attention item', step: () => {}, expect: () => {
         const c = C();
         const n = c.pvxNodes().find(x => x.id === 'lxc/101');
-        // The lab summary's attention count only takes the three pending states;
-        // what is asserted here is that "gone" is not one of them.
         const e = c.pvxNodeState(n);
         if (['stale', 'no-credential', 'critical'].indexOf(e) >= 0) {
           return { error: 'node gone from the hypervisor entered the pending list as ' + e };
@@ -591,12 +479,6 @@
       } },
   );
 
-  // 🔴 "I HAVE NOT READ IT YET" MUST NOT BECOME "IT DOES NOT EXIST" ════════
-  //
-  // The operator saw on screen "backup: no storage on this hypervisor accepts
-  // backups" with `pbs` standing right there on the other side. The storage list
-  // simply had not been loaded — and the panel asserted something about the
-  // HYPERVISOR out of an absence that was its OWN.
   window.__script.push(
     { name: 'REASON · unread storage does not become "no storage accepts backups"', step: () => {
         C().pvx.storage = null;
@@ -629,7 +511,6 @@
       } },
   );
 
-  // ══ EDITING THE NOTE WITHOUT LEAVING THE PANEL ═══════════════════════════
   const editNoteButton = () => Array.from(document.querySelectorAll('button')).filter(visible)
     .find(b => (b.getAttribute('@click') || '') === 'pvxEditNote()');
   const noteArea = () => Array.from(document.querySelectorAll('textarea')).filter(visible)
@@ -640,10 +521,6 @@
         C().pvx.note = { node: '', markdown: '', origin: '', reason: '', loading: false, error: '',
                          editing: false, draft: '', saving: false };
         open('lxc/204', 'summary');
-        // 🔴 THE MUTATION LIVES IN `step`, NEVER IN `expect`. The harness waits for
-        // Alpine to re-render AFTER the step; changing state inside the
-        // measurement is measuring the DOM from before the change — which is what
-        // made this check say "edit mode did not open" about a screen that opens.
       }, expect: () => {
         const b = editNoteButton();
         if (!b) return { error: 'there is no button to edit the note: the flow is still outside the panel' };
@@ -652,8 +529,6 @@
       } },
 
     { name: 'NOTE · editing during the load does NOT open an empty draft', step: () => {
-        // Saving an empty draft WOULD ERASE the hypervisor’s note. The guard lives
-        // in the function, not only in the markup.
         C().pvx.note.loading = true;
         C().pvxEditNote();
       }, expect: () => {
@@ -668,8 +543,6 @@
         const ta = noteArea();
         if (!ta) return { error: 'edit mode did not open a text area' };
         if (ta.value.indexOf('What it does') < 0) return { error: 'the draft did not come with the text in force: ' + ta.value.slice(0, 60) };
-        // 🔴 While editing, the rendered body disappears: seeing both at once would
-        // make the operator confuse what is saved with what he typed.
         if (noteVisible()) return { error: 'the rendered text stays on screen during editing' };
         return { note: 'draft open with ' + ta.value.length + ' characters, rendered body hidden' };
       } },
@@ -710,7 +583,6 @@
       } },
   );
 
-  // ══ MAINTENANCE: restart, clone and keep a copy ══════════════════════════
   const STORAGES = { pools: [
     { id: 'local', type: 'dir', content: ['backup', 'iso', 'vztmpl'], free: 8e11, total: 9e11, used: 1e10, used_pct: 1 },
     { id: 'local-zfs', type: 'zfspool', content: ['images', 'rootdir'], free: 8e11, total: 9e11, used: 6e10, used_pct: 7 },
@@ -758,7 +630,6 @@
         const dest = sel.find(x => (x.getAttribute('aria-label') || '') === 'destination storage');
         if (!dest) return { error: 'there is no storage selector' };
         const ops = Array.from(dest.options).map(o => o.value);
-        // Only `local` and `pbs` declare `backup` content; `local-zfs` does not.
         if (ops.indexOf('local-zfs') >= 0) return { error: 'offered a storage that does NOT accept backups: ' + ops.join(',') };
         if (ops.indexOf('pbs') < 0 || ops.indexOf('local') < 0) return { error: 'valid targets missing: ' + ops.join(',') };
         return { note: 'targets = ' + ops.join(', ') + ' (local-zfs correctly left out)' };
@@ -782,15 +653,12 @@
         if (!C().pvx.clone.open) return { error: 'the dialog did not open' };
         if (C().pvx.clone.newID !== 991) return { error: 'newID = ' + C().pvx.clone.newID + ', want 991 (from the hypervisor)' };
         if (C().pvx.clone.name !== 'lab-copy') return { error: 'suggested name = ' + C().pvx.clone.name };
-        // The id must NOT be a typeable field: it is a reading.
         const inputs = Array.from(document.querySelectorAll('input')).filter(visible);
         const typableWithID = inputs.filter(i => String(i.value) === '991');
         if (typableWithID.length) return { error: 'the target id is in a TYPEABLE field: it is read from the hypervisor' };
         if (!document.body.innerText.includes('991')) return { error: 'the id read does not show up on screen' };
         if (document.body.innerText.indexOf('crash-consistent') < 0)
           return { error: 'running guest and no crash-consistent copy warning' };
-        // 🔴 A running CT requires a source snapshot, and the screen has to OFFER
-        // the list instead of letting the operator take the hypervisor’s error.
         const sel = Array.from(document.querySelectorAll('select')).filter(visible)
           .find(x => (x.getAttribute('aria-label') || '').indexOf('snapshot') >= 0);
         if (!sel) return { error: 'running CT without a source snapshot selector' };
@@ -831,7 +699,6 @@
         return { note: 'no warning and no snapshot requirement, because there is nothing to require' };
       } },
 
-    // 🔴 THE CLASS CHECK OF THIS BATCH: every button has to LOOK like a button.
     { name: 'STYLE · no button renders as loose text', step: () => {
         C().pvxCloseClone();
         open('lxc/204', 'summary');
@@ -853,7 +720,6 @@
       } },
   );
 
-  // ── sweeps ALL the host and guest tabs, pristine and with data ───────────
   const TABS_HOST = ['summary', 'charts', 'console', 'tasks', 'disks', 'storage', 'zfs', 'network', 'system', 'packages', 'registry', 'perms'];
   const TABS_GUEST = ['summary', 'charts', 'console', 'tasks', 'perms'];
   for (const a of TABS_HOST) {

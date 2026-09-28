@@ -1,20 +1,5 @@
 package mobilebff
 
-// auth_login_test.go — HTTP-level proof of the guarantees auth_login.go
-// makes:
-//
-//  1. mobileLogin passes username/password/totp_code/device_label through to
-//     PasskeyBackend.MobileLogin unaltered — the MFA policy itself is tested
-//     in internal/api (the desktop's very own verifyLoginMFA).
-//  2. When the backend signals TOTPRequired, the HTTP response is
-//     EXACTLY {"totp_required": true} — not a token in sight.
-//  3. Success returns access_token + refresh_token + expires_in.
-//  4. Backend errors (bad credentials, lockout, rate limit, MFA
-//     unavailable, invalid code) map to the right HTTP status.
-//  5. mobileRefresh passes the refresh_token it received through unaltered
-//     and returns the NEW pair — an invalid or replayed refresh_token
-//     (already rotated) is always 401, never "almost works".
-
 import (
 	"net/http"
 	"testing"
@@ -56,9 +41,6 @@ func TestMobileLogin_Success_ReturnsTokens(t *testing.T) {
 	}
 }
 
-// TestMobileLogin_TOTPRequired_NeverReturnsToken proves that when the backend
-// signals TOTPRequired, the HTTP response carries neither access_token nor
-// refresh_token — the app is meant to resend with totp_code filled in.
 func TestMobileLogin_TOTPRequired_NeverReturnsToken(t *testing.T) {
 	backend := &fakePasskeyBackend{
 		mobileLoginResult: MobileLoginResult{TOTPRequired: true},
@@ -134,9 +116,6 @@ func TestMobileRefresh_Success_ReturnsNewPair(t *testing.T) {
 	}
 }
 
-// TestMobileRefresh_InvalidOrReused_Always401 proves that a refresh_token
-// that is invalid, expired, revoked or already rotated (replayed) always
-// fails the SAME way — 401, never "almost works" on a retry.
 func TestMobileRefresh_InvalidOrReused_Always401(t *testing.T) {
 	backend := &fakePasskeyBackend{mobileRefreshErr: ErrMobileRefreshInvalid}
 	srv := newPasskeyTestServer(t, backend)
@@ -148,8 +127,6 @@ func TestMobileRefresh_InvalidOrReused_Always401(t *testing.T) {
 		t.Fatalf("status = %d, expected 401: %v", resp.StatusCode, body)
 	}
 
-	// Repeating the SAME attempt keeps failing in exactly the same way —
-	// there is no "second chance" for a token that is already invalid.
 	resp2, body2 := postJSON(t, srv, "/auth/refresh", map[string]any{
 		"refresh_token": "sam.already-rotated",
 	})

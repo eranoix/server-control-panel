@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-// test-paste-single.mjs — one paste = one upload.
-//
-// The defect was in no function at all: it was in the TOPOLOGY of the listeners.
-// There was a capture paste listener on the container and another capture one on
-// the helper-textarea, which is its descendant. Both receive the SAME Event
-// instance — capture walks down the tree, so the ancestor's runs first — and the
-// descendant's stopImmediatePropagation arrives far too late to cancel it. Every
-// screenshot pasted went up twice and injected two paths into the pane.
-//
-// That is why this pin runs in a BROWSER and dispatches a real ClipboardEvent:
-// event propagation is DOM semantics, and evaluating the functions in isolation
-// (the way the expression harnesses do) could never see the defect — which is
-// exactly how it slipped through.
-//
-// Usage: node scripts/test-paste-single.mjs
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -28,8 +13,6 @@ const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
 console.log('=== test-paste-single ===');
 
-// ── Extraction from the real source ─────────────────────────────────────────
-// Copying the logic in here would let the pin drift from the product unseen.
 const extract = (name, args) => {
   const re = new RegExp('^ {4}' + name + '\\(' + args.join(', ') + '\\)\\{\\n([\\s\\S]*?)^ {4}\\},$', 'm');
   const m = src.match(re);
@@ -39,11 +22,6 @@ const extract = (name, args) => {
 const guardBody = extract('_pasteHandled', ['ev', 'files']);
 const filesBody  = extract('_clipboardFiles', ['ev']);
 
-// ── 1. Structural pin: the removed listener must not come back ──────────────
-// The container-capture listener that called _uploadPasteImage was the duplicate.
-// If anyone reintroduces that pair (capture on the container + a direct upload),
-// the guard saves it at runtime, but the intent of the code goes ambiguous again
-// — so we lock it.
 {
   const captureOnContainer = /el\.addEventListener\('paste'[\s\S]{0,600}?_uploadPasteImage/.test(src);
   captureOnContainer
@@ -51,7 +29,6 @@ const filesBody  = extract('_clipboardFiles', ['ev']);
     : ok('the duplicated capture listener on the container is still gone');
 }
 
-// ── Browser ─────────────────────────────────────────────────────────────────
 const require_ = createRequire(join(root, '.tools', 'package.json'));
 let chromium;
 try { ({ chromium } = require_('playwright-core')); }
@@ -73,7 +50,6 @@ const page = await browser.newPage();
 await page.setContent('<div id="el"><textarea class="xterm-helper-textarea"></textarea></div>');
 
 const result = await page.evaluate(({ guardBody, filesBody }) => {
-  // Rebuild the app around the TWO real methods from the product.
   const app = {
     _pasteHandled: new Function('ev', 'files', guardBody),
     _clipboardFiles: new Function('ev', filesBody),
@@ -85,8 +61,6 @@ const result = await page.evaluate(({ guardBody, filesBody }) => {
   let uploads = [];
   const rise = (files) => uploads.push(...files.map((f) => f.name));
 
-  // Wiring IDENTICAL to the product (00-shell.js): capture on the textarea (the
-  // owner) and bubble on the container (the fallback), both through the guard.
   ta.addEventListener('paste', (ev) => {
     const files = self._clipboardFiles(ev);
     if (!files) return;
@@ -113,45 +87,34 @@ const result = await page.evaluate(({ guardBody, filesBody }) => {
 
   const out = {};
 
-  // (a) the user's case: a screenshot pasted with focus on the terminal.
   uploads = [];
   ta.dispatchEvent(evPaste([['shot.png', 'image/png']]));
   out.umPaste = uploads.slice();
 
-  // (b) the TOPOLOGY of the defect: a third capture listener on the container,
-  //     which receives the SAME Event instance before the textarea does. Without
-  //     the guard that is two uploads — literally the reported bug.
   el.addEventListener('paste', (ev) => {
     const files = self._clipboardFiles(ev);
     if (!files) return;
     if (self._pasteHandled(ev, files)) return;
     rise(files);
   }, true);
-  // A distinct name on purpose: reusing 'shot.png' here would land in the
-  // signature window opened by case (a) and the pin would measure the wrong guard.
   uploads = [];
   ta.dispatchEvent(evPaste([['intruder.png', 'image/png']]));
   out.withIntruder = uploads.slice();
 
-  // (c) text from Excel/Word: brings text/plain plus a rendered PNG. Must not upload.
   uploads = [];
   ta.dispatchEvent(evPaste([['image.png', 'image/png']], 'A1\tB1'));
   out.withText = uploads.slice();
 
-  // (d) two distinct EVENTS with the same content inside the window — this is the
-  //     'paste' + clipboard.read() pair from the code-server interceptor.
   uploads = [];
   ta.dispatchEvent(evPaste([['dup.png', 'image/png']]));
   ta.dispatchEvent(evPaste([['dup.png', 'image/png']]));
   out.twoEvents = uploads.slice();
 
-  // (e) different files in sequence must not be swallowed by the guard.
   uploads = [];
   ta.dispatchEvent(evPaste([['a.png', 'image/png']]));
   ta.dispatchEvent(evPaste([['b.png', 'image/png']]));
   out.twoDifferent = uploads.slice();
 
-  // (f) multi-file in a single paste still uploads all of them.
   uploads = [];
   ta.dispatchEvent(evPaste([['x.pdf', 'application/pdf'], ['y.csv', 'text/csv']]));
   out.multi = uploads.slice();

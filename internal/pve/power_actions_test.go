@@ -2,9 +2,6 @@ package pve
 
 import "testing"
 
-// 🔴 The allowlist is the last line between the query from the screen and a
-// POST on the hypervisor. It has to refuse EVERYTHING that is not the two
-// commands — and refuse in a way that keeps a typo from becoming a power-off.
 func TestValidPowerCommand(t *testing.T) {
 	for _, bom := range []string{"reboot", "shutdown"} {
 		if _, ok := ValidPowerCommand(bom); !ok {
@@ -22,9 +19,6 @@ func TestValidPowerCommand(t *testing.T) {
 	}
 }
 
-// NodePower refuses before dialling: spending a connection to find out that the
-// screen sent garbage is waste, and the error that would come back would be the
-// hypervisor's, not the validation's.
 func TestNodePowerRejectsBeforeDialing(t *testing.T) {
 	c := &Client{}
 	if _, err := c.NodePower(nil, "", PowerReboot); err == nil {

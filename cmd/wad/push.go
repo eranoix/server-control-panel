@@ -14,11 +14,8 @@ import (
 	"time"
 )
 
-// pusher emits WAHA-compatible webhook events to the server-control-panel server, so the
-// existing internal/whatsapp/webhook.go handlers (and Store/Broadcaster) keep
-// working unchanged. It signs each POST with the per-user HMAC secret.
 type pusher struct {
-	base     string // e.g. http://127.0.0.1:8765
+	base     string
 	secretOf func(user string) string
 	reloadOf func(user string) (string, bool)
 	httpc    *http.Client
@@ -28,7 +25,6 @@ func newPusher(base string, secretOf func(string) string) *pusher {
 	return &pusher{base: base, secretOf: secretOf, httpc: &http.Client{Timeout: 15 * time.Second}}
 }
 
-// envelope mirrors webhookEnvelope on the server side.
 type envelope struct {
 	Event     string      `json:"event"`
 	Session   string      `json:"session"`
@@ -36,7 +32,6 @@ type envelope struct {
 	Timestamp int64       `json:"timestamp"`
 }
 
-// wahaMsgOut mirrors wahaMessagePayload (the fields the server reads).
 type wahaMsgOut struct {
 	ID         string `json:"id"`
 	From       string `json:"from"`
@@ -62,7 +57,6 @@ type wahaMsgOut struct {
 	} `json:"_data"`
 }
 
-// ackOut mirrors ackPayload.
 type ackOut struct {
 	ID   string `json:"id"`
 	From string `json:"from"`
@@ -77,18 +71,11 @@ func (p *pusher) event(user, event string, payload interface{}) {
 	if err != nil {
 		return
 	}
-	// Asynchronous delivery with retry: the daemon is the ONLY source of inbound
-	// events (the server no longer polls). If server-control-panel is restarting (the very
-	// deploy scenario this daemon exists to survive), a single delivery attempt
-	// would lose the message forever (whatsmeow does not redeliver). Retry with
-	// backoff covers the restart window; async so it never blocks whatsmeow's event loop.
 	secret := p.secretOf(user)
 	url := p.base + "/api/whatsapp/webhook/" + user
 	go p.deliver(user, event, url, secret, body)
 }
 
-// reloadSecret is injected by the manager: it re-reads meta.json from disk and
-// reports whether the secret changed. See manager.reloadMeta.
 func (p *pusher) reloadSecret(user string) (string, bool) {
 	if p.reloadOf == nil {
 		return "", false
@@ -97,7 +84,6 @@ func (p *pusher) reloadSecret(user string) (string, bool) {
 }
 
 func (p *pusher) deliver(user, event, url, secret string, body []byte) {
-	// ~ 0.5+1+2+4+5 = backoff covering a health-gated restart (a few seconds).
 	backoffs := []time.Duration{0, 500 * time.Millisecond, time.Second, 2 * time.Second, 4 * time.Second, 5 * time.Second}
 	var lastErr error
 	for i, wait := range backoffs {
@@ -117,18 +103,12 @@ func (p *pusher) deliver(user, event, url, secret string, body []byte) {
 		resp, err := p.httpc.Do(req)
 		if err == nil {
 			code := resp.StatusCode
-			// The body says WHICH 401 this is ("missing hmac" vs "bad hmac"); throwing
-			// it away was what turned diagnosis into guesswork.
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 			resp.Body.Close()
 			if code >= 200 && code < 300 {
-				return // success
+				return
 			}
 			if code == http.StatusUnauthorized || code == http.StatusForbidden {
-				// The in-memory secret may be stale — the panel rewrites meta.json
-				// on every boot. Re-reading and retrying ONCE fixes by itself what
-				// used to need a manual restart, and without it the message is lost
-				// (whatsmeow does not redeliver a refused event).
 				if fresh, changed := p.reloadSecret(user); changed {
 					log.Printf("wad push %s/%s: HTTP %d — secret reloaded from disk, retrying", user, event, code)
 					secret = fresh
@@ -136,17 +116,6 @@ func (p *pusher) deliver(user, event, url, secret string, body []byte) {
 				}
 			}
 			if code < 500 {
-				// 4xx is permanent (retrying is pointless) — BUT dropping it
-				// silently hides message loss for days. The real case: a 401
-				// "bad hmac" when meta.json's hmac_secret diverges from the vault
-				// (e.g. clobbered by a non-canonical worktree). whatsmeow does NOT
-				// redeliver, so the message is gone for good. Log LOUD with the
-				// hint for the fix instead of swallowing it.
-				// The hint has to reflect what the SERVER answered: "missing
-				// hmac" (empty secret on this side) and "bad hmac" (mismatched
-				// secrets) have opposite causes, and a single catch-all message
-				// sent you investigating the wrong one — comparing secrets that
-				// were already identical.
 				hint := ""
 				if code == http.StatusUnauthorized || code == http.StatusForbidden {
 					reason := strings.TrimSpace(string(body))
@@ -171,8 +140,6 @@ func (p *pusher) deliver(user, event, url, secret string, body []byte) {
 	log.Printf("wad push %s/%s: gave up after retries: %v", user, event, lastErr)
 }
 
-// reaction emits a `message` event in the WAHA reaction shape (the server
-// attaches it to the target message instead of creating a bubble).
 func (p *pusher) reaction(user, chat, targetMsgID, fromJID, emoji string, ts int64) {
 	type keyT struct {
 		ID          string `json:"ID"`
@@ -193,10 +160,6 @@ func (p *pusher) reaction(user, chat, targetMsgID, fromJID, emoji string, ts int
 	p.event(user, "message", payload)
 }
 
-// presence emits a `presence.update` event for a 1:1 contact or chat. The
-// participant identifies the actor behind the state (in a group it is the real
-// typist, not the group's JID); when empty, it falls back to chatJID itself
-// (the 1:1 case).
 func (p *pusher) presence(user, chatJID, participantJID, state string, lastSeen int64) {
 	type prT struct {
 		Participant string `json:"participant"`

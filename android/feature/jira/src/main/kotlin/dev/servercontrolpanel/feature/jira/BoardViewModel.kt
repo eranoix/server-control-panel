@@ -18,18 +18,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** The state of the board screen. */
 sealed interface BoardState {
     data object Loading : BoardState
 
-    /** No Jira account is connected yet — the way forward is the form, not an error. */
     data object Disconnected : BoardState
 
     data class Ready(val board: JiraBoard) : BoardState
     data class Error(val message: String) : BoardState
 }
 
-/** The state of an open issue's sheet. */
 sealed interface IssueState {
     data object Closed : IssueState
     data class Loading(val key: String) : IssueState
@@ -37,7 +34,6 @@ sealed interface IssueState {
     data class Error(val key: String, val message: String) : IssueState
 }
 
-/** The state of the creation form. */
 data class CreationState(
     val isOpen: Boolean = false,
     val loadingMeta: Boolean = false,
@@ -46,31 +42,6 @@ data class CreationState(
     val sending: Boolean = false,
 )
 
-/**
- * Drives the Jira board.
- *
- * ## The move is optimistic, and undoing it is mandatory
- *
- * When a card is dropped into a column, it changes place immediately — before
- * the server answers. Without that, the card would sit pinned under the finger
- * for a whole network round trip, and on a phone that is hundreds of
- * milliseconds in which the screen contradicts the gesture.
- *
- * The price of that choice is that the undo has to be exact: when the server
- * refuses — and it does refuse, because the project's workflow forbids certain
- * jumps — the card returns to the column AND to the position it came from,
- * with the reason on screen. Dropping it and letting it look like it worked is
- * the worst possible outcome: the person goes on believing they moved it, and
- * finds out days later.
- *
- * ## Why multi-select does not use long-press
- *
- * Long-press is the gesture for PICKING UP a card. Using it to select as well
- * would give one gesture two meanings, and the tie-break would come down to a
- * hold duration nobody hits on purpose. Selection is turned on by an explicit
- * menu item, and while it is on the cards show checkboxes — dragging still
- * works, but anyone who wants to tick taps the box.
- */
 class BoardViewModel(
     private val source: JiraSource = JiraRepository(),
 ) : ViewModel() {
@@ -84,14 +55,6 @@ class BoardViewModel(
     private val _creation = MutableStateFlow(CreationState())
     val creation: StateFlow<CreationState> = _creation.asStateFlow()
 
-    /**
-     * The last sentence of feedback. The screen consumes it and clears it.
-     *
-     * It exists because every action here happens FAR from its effect: whoever
-     * moves a card is looking at the destination column, and what changes is
-     * the issue on the server. Without a sentence, success and silence look
-     * identical.
-     */
     private val _notice = MutableStateFlow<String?>(null)
     val notice: StateFlow<String?> = _notice.asStateFlow()
 
@@ -104,9 +67,6 @@ class BoardViewModel(
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
-    // The board's current filter. Kept here rather than on the screen so that
-    // a reload (pull to refresh, coming back from an action) repeats exactly
-    // the same filter instead of falling back to the default.
     private var project: String? = null
     private var filter: String = "all"
     private var customJql: String = ""
@@ -114,7 +74,6 @@ class BoardViewModel(
     private var order: String = ""
     private var hideDoneAfter: Int = 0
 
-    /** The current filter, so the screen can draw the controls as ticked. */
     val currentSlice: Slice
         get() = Slice(project, filter, customJql, query, order, hideDoneAfter)
 
@@ -133,10 +92,6 @@ class BoardViewModel(
 
     fun load() {
         viewModelScope.launch {
-            // Reloading does NOT go back to "Loading" when there is already
-            // a board on screen: replacing the board with a spinner on every
-            // filter change makes the screen flash white and loses the scroll
-            // position.
             if (_state.value !is BoardState.Ready) {
                 _state.value = BoardState.Loading
             }
@@ -154,9 +109,6 @@ class BoardViewModel(
                     val q = r.value
                     _state.value = if (!q.connected) BoardState.Disconnected else BoardState.Ready(q)
                     if (q.connected && project == null) project = q.project
-                    // The selection held keys that may no longer be on the
-                    // board after a new filter. Keeping them would leave the
-                    // counter saying "3 selected" with one on screen.
                     pruneSelection(q)
                 }
                 is JiraResult.Rejected -> _state.value = BoardState.Error(r.reason)
@@ -175,9 +127,6 @@ class BoardViewModel(
         project = key
         _selection.value = emptySet()
         load()
-        // Pinning it on the server is what makes the choice survive the app's
-        // next launch — and it is the SAME preference the web panel uses, so
-        // changing it here changes it there.
         viewModelScope.launch { source.pinProject(key) }
     }
 
@@ -207,15 +156,6 @@ class BoardViewModel(
         load()
     }
 
-    // --- move --------------------------------------------------------------
-
-    /**
-     * Moves a card to a column, with the card changing place right away.
-     *
-     * [origin] and [position] are captured before anything else: they are what
-     * allows the card to be put back in its EXACT place when the server
-     * refuses.
-     */
     fun move(key: String, toColumn: String) {
         val ready = _state.value as? BoardState.Ready ?: return
         val board = ready.board
@@ -230,9 +170,6 @@ class BoardViewModel(
             when (val r = source.move(key, toColumn)) {
                 is JiraResult.Ok -> {
                     _notice.value = "$key → $toColumn"
-                    // Reload to get the REAL status: the destination column
-                    // can map to several statuses, and the card needs to show
-                    // which of them the transition left it in.
                     load()
                 }
                 is JiraResult.Rejected -> {
@@ -253,8 +190,6 @@ class BoardViewModel(
             ready.board.withoutCard(card.key).withCardAt(card, toColumn, position),
         )
     }
-
-    // --- the open issue ------------------------------------------------------
 
     fun openIssue(key: String) {
         _issue.value = IssueState.Loading(key)
@@ -277,9 +212,6 @@ class BoardViewModel(
             _busy.value = true
             when (val r = source.comment(key, text)) {
                 is JiraResult.Ok -> {
-                    // The new comment appears in the open sheet without a
-                    // second trip to the server — someone who has just written
-                    // something needs to see their own text in place.
                     val current = _issue.value
                     if (current is IssueState.Ready && current.issue.key == key) {
                         _issue.value = IssueState.Ready(
@@ -295,7 +227,6 @@ class BoardViewModel(
         }
     }
 
-    /** Assigns the issue to someone; a null [accountId] unassigns it. */
     fun assign(key: String, accountId: String?, name: String?) {
         viewModelScope.launch {
             _busy.value = true
@@ -316,7 +247,6 @@ class BoardViewModel(
         }
     }
 
-    /** Assigns the issue to whoever is using the app. */
     fun assignToMe(key: String) {
         val me = (_state.value as? BoardState.Ready)?.board?.me
         if (me == null) {
@@ -325,8 +255,6 @@ class BoardViewModel(
         }
         assign(key, me.accountId, me.name)
     }
-
-    // --- selection and batches -----------------------------------------------
 
     fun toggleSelectionMode() {
         _selecting.update { !it }
@@ -382,8 +310,6 @@ class BoardViewModel(
         }
     }
 
-    // --- create ---------------------------------------------------------------
-
     fun openCreation() {
         val proj = project ?: (_state.value as? BoardState.Ready)?.board?.project
         _creation.value = CreationState(isOpen = true, loadingMeta = proj != null)
@@ -426,8 +352,6 @@ class BoardViewModel(
         }
     }
 
-    // --- connect --------------------------------------------------------------
-
     fun connect(site: String, email: String, token: String, project: String?) {
         viewModelScope.launch {
             _busy.value = true
@@ -448,14 +372,6 @@ class BoardViewModel(
     }
 }
 
-/**
- * The sentence that sums up a batch.
- *
- * It names the issues that FAILED, not just how many: those are the ones that
- * need acting on, and a bare "2 failed" forces you to compare the board before
- * with the board after to work out which. Past three, the first one's reason
- * stands for the set — the whole sentence still has to fit in a snackbar.
- */
 internal fun bulkSummary(done: Int, failures: List<dev.servercontrolpanel.data.jira.BulkFailure>): String {
     if (failures.isEmpty()) return "$done moved"
     if (done == 0 && failures.size == 1) return "${failures[0].key}: ${failures[0].reason}"
@@ -464,16 +380,9 @@ internal fun bulkSummary(done: Int, failures: List<dev.servercontrolpanel.data.j
     return "$done done; failed: $names$rest — ${failures[0].reason}"
 }
 
-// --- board transformations -----------------------------------------------------
-//
-// Deliberately pure: they are the half of the optimistic move that has to be
-// exercisable with no network, no ViewModel and no Compose.
-
-/** The board without a given card, wherever it happens to be. */
 internal fun JiraBoard.withoutCard(key: String): JiraBoard =
     copy(columns = columns.map { c -> c.copy(cards = c.cards.filterNot { it.key == key }) })
 
-/** The board with a card inserted at an exact position in a column. */
 internal fun JiraBoard.withCardAt(card: JiraCard, column: String, position: Int): JiraBoard =
     copy(
         columns = columns.map { c ->
@@ -487,18 +396,9 @@ internal fun JiraBoard.withCardAt(card: JiraCard, column: String, position: Int)
         },
     )
 
-/**
- * The board with a card moved to the TOP of another column.
- *
- * Top and not bottom: the card you have just moved is the one that matters
- * now, and burying it at the end of a long column makes the gesture look like
- * it did nothing. The card's status changes immediately too, so its label does
- * not go on stating the old state while the response is still in flight.
- */
 internal fun JiraBoard.withCardMoved(key: String, toColumn: String): JiraBoard {
     val card = columns.firstNotNullOfOrNull { c -> c.cards.firstOrNull { it.key == key } } ?: return this
     return withoutCard(key).withCardAt(card.copy(status = toColumn), toColumn, 0)
 }
 
-/** The column labels, in board order. */
 internal fun JiraBoard.labels(): List<String> = columns.map(JiraColumn::label)

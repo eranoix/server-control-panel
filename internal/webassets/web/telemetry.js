@@ -1,41 +1,15 @@
-/* telemetry.js — measuring how the panel screens get used.
- *
- * WHAT IT SENDS, and only this:
- *   { v:1, s:"<sid hex>", e:[{screen:"<canonical id>", origin:"default|nav"}], dropped:N }
- * No URL, no query string, no screen content, no user name. The `sid`
- * is random per tab, lives in sessionStorage and has no tie to any identity
- * The timestamp is the SERVER's — the browser has no way to send one.
- *
- * WHY THE MAIN PATH IS fetch(keepalive) AND NOT sendBeacon (measured in
- * THIS fork):
- *   - there is no CSRF middleware on /api/* (nothing under internal/httpmw/
- *     matches 'csrf'), so both paths are allowed;
- *   - but this fork authenticates with `Authorization: Bearer` (the SPA keeps
- *     the JWT in localStorage) AND, as a fallback, with the HttpOnly cookie
- *     `panel_token` (internal/auth/auth.go). sendBeacon CANNOT send a header,
- *     so it depends entirely on the cookie. Depending on the cookie alone would
- *     make telemetry die IN SILENCE in any scenario where it is not there —
- *     and 14 days of an empty file would only be found out much later, too late.
- *   - `keepalive` survives pagehide/visibilitychange just like sendBeacon,
- *     with the same 64 KiB ceiling. sendBeacon stays as the fallback.
- *
- * NON-NEGOTIABLE RULE: telemetry NEVER gets in the panel's way. Everything
- * here is inside try/catch and every promise has a .catch(); a network
- * failure, a blocked localStorage or a 401 cannot produce a single error
- * that the operator can see.
- */
 (function () {
   'use strict';
 
   var ENDPOINT = '/api/telemetry';
   var V = 1;
-  var MAX_BATCH = 200;    // the server rejects the WHOLE batch above this
-  var FLUSH_MS = 20000;  // 20 s: short enough not to lose a short session
+  var MAX_BATCH = 200;
+  var FLUSH_MS = 20000;
 
   var buf = [];
   var dropped = 0;
   var timer = null;
-  var last = '';       // dedup of an IMMEDIATE repeat (A -> A). A -> B -> A counts 2x.
+  var last = '';
   var sid = '';
 
   function hex(n) {
@@ -47,7 +21,6 @@
   }
 
   function newSid() {
-    // 16 hex = 8 bytes. Matches the ^[a-f0-9]{8,32}$ the handler demands.
     try { return hex(8); } catch (_) {
       var s = '';
       for (var i = 0; i < 16; i++) s += '0123456789abcdef'[Math.floor(Math.random() * 16)];
@@ -81,8 +54,6 @@
       var tok = '';
       try { tok = localStorage.getItem('panel_token') || ''; } catch (_) {}
 
-      // (1) main path: fetch keepalive with Bearer — the same authentication
-      //     channel every other call in this SPA uses.
       if (tok && window.fetch) {
         try {
           window.fetch(ENDPOINT, {
@@ -96,13 +67,10 @@
         } catch (_) { /* fall through to the fallback */ }
       }
 
-      // (2) fallback: sendBeacon — authenticates with the HttpOnly panel_token cookie.
-      //     Sends Content-Type: text/plain;charset=UTF-8, which the handler accepts.
       try {
         if (navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, body)) return;
       } catch (_) {}
 
-      // (3) last resort: fetch without Bearer (cookie), still keepalive.
       try {
         if (window.fetch) {
           window.fetch(ENDPOINT, {
@@ -129,9 +97,6 @@
     } catch (_) {}
   }
 
-  // Tab hidden / page going away: this is WHERE most batches leave. Without it,
-  // whoever closes the tab before the 20 s records nothing — and fast navigation
-  // between screens is exactly the behaviour the triage wants to see.
   try {
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'hidden') flush();

@@ -9,11 +9,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.webrtc.CameraVideoCapturer
 
-/**
- * Hand-rolled fake standing in for the real (native-backed, un-fakeable) `MediaStreamTrack`
- * — see [LocalMediaTrackControl]'s doc. Records every write so a test can assert the manager's
- * public toggle reached this "track", not just a UI-only flag.
- */
 private class FakeTrackControl(initial: Boolean = true) : LocalMediaTrackControl {
     var writes = mutableListOf<Boolean>()
     override var enabled: Boolean = initial
@@ -23,12 +18,6 @@ private class FakeTrackControl(initial: Boolean = true) : LocalMediaTrackControl
         }
 }
 
-/**
- * Hand-rolled fake for `org.webrtc.CameraVideoCapturer` — this one CAN be faked directly since
- * it is a plain interface (confirmed via `javap`), unlike `MediaStreamTrack`. Only
- * `switchCamera(handler)` is exercised by [WebRtcSessionManager.switchCamera]; every other method
- * is unused by this test and left as a no-op/placeholder.
- */
 private class FakeCameraVideoCapturer : CameraVideoCapturer {
     var switchCameraCallCount = 0
         private set
@@ -61,13 +50,6 @@ private class FakeCameraVideoCapturer : CameraVideoCapturer {
 @RunWith(RobolectricTestRunner::class)
 class WebRtcSessionManagerTest {
 
-    /**
-     * [eglBaseProvider]/[peerConnectionFactoryProvider] are never invoked by these tests — every
-     * behavior under test ([setMicEnabled]/[setCameraEnabled]/[switchCamera]/[isPolite]) reads
-     * only [WebRtcSessionManager.micControl]/[WebRtcSessionManager.cameraControl]/
-     * [WebRtcSessionManager.cameraCapturer], all injectable directly since they are `internal`.
-     * Erroring here proves the real native factory is never touched.
-     */
     private fun newManager(): WebRtcSessionManager = WebRtcSessionManager(
         context = RuntimeEnvironment.getApplication(),
         eglBaseProvider = { error("EglBase.create() must not be called by this test") },

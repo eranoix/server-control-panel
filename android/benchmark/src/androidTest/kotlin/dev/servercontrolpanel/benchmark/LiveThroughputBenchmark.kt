@@ -31,18 +31,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToLong
 
-/**
- * Like [GridThroughputBenchmark], but drives the fixture through the live path
- * (`TerminalSocketClient.onBytes` into `TerminalEngine.write`), so regressions in
- * the transport-to-render seam show up too.
- *
- * A fake [TerminalWebSocketFactory] replays the fixture as binary messages, and
- * [Dispatchers.Unconfined] runs each delivery on the thread that fires it.
- * Delivery is at frame pace ([CHUNKS_PER_FRAME] WS frames per `postOnAnimation`),
- * which also matches how a server streams a burst of output.
- *
- * Instrumented only: frame metrics need a real attached `Window`.
- */
 @RunWith(AndroidJUnit4::class)
 class LiveThroughputBenchmark {
 
@@ -75,8 +63,6 @@ class LiveThroughputBenchmark {
             val listener = Window.OnFrameMetricsAvailableListener { _, frameMetrics, _ ->
                 synchronized(frameDurationsNanos) {
                     frameDurationsNanos += frameMetrics.getMetric(FrameMetrics.TOTAL_DURATION)
-                    // TOTAL_DURATION includes vsync waits (33 ms on a 30 Hz emulator);
-                    // DRAW_DURATION isolates the drawing cost being measured.
                     drawDurationsNanos += frameMetrics.getMetric(FrameMetrics.DRAW_DURATION)
                 }
             }
@@ -129,11 +115,6 @@ class LiveThroughputBenchmark {
         return computeStats(snapshot, draws, peakRssKb = maxOf(vmHwmBeforeKb, vmHwmAfterKb))
     }
 
-    /**
-     * Fake `TerminalWebSocket` delivering [CHUNKS_PER_FRAME] binary messages per
-     * animation frame, yielding between batches so frames are drawn and measured.
-     * It never closes itself.
-     */
     private fun pacedFixtureSocket(
         host: android.view.View,
         bytes: ByteArray,
@@ -166,7 +147,6 @@ class LiveThroughputBenchmark {
         return context.assets.open("throughput/throughput.vt").use { it.readBytes() }
     }
 
-    /** Peak resident set size in KB, from `VmHWM` in `/proc/self/status`. */
     private fun readVmHwmKb(): Long {
         return try {
             File("/proc/self/status").bufferedReader().use { reader: BufferedReader ->
@@ -230,11 +210,9 @@ class LiveThroughputBenchmark {
     )
 
     private companion object {
-        /** 60Hz frame budget; longer frames count as dropped. */
         const val FRAME_BUDGET_MILLIS = 16L
         const val SETTLE_MILLIS = 2_000L
 
-        /** WS frames per animation frame; same as GridThroughputBenchmark so results compare. */
         const val CHUNKS_PER_FRAME = 8
     }
 }

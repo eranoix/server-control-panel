@@ -5,12 +5,6 @@ import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 
-/**
- * Relative age in one or two words, since the card line answers "is this stalled?".
- *
- * Jira sends offsets without a colon (`-0300`), which Java's standard formats reject. An
- * unreadable date yields an empty string rather than an error, so the card still renders.
- */
 internal fun timeAgo(timestamp: String?, now: OffsetDateTime): String {
     val whenText = parseTimestamp(timestamp) ?: return ""
     val d = Duration.between(whenText, now)
@@ -27,7 +21,6 @@ internal fun timeAgo(timestamp: String?, now: OffsetDateTime): String {
     }
 }
 
-/** Jira's date formats, most common first. */
 private val FORMATS = listOf(
     DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ"),
     DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZ"),
@@ -41,10 +34,8 @@ internal fun parseTimestamp(timestamp: String?): OffsetDateTime? {
         try {
             return OffsetDateTime.parse(text, f)
         } catch (e: Exception) {
-            // Next format.
         }
     }
-    // A bare date (the due-date field comes as YYYY-MM-DD).
     return try {
         LocalDate.parse(text).atStartOfDay().atOffset(java.time.ZoneOffset.UTC)
     } catch (e: Exception) {
@@ -52,10 +43,6 @@ internal fun parseTimestamp(timestamp: String?): OffsetDateTime? {
     }
 }
 
-/**
- * Assignee initials. Avatars are not fetched because they live on an Atlassian domain, which
- * would mean leaking our auth header to a third party or adding a proxy route.
- */
 internal fun initials(name: String?): String {
     val parts = name?.trim()?.split(Regex("\\s+")).orEmpty().filter { it.isNotBlank() }
     if (parts.isEmpty()) return "?"
@@ -64,7 +51,6 @@ internal fun initials(name: String?): String {
     return "$first${parts.last().first().uppercaseChar()}"
 }
 
-/** Due-date label for the card, or empty; a past date is shown as overdue. */
 internal fun dueLabel(timestamp: String?, today: LocalDate): String {
     val data = parseTimestamp(timestamp)?.toLocalDate() ?: return ""
     val days = java.time.temporal.ChronoUnit.DAYS.between(today, data)

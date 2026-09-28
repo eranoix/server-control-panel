@@ -7,26 +7,6 @@ import (
 	"time"
 )
 
-// pollclock_test.go — the TWO clocks.
-//
-// # The defect these tests close
-//
-// The screen had ONE clock: the age of the data (`age_seconds`). With a single
-// clock, two very different accidents produce exactly the same screen:
-//
-//	the NODE went quiet       → its fault; go and look at the guest
-//	the POLLER stopped/failed → OUR fault; every node ages together and
-//	                            not one of them has anything wrong
-//
-// The second case is the worse one, because the screen accuses eleven innocent
-// nodes. What breaks the tie is the instant of the last ATTEMPT: if the poller
-// tried 4 s ago and the node is at 40 min, the node is the mute one; if the
-// attempt is at 40 min too, the one that is mute is the panel.
-
-// 🔴 TestAttemptStampedEvenWhenDiscoveryFails — the test that defines
-// the field. Stamping only on success would reproduce the defect: a poller that
-// has been failing for half an hour would carry a timestamp from half an hour
-// ago, indistinguishable from a poller that never ran again.
 func TestAttemptStampedEvenWhenDiscoveryFails(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	p, st, rel := newTestPoller(t, f, Sources{}, PollerConfig{})
@@ -58,17 +38,12 @@ func TestAttemptStampedEvenWhenDiscoveryFails(t *testing.T) {
 		t.Fatal("an attempt that failed did not record the reason — 'I tried and could not' is different from 'I tried'")
 	}
 
-	// And the nodes' data keeps the OLD timestamp: there are two clocks, and it is
-	// the DIVERGENCE between them that says whose fault it is.
 	nodes := nodesByID(t, st)
 	if got := nodes["lxc/207"].Status.ObservedAt; got != 1800000000 {
 		t.Fatalf("the node was rejuvenated by the attempt that failed: %d", got)
 	}
 }
 
-// TestViewPollResolvesAgeOnServer — the age of the attempt is born on the
-// server, for the same reason as all the others: the browser's clock is not a
-// controlled variable. And "never tried" is -1, never 0.
 func TestViewPollResolvesAgeOnServer(t *testing.T) {
 	now := time.Unix(1800000300, 0)
 	ttl := 90 * time.Second
@@ -98,10 +73,6 @@ func TestViewPollResolvesAgeOnServer(t *testing.T) {
 	}
 }
 
-// 🔴 TestTwoClocksAreIndependent — the scenario that motivated the two
-// fields, staged in full: the poller answers on every tick and ONE node has
-// vanished from discovery. The attempt's clock stays new; the node's ages. If
-// the two moved together, the vanished node would look eternally fresh.
 func TestTwoClocksAreIndependent(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	p, st, rel := newTestPoller(t, f, Sources{}, PollerConfig{})
@@ -109,7 +80,6 @@ func TestTwoClocksAreIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The guest vanishes from the hypervisor; the tick stays healthy.
 	f.mu.Lock()
 	f.resources = f.resources[:1]
 	f.mu.Unlock()

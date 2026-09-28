@@ -12,11 +12,6 @@ import (
 	"testing"
 )
 
-// fakeExportBackend implements the whole Backend with no-ops, except for the
-// methods each test needs to observe/control. It avoids any real network call —
-// the tests in this file build a *Service directly (without going through
-// New(), which spins up background pollers) so that they depend on no method
-// beyond the ones being exercised.
 type fakeExportBackend struct {
 	mu sync.Mutex
 
@@ -138,9 +133,6 @@ func (f *fakeExportBackend) SendTyping(string, bool) error  { return nil }
 
 var _ Backend = (*fakeExportBackend)(nil)
 
-// newExportTestService assembles a minimal *Service without going through New()
-// (which spins up background pollers against the real Backend). Enough for the
-// exported wrappers, which only touch Store + Client.
 func newExportTestService(t *testing.T, backend Backend) *Service {
 	t.Helper()
 	store, err := NewStore(t.TempDir(), t.TempDir())
@@ -154,8 +146,6 @@ func newExportTestService(t *testing.T, backend Backend) *Service {
 	}
 }
 
-// TestSendTextDedup locks down idempotency: the same client_msg_id sent twice
-// calls Client.SendText ONCE only and always returns the same id.
 func TestSendTextDedup(t *testing.T) {
 	backend := &fakeExportBackend{sendTextID: "wamid-1"}
 	svc := newExportTestService(t, backend)
@@ -182,8 +172,6 @@ func TestSendTextDedup(t *testing.T) {
 	}
 }
 
-// TestSendTextDedupDifferentClientMsgIDsDoNotDedup makes sure the dedupe key
-// is the client_msg_id — distinct messages are still sent.
 func TestSendTextDedupDifferentClientMsgIDsDoNotDedup(t *testing.T) {
 	backend := &fakeExportBackend{sendTextID: "wamid-1"}
 	svc := newExportTestService(t, backend)
@@ -202,10 +190,6 @@ func TestSendTextDedupDifferentClientMsgIDsDoNotDedup(t *testing.T) {
 	}
 }
 
-// TestMessagesForDisplayTriggersBackfillWhenLocalStoreBehind covers the
-// backfill-on-open path: an empty local store (fewer than the limit) triggers
-// backfillFromWAHA/requestHistoryGap, exactly as handleMessagesList always
-// triggered it.
 func TestMessagesForDisplayTriggersBackfillWhenLocalStoreBehind(t *testing.T) {
 	backend := &fakeExportBackend{
 		chatMessagesPaged: []wahaHistoryMsg{
@@ -229,9 +213,6 @@ func TestMessagesForDisplayTriggersBackfillWhenLocalStoreBehind(t *testing.T) {
 	}
 }
 
-// TestMessagesForDisplayNoBackfillWhenStoreComplete: the local store
-// already holds `limit` messages and there is no newer chat in the overview →
-// no backfill is triggered.
 func TestMessagesForDisplayNoBackfillWhenStoreComplete(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
@@ -252,9 +233,6 @@ func TestMessagesForDisplayNoBackfillWhenStoreComplete(t *testing.T) {
 	}
 }
 
-// TestMarkRead makes sure the Backend's error reaches the caller instead of
-// being swallowed — unlike the legacy handleMarkRead, which is best-effort on
-// purpose.
 func TestMarkRead(t *testing.T) {
 	wantErr := errors.New("waha unavailable")
 	backend := &fakeExportBackend{markChatReadErr: wantErr}
@@ -274,10 +252,6 @@ func TestMarkReadNoError(t *testing.T) {
 	}
 }
 
-// TestServeAvatarNoPhoto covers the proxy with no URL available at all (no
-// cache, no chat carrying an AvatarURL, Backend.GetProfilePicture returns
-// empty): it answers 204 (contact with no photo), the same contract as the
-// original handleAvatar.
 func TestServeAvatarNoPhoto(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
@@ -291,9 +265,6 @@ func TestServeAvatarNoPhoto(t *testing.T) {
 	}
 }
 
-// TestHandleAvatarDelegatesToServeAvatar makes sure the extraction did not break
-// the legacy path: handleAvatar (parsing r.URL.Path) still serves the same 204
-// when there is no photo.
 func TestHandleAvatarDelegatesToServeAvatar(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
@@ -307,9 +278,6 @@ func TestHandleAvatarDelegatesToServeAvatar(t *testing.T) {
 	}
 }
 
-// TestDownloadMediaForMessageCacheHitSkipsNetwork covers the short-circuit:
-// Media.Path already points at a file that exists under MediaRoot → it returns
-// right away, without calling Client.DownloadFile a single time.
 func TestDownloadMediaForMessageCacheHitSkipsNetwork(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
@@ -349,9 +317,6 @@ func TestDownloadMediaForMessageCacheHitSkipsNetwork(t *testing.T) {
 	}
 }
 
-// TestDownloadMediaForMessageCacheMissDownloadsAndPersists covers the cache miss:
-// with no local file, it downloads through WAHA (Client.GetChatMessagesWithMedia
-// + DownloadFile) and writes to <chatDir>/<safeID>.<ext>, updating the store.
 func TestDownloadMediaForMessageCacheMissDownloadsAndPersists(t *testing.T) {
 	jid := "5511999998888@c.us"
 	msgID := "wamid.NAOCACHEADO"
@@ -388,8 +353,6 @@ func TestDownloadMediaForMessageCacheMissDownloadsAndPersists(t *testing.T) {
 		t.Fatalf("Client.DownloadFile called %d times, want 1", calls)
 	}
 
-	// Store.UpdateMessageMedia was called — the message in the store now
-	// reflects the local path.
 	updated, err := svc.Store.FindMessage(jid, msgID)
 	if err != nil || updated == nil {
 		t.Fatalf("FindMessage after the download: %v", err)
@@ -398,7 +361,6 @@ func TestDownloadMediaForMessageCacheMissDownloadsAndPersists(t *testing.T) {
 		t.Fatalf("Media.Path in the store = %q, want %q (UpdateMessageMedia was not called)", updated.Media.Path, wantRel)
 	}
 
-	// Bytes actually written to disk at the path that was returned.
 	full := filepath.Join(svc.Store.MediaRoot, gotRel)
 	data, err := os.ReadFile(full)
 	if err != nil {
@@ -409,9 +371,6 @@ func TestDownloadMediaForMessageCacheMissDownloadsAndPersists(t *testing.T) {
 	}
 }
 
-// TestDownloadMediaForMessageUnknownMessageReturns404 pins the exact
-// status (404) that the legacy JSON handler always returned when the message
-// does not exist in the local store.
 func TestDownloadMediaForMessageUnknownMessageReturns404(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
@@ -429,10 +388,6 @@ func TestDownloadMediaForMessageUnknownMessageReturns404(t *testing.T) {
 	}
 }
 
-// TestDownloadMediaForMessageConcurrencyCollapsesToOneDownload proves that N
-// concurrent requests for the SAME (chatJID,msgID), not yet cached, result in
-// ONE single network download — without that, opening the same media in
-// parallel (two tabs, an automatic retry) would fire N identical downloads.
 func TestDownloadMediaForMessageConcurrencyCollapsesToOneDownload(t *testing.T) {
 	jid := "5511999998888@c.us"
 	msgID := "wamid.CONCURRENT"
@@ -463,8 +418,6 @@ func TestDownloadMediaForMessageConcurrencyCollapsesToOneDownload(t *testing.T) 
 			errs[i] = err
 		}(i)
 	}
-	// Gives every goroutine time to enter the singleflight before releasing
-	// the simulated download.
 	close(release)
 	wg.Wait()
 
@@ -481,9 +434,6 @@ func TestDownloadMediaForMessageConcurrencyCollapsesToOneDownload(t *testing.T) 
 	}
 }
 
-// blockingDownloadBackend holds DownloadFile until `release` closes, so that
-// every test goroutine has time to enter singleflight.Do before any one of
-// them completes.
 type blockingDownloadBackend struct {
 	fakeExportBackend
 	release chan struct{}
@@ -494,9 +444,6 @@ func (b *blockingDownloadBackend) DownloadFile(fileURL string, dst io.Writer) (i
 	return b.fakeExportBackend.DownloadFile(fileURL, dst)
 }
 
-// TestSendFileDedupCollapsesByClientMsgID locks down upload idempotency: two
-// calls with the same client_msg_id call Client.SendFile ONCE and return the
-// same id — the very guarantee SendTextDedup already provides.
 func TestSendFileDedupCollapsesByClientMsgID(t *testing.T) {
 	backend := &fakeExportBackend{sendFileID: "wamid-file-1"}
 	svc := newExportTestService(t, backend)
@@ -521,9 +468,6 @@ func TestSendFileDedupCollapsesByClientMsgID(t *testing.T) {
 	}
 }
 
-// TestSendFileDedupPersistsBytesLocally makes sure the bytes that were sent
-// stay in MediaRoot under the <chatDir>/<safeID>.<ext> layout — so the media
-// shows up inline, with no "Download", after a reload.
 func TestSendFileDedupPersistsBytesLocally(t *testing.T) {
 	backend := &fakeExportBackend{sendFileID: "wamid-file-2"}
 	svc := newExportTestService(t, backend)
@@ -546,10 +490,6 @@ func TestSendFileDedupPersistsBytesLocally(t *testing.T) {
 	}
 }
 
-// TestSendFileDedupInfersTypeWhenEmpty makes sure an empty msgType/mimeType
-// is inferred (guessMsgType / extension) exactly as handleSendFile always did
-// — the mobile BFF depends on this because guessMsgType is not
-// exported.
 func TestSendFileDedupInfersTypeWhenEmpty(t *testing.T) {
 	backend := &fakeExportBackend{sendFileID: "wamid-file-3"}
 	svc := newExportTestService(t, backend)
@@ -560,8 +500,6 @@ func TestSendFileDedupInfersTypeWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendFileDedup: %v", err)
 	}
-	// inferred type = "voice" (guessMsgType classifies audio/* as voice) →
-	// it persisted (it is neither "" nor "text").
 	wantRel := filepath.Join(chatDir(jid), sanitizeMsgID(id)+".ogg")
 	full := filepath.Join(svc.Store.MediaRoot, wantRel)
 	if _, err := os.Stat(full); err != nil {
@@ -569,9 +507,6 @@ func TestSendFileDedupInfersTypeWhenEmpty(t *testing.T) {
 	}
 }
 
-// TestServeMediaRelRangeRequestReturns206 proves Range support: it reuses
-// http.ServeContent (it does not reimplement Range parsing), so a
-// `Range: bytes=0-3` request returns 206 with the correct slice.
 func TestServeMediaRelRangeRequestReturns206(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
@@ -605,9 +540,6 @@ func TestServeMediaRelRangeRequestReturns206(t *testing.T) {
 	}
 }
 
-// TestServeMediaRelUnsatisfiableRangeReturns416 covers the other side of the
-// Range contract: a range outside the file's bounds returns 416, the same
-// default behaviour http.ServeContent has.
 func TestServeMediaRelUnsatisfiableRangeReturns416(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
@@ -631,8 +563,6 @@ func TestServeMediaRelUnsatisfiableRangeReturns416(t *testing.T) {
 	}
 }
 
-// TestServeMediaRelRejectsTraversal makes sure the anti-traversal
-// (safeMediaPath + re-anchor check) is still active after the extraction.
 func TestServeMediaRelRejectsTraversal(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)

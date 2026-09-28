@@ -4,21 +4,6 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
-/**
- * The app's light color scheme, derived from the web panel's palette (cyan
- * `#22D3EE` primary, sky `#38BDF8` tertiary, red `#EF4444` error, cool slate neutrals).
- *
- * The panel hex values are not used directly: Material roles are tones with
- * guaranteed contrast, and `#22D3EE` as `primary` would give white text at 1.9:1.
- * The hue is kept and the tone recomputed on a CIELAB tonal palette, the same way
- * Material Theme Builder does.
- *
- * Every color/on-color pair meets WCAG AA (worst: 6.43:1 light, 5.53:1 dark), and
- * `PanelColorsTest` enforces it on every build.
- *
- * The terminal grid (`TerminalPalette`) does not use this scheme. Status colors
- * ([panelStatusColors]) derive from it except the warning amber.
- */
 internal val PanelLightColors = lightColorScheme(
     primary = Color(0xFF006877),
     onPrimary = Color(0xFFFFFFFF),
@@ -58,7 +43,6 @@ internal val PanelLightColors = lightColorScheme(
     surfaceContainerLowest = Color(0xFFFFFFFF),
 )
 
-/** Dark counterpart of [PanelLightColors]. */
 internal val PanelDarkColors = darkColorScheme(
     primary = Color(0xFF2FD9F4),
     onPrimary = Color(0xFF00363E),
@@ -98,11 +82,6 @@ internal val PanelDarkColors = darkColorScheme(
     surfaceContainerLowest = Color(0xFF080F11),
 )
 
-/**
- * Adaptive icon background. Kept here because it is the dark theme's `onPrimary`;
- * the mark on top uses [MarkOnBackground], the dark `primary`.
- */
 val AdaptiveIconBackground: Color = Color(0xFF00363E)
 
-/** The brand colour on top of [AdaptiveIconBackground]. */
 val MarkOnBackground: Color = Color(0xFF2FD9F4)

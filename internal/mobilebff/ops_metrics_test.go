@@ -1,11 +1,5 @@
 package mobilebff
 
-// ops_metrics_test.go covers the "resources" half of GET /ops/status: the exact
-// shape of the JSON (raw/formatted pairs), the mount filter that exists so the
-// dashboard does not open shouting "disk full" because of the snaps, the choice
-// of uplink interface, the derivation of the network rate from two samples, and
-// the absence contract (with no dependency wired, the `system` field drops out
-// of the bytes — it never becomes a block of zeros).
 import (
 	"context"
 	"encoding/json"
@@ -20,8 +14,6 @@ import (
 	"server-control-panel/internal/system"
 )
 
-// fakeStats is a stable, realistic snapshot (taken from this host, with the
-// snaps preserved on purpose — they are what proves the filter).
 func fakeStats() *system.Stats {
 	return &system.Stats{
 		Host: system.HostInfo{
@@ -58,9 +50,6 @@ func statsDep(s *system.Stats) func(context.Context) (*system.Stats, error) {
 	return func(context.Context) (*system.Stats, error) { return s, nil }
 }
 
-// getOpsStatusJSON exercises the real route (mux + admin gate) and returns the
-// body already decoded as a generic map, so the assertions can speak about a
-// field's PRESENCE/ABSENCE, not just about values after unmarshalling.
 func getOpsStatusJSON(t *testing.T, deps Deps, user string) map[string]any {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -79,9 +68,6 @@ func getOpsStatusJSON(t *testing.T, deps Deps, user string) map[string]any {
 	return body
 }
 
-// TestOpsStatus_System_Shape is the complete contract of the `system` block as
-// the app sees it: a single GET brings CPU, load, memory, swap, disk, uptime and
-// the server clock — each number in a raw/formatted pair.
 func TestOpsStatus_System_Shape(t *testing.T) {
 	deps := Deps{
 		Cfg:            adminCfg(),
@@ -123,7 +109,6 @@ func TestOpsStatus_System_Shape(t *testing.T) {
 	if sys.CPU.Steal != 0.5 || sys.CPU.Iowait != 1.25 {
 		t.Errorf("steal/iowait = %v/%v", sys.CPU.Steal, sys.CPU.Iowait)
 	}
-	// Raw AND formatted: the client draws the bar from the raw and the label from the text.
 	if sys.Memory.Total != 33653854208 || sys.Memory.TotalText != "31.3 GiB" {
 		t.Errorf("memory total = %d / %q", sys.Memory.Total, sys.Memory.TotalText)
 	}
@@ -135,9 +120,6 @@ func TestOpsStatus_System_Shape(t *testing.T) {
 	}
 }
 
-// TestOpsStatus_System_DisksFilteredAndSorted: the 2 snaps (squashfs, 100% by
-// construction) and the tmpfs drop out; "/" comes first and the rest run from
-// fullest to emptiest.
 func TestOpsStatus_System_DisksFilteredAndSorted(t *testing.T) {
 	got := relevantDisks(fakeStats().Disks)
 	var mounts []string
@@ -161,8 +143,6 @@ func TestOpsStatus_System_DisksFilteredAndSorted(t *testing.T) {
 	}
 }
 
-// TestRelevantDisks_FullestFirst proves the ordering is independent of the
-// input order, with "/" not in first position at the source.
 func TestRelevantDisks_FullestFirst(t *testing.T) {
 	in := []system.DiskInfo{
 		{Mount: "/var", FSType: "ext4", Total: 100, Used: 10, UsedPercent: 10},
@@ -178,8 +158,6 @@ func TestRelevantDisks_FullestFirst(t *testing.T) {
 	}
 }
 
-// TestPickUplink_IgnoresVirtual: lo/docker0/br-*/veth*/tailscale0 can never be
-// the card's interface — counting them would double the same byte.
 func TestPickUplink_IgnoresVirtual(t *testing.T) {
 	up, ok := pickUplink(fakeStats().Net)
 	if !ok || up.Name != "eth0" {
@@ -190,9 +168,6 @@ func TestPickUplink_IgnoresVirtual(t *testing.T) {
 	}
 }
 
-// TestNetRateTracker_NeedsTwoSamples: the first sample publishes the
-// cumulative counters but NO rate (absent ≠ 0 B/s); the second derives bytes/s
-// from the delta.
 func TestNetRateTracker_NeedsTwoSamples(t *testing.T) {
 	tr := &netRateTracker{}
 	t0 := time.Unix(1700000000, 0)
@@ -209,7 +184,6 @@ func TestNetRateTracker_NeedsTwoSamples(t *testing.T) {
 		t.Errorf("the first sample published a rate: %#v", first)
 	}
 
-	// +10s, +20480 sent (2 KiB/s), +102400 received (10 KiB/s).
 	second := tr.sample([]system.NetInfo{{Name: "eth0", BytesSent: 1000 + 20480, BytesRecv: 2000 + 102400}}, t0.Add(10*time.Second))
 	if second.SentRate == nil || *second.SentRate != 2048 {
 		t.Fatalf("sent_rate = %v, want 2048", second.SentRate)
@@ -222,11 +196,6 @@ func TestNetRateTracker_NeedsTwoSamples(t *testing.T) {
 	}
 }
 
-// TestNetRateTracker_SameSampleDoesNotDropRate is the guard for the 3s cache:
-// the endpoint may be called twice inside the same window and receive the SAME
-// counters. Recomputing there would give a false 0 B/s, and moving the baseline
-// would shrink the next real sample's dt (an inflated rate). Here the previous
-// rate is repeated and the next computation stays correct.
 func TestNetRateTracker_SameSampleDoesNotDropRate(t *testing.T) {
 	tr := &netRateTracker{}
 	t0 := time.Unix(1700000000, 0)
@@ -236,22 +205,17 @@ func TestNetRateTracker_SameSampleDoesNotDropRate(t *testing.T) {
 		t.Fatalf("sent_rate = %v, want 1024", second.SentRate)
 	}
 
-	// The same collection served from the cache 2s later: rate preserved, baseline still.
 	cached := tr.sample([]system.NetInfo{{Name: "eth0", BytesSent: 10240, BytesRecv: 0}}, t0.Add(12*time.Second))
 	if cached.SentRate == nil || *cached.SentRate != 1024 {
 		t.Fatalf("cached rate = %v, want 1024 preserved", cached.SentRate)
 	}
 
-	// A fresh sample at t0+20s: the delta has to be measured against t0+10s (the
-	// last REAL collection), not against t0+12s. 10240 bytes / 10s = 1024 B/s.
 	third := tr.sample([]system.NetInfo{{Name: "eth0", BytesSent: 20480, BytesRecv: 0}}, t0.Add(20*time.Second))
 	if third.SentRate == nil || *third.SentRate != 1024 {
 		t.Fatalf("sent_rate = %v, want 1024 (baseline must not have moved)", third.SentRate)
 	}
 }
 
-// TestNetRateTracker_CounterWentBackwards: the NIC/host restarted. Rebaseline in
-// silence, without publishing a negative or absurd rate.
 func TestNetRateTracker_CounterWentBackwards(t *testing.T) {
 	tr := &netRateTracker{}
 	t0 := time.Unix(1700000000, 0)
@@ -263,17 +227,11 @@ func TestNetRateTracker_CounterWentBackwards(t *testing.T) {
 	}
 }
 
-// TestOpsStatus_System_MissingWithoutDependency is the absence contract: with no
-// SysStats wired, the "system" key does not exist in the serialized bytes — the
-// app tells "not available" apart from "idle server", which a block of zeros
-// would make indistinguishable.
 func TestOpsStatus_System_MissingWithoutDependency(t *testing.T) {
 	body := getOpsStatusJSON(t, Deps{Cfg: adminCfg(), HealthDetailed: fakeHealthDetailed(true)}, testPrimary)
 	if _, ok := body["system"]; ok {
 		t.Fatalf("system key present without SysStats: %#v", body["system"])
 	}
-	// The rest of /ops/status stays intact — the extension must not have cost a
-	// single field of the contract the app already consumes.
 	if body["health_ok"] != true {
 		t.Errorf("health_ok = %#v, want true", body["health_ok"])
 	}
@@ -282,9 +240,6 @@ func TestOpsStatus_System_MissingWithoutDependency(t *testing.T) {
 	}
 }
 
-// TestOpsStatus_System_MissingWhenCollectionFails: a collection that errors must
-// turn neither into zeros nor into a 500 — the rest of the status (health,
-// queue, alerts) still lets the app paint the screen.
 func TestOpsStatus_System_MissingWhenCollectionFails(t *testing.T) {
 	deps := Deps{
 		Cfg:            adminCfg(),
@@ -302,9 +257,6 @@ func TestOpsStatus_System_MissingWhenCollectionFails(t *testing.T) {
 	}
 }
 
-// TestOpsStatus_System_DoesNotLeakToNonAdmin: the resources inherit EXACTLY
-// /ops/status's gate (admin ⇒ 403 for everyone else), with no new policy. A
-// non-admin does not get a trimmed `system`: they get no response at all.
 func TestOpsStatus_System_DoesNotLeakToNonAdmin(t *testing.T) {
 	deps := Deps{
 		Cfg:            adminCfg(),
@@ -345,9 +297,6 @@ func TestFormatUptime(t *testing.T) {
 	}
 }
 
-// TestFormatBytes guarantees the SAME output as formatDockerBytes/
-// formatSecurityBytes — the app must not see "1.0 KiB" on one screen and
-// something else on another for the same number.
 func TestFormatBytes(t *testing.T) {
 	cases := []struct {
 		in   uint64

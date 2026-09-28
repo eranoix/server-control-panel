@@ -19,21 +19,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 
-/**
- * Diagnostic screen. Without adb or logcat it is the only way failure details leave the
- * device, so it shows full, selectable stack traces.
- *
- * [updateFailures] carries `PackageInstaller`'s status message, the only text that tells update
- * failures apart; it does not fit in the banner, so the banner links here (a route reachable
- * while the app is running).
- */
 @Composable
 fun DiagnosticsScreen(
     initFailures: List<String>,
     lastCrash: String?,
     onClear: () -> Unit,
     updateFailures: String? = null,
-    // Overridden when reached from inside the running app, where "try opening" makes no sense.
     clearLabel: String = "Clear and try opening the app",
 ) {
     Scaffold { insets ->
@@ -120,12 +111,6 @@ fun DiagnosticsScreen(
     }
 }
 
-/**
- * Who Android thinks installed this app. Silent updates (the only path Samsung's Auto Blocker
- * does not interrupt) require a known installer; otherwise they fail with
- * `Self update is blocked by unknown source package` and fall back to the dialog. Shown here
- * because that state decides update behavior and is otherwise invisible.
- */
 @Composable
 private fun InstallProvenance() {
     val context = LocalContext.current

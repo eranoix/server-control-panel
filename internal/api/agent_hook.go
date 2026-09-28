@@ -1,20 +1,3 @@
-// agent_hook.go — Claude Code hooks → agent state + notifications (PANEL #4).
-//
-// Endpoint: POST /api/agent/hook. It is registered on the RAW mux (not behind
-// the JWT middleware) but is NOT an open mutation endpoint: it is gated on
-//
-//	(a) a loopback RemoteAddr (the hook curls 127.0.0.1), AND
-//	(b) a shared secret the hook command includes (X-Panel-Agent-Secret),
-//
-// compared in constant time. The secret lives in <DataDir>/agent-hook.secret
-// and is the same value ensureAgentHooks() embeds into the spawned sessions'
-// settings.json hook commands.
-//
-// Payload is a Claude Code hook event: {session_id, cwd, hook_event_name,
-// transcript_path, message}. We map cwd → dtach session name via the cwd
-// sidecar (agent_status.go), set the session's state in session-status.json,
-// and dispatch a notify Event for waiting_input / done (throttled by the notify
-// spine's per-(DedupKey,rule) window).
 package api
 
 import (
@@ -34,20 +17,15 @@ import (
 	"server-control-panel/internal/notify"
 )
 
-// agentHookPayload is the subset of the CC hook JSON we consume.
 type agentHookPayload struct {
 	SessionID      string `json:"session_id"`
 	CWD            string `json:"cwd"`
 	HookEventName  string `json:"hook_event_name"`
 	TranscriptPath string `json:"transcript_path"`
 	Message        string `json:"message"`
-	// Source tells startup / resume / clear / compact apart in a SessionStart.
-	Source string `json:"source"`
+	Source         string `json:"source"`
 }
 
-// loadAgentHookSecret reads (or first-run generates) the shared secret. Returns
-// "" only if it cannot generate one, in which case the endpoint fails closed
-// (every request is rejected).
 func (r *Router) loadAgentHookSecret() string {
 	path := filepath.Join(r.cfg.DataDir, "agent-hook.secret")
 	if b, err := os.ReadFile(path); err == nil {
@@ -65,7 +43,6 @@ func (r *Router) loadAgentHookSecret() string {
 	return s
 }
 
-// isLoopbackRemote reports whether the request came from the loopback iface.
 func isLoopbackRemote(remoteAddr string) bool {
 	host, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
@@ -75,7 +52,6 @@ func isLoopbackRemote(remoteAddr string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// hookEventToState maps a CC hook_event_name to an agent state.
 func hookEventToState(name string) string {
 	switch name {
 	case "Notification":
@@ -85,25 +61,19 @@ func hookEventToState(name string) string {
 	case "SessionEnd":
 		return agentStateIdle
 	default:
-		// SessionStart / PreToolUse / PostToolUse / UserPromptSubmit / etc. — all
-		// signal active work.
 		return agentStateRunning
 	}
 }
 
-// handleAgentHook receives a CC hook payload, sets the mapped session's state,
-// and dispatches a notify event for waiting_input / done.
 func (r *Router) handleAgentHook(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		writeErr(w, 405, "method not allowed")
 		return
 	}
-	// Defense in depth: loopback only.
 	if !isLoopbackRemote(req.RemoteAddr) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
-	// Shared secret, constant-time. Fail closed when the secret is unset.
 	got := req.Header.Get("X-Panel-Agent-Secret")
 	if r.agentHookSecret == "" || subtle.ConstantTimeCompare([]byte(got), []byte(r.agentHookSecret)) != 1 {
 		writeErr(w, 401, "unauthorized")
@@ -116,16 +86,6 @@ func (r *Router) handleAgentHook(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Attribution ledger. The transcript does NOT carry account identity, and
-	// ever since the accounts started sharing the transcript tree, authorship
-	// stopped being recoverable from the file. This hook is the one place in the
-	// system that KNOWS the account without inferring it: it runs inside claude,
-	// with CLAUDE_CONFIG_DIR in its own env, and the header below carries that
-	// value all the way here.
-	//
-	// Each SessionStart opens an interval. That is why the live swap comes for
-	// free: the respawn fires another SessionStart, which opens another interval,
-	// and the messages before and after the switch land on different accounts.
 	if p.HookEventName == "SessionStart" && r.claudeAccts != nil {
 		dir := req.Header.Get("X-Panel-Claude-Dir")
 		if id := r.claudeAccts.AccountIDForConfigDir(dir); id != "" {
@@ -139,8 +99,6 @@ func (r *Router) handleAgentHook(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// Resolve cwd → dtach session name. Best-effort: without a record we can't
-	// attribute the event, so we ack (200) without touching state.
 	session := r.agentCWD.ResolveName(p.CWD)
 	if session == "" {
 		writeJSON(w, map[string]any{"status": "unmapped"})
@@ -152,9 +110,6 @@ func (r *Router) handleAgentHook(w http.ResponseWriter, req *http.Request) {
 		r.agentStatus.setState(session, state, p.SessionID)
 	}
 
-	// Notify on the actionable transitions. The notify spine throttles identical
-	// (DedupKey, rule) within its window, so repeated waiting_input pings for the
-	// same session collapse to one per window.
 	if r.notify != nil && (state == agentStateWaiting || state == agentStateDone) {
 		r.notify.Dispatch(r.agentHookEvent(session, state, p.Message))
 	}
@@ -163,7 +118,6 @@ func (r *Router) handleAgentHook(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]any{"status": "ok", "session": session, "state": state})
 }
 
-// agentHookEvent builds the notify Event for a waiting_input / done transition.
 func (r *Router) agentHookEvent(session, state, msg string) notify.Event {
 	typ := notify.TypeAgentDone
 	title := "Agent finished: " + session
@@ -183,8 +137,6 @@ func (r *Router) agentHookEvent(session, state, msg string) notify.Event {
 	}
 }
 
-// sessionOwnerOf best-effort resolves the owning user of a session (registry
-// first, then the "panel-<user>-…" naming convention). "" when unknown.
 func (r *Router) sessionOwnerOf(session string) string {
 	if r.sessionOwn != nil {
 		if o := r.sessionOwn.Owner(session); o != "" {
@@ -199,9 +151,6 @@ func (r *Router) sessionOwnerOf(session string) string {
 	return ""
 }
 
-// ─── settings.json hook wiring ──────────────────────────────────────────────
-
-// selfLoopbackPort extracts the listen port (default 8766) for the hook curl.
 func (r *Router) selfLoopbackPort() int {
 	port := 8766
 	if listen := strings.TrimSpace(r.cfg.Listen); listen != "" {
@@ -214,26 +163,10 @@ func (r *Router) selfLoopbackPort() int {
 	return port
 }
 
-// ensureAgentHooks idempotently installs Notification + Stop hooks into the CC
-// settings.json of every config dir spawned sessions use (the fork config dir,
-// when set, AND /root/.claude). The hook command curls the local endpoint with
-// the shared secret. Existing settings are preserved; only our own hook entries
-// (identified by the /api/agent/hook marker) are replaced on re-run. Best-
-// effort: failures are logged by the caller pattern, never fatal.
 func (r *Router) ensureAgentHooks() {
 	if r.agentHookSecret == "" {
 		return
 	}
-	// X-Panel-Claude-Dir carries the CLAUDE_CONFIG_DIR of the process that fired
-	// the hook, expanded by the shell AT THAT MOMENT. It is what lets the
-	// attribution ledger know the account without inferring it.
-	//
-	// It comes from the env, and is not recorded per directory, on purpose:
-	// settings.json can be shared between accounts (the claudeacct package comment
-	// says it is a symlink; today they are separate files, but the env is
-	// per-process and is right in both worlds). DOUBLE quotes because the expansion
-	// has to happen; the ':-' keeps the header present and empty for the default
-	// account, which runs without CLAUDE_CONFIG_DIR — and empty is precisely its id.
 	cmd := "curl -sf -m 5 -X POST" +
 		" -H 'Content-Type: application/json'" +
 		" -H 'X-Panel-Agent-Secret: " + r.agentHookSecret + "'" +
@@ -244,9 +177,6 @@ func (r *Router) ensureAgentHooks() {
 	if fork := r.forkConfigDir(); fork != "" {
 		dirs[fork] = true
 	}
-	// ALL the accounts in the registry, not just the default one and the fork's: an
-	// account whose settings.json lacks the hook never enters the ledger, and all of
-	// its usage falls into the "unattributed" bucket without anything looking broken.
 	if r.claudeAccts != nil {
 		for _, a := range r.claudeAccts.Accounts() {
 			if a.ConfigDir != "" {
@@ -259,18 +189,13 @@ func (r *Router) ensureAgentHooks() {
 	}
 }
 
-// agentHookMarker identifies hook commands this code installed, so a re-run
-// updates them (port/secret) rather than duplicating.
 const agentHookMarker = "/api/agent/hook"
 
-// mergeAgentHooksFile reads settings.json (tolerating absence), ensures the
-// Notification + Stop events carry exactly one command hook pointing at our
-// endpoint, and writes it back atomically without clobbering unrelated keys.
 func mergeAgentHooksFile(path, cmd string) error {
 	root := map[string]any{}
 	if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
 		if err := json.Unmarshal(data, &root); err != nil {
-			return err // malformed existing settings: don't risk clobbering
+			return err
 		}
 	}
 
@@ -278,9 +203,6 @@ func mergeAgentHooksFile(path, cmd string) error {
 	if hooks == nil {
 		hooks = map[string]any{}
 	}
-	// SessionStart feeds the attribution ledger: every fire opens an interval of
-	// "this session is on this account". It is also what makes the live swap work by
-	// itself — the respawn fires another SessionStart.
 	for _, event := range []string{"Notification", "Stop", "SessionStart"} {
 		hooks[event] = withAgentHook(hooks[event], cmd)
 	}
@@ -300,8 +222,6 @@ func mergeAgentHooksFile(path, cmd string) error {
 	return os.Rename(tmp, path)
 }
 
-// withAgentHook returns the hook-group slice for one event: existing groups with
-// any of OUR command entries stripped, plus one fresh group carrying our command.
 func withAgentHook(existing any, cmd string) []any {
 	out := []any{}
 	if arr, ok := existing.([]any); ok {
@@ -312,7 +232,6 @@ func withAgentHook(existing any, cmd string) []any {
 				continue
 			}
 			kept := filterOurHooks(grp["hooks"])
-			// Drop groups that only existed to hold our (now-removed) command.
 			if len(kept) == 0 && groupIsOnlyHooks(grp) {
 				continue
 			}
@@ -326,7 +245,6 @@ func withAgentHook(existing any, cmd string) []any {
 	return out
 }
 
-// filterOurHooks removes hook entries whose command contains our marker.
 func filterOurHooks(hooksField any) []any {
 	kept := []any{}
 	arr, ok := hooksField.([]any)
@@ -344,8 +262,6 @@ func filterOurHooks(hooksField any) []any {
 	return kept
 }
 
-// groupIsOnlyHooks reports whether a matcher group has no keys other than
-// "hooks" (so it can be dropped once emptied).
 func groupIsOnlyHooks(grp map[string]any) bool {
 	for k := range grp {
 		if k != "hooks" {

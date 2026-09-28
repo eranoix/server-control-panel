@@ -1,17 +1,5 @@
 package config
 
-// config_io.go — loading, parsing, defaults, atomic save and backups
-//
-// Load (with a fallback to the most recent backup when the live file is
-// corrupt), parseFile, applyDefaults (silent defaults for Listen, DataDir,
-// ClaudeHome, JWTSecret), latestBackup (resolves the newest .bak.<ts>),
-// bootstrap (creates the initial config with a random admin and a random
-// JWT), Save (atomic write via .new -> rename + fsync of the directory +
-// backup rotation), writeFileSync (writeAtomic + fsync), pruneBackups (caps
-// at maxBackups), randHex (helper).
-//
-// Extracted from config.go.
-
 import (
 	"crypto/rand"
 	"encoding/hex"
@@ -31,13 +19,8 @@ import (
 
 const defaultPath = "/opt/panel/data/config.json"
 
-// maxBackups bounds the size of config.json.bak.<ts> history.
 const maxBackups = 10
 
-// Load reads the config, applying defaults. If the live file fails to parse,
-// it falls back to the most recent .bak.<ts> with a loud warning. The returned
-// Config has LoadedFromBackup set so the caller (and /api/panel/health) can
-// surface the degradation to the user.
 func Load() (*Config, error) {
 	path := os.Getenv("PANEL_CONFIG")
 	if path == "" {
@@ -63,7 +46,6 @@ func Load() (*Config, error) {
 		return c, nil
 	}
 
-	// Live config corrupt — try the freshest backup.
 	log.Printf("config: WARNING failed to parse %s: %v — trying latest .bak", path, err)
 	bakPath, bakErr := latestBackup(path)
 	if bakErr != nil {
@@ -109,9 +91,6 @@ func applyDefaults(c *Config, path string) {
 		c.PrivateAIAdminTokenFile = "/etc/private-ai-api/env"
 	}
 	if c.AdGuardURL == "" {
-		// The host loopback → the container publishes the admin API on
-		// 127.0.0.1:3053 (3000 already belongs to Grafana). sing-box talks to
-		// DNS over adguard:53.
 		c.AdGuardURL = "http://127.0.0.1:3053"
 	}
 	if c.SingboxConfigPath == "" {
@@ -135,10 +114,6 @@ func applyDefaults(c *Config, path string) {
 	if len(c.DatasaverContainers) == 0 {
 		c.DatasaverContainers = []string{"datasaver-vps", "datasaver-home"}
 	}
-	// File-based JWT secret: when JWTSecretFile is set AND JWTSecret is empty,
-	// read the file. Failing silently here (log + JWTSecret stays empty) lets
-	// cmd/server catch it through the "jwt_secret is empty" validation and
-	// abort with a clear message.
 	if c.JWTSecretFile != "" && c.JWTSecret == "" {
 		b, err := os.ReadFile(c.JWTSecretFile)
 		if err != nil {
@@ -153,7 +128,6 @@ func applyDefaults(c *Config, path string) {
 	}
 }
 
-// latestBackup returns the path of the freshest config.json.bak.<unix-ts>.
 func latestBackup(path string) (string, error) {
 	dir := filepath.Dir(path)
 	base := filepath.Base(path) + ".bak."
@@ -198,9 +172,6 @@ func bootstrap(path string) (*Config, error) {
 		return nil, err
 	}
 	c := &Config{
-		// A fresh install is born at the current schema: there is nothing to
-		// migrate. Without this, MigrateV1ToV2 fires on the first boot looking
-		// for a primary user that bootstrap never created, and the process dies.
 		SchemaVersion: CurrentSchemaVersion,
 		Listen:        ":8765",
 		DataDir:       filepath.Dir(path),
@@ -217,23 +188,8 @@ func bootstrap(path string) (*Config, error) {
 	return c, nil
 }
 
-// Save writes the config atomically:
-//  1. If the live file exists, copies it to config.json.bak.<unix-ts> first.
-//  2. Writes the new contents to config.json.new in the same directory.
-//  3. os.Rename → config.json (atomic on same filesystem).
-//  4. fsyncs the containing directory so the rename survives a crash.
-//  5. Prunes older backups beyond maxBackups.
-//
-// A failure at any step leaves the live config either fully intact (early
-// failure) or replaced atomically (after rename).
 func Save(c *Config, path string) error {
 	dir := filepath.Dir(path)
-	// Invariant: never write a literal jwt_secret back when the file operates
-	// in file-based mode. applyDefaults populates c.JWTSecret in memory (so
-	// Issue/Verify keep working without changing callers), but what gets
-	// serialised must keep ONLY the jwt_secret_file pointer. Without this
-	// guard, any Save (password.change, user CRUD, MFA disable, etc.) writes
-	// the secret back in clear text — defeating the sync gate.
 	toSerialize := *c
 	if toSerialize.JWTSecretFile != "" {
 		toSerialize.JWTSecret = ""
@@ -243,11 +199,9 @@ func Save(c *Config, path string) error {
 		return err
 	}
 
-	// Step 1: backup current live file (if any).
 	if cur, err := os.ReadFile(path); err == nil {
 		bakName := filepath.Base(path) + ".bak." + strconv.FormatInt(time.Now().Unix(), 10)
 		bakPath := filepath.Join(dir, bakName)
-		// 0o600 — config holds JWT secret and password hashes.
 		if err := os.WriteFile(bakPath, cur, 0o600); err != nil {
 			return fmt.Errorf("config: backup write failed: %w", err)
 		}
@@ -255,25 +209,21 @@ func Save(c *Config, path string) error {
 		return fmt.Errorf("config: backup read failed: %w", err)
 	}
 
-	// Step 2: write to .new in the same directory.
 	tmpPath := path + ".new"
 	if err := writeFileSync(tmpPath, b, 0o600); err != nil {
 		return fmt.Errorf("config: write .new failed: %w", err)
 	}
 
-	// Step 3: atomic rename.
 	if err := os.Rename(tmpPath, path); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("config: rename failed: %w", err)
 	}
 
-	// Step 4: fsync the directory entry so the rename survives a crash.
 	if df, err := os.Open(dir); err == nil {
 		_ = df.Sync()
 		_ = df.Close()
 	}
 
-	// Step 5: prune old backups (best-effort; failures here don't fail Save).
 	pruneBackups(path, maxBackups)
 	return nil
 }
@@ -299,8 +249,6 @@ func pruneBackups(path string, keep int) {
 	base := filepath.Base(path) + ".bak."
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		// This used to return silently. It now logs: if cleanup breaks, the
-		// disk fills up.
 		log.Printf("pruneBackups: read %s failed: %v (backups will pile up)", dir, err)
 		return
 	}
@@ -327,7 +275,6 @@ func pruneBackups(path string, keep int) {
 	if len(baks) <= keep {
 		return
 	}
-	// Sort newest first; remove the tail.
 	sort.Slice(baks, func(i, j int) bool { return baks[i].ts > baks[j].ts })
 	for _, old := range baks[keep:] {
 		if err := os.Remove(old.path); err != nil {

@@ -8,12 +8,6 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 
-/**
- * Production [TerminalWebSocketFactory]: opens a real OkHttp WebSocket
- * against `/ws/shell`. The 25s ping / 45s pong keepalive is server-driven
- * (`internal/pty/pty.go`) — OkHttp answers protocol-level pings on its own,
- * nothing to configure here.
- */
 class OkHttpTerminalWebSocketFactory(
     private val client: OkHttpClient = OkHttpClient(),
 ) : TerminalWebSocketFactory {

@@ -1,20 +1,5 @@
 package api
 
-// handlers_users.go — user management + terminal sessions
-// + handleExec (RCE, primary-only) + handleHostShell.
-//
-// handleExec, handleHostShell and touching users are all primary-only:
-// grouped here as the "admin actions" only the host's owner may perform.
-//
-// Covers:
-//   - handleExec (POST /api/exec — direct shell, server-control-panel root)
-//   - handleHostShell (GET /api/host-shell — PTY wrapper for the host shell)
-//   - handleUsersList / Create / Delete / ResetPassword / Disable2FA
-//     / RevokeSessions (admin UI)
-//   - handleTerminalSessions / handleTerminalKillSession (kill by sid)
-//
-// Extracted from api.go.
-
 import (
 	"context"
 	"encoding/json"
@@ -77,15 +62,12 @@ func (r *Router) handleHostShell(w http.ResponseWriter, req *http.Request) {
 		r.terminalConfigDirForSession(sessionName), r.cfg.DataDir, r.sessReg)
 }
 
-// ---------------- User management ----------------
-
-// userInfo is the shape exposed to the UI (never includes the password hash).
 type userInfo struct {
 	Username  string `json:"username"`
 	IsPrimary bool   `json:"is_primary"`
-	IsAdmin   bool   `json:"is_admin"` // primary OR the Admin flag — privilege parity
+	IsAdmin   bool   `json:"is_admin"`
 	HasTOTP   bool   `json:"has_totp"`
-	Sessions  int    `json:"sessions"` // count of active JWT sessions
+	Sessions  int    `json:"sessions"`
 }
 
 func (r *Router) handleUsersList(w http.ResponseWriter, req *http.Request) {
@@ -95,16 +77,12 @@ func (r *Router) handleUsersList(w http.ResponseWriter, req *http.Request) {
 	}
 	r.cfgMu.Lock()
 	all := r.cfg.AllUsers()
-	// FIX (v2): this used to be r.cfg.Username, which is empty after the
-	// migration → is_primary always came out false in the UI. The canonical
-	// primary in v2 is r.cfg.Primary.
 	primaryName := r.cfg.Primary
 	adminSet := map[string]bool{}
 	for _, name := range r.cfg.Admins() {
 		adminSet[name] = true
 	}
 	r.cfgMu.Unlock()
-	// Count active sessions per user (when sessions are enabled)
 	sessionsPerUser := map[string]int{}
 	if r.auth.Sessions() != nil {
 		now := time.Now().Unix()
@@ -122,11 +100,8 @@ func (r *Router) handleUsersList(w http.ResponseWriter, req *http.Request) {
 			Username:  u.Username,
 			IsPrimary: u.Username == primaryName,
 			IsAdmin:   adminSet[u.Username],
-			// The real MFA now lives in Supabase. SupabaseMFAEnabled is the local
-			// mirror (updated on enroll-verify/disable/login). TOTPSecret is kept
-			// as a fallback when it exists (legacy, pre-migration).
-			HasTOTP:  u.SupabaseMFAEnabled || u.TOTPSecret != "",
-			Sessions: sessionsPerUser[u.Username],
+			HasTOTP:   u.SupabaseMFAEnabled || u.TOTPSecret != "",
+			Sessions:  sessionsPerUser[u.Username],
 		})
 	}
 	writeJSON(w, map[string]any{"users": sanitizeList(out, "Username")})
@@ -154,7 +129,6 @@ func (r *Router) handleUserCreate(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, 400, "invalid username (1-40 chars)")
 		return
 	}
-	// Sanitisation: only A-Z a-z 0-9 _ -
 	for _, c := range body.Username {
 		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
 			writeErr(w, 400, "username may contain only letters, digits, _ and -")
@@ -183,10 +157,6 @@ func (r *Router) handleUserCreate(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, 500, "save config: "+saveErr.Error())
 		return
 	}
-	// WhatsApp provisioning (v2): creates dirs, allocates a port, generates the
-	// vault keys, renders compose/env, systemctl enable. Idempotent. An error is
-	// logged but does not take the user create down (the config has already been
-	// saved) — the operator re-runs Provision at boot or with a manual tool.
 	if r.whatsappMgr != nil {
 		if su, err := scope.New(body.Username); err == nil {
 			if err := r.whatsappMgr.Provision(su); err != nil {
@@ -218,14 +188,10 @@ func (r *Router) handleUserDelete(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, 400, "empty username")
 		return
 	}
-	// Guard: you cannot delete yourself
 	if body.Username == caller {
 		writeErr(w, 403, "cannot delete your own user (logged in right now)")
 		return
 	}
-	// Protecting the primary: now that several admins can exist, an additional
-	// admin may NOT delete the primary (it would break the legacy state
-	// binding). RemoveUser rejects it too, but we give a clear 403 here.
 	r.cfgMu.Lock()
 	isPrimaryTarget := r.cfg.Primary != "" && r.cfg.Primary == body.Username
 	r.cfgMu.Unlock()
@@ -233,11 +199,6 @@ func (r *Router) handleUserDelete(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, 403, "cannot delete the primary user")
 		return
 	}
-	// Decommission WhatsApp BEFORE deleting from the config — that way the
-	// Manager can still resolve the user in order to stop the container and clean
-	// the vault. On failure the user stays in the config and the operator can
-	// retry; it prevents the "user gone from the config but container orphaned"
-	// state.
 	if r.whatsappMgr != nil {
 		if su, err := scope.New(body.Username); err == nil {
 			if err := r.whatsappMgr.Decommission(su); err != nil {
@@ -258,14 +219,9 @@ func (r *Router) handleUserDelete(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, 500, "save config: "+saveErr.Error())
 		return
 	}
-	// Revoke every local session of the deleted user.
 	if r.auth.Sessions() != nil {
 		r.auth.Sessions().RevokeAllExcept(body.Username, "")
 	}
-	// Close the Supabase login path: with no entry in uuid_map, verifySupabase
-	// returns ErrSupabaseInvalidCredentials before ever reaching GoTrue. Without
-	// this, a deleted user would go on logging in whenever the Supabase backend
-	// is "supabase" or "both" (found in an audit).
 	if um := r.auth.UUIDMap(); um != nil {
 		if um.Remove(body.Username) {
 			if err := auth.SaveUUIDMap(um, filepath.Join(r.cfg.DataDir, "migration-uuid-map.json")); err != nil {
@@ -277,11 +233,6 @@ func (r *Router) handleUserDelete(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
-// handleUserSetAdmin grants or revokes a user's administrator privileges (full
-// parity with the primary). Gated by mustPrimary: only an admin can create or
-// remove other admins. The primary is always an admin — trying to revoke it
-// returns 422 (SetAdmin refuses). Persists to the config and updates the
-// in-memory state atomically under cfgMu.
 func (r *Router) handleUserSetAdmin(w http.ResponseWriter, req *http.Request) {
 	caller, ok := r.mustPrimary(w, req)
 	if !ok {
@@ -363,9 +314,6 @@ func (r *Router) handleUserResetPassword(w http.ResponseWriter, req *http.Reques
 		r.auth.ReloadUsers(credsFromConfig(r.cfg))
 	}
 	r.cfgMu.Unlock()
-	// BUG fix: this used to be `if !ok` (ok = mustPrimary) — always false here,
-	// so SetPassword returning false (the user does not exist) silently
-	// answered 200 without changing anything. Now the correct feedback gets out.
 	if !updated {
 		writeErr(w, 404, "user not found")
 		return
@@ -438,21 +386,12 @@ func (r *Router) handleUserRevokeSessions(w http.ResponseWriter, req *http.Reque
 	writeJSON(w, map[string]any{"status": "ok", "revoked": count})
 }
 
-// handleTerminalSessions lists only the authenticated user's sessions. Tenant
-// boundary: each profile sees only its own sessions (the panel-<user>- prefix).
-// Other profiles' sessions are invisible in the UI — not "listed but not
-// attachable", genuinely invisible.
 func (r *Router) handleTerminalSessions(w http.ResponseWriter, req *http.Request) {
 	user := auth.UserFrom(req)
 	if user == "" {
 		writeErr(w, 401, "unauthorized")
 		return
 	}
-	// ?all=1 + admin → an annotated master view (every session plus its owner in
-	// "assigned"), used by the session manager. sanitizeList preserves the
-	// "assigned" field (it only drops items with no "name", and dedups). For a
-	// non-admin the ?all=1 is ignored: it falls into the normal filtered path
-	// (the "who it shows up for").
 	if req.URL.Query().Get("all") == "1" && r.isPrimary(user) {
 		sessions, err := ptysvc.SessionListAnnotated(r.sessionOwn, r.claudeAccts, claudeacct.ConsumerTerminal)
 		if err != nil {
@@ -464,18 +403,12 @@ func (r *Router) handleTerminalSessions(w http.ResponseWriter, req *http.Request
 	}
 	sessions, err := ptysvc.SessionListForUser(user, r.isPrimary(user), r.sessionOwn)
 	if err != nil {
-		writeJSON(w, []any{}) // graceful: no engine or no sessions -> empty list
+		writeJSON(w, []any{})
 		return
 	}
 	writeJSON(w, sanitizeList(r.enrichSessionsWithAgent(sessions), "name"))
 }
 
-// enrichSessionsWithAgent merges the agent's state (state ●/○, cwd, cost,
-// tokens, last activity) — data already kept in session-status.json +
-// session-cwd.json, which the agents tab uses — into each row of the session
-// list, so the session manager becomes a cockpit without duplicating telemetry.
-// Mutates in place; the extra keys survive sanitizeList (which only filters out
-// entries with no "name").
 func (r *Router) enrichSessionsWithAgent(sessions []map[string]any) []map[string]any {
 	var status map[string]AgentStatus
 	if r.agentStatus != nil {
@@ -511,12 +444,6 @@ func (r *Router) enrichSessionsWithAgent(sessions []map[string]any) []map[string
 	return sessions
 }
 
-// handleTerminalCreate creates a DETACHED dtach session with the chosen
-// cwd/command/account (POST /api/terminal/create) — the structured "New
-// session" form. Creating one through the WS (/ws/shell?name=) always starts in
-// $HOME; this endpoint lets you pick the directory and the Claude account
-// BEFORE the shell comes up. The frontend then opens a pane attaching to the
-// already-created session (and injects the command via startupCmd).
 func (r *Router) handleTerminalCreate(w http.ResponseWriter, req *http.Request) {
 	user := auth.UserFrom(req)
 	if user == "" {
@@ -542,17 +469,14 @@ func (r *Router) handleTerminalCreate(w http.ResponseWriter, req *http.Request) 
 		writeErr(w, 400, "name required")
 		return
 	}
-	// Already alive? Idempotent: answer ok (the frontend just attaches).
 	if alive, _ := ptysvc.SessionHas(name); alive {
 		writeJSON(w, map[string]any{"ok": true, "name": name, "existed": true})
 		return
 	}
-	// Per-user quota (same rule as the WS): only live sessions count.
 	if n := ptysvc.OwnedSessionCountLive(r.sessionOwn, user); n >= ptysvc.MaxSessionsPerUser {
 		writeErr(w, 429, "session limit reached — close one first")
 		return
 	}
-	// cwd: check it exists and is a directory (best effort; empty = the shell's default).
 	cwd := strings.TrimSpace(body.CWD)
 	if cwd != "" {
 		if fi, err := os.Stat(cwd); err != nil || !fi.IsDir() {
@@ -560,7 +484,6 @@ func (r *Router) handleTerminalCreate(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 	}
-	// Optional Claude account → set the assignment and inject CLAUDE_CONFIG_DIR.
 	var env []string
 	if acc := strings.TrimSpace(body.Account); acc != "" && r.claudeAccts != nil {
 		_ = r.claudeAccts.SetSessionAccount(name, acc)
@@ -578,20 +501,12 @@ func (r *Router) handleTerminalCreate(w http.ResponseWriter, req *http.Request) 
 		writeErr(w, 500, "failed to create session: "+err.Error())
 		return
 	}
-	// Ownership to the creator (same semantics as the WS: a new session belongs to the user).
 	if r.sessionOwn != nil {
 		_ = r.sessionOwn.Claim(name, user)
 	}
 	writeJSON(w, map[string]any{"ok": true, "name": name})
 }
 
-// handleCodeRestorePing writes the trigger file the code-server extension
-// watches (fs.watch) in order to reopen the code-server sessions on every
-// (re)load of the iframe. Needed because code-server's native restore fails on
-// reload and the extension's activate() does NOT fire again (the extension host
-// is persistent). The frontend calls this from onVscodeFrameLoad. Contents = a
-// timestamp (it changes on every ping → fs.watch fires and the extension runs
-// restoreOpenSessions). Best effort.
 func (r *Router) handleCodeRestorePing(w http.ResponseWriter, req *http.Request) {
 	user := auth.UserFrom(req)
 	if user == "" {
@@ -616,13 +531,6 @@ func (r *Router) handleCodeRestorePing(w http.ResponseWriter, req *http.Request)
 	writeJSON(w, map[string]any{"ok": true})
 }
 
-// handleTerminalAssignSession reattributes a session's audience:
-// who sees it in their day-to-day picker. Admin-only (mustPrimary). Target is a
-// valid username (the session becomes private to them) or "*" (AudienceAll —
-// visible to everyone). The session's name is sanitised the same way the
-// backend keys ownership, so the assign lands on the right entry. We do not
-// require the session to currently exist: assigning ahead of (re)create
-// is harmless and the entry is inert until a session by that name lives.
 func (r *Router) handleTerminalAssignSession(w http.ResponseWriter, req *http.Request) {
 	caller, ok := r.mustPrimary(w, req)
 	if !ok {
@@ -663,14 +571,6 @@ func (r *Router) handleTerminalAssignSession(w http.ResponseWriter, req *http.Re
 	writeJSON(w, map[string]any{"status": "ok", "name": name, "assigned": target})
 }
 
-// handleTerminalKillSession kills a single session by full name.
-// Accepts {"name": "..."} (preferred) or {"tab": "..."} (legacy alias).
-// handleTerminalScrollback returns the pane history (scrollback + visible
-// screen, with colors) for a session the caller owns. The mobile hterm fetches
-// this on first attach to prime its scrollback — `dtach -A` only
-// redraws the visible screen, so without priming the client can only scroll the
-// rows it received since connecting ("it only loads part of it"). Ownership is
-// enforced the same way as kill/rename: 404 (not 403) so existence never leaks.
 func (r *Router) handleTerminalScrollback(w http.ResponseWriter, req *http.Request) {
 	user := auth.UserFrom(req)
 	if user == "" {
@@ -696,34 +596,10 @@ func (r *Router) handleTerminalScrollback(w http.ResponseWriter, req *http.Reque
 			lines = n
 		}
 	}
-	// plain=1 → text with no escapes (for "copy everything" to the clipboard).
-	// The default keeps the colours (-e) to prime hterm's display on attach.
 	escapes := req.URL.Query().Get("plain") != "1"
-	// The engine is dtach: reading means tailing the pty log (session.go).
 	writeJSON(w, map[string]any{"data": ptysvc.SessionScrollback(user, name, lines, escapes)})
 }
 
-// handleTerminalRawLog returns the RAW BYTES of the session's pty log — escapes
-// and all — so the client can prime its own emulator when attaching.
-//
-// ## Why raw, and why the dashboard needs it
-//
-// `/api/terminal/scrollback` cuts by lines and knows how to strip escapes. Both
-// of those destroy the output of a program that redraws: the same log yields
-// 511 shredded lines as plain text and 5,058 readable ones when the bytes reach
-// an emulator intact. What knows how to assemble that is a terminal, and the
-// dashboard has one (xterm.js) — the same reasoning that led the app to ask for
-// this.
-//
-// The dashboard used to depend on the replay the SERVER decides to send on
-// attach, and that replay is skipped on exactly the sessions that matter:
-// measured across the 28 logs on this machine, every working session has a
-// repainted stream and receives nothing. The result was opening the terminal on
-// another computer and seeing a single blank page.
-//
-// Ownership is checked as in kill/rename: 404, never 403 — the existence of
-// someone else's session must not leak. It weighs more here, because the raw
-// log is the literal transcript of everything that went through the terminal.
 func (r *Router) handleTerminalRawLog(w http.ResponseWriter, req *http.Request) {
 	user := auth.UserFrom(req)
 	if user == "" {
@@ -746,10 +622,6 @@ func (r *Router) handleTerminalRawLog(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 	data, total := ptysvc.SessionRawLogTail(user, name, requestedBytes)
-	// It goes out as octet-stream and not as JSON/base64: the dashboard writes
-	// these bytes straight into xterm, and putting them through base64 would only
-	// cost a third more bandwidth plus a decode on the side that is already busy
-	// painting.
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Panel-Log-Total", strconv.Itoa(total))
@@ -757,24 +629,6 @@ func (r *Router) handleTerminalRawLog(w http.ResponseWriter, req *http.Request) 
 	_, _ = w.Write(data)
 }
 
-// handleTerminalHistory returns the session's RENDERED history: the lines
-// that have already scrolled off the screen, as append-only text.
-//
-// It is what the dashboard writes into xterm when opening the session. The
-// difference from the raw log route is not one of format, but of nature:
-//
-//	raw log  = everything that went over the wire, the drawing in progress
-//	           included
-//	history  = what the person SAW, once each
-//
-// Replaying the raw log onto a fresh grid duplicates content — the `ESC[nA` of
-// a program that repaints saturates at the top of the SCREEN and never reaches
-// the scrollback, so the earlier copy stays put. The history does not have that
-// problem because it is not a replay: the server already rendered it, live, on
-// a screen the size of the session.
-//
-// Empty is a legitimate answer: a new session, or one that has not yet scrolled
-// a single line off. The dashboard falls back to the raw log route in that case.
 func (r *Router) handleTerminalHistory(w http.ResponseWriter, req *http.Request) {
 	user := auth.UserFrom(req)
 	if user == "" {
@@ -826,7 +680,6 @@ func (r *Router) handleTerminalKillSession(w http.ResponseWriter, req *http.Requ
 	if target == "" {
 		target = body.Tab
 	}
-	// 404 (not 403) when the target does not belong to the user: existence does not leak.
 	if !ptysvc.OwnsSession(user, target, r.isPrimary(user), r.sessionOwn) {
 		writeErr(w, 404, "session not found")
 		return
@@ -835,10 +688,6 @@ func (r *Router) handleTerminalKillSession(w http.ResponseWriter, req *http.Requ
 		writeErr(w, 500, err.Error())
 		return
 	}
-	// Release ownership: a future create with the same name belongs to
-	// whoever attaches first (primary on legacy adoption, the explicit
-	// claimer otherwise). A stale entry would just sit there harmlessly,
-	// but cleaning up keeps the registry honest.
 	if err := r.sessionOwn.Release(target); err != nil {
 		log.Printf("session ownership: release %s: %v", target, err)
 	}

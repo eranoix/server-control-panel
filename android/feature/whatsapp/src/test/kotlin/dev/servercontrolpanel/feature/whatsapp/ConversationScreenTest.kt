@@ -26,11 +26,6 @@ import org.robolectric.RobolectricTestRunner
 
 private const val JID = "5511999@s.whatsapp.net"
 
-/**
- * Renders [ConversationScreen] under Robolectric in every [ConversationUiState], which
- * also proves its ExoPlayer and Coil setup construct off-device. Only document media is
- * exercised: image and video start a real fetch on composition that could hang here.
- */
 @RunWith(RobolectricTestRunner::class)
 class ConversationScreenTest {
 
@@ -40,7 +35,6 @@ class ConversationScreenTest {
     @Test
     fun `loading state shows a spinner`() {
         val repository = ConversationScreenFakeRepository(onMessages = { awaitCancellation() })
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm = ConversationViewModel(JID, repository, ConversationScreenFakeEventSource())
         composeRule.setContent {
             ConversationScreen(viewModel = vm)
@@ -54,7 +48,6 @@ class ConversationScreenTest {
         val repository = ConversationScreenFakeRepository(
             onMessages = { MessagesResult.Error("The server is unavailable right now.") },
         )
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm2 = ConversationViewModel(JID, repository, ConversationScreenFakeEventSource())
         composeRule.setContent {
             ConversationScreen(viewModel = vm2)
@@ -70,7 +63,6 @@ class ConversationScreenTest {
         val repository = ConversationScreenFakeRepository(
             onMessages = { MessagesResult.Success(emptyList(), backfilling = false) },
         )
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm3 = ConversationViewModel(JID, repository, ConversationScreenFakeEventSource())
         composeRule.setContent {
             ConversationScreen(viewModel = vm3)
@@ -136,7 +128,6 @@ class ConversationScreenTest {
         val repository = ConversationScreenFakeRepository(
             onMessages = { MessagesResult.Success(messages, backfilling = true) },
         )
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm4 = ConversationViewModel(JID, repository, ConversationScreenFakeEventSource())
         composeRule.setContent {
             ConversationScreen(viewModel = vm4)
@@ -155,7 +146,6 @@ class ConversationScreenTest {
             onMessages = { MessagesResult.Success(emptyList(), backfilling = false) },
             onSend = { _, _ -> SendResult.Error("failed") },
         )
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm5 = ConversationViewModel(JID, repository, ConversationScreenFakeEventSource())
         composeRule.setContent {
             ConversationScreen(viewModel = vm5)
@@ -166,16 +156,11 @@ class ConversationScreenTest {
         composeRule.onNodeWithText("Send").performClick()
         composeRule.waitForIdle()
 
-        // The fake onSend resolves immediately, so the bubble is already in its terminal state.
         composeRule.onNodeWithText("Failed to send").assertExists()
-        composeRule.onNodeWithText("Message").assertExists() // draft field cleared back to its placeholder
+        composeRule.onNodeWithText("Message").assertExists()
     }
 }
 
-/**
- * Fake [WhatsAppRepository]; renamed from the one in [ConversationViewModelTest] to avoid a
- * JVM class name collision between private top-level classes in the same package.
- */
 private class ConversationScreenFakeRepository(
     private val onMessages: suspend () -> MessagesResult = { MessagesResult.Success(emptyList(), backfilling = false) },
     private val onSend: suspend (String, String) -> SendResult = { _, _ -> SendResult.Error("failed") },
@@ -185,7 +170,6 @@ private class ConversationScreenFakeRepository(
         onSend(clientMsgId, text)
 }
 
-/** Mirrors [ConversationViewModelTest]'s private `FakeWhatsAppEventSource`, renamed for the same reason. */
 private class ConversationScreenFakeEventSource : WhatsAppEventSource {
     private val _state = MutableStateFlow<WhatsAppConnectionState>(WhatsAppConnectionState.Live)
     override val state: StateFlow<WhatsAppConnectionState> = _state.asStateFlow()

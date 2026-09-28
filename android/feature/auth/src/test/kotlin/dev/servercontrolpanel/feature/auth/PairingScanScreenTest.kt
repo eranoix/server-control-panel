@@ -19,17 +19,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 
-/**
- * Renders [PairingScanScreen] under Robolectric.
- *
- * Guards that the screen degrades instead of crashing when the camera is
- * unavailable: each cause is injected through [CameraEnvironment] and must render
- * an explanation plus a way out.
- *
- * Causes are injected rather than relying on the emulator's camera config, which
- * is shared and unreliable. The happy path (real camera, QR decoding) still
- * needs a device.
- */
 @RunWith(RobolectricTestRunner::class)
 class PairingScanScreenTest {
 
@@ -75,10 +64,6 @@ class PairingScanScreenTest {
         composeRule.onNodeWithText(LABEL_ALREADY_HAVE_ACCESS).assertHasClickAction()
     }
 
-    /**
-     * Through the public path with no injection: Robolectric's `CameraManager`
-     * exposes no camera, so the degraded screen must appear, not a blank preview or a crash.
-     */
     @Test
     fun `through the real path, a device without a camera reaches the degraded state`() {
         grantCameraPermission()
@@ -124,7 +109,6 @@ class PairingScanScreenTest {
         composeRule.onNodeWithText("Try again").performClick()
         composeRule.waitForIdle()
 
-        // A different cause on the second check proves the button really re-checked.
         composeRule.onNodeWithText("This device has no camera").assertExists()
     }
 

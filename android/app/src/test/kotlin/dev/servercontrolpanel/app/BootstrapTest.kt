@@ -11,15 +11,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * [Bootstrap] guarantees: a throwing step never stops the ones after it, and an uncaught
- * exception is persisted readably before the process dies while still reaching the previously
- * installed handler.
- *
- * Uses the plain [android.app.Application]: [PanelApplication.onCreate] starts a
- * background coroutine touching WorkManager, which fails under Robolectric and would write into
- * the same [Bootstrap.initFailures] these tests assert on.
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class)
 class BootstrapTest {
@@ -57,7 +48,7 @@ class BootstrapTest {
 
     @Test
     fun `a step that does not throw never touches initFailures`() {
-        Bootstrap.step("ok step") { /* no-op */ }
+        Bootstrap.step("ok step") {  }
 
         assertTrue(Bootstrap.initFailures.isEmpty())
     }
@@ -65,7 +56,7 @@ class BootstrapTest {
     @Test
     fun `multiple failing steps each get their own entry, in order`() {
         Bootstrap.step("one") { throw RuntimeException("failure one") }
-        Bootstrap.step("two") { /* ok */ }
+        Bootstrap.step("two") {  }
         Bootstrap.step("three") { throw RuntimeException("failure three") }
 
         assertEquals(2, Bootstrap.initFailures.size)
@@ -85,7 +76,7 @@ class BootstrapTest {
         }
 
         Bootstrap.installCrashReporter(context)
-        Bootstrap.step("step that is reported but does not fail") { /* ok, just populates initFailures with nothing */ }
+        Bootstrap.step("step that is reported but does not fail") {  }
         val crashError = IllegalStateException("EncryptedSharedPreferences.create failed after key rotation")
         Thread.getDefaultUncaughtExceptionHandler()!!.uncaughtException(Thread.currentThread(), crashError)
 

@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// fakeSource is a fake node inventory, with the bare minimum of the interface.
 type fakeSource map[string]NodeTarget
 
 func (f fakeSource) NodeByID(id string) (NodeTarget, bool) {
@@ -47,7 +46,6 @@ func TestInventoryMigrationIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Byte for byte, asserted — not "described as idempotent".
 	if string(after1) != string(after2) {
 		t.Errorf("MIGRATION IS NOT IDEMPOTENT:\n--- 1st ---\n%s\n--- 2nd ---\n%s", after1, after2)
 	}
@@ -59,8 +57,6 @@ func TestInventoryMigrationIdempotent(t *testing.T) {
 func TestMigrationPreservesUnknownFields(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gameservers.json")
-	// `futureField` does not exist in the Server struct. Decoding into []Server
-	// and re-serializing would ERASE it — that is the defect this test watches.
 	original := `[{"id":"game-b","game":"enshrouded","futureField":{"a":1,"b":[2,3]},"notes":"do not delete me"}]`
 	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
 		t.Fatal(err)
@@ -98,7 +94,6 @@ func TestMigrationPreservesUnknownFields(t *testing.T) {
 func TestMigrationKeepsCopyAndMissingFileIsNotError(t *testing.T) {
 	dir := t.TempDir()
 
-	// Absent: a no-op, not an error. The Manager already comes up empty here.
 	if changed, err := MigrateInventoryToNode(filepath.Join(dir, "missing.json")); err != nil || changed {
 		t.Errorf("a missing file should be a silent no-op, got changed=%v err=%v", changed, err)
 	}
@@ -139,11 +134,9 @@ func TestMigrationDoesNotWriteInvalidJSON(t *testing.T) {
 	}
 }
 
-// RESOLUTION
-
 func TestServerWithoutNodeRejected(t *testing.T) {
 	source := fakeSource{"games": {Name: "games", Transport: TransportAgent, Base: "http://x:1", Token: "t"}}
-	s := Server{ID: "game-b", Name: "Enshrouded"} // no node
+	s := Server{ID: "game-b", Name: "Enshrouded"}
 
 	_, err := ResolveTarget(s, source)
 	if err == nil {
@@ -206,8 +199,6 @@ func TestNodeWithInvalidTransport(t *testing.T) {
 	}
 }
 
-// TestResolverHasNoImplicitDefault is the control that pins the hard rule: NO
-// combination of missing fields may result in a usable destination.
 func TestResolverHasNoImplicitDefault(t *testing.T) {
 	empties := []struct {
 		name   string
@@ -228,25 +219,13 @@ func TestResolverHasNoImplicitDefault(t *testing.T) {
 	}
 }
 
-// TestSaveInventoryAcceptsServerOnOtherNode — a regression test.
-//
-// The unconditional `os.Stat(Root)` made it impossible to register a server that
-// lives on ANOTHER node: the path exists there, not here. The registration was
-// refused with "the folder does not exist" — true about the wrong machine — and
-// that blocked the entire multi-node model. The pair below pins BOTH directions,
-// because only the positive one would let somebody "simplify" by removing the
-// check from the local case as well.
 func TestSaveInventoryAcceptsServerOnOtherNode(t *testing.T) {
 	dir := t.TempDir()
-	// Pre-existing inventory: the atomic write uses the current file as the
-	// REFERENCE for owner and mode, so it presupposes the file exists. In a real
-	// installation it has existed since the first boot.
 	if err := os.WriteFile(filepath.Join(dir, "gameservers.json"), []byte("[]"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	m := New(dir, nil)
 
-	// With a node: the root belongs to ANOTHER machine and cannot be checked here.
 	remote := []Server{{
 		ID: "remote", Name: "Remote", Game: "enshrouded",
 		Container: "c-remote", Root: "/opt/does-not-exist-on-this-host", No: "games",
@@ -255,8 +234,6 @@ func TestSaveInventoryAcceptsServerOnOtherNode(t *testing.T) {
 		t.Fatalf("a server with a node should be accepted (the root lives on the node, not here): %v", err)
 	}
 
-	// With no node: it is local, and then a nonexistent root MUST fail — it is the
-	// typo caught at registration, and not at the first click on "restart".
 	local := []Server{{
 		ID: "local", Name: "Local", Game: "enshrouded",
 		Container: "c-local", Root: "/opt/also-does-not-exist", No: "",

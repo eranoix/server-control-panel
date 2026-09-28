@@ -13,18 +13,6 @@ import (
 	"server-control-panel/internal/gameservers"
 )
 
-// The catalogue is CLOSED, and "closed" here means three things that have to
-// be proved separately, because each one covers a different hole:
-//
-//	1. every declared constant has a registry entry     → operation announced and not served
-//	2. every registry key is a declared constant        → operation served and not announced
-//	3. every constant of type OpName is in AllOps   → ORPHAN constant, invisible to 1 and 2
-//
-// Item 3 is the one that is almost always missing. Without it, somebody
-// declares `OpExec OpName = "maintenance.run"`, leaves it out of AllOps,
-// and the first two tests stay green forever.
-
-// repoRoot walks up to the go.mod.
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := filepath.Abs(".")
@@ -65,8 +53,6 @@ func TestClosedCatalogEveryKeyIsConstant(t *testing.T) {
 	}
 }
 
-// TestClosedCatalogDeclaredConstantsMatchAllOps closes the ORPHAN
-// constant hole, by walking the AST of opnames.go.
 func TestClosedCatalogDeclaredConstantsMatchAllOps(t *testing.T) {
 	file := filepath.Join(repoRoot(t), "internal", "gameservers", "opnames.go")
 	fset := token.NewFileSet()
@@ -86,8 +72,6 @@ func TestClosedCatalogDeclaredConstantsMatchAllOps(t *testing.T) {
 		if !ok || gd.Tok != token.CONST {
 			continue
 		}
-		// In a `const (...)` block with the type declared once, the type carries
-		// over to the following lines: propagate the last type seen, as Go does.
 		currentType := ""
 		for _, spec := range gd.Specs {
 			vs, ok := spec.(*ast.ValueSpec)
@@ -134,15 +118,6 @@ func TestClosedCatalogDeclaredConstantsMatchAllOps(t *testing.T) {
 	}
 }
 
-// TestCatalogNamesWellFormed asserts a PROPERTY, never a count.
-//
-// ⚠️ Do NOT assert the absolute count of AllOps here (the literal of the
-// forbidden comparison does not even appear in this comment, because the
-// acceptance criterion matches by fixed text and does not discount comments —
-// the same trap that has already caught this project once).
-// A frozen count goes stale silently, and it would break the M5 negative
-// control, which adds a
-// LEGITIMATE operation and has to pass.
 func TestCatalogNamesWellFormed(t *testing.T) {
 	seen := map[gameservers.OpName]bool{}
 	families := map[string]int{}
@@ -169,13 +144,6 @@ func TestCatalogNamesWellFormed(t *testing.T) {
 	}
 }
 
-// TestHandlersAreMethodExpressions — no Handler value in the registry is a
-// function literal.
-//
-// It is the structural half of narrowness: a function literal can CAPTURE a
-// variable from the enclosing scope, and capture is how a free argument gets in
-// without showing up in the signature. A method expression (`(*Agent).opFoo`)
-// captures nothing.
 func TestHandlersAreMethodExpressions(t *testing.T) {
 	file := filepath.Join(repoRoot(t), "internal", "nodeagent", "registry.go")
 	fset := token.NewFileSet()

@@ -10,10 +10,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/**
- * State of the chat list screen. Every branch is distinct, real UI --
- * [Loading]/[Error]/[Empty]/[Success] never render the same way.
- */
 sealed interface ChatListUiState {
     data object Loading : ChatListUiState
     data class Error(val message: String) : ChatListUiState
@@ -21,11 +17,6 @@ sealed interface ChatListUiState {
     data class Success(val chats: List<WhatsAppChat>) : ChatListUiState
 }
 
-/**
- * Loads the WhatsApp chat list from a single `WhatsAppRepository.chats()`
- * call. The list order is whatever the server returned -- this ViewModel
- * never re-sorts it.
- */
 open class ChatListViewModel(
     private val repository: WhatsAppRepository = WhatsAppRepository(),
 ) : ViewModel() {

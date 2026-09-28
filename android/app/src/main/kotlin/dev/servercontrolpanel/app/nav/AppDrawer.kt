@@ -26,52 +26,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.servercontrolpanel.designsystem.PanelIcons
 
-/** Label of the item that ends the session. The one literal — the UI and the test read it from here. */
 internal const val SIGN_OUT_LABEL = "Sign out"
 
-/** Description of the sign-out icon, for screen readers. */
 internal const val SIGN_OUT_ICON_DESCRIPTION = "Sign out of the account"
 
-/** Description of the button that opens the drawer, in the top bar. */
 internal const val OPEN_DRAWER_DESCRIPTION = "Open navigation menu"
 
-/** Labels of the two shortcuts at the top. The UI and the test read them from here. */
 internal const val TERMINAL_SHORTCUT_LABEL = "Terminal"
 internal const val TASKS_SHORTCUT_LABEL = "Tasks"
 
-/**
- * The drawer's content: the panel's parent pages, and "Sign out" anchored.
- *
- * ## Why it shrank
- *
- * The previous version had nine loose destinations, four group headers,
- * the appearance choice and the update check — sixteen rows to navigate
- * between eight places, and even so it did not fit on an 891 dp phone.
- *
- * Now there are eight items: the web panel's seven parents (Home, System,
- * Docker, Dev, Security, Apps, Operations) plus Settings. Each parent
- * opens the grid of its children. There is no group header because there
- * is no group any more — the items ALREADY are the groups. Appearance and
- * the update check moved to Settings, which is where device tuning now
- * lives.
- *
- * ## Why "Sign out" stays outside the scroll
- *
- * That is how it vanished off the screen when a new destination arrived:
- * the whole drawer scrolled, and each addition pushed the footer a little
- * further out. Ending the session on a panel that administers a server is
- * the last thing that may depend on discovering that an area scrolls.
- *
- * ## About label clipping
- *
- * Every label is `maxLines = 1` with [TextOverflow.Clip]. It is deliberate
- * that it is NOT an ellipsis: an ellipsis hides the problem (it looks tidy
- * and unreadable), a hard clip shows up in the screenshot and in the test.
- * `AppDrawerTest` reads each label's `TextLayoutResult` and fails if any
- * of them has more than one line or overflows — so that a new name, too
- * long, breaks the build instead of arriving crooked on the operator's
- * device.
- */
 @Composable
 internal fun AppDrawerSheet(
     currentRoute: String?,
@@ -97,19 +60,6 @@ internal fun AppDrawerSheet(
                 )
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-                // ── Shortcuts ───────────────────────────────────────────────
-                //
-                // The two screens you go into all day long, at ONE tap. With
-                // the parent-page taxonomy, the Terminal would start costing
-                // two taps (drawer → Dev → Terminal) — and the terminal is
-                // the reason this app exists. The web panel does the same:
-                // the Terminal lives at `dev/host`, and even so it has `g+t`
-                // as a direct shortcut.
-                //
-                // Two, and not a row: a third shortcut would start competing
-                // with the list of parents just below, and the drawer would
-                // go back to having two taxonomies fighting over the same
-                // height — which was the defect this reorganisation fixed.
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -154,7 +104,6 @@ internal fun AppDrawerSheet(
                 }
             }
 
-            // ── Footer, outside the scroll ──────────────────────────────────
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             NavigationDrawerItem(
                 icon = {
@@ -171,9 +120,6 @@ internal fun AppDrawerSheet(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 },
-                // Signing out is never a destination: it is never highlighted, it
-                // does not navigate, and it must not look like the screen the
-                // operator is on.
                 selected = false,
                 onClick = onSignOut,
                 modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
@@ -183,7 +129,6 @@ internal fun AppDrawerSheet(
     }
 }
 
-/** A shortcut from the top: icon above the label, in a block wide enough for a thumb. */
 @Composable
 private fun Shortcut(
     label: String,

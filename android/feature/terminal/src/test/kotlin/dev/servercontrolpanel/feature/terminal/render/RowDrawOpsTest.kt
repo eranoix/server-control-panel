@@ -5,15 +5,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Host-runnable (plain JUnit, no Robolectric, no device) proof of the two
- * silent-corruption risks called out for the renderer: double-drawn/clipped
- * wide glyphs, and re-indented wrap-continuation rows. [CellSnapshot.Cell]
- * and [CellSnapshot.Wide] are public and directly constructible, so this
- * builds synthetic rows without going through [CellSnapshot.fromBuffer]
- * (which is `internal` to `:terminal-engine` and backed by native memory
- * this test module has no access to).
- */
 class RowDrawOpsTest {
 
     private fun narrowCell(cp: Int): CellSnapshot.Cell = CellSnapshot.Cell(
@@ -38,7 +29,6 @@ class RowDrawOpsTest {
 
     @Test
     fun wideGlyph_producesExactlyOneOp_neverDoubleDrawn() {
-        // 'A' 'B' <wide 中> <spacer_tail> 'C' <spacer_head>, mirroring fixture 05-wide.
         val row = listOf(
             narrowCell('A'.code),
             narrowCell('B'.code),
@@ -50,10 +40,6 @@ class RowDrawOpsTest {
 
         val ops = buildRowDrawOps(row, defaultFg = 0xffffff, defaultBg = 0x000000)
 
-        // Exactly 4 ops: A, B, the wide glyph itself, C. The spacer_tail and
-        // spacer_head each contribute zero ops -- never a second op for the
-        // wide glyph's trailing column, never a stray op for the column that
-        // couldn't fit a second wide glyph.
         assertEquals(4, ops.size)
         assertEquals(listOf(0, 1, 2, 4), ops.map { it.column })
 
@@ -61,7 +47,6 @@ class RowDrawOpsTest {
         assertEquals(0x4E2D, wideOp.codepoint)
         assertTrue(wideOp.wide)
 
-        // No op at all claims column 3 (spacer_tail) or column 5 (spacer_head).
         assertTrue(ops.none { it.column == 3 || it.column == 5 })
     }
 
@@ -69,14 +54,6 @@ class RowDrawOpsTest {
     fun wrapContinuationRow_usesSameColumnsAsFreshRow_neverReindented() {
         val cells = listOf(narrowCell('i'.code), narrowCell('j'.code))
 
-        // buildRowDrawOps takes only the row's cells -- it has no wrap or
-        // wrapContinuation parameter to shift positions with, by
-        // construction. This test pins that: two structurally identical
-        // rows, one that a caller would only ever see with
-        // CellSnapshot.isWrapContinuation(row) == true (a wrapped
-        // continuation) and one that would only ever see it == false (a
-        // fresh logical line), produce byte-for-byte identical column
-        // placement.
         val continuationOps = buildRowDrawOps(cells, defaultFg = 0xffffff, defaultBg = 0x000000)
         val freshLineOps = buildRowDrawOps(cells, defaultFg = 0xffffff, defaultBg = 0x000000)
 

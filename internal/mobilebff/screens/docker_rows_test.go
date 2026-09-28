@@ -19,10 +19,6 @@ import (
 	"server-control-panel/internal/mobilebff"
 )
 
-// fakeDockerRowsDeps builds a DockerDeps with only the List* fields
-// populated — the rows endpoints never call any mutation closure, so
-// start/stop/remove/etc. are deliberately left nil (a nil call would panic,
-// which is exactly what we want if a rows handler ever starts calling one).
 func fakeDockerRowsDeps() DockerDeps {
 	return DockerDeps{
 		ListContainers: func(context.Context) ([]dockertypes.Container, error) {
@@ -55,11 +51,6 @@ func fakeDockerRowsDeps() DockerDeps {
 	}
 }
 
-// newDockerRowsMux wires only the five registerDockerXRows functions onto a
-// throwaway huma.API — mirrors newSchedulerRowsMux's rationale exactly:
-// screens.RegisterDocker itself goes through the process-global sdui.Register
-// / sdui.RegisterAction registries (which panic on double-registration), so
-// tests exercise the rows plumbing directly instead of through RegisterDocker.
 func newDockerRowsMux(deps DockerDeps) *http.ServeMux {
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(mux, mobilebff.Prefix, huma.DefaultConfig("docker-rows-test", "0"))
@@ -103,7 +94,6 @@ func TestDockerRows_Unauthenticated(t *testing.T) {
 	}
 }
 
-// TestDockerContainersRows_WireShape pins {"rows":[{"id","name","image","status","created"}]}.
 func TestDockerContainersRows_WireShape(t *testing.T) {
 	mux := newDockerRowsMux(fakeDockerRowsDeps())
 	rec, body := doDockerRowsRequest(t, mux, "/docker/containers", "docker-admin")
@@ -131,7 +121,6 @@ func TestDockerContainersRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestDockerImagesRows_WireShape pins {"rows":[{"id","repo_tag","size","created"}]}.
 func TestDockerImagesRows_WireShape(t *testing.T) {
 	mux := newDockerRowsMux(fakeDockerRowsDeps())
 	rec, body := doDockerRowsRequest(t, mux, "/docker/images", "docker-admin")
@@ -156,10 +145,6 @@ func TestDockerImagesRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestDockerVolumesRows_WireShape pins {"rows":[{"id","name","driver","size"}]}
-// and proves the interface{} unwrap in internal/api/api.go's ListVolumes
-// closure (asserting volume.ListResponse) round-trips correctly end to end
-// through this seam.
 func TestDockerVolumesRows_WireShape(t *testing.T) {
 	mux := newDockerRowsMux(fakeDockerRowsDeps())
 	rec, body := doDockerRowsRequest(t, mux, "/docker/volumes", "docker-admin")
@@ -184,9 +169,6 @@ func TestDockerVolumesRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestDockerVolumesRows_NilUsageDataSizeIsEmptyString proves a volume with no
-// UsageData (the plain list call docker.Client.Volumes makes never populates
-// it) renders "" for size, never a panic or "-1".
 func TestDockerVolumesRows_NilUsageDataSizeIsEmptyString(t *testing.T) {
 	deps := fakeDockerRowsDeps()
 	deps.ListVolumes = func(context.Context) (volume.ListResponse, error) {
@@ -204,7 +186,6 @@ func TestDockerVolumesRows_NilUsageDataSizeIsEmptyString(t *testing.T) {
 	}
 }
 
-// TestDockerNetworksRows_WireShape pins {"rows":[{"id","name","driver","scope"}]}.
 func TestDockerNetworksRows_WireShape(t *testing.T) {
 	mux := newDockerRowsMux(fakeDockerRowsDeps())
 	rec, body := doDockerRowsRequest(t, mux, "/docker/networks", "docker-admin")
@@ -226,8 +207,6 @@ func TestDockerNetworksRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestDockerComposeRows_WireShape pins {"rows":[{"id","stack","status"}]} —
-// "id" and "stack" both equal the project name (compose has no separate id).
 func TestDockerComposeRows_WireShape(t *testing.T) {
 	mux := newDockerRowsMux(fakeDockerRowsDeps())
 	rec, body := doDockerRowsRequest(t, mux, "/docker/compose", "docker-admin")
@@ -241,18 +220,11 @@ func TestDockerComposeRows_WireShape(t *testing.T) {
 	if row["id"] != "myapp" || row["stack"] != "myapp" || row["status"] != "running" {
 		t.Errorf("row = %v, want id=stack=myapp status=running", row)
 	}
-	// working_dir must NEVER be present on the wire — it is a server-only
-	// resolution detail, never client-supplied or client-visible.
 	if _, ok := row["working_dir"]; ok {
 		t.Errorf("row exposes working_dir on the wire, which should never happen: %v", row)
 	}
 }
 
-// TestDockerRows_SameShapeForAdminAndNonAdmin proves containers/images/
-// volumes/networks/compose rows are identical for admin and non-admin —
-// internal/docker applies no per-viewer scoping to any of these lists
-// (verified against handlers_docker.go), so the rows endpoints must not
-// invent scoping that does not exist upstream.
 func TestDockerRows_SameShapeForAdminAndNonAdmin(t *testing.T) {
 	mux := newDockerRowsMux(fakeDockerRowsDeps())
 	for _, path := range []string{"/docker/containers", "/docker/images", "/docker/volumes", "/docker/networks", "/docker/compose"} {

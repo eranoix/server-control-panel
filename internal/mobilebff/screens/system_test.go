@@ -12,9 +12,6 @@ import (
 	"server-control-panel/internal/sysextra"
 )
 
-// testSystemCfg/testSystemViewers mirror testDockerCfg/testDockerViewers — a
-// real *config.Config through the real ViewerFrom/httpx.IsAdmin path, never
-// a Viewer{} literal.
 func testSystemCfg() *config.Config {
 	return &config.Config{
 		SchemaVersion: config.CurrentSchemaVersion,
@@ -30,8 +27,6 @@ func testSystemViewers() (admin, nonAdmin sdui.Viewer) {
 	cfg := testSystemCfg()
 	return sdui.ViewerFrom(cfg, "sys-admin"), sdui.ViewerFrom(cfg, "sys-user")
 }
-
-// --- Test 1: structure -------------------------------------------------
 
 func TestSystemHistoryScreen_Structure(t *testing.T) {
 	env := buildSystemHistoryScreen()
@@ -74,9 +69,6 @@ func TestSystemProcessesScreen_Structure(t *testing.T) {
 	}
 }
 
-// TestSystemPortsScreen_ListOnlyForEveryViewer proves system.ports never
-// carries a row action or a confirm_destructive component — no removal of a
-// listening socket exists anywhere in this project.
 func TestSystemPortsScreen_ListOnlyForEveryViewer(t *testing.T) {
 	env := buildSystemPortsScreen()
 
@@ -114,8 +106,6 @@ func TestSystemSystemdScreen_Structure(t *testing.T) {
 			t.Errorf("systemd-table.row_actions does not reference %q: %v", want, table.RowActions)
 		}
 	}
-	// No systemd action is destructive (restarting a service is not
-	// irreversible), so there must be no confirm_destructive on this screen.
 	for _, c := range env.Screen.Components {
 		if c.ComponentType() == sdui.ComponentTypeConfirmDestructive {
 			t.Errorf("system.systemd contains a ConfirmDestructiveComponent (%s) — no systemd action is destructive", c.Base().ID)
@@ -123,10 +113,6 @@ func TestSystemSystemdScreen_Structure(t *testing.T) {
 	}
 }
 
-// TestSystemMetricsScreen_Structure proves the plan's own claim about
-// chart's shape: exactly one form (the window selector) and three charts
-// (cpu/mem/disk), no table — and that each chart's x_key/y_key/chart_kind
-// match the pinned data shape (see systemMetricPointRow's doc comment).
 func TestSystemMetricsScreen_Structure(t *testing.T) {
 	admin, _ := testSystemViewers()
 	env := buildSystemMetricsScreen(admin)
@@ -176,8 +162,6 @@ func TestSystemMetricsScreen_Structure(t *testing.T) {
 	}
 }
 
-// --- Test 2 (RBAC omission, on bytes) + Test 3 (non-vacuity) -----------
-
 func TestSystemProcessesScreen_RBACOmissionOnBytes(t *testing.T) {
 	admin, nonAdmin := testSystemViewers()
 
@@ -196,7 +180,6 @@ func TestSystemProcessesScreen_RBACOmissionOnBytes(t *testing.T) {
 	if strings.Contains(string(nonAdminBytes), systemActionProcessKill) {
 		t.Errorf("non-admin envelope contains %q: %s", systemActionProcessKill, nonAdminBytes)
 	}
-	// Non-vacuity: the table's columns stay present for the non-admin.
 	for _, want := range []string{"\"pid\"", "\"name\"", "\"user\""} {
 		if !strings.Contains(string(nonAdminBytes), want) {
 			t.Errorf("non-admin envelope does not contain column %s (should stay visible): %s", want, nonAdminBytes)
@@ -227,13 +210,10 @@ func TestSystemSystemdScreen_RBACOmissionOnBytes(t *testing.T) {
 			t.Errorf("non-admin envelope contains %q: %s", want, nonAdminBytes)
 		}
 	}
-	// Non-vacuity: the table's columns stay present for the non-admin.
 	if !strings.Contains(string(nonAdminBytes), "\"name\"") {
 		t.Errorf("non-admin envelope does not contain the \"name\" column (should stay visible): %s", nonAdminBytes)
 	}
 }
-
-// --- Test 4: no client-side logic ---------------------------------------
 
 func TestSystemScreens_NoClientSideLogicKeys(t *testing.T) {
 	admin, _ := testSystemViewers()
@@ -274,8 +254,6 @@ func TestSystemScreens_NoClientSideLogicKeys(t *testing.T) {
 	}
 }
 
-// --- Test 5: preformatted values -----------------------------------------
-
 func TestFormatSystemTimestamp_ZeroIsEmpty(t *testing.T) {
 	if got := formatSystemTimestamp(0); got != "" {
 		t.Errorf("formatSystemTimestamp(0) = %q, want \"\"", got)
@@ -291,9 +269,6 @@ func TestFormatSystemPercentAndLoad(t *testing.T) {
 	}
 }
 
-// TestSystemRowShapingFuncs_NeverEmitRawNumbers proves the row-shaping
-// functions always produce display-ready strings for numeric/timestamp
-// keys, never a raw number — using synthetic domain values.
 func TestSystemRowShapingFuncs_NeverEmitRawNumbers(t *testing.T) {
 	procRow := systemProcessRow(procs.Info{PID: 123, Name: "sshd", User: "root", CPU: 0.5, Memory: 1.2, Status: "sleeping"})
 	if _, isString := procRow["pid"].(string); !isString {

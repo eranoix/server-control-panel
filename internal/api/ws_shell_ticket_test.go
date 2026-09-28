@@ -1,16 +1,5 @@
 package api
 
-// ws_shell_ticket_test.go — end-to-end proof, on the real Router (same mux,
-// same auth.Middleware, same handleHostShell), that /ws/shell accepts the
-// one-shot WS ticket the Android app mints at POST /api/mobile/v1/terminal/ws-ticket
-// — and that the ticket carries the RIGHT identity to the session ownership gate.
-//
-// Before the fix the handshake below took a 401 from the Middleware: nothing on
-// the /ws/shell path consumed a ticket, and the app (which has no browser cookie
-// and sends no Authorization header on the upgrade) had no way to authenticate
-// without putting the 12h JWT in the query string — which is exactly what the
-// ticket avoids.
-
 import (
 	"net/http/httptest"
 	"strings"
@@ -22,11 +11,6 @@ import (
 	"server-control-panel/internal/auth"
 )
 
-// TestWSShell_TicketAuthenticatesHandshake: with a valid ticket the upgrade happens
-// (101) and the handler runs. It uses attach=1 on a session that does not exist
-// to prove the handler was reached WITHOUT creating any shell: the legitimate
-// owner gets close code 4404 ("session ended"), a signal that only goes to
-// whoever may touch the name.
 func TestWSShell_TicketAuthenticatesHandshake(t *testing.T) {
 	r := newSmokeRouter(t)
 	srv := httptest.NewServer(r)
@@ -61,11 +45,6 @@ func TestWSShell_TicketAuthenticatesHandshake(t *testing.T) {
 	}
 }
 
-// TestWSShell_OtherUsersTicketCannotOpenForeignSession: the ticket has to carry
-// the RIGHT owner to the handler. The session belongs to "sam"; the ticket is
-// "beto"'s (non-admin). If the Middleware injected the wrong identity — or
-// none — HostShell's ownership gate would decide with the wrong user, and that
-// would be silent privilege escalation.
 func TestWSShell_OtherUsersTicketCannotOpenForeignSession(t *testing.T) {
 	r := newSmokeRouter(t)
 	const session = "sams-session"
@@ -96,13 +75,11 @@ func TestWSShell_OtherUsersTicketCannotOpenForeignSession(t *testing.T) {
 	if !strings.Contains(string(msg), "session not found") {
 		t.Fatalf("response = %q, expected \"session not found\" — beto's ticket attached to sam's session", msg)
 	}
-	// And ownership must not have been stolen along the way.
 	if owner := r.sessionOwn.Owner(session); owner != "sam" {
 		t.Fatalf("session owner = %q, expected \"sam\"", owner)
 	}
 }
 
-// TestWSShell_NoCredentialStill401: the counter-proof — the gate did not loosen.
 func TestWSShell_NoCredentialStill401(t *testing.T) {
 	r := newSmokeRouter(t)
 	srv := httptest.NewServer(r)

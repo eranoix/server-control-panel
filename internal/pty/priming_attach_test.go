@@ -2,39 +2,6 @@ package pty
 
 import "testing"
 
-// THE TEST THAT SAID "A CLIENT THAT PRIMES ITSELF GETS NO WOBBLE" IS GONE.
-//
-// It pinned a conclusion of mine that measurement later knocked down — that the
-// app, because it rebuilds the screen by replaying the log, did not need the
-// repaint. What it really protected is still protected, and in a better place:
-// the wobble must not SHRINK the PTY (that is what fuses two layouts and
-// scrambles the screen), and that now lives in the body of `wobble`, where
-// whoever goes to touch the number will read it.
-//
-// What stays on record is that the same behaviour was switched off and back on
-// the same day, and both times by measurement — not by taste.
-
-// THE TWO ANSWERS ARE DIFFERENT, AND THE STORY OF HOW I GOT IT WRONG AT BOTH
-// ENDS IS WHAT THIS TEST KEEPS.
-//
-// At first they were separate by accident, and the app — which rebuilds its own
-// screen — took a repaint-wobble on every attach that fused two layouts and
-// scrambled the screen. So I tied them together, and this test said "they are
-// the same question".
-//
-// That was wrong, and the measurement showed why. History and repaint answer
-// different things:
-//
-//	"who shows the PAST?" -> the app, replaying the log. It does not want the
-//	                         server's: it would show everything twice.
-//	"who draws the NOW?"  -> only the remote program knows. The log is a cut of
-//	                         a live stream taken at an arbitrary instant, and in
-//	                         the middle of a frame it rebuilds a HALF-PAINTED
-//	                         screen.
-//
-// The repaint is safe because the nudge GROWS instead of shrinking: shrinking
-// scrolls the screen and loses content; growing only adds blank lines at the
-// bottom. See the body of `wobble`.
 func TestHistoryAndRepaintAnswerDifferentQuestions(t *testing.T) {
 	cases := []struct {
 		name                   string
@@ -42,21 +9,16 @@ func TestHistoryAndRepaintAnswerDifferentQuestions(t *testing.T) {
 		wantHistory, wantPaint bool
 	}{
 		{
-			// The app: it primes the past on its own, but it needs the program to
-			// draw the now.
 			name:   "app, fresh attach",
 			attach: "", replay: "0",
 			wantHistory: false, wantPaint: true,
 		},
 		{
-			// The web panel: it rebuilds nothing on its own. Both.
 			name:   "web panel, fresh attach",
 			attach: "", replay: "",
 			wantHistory: true, wantPaint: true,
 		},
 		{
-			// Reconnect: the in-memory grid is intact on both sides.
-			// Repainting would duplicate; replaying history would duplicate.
 			name:   "reconnect",
 			attach: "1", replay: "",
 			wantHistory: false, wantPaint: false,
@@ -81,8 +43,6 @@ func TestHistoryAndRepaintAnswerDifferentQuestions(t *testing.T) {
 	}
 }
 
-// NO RECONNECT REPAINTS. It is the one rule that did not change in either turn:
-// with the client's grid intact, repainting over it duplicates.
 func TestReconnectNeverRepaints(t *testing.T) {
 	for _, replay := range []string{"", "0", "1"} {
 		if _, repaint := serverPriming("1", replay); repaint {

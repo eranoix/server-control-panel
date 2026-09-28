@@ -7,10 +7,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Tests [toComponentDataState], the pure mapping read components use to pick
- * Loading, Error, Empty or Data.
- */
 class ComponentDataSourceTest {
 
     @Test

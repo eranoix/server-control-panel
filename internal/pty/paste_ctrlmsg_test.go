@@ -18,10 +18,6 @@ const (
 	bracketedPasteEnd   = "\x1b[201~"
 )
 
-// fakeRWC is the io.ReadWriteCloser proxy() sees in place of the real PTY.
-// Read blocks until Close (the proxy's PTY->WS pump only advances when there is
-// data or a close) — so the only observable activity in the test is what WS->PTY
-// writes, which is exactly the path this test is verifying.
 type fakeRWC struct {
 	mu      sync.Mutex
 	writes  [][]byte
@@ -86,11 +82,6 @@ func waitForWriteCount(t *testing.T, f *fakeRWC, want int, timeout time.Duration
 	}
 }
 
-// dialProxy brings up an httptest.Server that does a real Upgrade and calls the
-// production proxy() with the fakeRWC in place of the PTY, exactly as
-// restart_test.go does for NotifyRestart. It is the only honest way to prove
-// that the "paste" frame is parsed on the real WS->PTY path, and not in a
-// stand-in function the test calls directly.
 func dialProxy(t *testing.T, rwc *fakeRWC) *websocket.Conn {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -113,10 +104,6 @@ func dialProxy(t *testing.T, rwc *fakeRWC) *websocket.Conn {
 	return cli
 }
 
-// A {"type":"paste","data":"..."} sent by a real WS client reaches the PTY
-// as the bytes ESC[200~<data>ESC[201~ in a SINGLE Write — not two, not the raw
-// data without the envelope, and not silently nothing (the original bug: there
-// was no "case paste" at all and the frame was dropped in the empty fallthrough).
 func TestPasteCtrlMsgWritesBracketedInSingleWrite(t *testing.T) {
 	rwc := newFakeRWC()
 	cli := dialProxy(t, rwc)
@@ -141,10 +128,6 @@ func TestPasteCtrlMsgWritesBracketedInSingleWrite(t *testing.T) {
 	}
 }
 
-// A real clipboard has quotes, backslashes, accents — not just the trivial
-// "a\nb". The round trip through encoding/json (marshal on the client,
-// unmarshal into the server's ctrlMsg) has to preserve the literal content
-// inside the envelope, without escaping/unescaping it wrongly.
 func TestPasteCtrlMsgContentWithQuotesAndSlashes(t *testing.T) {
 	rwc := newFakeRWC()
 	cli := dialProxy(t, rwc)
@@ -166,10 +149,6 @@ func TestPasteCtrlMsgContentWithQuotesAndSlashes(t *testing.T) {
 	}
 }
 
-// The invariant that already existed (the comment in proxy(): valid JSON, with a
-// known type or not, NEVER falls through to the raw Write) has to keep holding
-// after "paste" joins the switch — otherwise adding the new case would
-// accidentally widen the fallthrough to ANY unknown type.
 func TestPasteCtrlMsgUnknownTypeDoesNotWrite(t *testing.T) {
 	rwc := newFakeRWC()
 	cli := dialProxy(t, rwc)
@@ -182,10 +161,6 @@ func TestPasteCtrlMsgUnknownTypeDoesNotWrite(t *testing.T) {
 		t.Fatalf("write bogus: %v", err)
 	}
 
-	// proxy() processes messages in order, one at a time, on the same goroutine
-	// (WS->PTY is the main loop). Sending a "ping" AFTERWARDS and waiting for the
-	// binary pong back proves the "bogus" one was fully processed on the server
-	// side before we check the count — with no sleep needed.
 	ping, _ := json.Marshal(ctrlMsg{Type: "ping"})
 	if err := cli.WriteMessage(websocket.TextMessage, ping); err != nil {
 		t.Fatalf("write ping: %v", err)

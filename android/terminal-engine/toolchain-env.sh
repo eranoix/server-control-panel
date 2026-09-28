@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# Exports and checks the toolchain build-libghostty.sh needs: Zig, the Android
-# NDK and JDK 17. Sourced, not executed.
-#
-# Zig is taken from $ZIG when set, else from PATH if it is the pinned version,
-# else downloaded once into .build/zig and checked against the sha256 in
-# toolchain.properties. The NDK is looked up under $ANDROID_HOME and installed
-# with sdkmanager when missing.
-#
-# Every failure is prefixed `TOOLCHAIN-ENV:` so a missing tool is easy to tell
-# apart from a Zig or Ghostty build failure.
 
 _toolchain_env_fail() {
   echo "TOOLCHAIN-ENV: $1" >&2

@@ -31,35 +31,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.servercontrolpanel.data.terminal.TerminalSession
 
-/** Test tag for the sessions sheet. */
 const val SESSIONS_SHEET_TAG = "sessions-sheet"
 
-/** Test tag for the sheet's filter field. */
 const val SESSIONS_FILTER_TAG = "sessions-filter"
 
-/** Test tag for the new-session name field. */
 const val SESSIONS_NEW_TAG = "sessions-nova"
 
-/** Prefix of the test tag on each session row. */
 fun sessionTag(name: String): String = "session-$name"
 
-/**
- * The session-switching sheet, opened by the "Session" button in the top bar.
- *
- * A bottom sheet rather than tabs (20+ sessions do not fit a phone tab strip), a
- * dropdown (no room for each session's state) or a side drawer (edge swipes clash
- * with predictive back and the grid's gestures): it is anchored to an explicit
- * button, within thumb reach, scrolls, and gives full width to each row.
- *
- * Borrowed from Termux: the `[n]` index for muscle memory, a filter for long
- * lists, "New session" pinned to the footer (a first-row action would scroll away
- * and sit where the thumb reaches for session 1), and instant switching with no
- * grid animation.
- *
- * Detach needs no server route: the session lives under `dtach`, so leaving the
- * screen already detaches. The item says so in words, because fear of losing a
- * running process is why people never leave.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionSwitcherSheet(
@@ -86,10 +65,6 @@ fun SessionSwitcherSheet(
     }
 }
 
-/**
- * The sheet content, split from the system-window wrapper (as in
- * [TerminalOptionsSheet]) so its rules can be tested without window animations.
- */
 @Composable
 internal fun SessionSwitcherContent(
     currentSession: String,
@@ -128,7 +103,6 @@ internal fun SessionSwitcherContent(
                 val visible = state.sessions.filter {
                     filter.isBlank() || it.name.contains(filter, ignoreCase = true)
                 }
-                // The filter only appears when the list is long enough to need it.
                 if (state.sessions.size > FILTER_THRESHOLD) {
                     OutlinedTextField(
                         value = filter,
@@ -138,8 +112,6 @@ internal fun SessionSwitcherContent(
                         modifier = Modifier.fillMaxWidth().testTag(SESSIONS_FILTER_TAG),
                     )
                 }
-                // Capped height: the list scrolls inside the sheet and the create
-                // footer always stays on screen.
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().heightIn(max = MAX_LIST_HEIGHT),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -179,8 +151,6 @@ internal fun SessionSwitcherContent(
             ) { Text(text = "Create") }
         }
 
-        // Spells out what the back arrow already does: the session stays alive
-        // on the server.
         OutlinedButton(onClick = onDetach, modifier = Modifier.fillMaxWidth()) {
             Text(text = "Detach (the session keeps running on the server)")
         }
@@ -217,7 +187,6 @@ private fun SessionRow(
     }
 }
 
-/** Above this many sessions the list gains a filter. */
 private const val FILTER_THRESHOLD = 8
 
 private val MAX_LIST_HEIGHT = 340.dp

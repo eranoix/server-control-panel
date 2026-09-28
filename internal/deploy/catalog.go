@@ -1,32 +1,23 @@
 package deploy
 
-// catalog.go — the one-click service catalogue. Each Template is a ready-made
-// docker-compose.yml that becomes a new App with no `git push` needed: the
-// compose file is seeded as the initial commit in the app's bare repo and then
-// deployed. Web templates use ${PORT} (the PaaS contract) to line up with the
-// nginx proxy.
-
-// Template is a publishable service built from a curated compose file.
 type Template struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
-	Category    string    `json:"category"`  // db | cache | storage | monitoring | analytics | tool
-	Web         bool      `json:"web"`       // true = has an HTTP UI (an nginx proxy makes sense)
-	Port        int       `json:"port"`      // suggested host port (0 = pick a free one)
-	Compose     string    `json:"compose"`   // contents of the docker-compose.yml
-	EnvHints    []EnvHint `json:"env_hints"` // vars the user usually wants to set
+	Category    string    `json:"category"`
+	Web         bool      `json:"web"`
+	Port        int       `json:"port"`
+	Compose     string    `json:"compose"`
+	EnvHints    []EnvHint `json:"env_hints"`
 }
 
-// EnvHint suggests an environment variable when creating the service.
 type EnvHint struct {
 	Key     string `json:"key"`
 	Default string `json:"default"`
 	Note    string `json:"note"`
-	Secret  bool   `json:"secret"` // the UI masks it and keeps it in the vault
+	Secret  bool   `json:"secret"`
 }
 
-// Catalog returns the available templates (order = display order).
 func Catalog() []Template {
 	return []Template{
 		{
@@ -157,7 +148,6 @@ volumes:
 	}
 }
 
-// TemplateByID returns a template from the catalogue by id.
 func TemplateByID(id string) (Template, bool) {
 	for _, t := range Catalog() {
 		if t.ID == id {

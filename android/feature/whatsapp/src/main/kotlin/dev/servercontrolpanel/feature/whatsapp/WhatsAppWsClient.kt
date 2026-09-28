@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/** How the `/ws/whatsapp` connection currently stands. */
 sealed interface WhatsAppConnectionState {
     data object Connecting : WhatsAppConnectionState
     data object Live : WhatsAppConnectionState
@@ -25,11 +24,6 @@ sealed interface WhatsAppConnectionState {
     data object Disconnected : WhatsAppConnectionState
 }
 
-/**
- * What [ConversationViewModel] needs from a live `/ws/whatsapp` connection --
- * a seam `ConversationViewModelTest` substitutes with a fake, never touching
- * a real socket. [WhatsAppWsClient] is the only production implementation.
- */
 interface WhatsAppEventSource {
     val state: StateFlow<WhatsAppConnectionState>
     val events: SharedFlow<WhatsAppWsEvent>
@@ -37,10 +31,6 @@ interface WhatsAppEventSource {
     fun disconnect()
 }
 
-// Backoff schedule for the reconnect loop below: base 500ms, doubling each
-// attempt, capped at 15s -- 500, 1000, 2000, 4000, 8000, 15000, 15000, ...
-// Mirrors feature/terminal's TerminalSocketClient (capped exponential
-// backoff against a reconnect storm on a flaky network).
 internal const val BACKOFF_BASE_MS = 500L
 internal const val BACKOFF_FACTOR = 2L
 internal const val BACKOFF_CAP_MS = 15_000L
@@ -54,14 +44,6 @@ internal fun backoffDelayMs(attempt: Int): Long {
     return delayMs
 }
 
-/**
- * Auto-reconnecting `/ws/whatsapp` client. On every (re)connect it does not
- * attempt to merge or replay any client-buffered event -- it only exposes
- * [state] and lets [ConversationViewModel] decide to refetch history over
- * REST whenever [state] moves back to [WhatsAppConnectionState.Live] after a
- * disconnect, matching the server's own design (`internal/whatsapp/ws.go`'s
- * `Send` comment: "next reconnect refetches state via REST anyway").
- */
 class WhatsAppWsClient(
     private val webSocketFactory: WhatsAppWebSocketFactory,
     private val wsBaseUrl: String,
@@ -109,7 +91,6 @@ class WhatsAppWsClient(
         }
     }
 
-    /** Opens one connection attempt and suspends until it closes or fails. */
     private suspend fun connectAttempt() {
         val outcome = CompletableDeferred<Unit>()
         val listener = object : WhatsAppWebSocketListener {

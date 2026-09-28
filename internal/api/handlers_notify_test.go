@@ -34,7 +34,6 @@ func notifyReq(method, target, user, body string) *http.Request {
 	return req.WithContext(auth.WithUser(context.Background(), user))
 }
 
-// Non-primary users are forbidden from every notify endpoint.
 func TestNotifyRulesForbiddenForNonPrimary(t *testing.T) {
 	r := newNotifyTestRouter(t)
 	rec := httptest.NewRecorder()
@@ -44,11 +43,9 @@ func TestNotifyRulesForbiddenForNonPrimary(t *testing.T) {
 	}
 }
 
-// Full rule lifecycle through the handlers: create → list → delete → list.
 func TestNotifyRulesCRUD(t *testing.T) {
 	r := newNotifyTestRouter(t)
 
-	// Create.
 	rec := httptest.NewRecorder()
 	r.handleNotifyRules(rec, notifyReq(http.MethodPost, "/api/notify/rules", "sam",
 		`{"name":"jobs","enabled":true,"type_prefix":"job.","channels":[]}`))
@@ -60,7 +57,6 @@ func TestNotifyRulesCRUD(t *testing.T) {
 		t.Fatalf("create response: %v %q", err, rec.Body.String())
 	}
 
-	// List → 1.
 	rec = httptest.NewRecorder()
 	r.handleNotifyRules(rec, notifyReq(http.MethodGet, "/api/notify/rules", "sam", ""))
 	var listed struct{ Rules []notify.Rule }
@@ -69,7 +65,6 @@ func TestNotifyRulesCRUD(t *testing.T) {
 		t.Fatalf("after create want 1 rule, got %d", len(listed.Rules))
 	}
 
-	// Delete.
 	rec = httptest.NewRecorder()
 	r.handleNotifyRuleDelete(rec, notifyReq(http.MethodPost, "/api/notify/rules/delete", "sam",
 		`{"id":"`+created.ID+`"}`))
@@ -77,7 +72,6 @@ func TestNotifyRulesCRUD(t *testing.T) {
 		t.Fatalf("delete: status=%d body=%q", rec.Code, rec.Body.String())
 	}
 
-	// List → 0.
 	rec = httptest.NewRecorder()
 	r.handleNotifyRules(rec, notifyReq(http.MethodGet, "/api/notify/rules", "sam", ""))
 	_ = json.Unmarshal(rec.Body.Bytes(), &listed)
@@ -86,7 +80,6 @@ func TestNotifyRulesCRUD(t *testing.T) {
 	}
 }
 
-// Events endpoint returns the history+dropped envelope.
 func TestNotifyEventsEnvelope(t *testing.T) {
 	r := newNotifyTestRouter(t)
 	rec := httptest.NewRecorder()
@@ -103,7 +96,6 @@ func TestNotifyEventsEnvelope(t *testing.T) {
 	}
 }
 
-// Testing an unknown channel id surfaces a delivery error (not a 200).
 func TestNotifyChannelTestUnknownID(t *testing.T) {
 	r := newNotifyTestRouter(t)
 	rec := httptest.NewRecorder()
@@ -114,9 +106,8 @@ func TestNotifyChannelTestUnknownID(t *testing.T) {
 	}
 }
 
-// 503 when the spine is unavailable (boot failure).
 func TestNotifyUnavailable503(t *testing.T) {
-	r := &Router{cfg: &config.Config{Primary: "sam"}} // notify nil
+	r := &Router{cfg: &config.Config{Primary: "sam"}}
 	rec := httptest.NewRecorder()
 	r.handleNotifyRules(rec, notifyReq(http.MethodGet, "/api/notify/rules", "sam", ""))
 	if rec.Code != http.StatusServiceUnavailable {

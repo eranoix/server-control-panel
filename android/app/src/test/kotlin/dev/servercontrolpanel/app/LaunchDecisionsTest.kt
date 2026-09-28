@@ -5,11 +5,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Pure-JVM tests for [MainActivity.onCreate]'s non-UI launch decisions, extracted into
- * [shouldShowDiagnosticScreen], [shouldSeedDefaultServer] and [decideLaunchDestination] so they
- * can be tested without Robolectric or Compose.
- */
 class LaunchDecisionsTest {
 
     @Test
@@ -59,8 +54,6 @@ class LaunchDecisionsTest {
 
     @Test
     fun `a fresh install with a seeded server and no session goes to sign-in, not Home`() {
-        // `onCreate` seeds the default server itself, so "server configured" alone must
-        // never open the shell without credentials.
         assertEquals(
             LaunchDestination.AuthGate,
             decideLaunchDestination(hasServerConfigured = true, hasSession = false),
@@ -85,7 +78,6 @@ class LaunchDecisionsTest {
 
     @Test
     fun `a stored session without a configured server does not lead to Home`() {
-        // Corrupt state or a partial backup restore: a token but no server to talk to.
         assertEquals(
             LaunchDestination.AuthGate,
             decideLaunchDestination(hasServerConfigured = false, hasSession = true),

@@ -16,7 +16,6 @@ import (
 	"server-control-panel/internal/gameservers"
 )
 
-// backendDouble satisfies gameservers.Backend without touching any disk.
 type backendDouble struct {
 	calls    []gameservers.OpName
 	failure  error
@@ -34,8 +33,6 @@ func (b *backendDouble) Open(context.Context, gameservers.Handle) (io.ReadCloser
 	return nil, nil
 }
 func (b *backendDouble) Receive(_ context.Context, r io.Reader) (gameservers.Handle, error) {
-	// Consume the body: a double that does not read would let the upload test
-	// pass without a single byte crossing over.
 	n, err := io.Copy(io.Discard, r)
 	if err != nil {
 		return "", err
@@ -69,13 +66,6 @@ func request(t *testing.T, s *Server, method, target, bearer string, body string
 	return w
 }
 
-// TestAuthWithoutSecretIsInert — an agent with no secret accepts NOTHING.
-//
-// The half that matters is the second one: even with a syntactically perfect
-// Authorization (another node's bearer, say), the answer is 401. "Inert" means
-// there is no request it accepts — not that it accepts any request at all. An
-// agent that came up with no secret and stayed OPEN would be the worst failure
-// possible in this work, and it would be a silent one.
 func TestAuthWithoutSecretIsInert(t *testing.T) {
 	s, back := testServer(t, "")
 	for _, bearer := range []string{"", "anything", "another-nodes-bearer"} {
@@ -110,11 +100,6 @@ func TestAuthRightToken(t *testing.T) {
 	}
 }
 
-// TestAuthRejectsQueryString — the fanhub regression that must not happen.
-//
-// `fanhub.py:388` accepts `?t=`; a token in the query string leaks into the
-// access log, into Referer and into the browser history. Here, with no header,
-// it is 401 — no matter what comes in the URL.
 func TestAuthRejectsQueryString(t *testing.T) {
 	s, back := testServer(t, "the-right-one")
 	for _, target := range []string{
@@ -131,16 +116,6 @@ func TestAuthRejectsQueryString(t *testing.T) {
 	}
 }
 
-// TestAuthComparesFixedSizeHash asserts the SHAPE in the AST.
-//
-// Timing cannot be measured stably in a unit test — a test that tried to put a
-// stopwatch on it would be flaky and would get turned off. What can be asserted
-// stably is the structure: there is a `sha256.Sum256` on BOTH sides before a
-// single `subtle.ConstantTimeCompare`, and there is no `==` comparison of a
-// credential string.
-//
-// Why hash first: ConstantTimeCompare returns early when the lengths differ,
-// which leaks the SIZE of the expected token.
 func TestAuthComparesFixedSizeHash(t *testing.T) {
 	file := filepath.Join(repoRoot(t), "internal", "nodeagent", "auth.go")
 	fset := token.NewFileSet()
@@ -173,8 +148,6 @@ func TestAuthComparesFixedSizeHash(t *testing.T) {
 		t.Error("auth.go does not use subtle.ConstantTimeCompare")
 	}
 
-	// The matching behaviour: tokens of VERY different lengths take the same
-	// path and both are refused.
 	s := SecretFromText("medium-length-token")
 	for _, attempt := range []string{"x", strings.Repeat("y", 4000)} {
 		if s.matches(attempt) {
@@ -186,7 +159,6 @@ func TestAuthComparesFixedSizeHash(t *testing.T) {
 	}
 }
 
-// TestMissingSecretNeverMatches: a zero Secret refuses even the empty string.
 func TestMissingSecretNeverMatches(t *testing.T) {
 	var s Secret
 	if s.Present() {

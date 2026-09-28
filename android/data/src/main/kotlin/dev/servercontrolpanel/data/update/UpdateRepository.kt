@@ -18,10 +18,8 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 
-/** A `.hdiff` file to download. `sizeBytes`/`sha256` describe the ARTIFACT, not the APK it rebuilds. */
 data class UpdateArtifact(val url: String, val sizeBytes: Long, val sha256: String)
 
-/** The newest published version. `apkSha256`/`apkSizeBytes` describe the rebuilt SIGNED APK. */
 data class UpdateRelease(
     val versionName: String,
     val versionCode: Long,
@@ -29,11 +27,6 @@ data class UpdateRelease(
     val apkSizeBytes: Long,
 )
 
-/**
- * The update manifest. [patch] is null whenever there is no patch for the exact
- * base given; the server never approximates. [full] is always present, so a
- * failed patch needs no second trip to the server.
- */
 data class UpdateManifest(
     val latest: UpdateRelease,
     val upToDate: Boolean,
@@ -42,45 +35,27 @@ data class UpdateManifest(
     val patchTool: String,
 )
 
-/** Outcome of [UpdateSource.check]. */
 sealed interface UpdateCheckResult {
     data class Success(val manifest: UpdateManifest) : UpdateCheckResult
 
-    /**
-     * 503: no release has gone through the patch pipeline yet. This is server
-     * state, not an error, so the app stays quiet.
-     */
     data object ChannelNotPublished : UpdateCheckResult
 
     data class Error(val reason: String) : UpdateCheckResult
 }
 
-/** Progress of [UpdateSource.download]. */
 sealed interface ArtifactDownloadProgress {
     data class Progress(val downloadedBytes: Long, val totalBytes: Long) : ArtifactDownloadProgress
 
-    /** The file is complete AND its SHA-256 matches the manifest's. */
     data class Done(val file: File) : ArtifactDownloadProgress
 
-    /**
-     * [corrupt]: the hash did not match and the file was deleted, so it must be
-     * downloaded again. Otherwise the connection dropped and the partial file
-     * stays on disk for the next attempt to resume.
-     */
     data class Failed(val reason: String, val corrupt: Boolean) : ArtifactDownloadProgress
 }
 
-/** The port the upper layers see, so ViewModel tests never touch the network. */
 interface UpdateSource {
     suspend fun check(baseSha256: String?): UpdateCheckResult
     fun download(artifact: UpdateArtifact, target: File): Flow<ArtifactDownloadProgress>
 }
 
-/**
- * The single entry point into `GET /app/update` and `GET /app/update/artifact`.
- * The base URL is re-derived on every call because the periodic check runs long
- * after startup and must use the server configured now.
- */
 open class UpdateRepository(
     private val serverConfigRepository: ServerConfigRepository,
     private val mobileApiFactory: (String) -> MobileApi = { basePath -> MobileApi(basePath) },
@@ -124,20 +99,6 @@ open class UpdateRepository(
         }
     }
 
-    /**
-     * Downloads [artifact] into [target], resuming where it left off, since a
-     * download restarting from zero on a poor connection may never finish.
-     *
-     * `If-Range` with the strong ETag (the artifact SHA-256) is mandatory: if the
-     * server content changed, it answers 200 with the whole file instead of
-     * splicing different bytes onto the partial one.
-     * - 206: resume from the offset in the server's `Content-Range`, truncating there.
-     * - 200: truncate to zero and write the whole body.
-     * - 416: the disk holds more than the artifact (leftover from another version);
-     *   delete it and fail as corrupt.
-     *
-     * The SHA-256 is checked before [ArtifactDownloadProgress.Done].
-     */
     override fun download(artifact: UpdateArtifact, target: File): Flow<ArtifactDownloadProgress> = flow {
         val api = api()
         if (api == null) {
@@ -153,7 +114,6 @@ open class UpdateRepository(
         target.parentFile?.let { if (!it.isDirectory) it.mkdirs() }
         var onDisk = if (target.isFile) target.length() else 0L
         if (onDisk > artifact.sizeBytes) {
-            // More on disk than the target: this is not a resume, it is debris from something else.
             target.delete()
             onDisk = 0L
         }
@@ -165,7 +125,6 @@ open class UpdateRepository(
         val request = Request.Builder().url(url).apply {
             if (onDisk > 0) {
                 header("Range", "bytes=$onDisk-")
-                // The server's strong ETag: the quotes are part of the value.
                 header("If-Range", "\"${artifact.sha256}\"")
             }
         }.build()
@@ -209,14 +168,11 @@ open class UpdateRepository(
                 var written = writeFrom
                 var lastReported = writeFrom
                 RandomAccessFile(target, "rw").use { out ->
-                    // Truncate before writing, so a 200 after a partial 206 does
-                    // not leave an old tail at the end of the file.
                     out.setLength(writeFrom)
                     out.seek(writeFrom)
                     body.byteStream().use { input ->
                         val buffer = ByteArray(DOWNLOAD_CHUNK_SIZE_BYTES)
                         while (true) {
-                            // On cancel, leave the partial file on disk for resuming.
                             currentCoroutineContext().ensureActive()
                             val read = input.read(buffer)
                             if (read == -1) break
@@ -232,7 +188,6 @@ open class UpdateRepository(
                 emit(ArtifactDownloadProgress.Progress(written, artifact.sizeBytes))
 
                 if (written != artifact.sizeBytes) {
-                    // Connection cut mid-way: the partial STAYS, to resume from.
                     emit(
                         ArtifactDownloadProgress.Failed(
                             "Connection failed. Check your network and try again.",
@@ -250,11 +205,6 @@ open class UpdateRepository(
         emit(verify(artifact, target))
     }.flowOn(Dispatchers.IO)
 
-    /**
-     * A `.hdiff` with the wrong hash never reaches `hpatchz`, which can report
-     * success on bad input and write a complete but wrong APK. This is the first
-     * of two checks (the final APK is checked too).
-     */
     private fun verify(artifact: UpdateArtifact, target: File): ArtifactDownloadProgress = try {
         val actual = sha256Of(target)
         if (actual.equals(artifact.sha256, ignoreCase = true)) {
@@ -288,11 +238,6 @@ open class UpdateRepository(
 private fun dev.servercontrolpanel.mobileapiclient.model.AppUpdateArtifact.toDomain() =
     UpdateArtifact(url = url, sizeBytes = sizeBytes, sha256 = sha256)
 
-/**
- * Resolves the manifest's artifact path against the client base and refuses any
- * result on a different host: the auth interceptor would attach the Bearer token
- * to whatever host appears there.
- */
 internal fun resolveArtifactUrl(baseUrl: String, artifactUrl: String): HttpUrl? {
     val base = baseUrl.toHttpUrlOrNull() ?: return null
     val resolved = base.resolve(artifactUrl) ?: return null
@@ -300,7 +245,6 @@ internal fun resolveArtifactUrl(baseUrl: String, artifactUrl: String): HttpUrl? 
     return resolved
 }
 
-/** Extracts the start offset from a `Content-Range: bytes <start>-<end>/<total>`. */
 internal fun contentRangeStart(header: String?): Long? {
     val value = header?.trim() ?: return null
     if (!value.startsWith("bytes ")) return null

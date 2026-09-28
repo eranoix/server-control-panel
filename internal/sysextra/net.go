@@ -45,7 +45,6 @@ func parseListening(out []byte, proto string) []Port {
 			continue
 		}
 		fields := strings.Fields(line)
-		// Expected columns: State Recv-Q Send-Q Local Peer [users...]
 		if len(fields) < 5 {
 			continue
 		}
@@ -55,7 +54,6 @@ func parseListening(out []byte, proto string) []Port {
 			Local: fields[3],
 			Peer:  fields[4],
 		}
-		// users blob may be field 5 or later; search the rest of the line
 		rest := ""
 		if len(fields) >= 6 {
 			rest = strings.Join(fields[5:], " ")
@@ -97,7 +95,6 @@ func Connections() ([]Conn, error) {
 			continue
 		}
 		fields := strings.Fields(line)
-		// Without state column: Recv-Q Send-Q Local Peer
 		if len(fields) < 4 {
 			continue
 		}

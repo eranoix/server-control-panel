@@ -8,14 +8,8 @@ import org.junit.Test
 import kotlin.math.abs
 import kotlin.math.pow
 
-/**
- * Legibility guard for the light theme: the ANSI palette is designed for a black
- * background, so colors like bright white or yellow would be invisible. The tests use
- * the real WCAG contrast ratio to validate the renderer's cheaper luma threshold.
- */
 class TerminalPaletteTest {
 
-    // WCAG 2.x contrast ratio.
     private fun linearChannel(v: Int): Double {
         val s = v / 255.0
         return if (s <= 0.03928) s / 12.92 else ((s + 0.055) / 1.055).pow(2.4)
@@ -34,7 +28,6 @@ class TerminalPaletteTest {
         return (light + 0.05) / (dark + 0.05)
     }
 
-    /** ANSI palette colors that vanish on a light background. */
     private val colorsThatVanishOnLight = mapOf(
         "white bright" to 0xFFFFFF,
         "yellow bright" to 0xFFFF00,
@@ -45,7 +38,6 @@ class TerminalPaletteTest {
         "cyan (ls: symbolic link)" to 0x00CDCD,
     )
 
-    /** The full 16-color ANSI palette as the emulator resolves it. */
     private val ansi16Palette = listOf(
         0x000000, 0xCD0000, 0x00CD00, 0xCDCD00, 0x0000EE, 0xCD00CD, 0x00CDCD, 0xE5E5E5,
         0x7F7F7F, 0xFF0000, 0x00FF00, 0xFFFF00, 0x5C5CFF, 0xFF00FF, 0x00FFFF, 0xFFFFFF,
@@ -81,7 +73,6 @@ class TerminalPaletteTest {
 
     @Test
     fun `without the guard these colors would be illegible`() {
-        // If this ever fails, the guard is no longer needed.
         val bg = LightTerminalPalette.defaultBg
         colorsThatVanishOnLight.forEach { (name, color) ->
             assertTrue(
@@ -97,7 +88,6 @@ class TerminalPaletteTest {
         val r = (yellow shr 16) and 0xff
         val g = (yellow shr 8) and 0xff
         val b = yellow and 0xff
-        // High red and green, zero blue: still yellow, just dark.
         assertEquals("yellow's blue channel must stay at zero", 0, b)
         assertTrue("yellow turned gray", r > b && g > b)
         assertEquals("yellow lost its R=G symmetry", r, g)
@@ -123,7 +113,6 @@ class TerminalPaletteTest {
     fun `in the dark theme nothing changes`() {
         val bg = DarkTerminalPalette.defaultBg
         val delta = DarkTerminalPalette.minLumaDelta
-        // With the guard off, no color is touched, even dark ones on black.
         ansi16Palette.forEach { color ->
             assertEquals(color, adjustForContrast(color, bg, delta))
         }
@@ -131,14 +120,12 @@ class TerminalPaletteTest {
 
     @Test
     fun `the guard also applies against a colored cell background`() {
-        // White text on a light background set by the program vanishes the same way.
         val adjusted = adjustForContrast(0xFFFFFF, 0xF0F0F0, LightTerminalPalette.minLumaDelta)
         assertTrue(contrast(adjusted, 0xF0F0F0) >= 4.5)
     }
 
     @Test
     fun `a dark background pushes text lighter, not darker`() {
-        // Dark blue on black is lightened, never darkened further.
         val adjusted = adjustForContrast(0x000080, 0x000000, minLumaDelta = 150)
         assertTrue("should lighten", luma(adjusted) > luma(0x000080))
     }
@@ -179,7 +166,6 @@ class TerminalPaletteTest {
 
     @Test
     fun `buildRowDrawOps without the guard is unchanged`() {
-        // The parameter defaults to 0, so callers without the guard are unaffected.
         val cells = listOf(cell(fg = 0xFFFFFF), cell(fg = 0x00FF00, bg = 0x000080), cell())
         val withoutParam = buildRowDrawOps(cells, defaultFg = 0xE0E0E0, defaultBg = 0x000000)
         val withZero = buildRowDrawOps(cells, defaultFg = 0xE0E0E0, defaultBg = 0x000000, minLumaDelta = 0)
@@ -189,7 +175,6 @@ class TerminalPaletteTest {
 
     @Test
     fun `faint stays weaker than normal even with the guard`() {
-        // The guard must run before the faint pass, or it would undo the fading.
         val cells = listOf(cell(fg = 0xFFFFFF), cell(fg = 0xFFFFFF, faint = true))
         val ops = buildRowDrawOps(
             cells,
@@ -205,14 +190,11 @@ class TerminalPaletteTest {
             "faint must be closer to the background than normal",
             abs(luma(faint) - background) < abs(luma(normal) - background),
         )
-        // But still visible.
         assertTrue("faint vanished into the background", abs(luma(faint) - background) > 40)
     }
 
     @Test
     fun `inverse video in the light theme does not become light text on light background`() {
-        // `inverse` swaps default fg and bg; a half-swapped palette would give
-        // light on light.
         val ops = buildRowDrawOps(
             cells = listOf(cell(inverse = true)),
             defaultFg = LightTerminalPalette.defaultFg,
@@ -228,7 +210,6 @@ class TerminalPaletteTest {
 
     @Test
     fun `both palettes have a cursor visible on their own background`() {
-        // A fixed translucent white cursor would be invisible on a light background.
         assertTrue(
             "the light theme cursor must be dark",
             LightTerminalPalette.cursor.red < 0.5f && LightTerminalPalette.cursor.green < 0.5f,

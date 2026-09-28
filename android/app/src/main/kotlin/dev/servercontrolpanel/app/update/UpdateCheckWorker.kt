@@ -11,11 +11,6 @@ import androidx.work.WorkerParameters
 import dev.servercontrolpanel.app.PanelApplication
 import java.util.concurrent.TimeUnit
 
-/**
- * The periodic update check. It only fetches `GET /app/update` (a small JSON); the download
- * starts only when the user taps the banner. The system can defer periodic work for a long
- * time, so [dev.servercontrolpanel.app.MainActivity] also checks at launch.
- */
 class UpdateCheckWorker(
     context: Context,
     params: WorkerParameters,
@@ -23,7 +18,6 @@ class UpdateCheckWorker(
 
     override suspend fun doWork(): Result {
         val app = applicationContext as? PanelApplication ?: return Result.success()
-        // `check` swallows its own errors; the next periodic window is the retry.
         app.updateCoordinator.check()
         return Result.success()
     }
@@ -31,7 +25,6 @@ class UpdateCheckWorker(
     companion object {
         private const val WORK_NAME = "panel-update-check"
 
-        /** Idempotent: `KEEP` preserves the existing schedule across app restarts. */
         fun enqueue(context: Context) {
             val request = PeriodicWorkRequestBuilder<UpdateCheckWorker>(6, TimeUnit.HOURS)
                 .setConstraints(

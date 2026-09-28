@@ -1,16 +1,5 @@
 package main
 
-// session_tokens.go — per-session / per-day token + cost totals from Claude
-// Code JSONL transcripts.
-//
-//	panelctl session-tokens --session <uuid> [--home DIR] [--json]
-//	panelctl session-tokens --cwd /opt/panel [--json]     # newest in project
-//	panelctl session-tokens --project -opt-panel [--json]
-//	panelctl session-tokens --all [--home DIR] [--json]          # every project
-//
-// Reuses the JSONL location + parsing helpers from session_transcript.go
-// (projectMangle, newestJSONL, transcriptLine, msgEnvelope, usageBlock).
-
 import (
 	"bufio"
 	"encoding/json"
@@ -22,8 +11,6 @@ import (
 	"strings"
 )
 
-// priceRow / cliModelPriceTable mirror internal/api/agent_cost.go's authoritative
-// table (per MTok: in / out / cache-write(1.25×in) / cache-read(0.1×in)).
 type priceRow struct{ in, out, cacheWrite, cacheRead float64 }
 
 var cliModelPriceTable = []struct {
@@ -53,16 +40,14 @@ func cliPriceFor(model string) priceRow {
 	return cliDefaultPrice
 }
 
-// dayBucket accumulates per-model tokens for one (session, day) key.
 type dayBucket struct {
-	Session string  `json:"session"`
-	Day     string  `json:"day"`
-	In      int64   `json:"in"`
-	Out     int64   `json:"out"`
-	CacheR  int64   `json:"cache_read"`
-	CacheW  int64   `json:"cache_creation"`
-	Cost    float64 `json:"cost_usd"`
-	// per-model token sub-totals feed the cost; not emitted.
+	Session  string  `json:"session"`
+	Day      string  `json:"day"`
+	In       int64   `json:"in"`
+	Out      int64   `json:"out"`
+	CacheR   int64   `json:"cache_read"`
+	CacheW   int64   `json:"cache_creation"`
+	Cost     float64 `json:"cost_usd"`
 	perModel map[string]*usageBlock
 }
 
@@ -84,14 +69,12 @@ func cmdSessionTokens(args []string) error {
 		return err
 	}
 
-	// Aggregate into (session|day) buckets.
 	buckets := map[string]*dayBucket{}
 	for _, p := range paths {
 		if err := accumulate(p, buckets); err != nil {
 			fmt.Fprintf(os.Stderr, "warn: %s: %v\n", p, err)
 		}
 	}
-	// Finalize cost per bucket.
 	rows := make([]*dayBucket, 0, len(buckets))
 	for _, b := range buckets {
 		for model, tok := range b.perModel {
@@ -144,7 +127,6 @@ func trim40(s string) string {
 	return s
 }
 
-// collectJSONL resolves the set of JSONL files to aggregate.
 func collectJSONL(home, session, cwd, project string, all bool) ([]string, error) {
 	projectsDir := filepath.Join(home, "projects")
 	if all {
@@ -169,7 +151,6 @@ func collectJSONL(home, session, cwd, project string, all bool) ([]string, error
 		}
 		return out, nil
 	}
-	// Single transcript via the shared locator.
 	p, err := locateTranscript(home, session, cwd, project)
 	if err != nil {
 		return nil, err
@@ -177,7 +158,6 @@ func collectJSONL(home, session, cwd, project string, all bool) ([]string, error
 	return []string{p}, nil
 }
 
-// accumulate reads one JSONL into (session|day) buckets, summing usage per model.
 func accumulate(path string, buckets map[string]*dayBucket) error {
 	f, err := os.Open(path)
 	if err != nil {

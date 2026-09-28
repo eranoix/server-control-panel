@@ -14,14 +14,6 @@ import (
 	"server-control-panel/internal/config"
 )
 
-// Regression sanity check for the persistent browser proxy.
-//
-// Historical bug: loadBrowserInstances() read /opt/panel/data/browser-instances.json
-// (the legacy path). The v1→v2 migration moved the file to <DataDir>/users/<user>/browser-instances.json
-// (per-user) and the whole feature started answering 404. These tests pin the
-// per-user path and the error message so that nobody regresses the read back to
-// the global path.
-
 func newBrowserTestRouter(t *testing.T) (*Router, string) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "panel-browser-test-")
@@ -72,7 +64,6 @@ func TestBrowserPersistentProxy_404WhenInstanceUnknown(t *testing.T) {
 }
 
 func TestBrowserPersistentProxy_RoutesToInstance(t *testing.T) {
-	// Fake upstream that records the received path.
 	var gotPath string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		gotPath = req.URL.Path
@@ -99,8 +90,6 @@ func TestBrowserPersistentProxy_RoutesToInstance(t *testing.T) {
 }
 
 func TestBrowserPersistentProxy_PerUserIsolation(t *testing.T) {
-	// sam has a "pro" instance but jordan does not → jordan's request must give
-	// a 404 even if sam has a working config.
 	r, dataDir := newBrowserTestRouter(t)
 	writeInstancesJSON(t, dataDir, "sam", `{"instances":[{"name":"pro","port":6902}]}`)
 
@@ -112,8 +101,6 @@ func TestBrowserPersistentProxy_PerUserIsolation(t *testing.T) {
 }
 
 func TestBrowserPersistentProxy_NoAuthReturns404(t *testing.T) {
-	// With no user in the context (auth.Middleware missing or disabled) there is
-	// no way to resolve an instance. It must land on 404, never reach /opt/panel/data/.
 	r, _ := newBrowserTestRouter(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/browser-persistent/", nil)

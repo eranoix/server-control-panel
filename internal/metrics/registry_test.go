@@ -20,8 +20,6 @@ func TestRegistryGatherMergesCollectors(t *testing.T) {
 	}
 }
 
-// A collector with a long Interval is not re-collected on the next Gather; the
-// cached value is reused (proves cadence + cache for expensive collectors).
 func TestRegistryHonorsInterval(t *testing.T) {
 	calls := 0
 	reg := NewRegistry()
@@ -38,7 +36,6 @@ func TestRegistryHonorsInterval(t *testing.T) {
 	}
 }
 
-// Latest returns the last merged snapshot without re-collecting.
 func TestRegistryLatest(t *testing.T) {
 	calls := 0
 	reg := NewRegistry()

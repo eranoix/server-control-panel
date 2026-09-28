@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-// TestGitReposRoundTrip proves that the GitRepos field survives
-// Save→parseFile without loss, that SchemaVersion stays untouched, and that a
-// config WITHOUT git_repos reads back as nil (backward compatible, omitempty).
 func TestGitReposRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
@@ -16,7 +13,7 @@ func TestGitReposRoundTrip(t *testing.T) {
 		SchemaVersion: CurrentSchemaVersion,
 		Listen:        ":8788",
 		DataDir:       dir,
-		JWTSecret:     "x", // avoids the file-based path in Save
+		JWTSecret:     "x",
 		GitRepos: []GitRepo{
 			{ID: "server-control-panel", Path: "/opt/panel", Name: "Server Control Panel", Policy: "read-only"},
 			{ID: "northwind-web", Path: "/root/projects/northwind-web", Name: "Northwind Web",
@@ -45,9 +42,6 @@ func TestGitReposRoundTrip(t *testing.T) {
 	}
 }
 
-// TestGitReposAbsentIsNil proves that an absent field in the JSON → nil
-// (never a panic), and that saving a config without GitRepos does not
-// materialise the key.
 func TestGitReposAbsentIsNil(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")

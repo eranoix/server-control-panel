@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// validContainerName guards the docker_restart runner against shell-metachar /
-// path injection in a scheduled container name.
 func TestValidContainerName(t *testing.T) {
 	ok := []string{"nginx", "my_app", "web.1", "a-b-c", "0container", "App_1.2-3"}
 	for _, s := range ok {
@@ -21,7 +19,6 @@ func TestValidContainerName(t *testing.T) {
 			t.Errorf("expected invalid: %q", s)
 		}
 	}
-	// Oversized rejected.
 	long := make([]byte, 129)
 	for i := range long {
 		long[i] = 'a'
@@ -31,7 +28,6 @@ func TestValidContainerName(t *testing.T) {
 	}
 }
 
-// The new restart runners are primary-only (host-impacting).
 func TestRestartRunnersPrimaryOnly(t *testing.T) {
 	if (DockerRestartRunner{}).AuthorizedFor("alice", false) {
 		t.Error("docker_restart must be primary-only")
@@ -47,7 +43,6 @@ func TestRestartRunnersPrimaryOnly(t *testing.T) {
 	}
 }
 
-// validUnitName guards systemd_restart against injection in a scheduled unit.
 func TestValidUnitName(t *testing.T) {
 	ok := []string{"nginx.service", "panel-whatsapp@sam.service", "docker", "a_b.timer"}
 	for _, s := range ok {
@@ -63,7 +58,6 @@ func TestValidUnitName(t *testing.T) {
 	}
 }
 
-// The new ops + security/audit runners are all primary-only.
 func TestNewRunnersPrimaryOnly(t *testing.T) {
 	runners := []Runner{
 		SystemdRestartRunner{}, DockerPruneRunner{}, HTTPCheckRunner{},
@@ -82,7 +76,6 @@ func TestNewRunnersPrimaryOnly(t *testing.T) {
 	}
 }
 
-// validDBName guards db_backup against injection in the database name.
 func TestValidDBName(t *testing.T) {
 	for _, s := range []string{"myapp", "wordpress", "app_prod", "db-1", "site.db"} {
 		if !validDBName(s) {
@@ -96,7 +89,6 @@ func TestValidDBName(t *testing.T) {
 	}
 }
 
-// validHost guards ssl_check against junk before net/tls.
 func TestValidHost(t *testing.T) {
 	for _, s := range []string{"example.org", "sub.dom.io", "10.0.0.1", "a-b.example"} {
 		if !validHost(s) {
@@ -110,10 +102,8 @@ func TestValidHost(t *testing.T) {
 	}
 }
 
-// pruneBackups keeps the newest N per target and never touches other targets.
 func TestPruneBackups(t *testing.T) {
 	dir := t.TempDir()
-	// 4 "all" archives (sortable stamps) + 2 "config" archives.
 	for _, n := range []string{
 		"panel-backup-all-20260101-010101.tgz",
 		"panel-backup-all-20260102-010101.tgz",
@@ -133,7 +123,6 @@ func TestPruneBackups(t *testing.T) {
 	if len(removed) != 2 {
 		t.Fatalf("removed %v, want 2 oldest", removed)
 	}
-	// The two oldest "all" are gone; newest two remain; config untouched.
 	mustGone := []string{"panel-backup-all-20260101-010101.tgz", "panel-backup-all-20260102-010101.tgz"}
 	for _, n := range mustGone {
 		if _, err := os.Stat(filepath.Join(dir, n)); !os.IsNotExist(err) {
@@ -146,7 +135,6 @@ func TestPruneBackups(t *testing.T) {
 			t.Errorf("%s should have survived: %v", n, err)
 		}
 	}
-	// keep >= count → no-op.
 	r2, _ := pruneBackups(dir, "config", 5)
 	if len(r2) != 0 {
 		t.Errorf("keep>=count should remove nothing, got %v", r2)

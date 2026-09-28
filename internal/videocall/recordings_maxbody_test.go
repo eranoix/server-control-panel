@@ -10,9 +10,6 @@ import (
 	"server-control-panel/internal/httpmw"
 )
 
-// TestIsRecordingUpload_MatchesOnlyUploadRoute proves that the matcher registered
-// in init() matches exactly POST /api/videocall/recordings and does not match
-// the item routes (metadata, blob, summarize, delete).
 func TestIsRecordingUpload_MatchesOnlyUploadRoute(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -34,15 +31,8 @@ func TestIsRecordingUpload_MatchesOnlyUploadRoute(t *testing.T) {
 	}
 }
 
-// TestRecordingUpload_BodyOver25MiB_NotCappedByGlobalMaxBody proves, with a
-// real 40 MiB body, that a recording can get past the global 25 MiB ceiling.
-// Before RegisterLargeBody in init(), the
-// r.Body = http.MaxBytesReader(w, r.Body, recordingMaxBytes+1<<20) inside
-// HandleRecordingUpload had no practical effect whatsoever — the middleware's
-// global 25 MiB wrapper had already been applied first, and MaxBytesReader
-// does not loosen a smaller limit already applied.
 func TestRecordingUpload_BodyOver25MiB_NotCappedByGlobalMaxBody(t *testing.T) {
-	body := bytes.Repeat([]byte("r"), 40<<20) // 40 MiB — above 25 MiB, well below 500 MiB
+	body := bytes.Repeat([]byte("r"), 40<<20)
 	var gotN int64
 	var gotErr error
 	handler := httpmw.MaxBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

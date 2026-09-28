@@ -25,61 +25,29 @@ import dev.servercontrolpanel.mobileapiclient.model.MessageView as GeneratedMess
 import dev.servercontrolpanel.mobileapiclient.model.Reaction as GeneratedReaction
 import dev.servercontrolpanel.mobileapiclient.model.SendMessageRequest
 
-/** Outcome of listing the WhatsApp chats (`GET /api/mobile/v1/whatsapp/chats`). */
 sealed interface ChatsResult {
     data class Success(val chats: List<WhatsAppChat>) : ChatsResult
     data object Empty : ChatsResult
     data class Error(val reason: String) : ChatsResult
 }
 
-/** Outcome of loading a chat's message history. */
 sealed interface MessagesResult {
     data class Success(val messages: List<WhatsAppMessage>, val backfilling: Boolean) : MessagesResult
     data class Error(val reason: String) : MessagesResult
 }
 
-/** Outcome of sending a text message. */
 sealed interface SendResult {
     data class Success(val id: String) : SendResult
     data class Error(val reason: String) : SendResult
 
-    /**
-     * No network — the message was STORED and goes out when the internet is
-     * back.
-     *
-     * It is a third result rather than an `Error` because the difference
-     * changes what the person does: faced with an error they try again; faced
-     * with a queued message they put the phone away. Treating the two as
-     * failure was the old behaviour, and it made the app ask for an action that
-     * was not needed.
-     */
     data object Queued : SendResult
 }
 
-/**
- * Outcome of uploading a media attachment (`POST .../media`).
- * [Error.overCap] is `true` for a server 413 (the real 100MiB enforcement
- * boundary) so callers can show the exact same inline "file too large"
- * state a client-side pre-check would have shown, instead of a generic
- * failure with a misleading retry affordance.
- */
 sealed interface UploadResult {
     data class Success(val id: String) : UploadResult
     data class Error(val reason: String, val overCap: Boolean = false) : UploadResult
 }
 
-/**
- * The single call site into the generated mobile BFF client
- * (`:data:mobile-api-client`) for WhatsApp operations. No other module may
- * reference [WhatsappApi] or its generated model types directly -- callers
- * only ever see [ChatsResult]/[MessagesResult]/[SendResult] and the pure
- * `dev.servercontrolpanel.core.model.WhatsApp*` domain shapes.
- *
- * Open (class and every member) so `:feature-whatsapp`'s ViewModel tests can
- * substitute a fake at this seam without ever seeing [WhatsappApi] -- that
- * type stays invisible outside `:data` because this module depends on
- * `:data:mobile-api-client` with `implementation`, not `api`.
- */
 open class WhatsAppRepository(
     private val whatsappApi: WhatsappApi = WhatsappApi(),
 ) {
@@ -129,18 +97,6 @@ open class WhatsAppRepository(
     } catch (e: ServerException) {
         SendResult.Error("The server is unavailable right now.")
     } catch (e: IOException) {
-        // HERE THE QUEUE FINALLY COMES IN.
-        //
-        // This is the only write path in the app that qualifies: the BFF
-        // deduplicates a message send by `client_msg_id` in the BODY
-        // (`internal/mobilebff/handlers_whatsapp.go`), so resending later is
-        // safe even if the first attempt arrived and only the response was
-        // lost — which is the situation a timeout produces and leaves
-        // indistinguishable.
-        //
-        // If the queue refuses (not installed, or at its ceiling), it falls
-        // through to the usual error: a message refused in silence would be
-        // worse than the visible failure that existed before.
         val stored = Outbox.enqueue(
             method = "POST",
             path = "/whatsapp/chats/$jid/messages",
@@ -161,29 +117,6 @@ open class WhatsAppRepository(
         SendResult.Error("Could not send the message.")
     }
 
-    /**
-     * Uploads a local media file through the multipart media endpoint.
-     * [onProgress] is invoked (0-100) as bytes are actually written to the
-     * socket -- a fresh [WhatsappApi] is built per call, reusing this
-     * instance's own [whatsappApi]`.baseUrl` (so it targets the same server
-     * a test's or production's injected instance already does) but wrapping
-     * [ApiClient.defaultClient] with one interceptor scoped to this single
-     * call's progress callback, mirroring `MediaNetwork.mediaCallFactory`'s
-     * "derive, don't replace" pattern for the shared `Call.Factory`.
-     *
-     * [caption]/[msgType]/[quotedId] are coerced from `null` to `""` before
-     * reaching the generated client: its multipart serializer force-casts
-     * every non-file form part's value with a non-null `as kotlin.String`
-     * regardless of the field's own optionality, so a `null` here throws a
-     * `ClassCastException` deep inside `uploadWhatsAppMedia` instead of
-     * omitting the part. An empty string sidesteps that crash and is
-     * indistinguishable from an absent field on the BFF side (Go's
-     * `FormValue` already returns `""` for a field that was never sent, and
-     * the endpoint's own contract documents an empty `msg_type` as "infer
-     * from mime/name") -- so this is a same-request-shape workaround, not a
-     * behavior change, and needs no change to the generated client or its
-     * codegen templates.
-     */
     open suspend fun uploadMedia(
         jid: String,
         clientMsgId: String,
@@ -221,16 +154,6 @@ open class WhatsAppRepository(
     }
 }
 
-/**
- * Wraps a multipart [RequestBody] so every chunk actually written to the
- * socket reports a 0-100 percentage back through [onProgress] -- the
- * standard OkHttp "counting sink" pattern, since neither the generated
- * client's [WhatsappApi.uploadWhatsAppMedia] nor OkHttp itself expose upload
- * progress natively. [isOneShot] is `true` because a real upload never needs
- * OkHttp to re-serialize this body from scratch (a failed attempt is retried
- * by the caller constructing a brand new request, not by OkHttp replaying
- * this one).
- */
 private class ProgressRequestBody(
     private val delegate: RequestBody,
     private val onProgress: (percent: Int) -> Unit,
@@ -257,14 +180,6 @@ private class ProgressRequestBody(
     }
 }
 
-/**
- * A [Call.Factory] scoped to exactly one upload attempt -- derived from
- * [ApiClient.defaultClient] via `newBuilder()` (same connection pool,
- * dispatcher and TLS/proxy config every other BFF call already trusts) plus
- * one interceptor wrapping the outgoing body in [ProgressRequestBody]. A
- * fresh instance per call rather than a shared singleton, because the
- * progress callback it closes over belongs to that one send/retry only.
- */
 private fun progressCallFactory(onProgress: (percent: Int) -> Unit): Call.Factory =
     ApiClient.defaultClient.newBuilder()
         .addInterceptor { chain ->
@@ -318,29 +233,12 @@ private fun GeneratedMediaView.toDomain() = WhatsAppMedia(
 
 private fun GeneratedReaction.toDomain() = WhatsAppReaction(emoji = emoji, from = from, ts = ts)
 
-/**
- * The send body, assembled by hand for the queue.
- *
- * By hand and not through the generated client because the queue stores TEXT:
- * it needs JSON that survives closing the app and rebooting the device, and the
- * generated client's object is neither serializable nor stable across versions.
- * The shape here is the same one `SendMessageRequest` produces — three fields,
- * all documented in the BFF's OpenAPI.
- *
- * `quoted_id` only goes in when it exists: sending an explicit `null` is not
- * the same as omitting it for a Go decoder with a non-nullable field.
- */
 private fun sendBody(clientMsgId: String, text: String, quotedId: String?): String {
     val fields = buildMap {
         put("client_msg_id", clientMsgId)
         put("text", text)
         if (quotedId != null) put("quoted_id", quotedId)
     }
-    // A JsonObject assembled by hand rather than a MapSerializer: the String
-    // serializer lives in `kotlinx.serialization.builtins.serializer()` as an
-    // EXTENSION on KSerializer.Companion, and calling it qualified does not
-    // resolve. Building the object is more direct and does not depend on which
-    // overload the compiler picks.
     return kotlinx.serialization.json.JsonObject(
         fields.mapValues { (_, value) -> kotlinx.serialization.json.JsonPrimitive(value) },
     ).toString()

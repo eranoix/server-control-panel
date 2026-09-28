@@ -84,7 +84,6 @@
     padding: .6rem .8rem; border-radius: 6px; margin-top: 1rem; font-size: .82rem; line-height: 1.5;
   }
 </style>
-<!-- LOGIN MODE -->
 <div class="card" id="login-card">
   <h1>Server Control Panel <span class="badge">RECOVERY</span></h1>
   <p class="sub">
@@ -96,14 +95,12 @@
     <label for="password">Password</label>
     <input id="password" name="password" type="password" autocomplete="current-password" required>
 
-    <!-- Banner shown when the backend asked for an inline enroll. -->
     <div class="enroll-banner" id="enroll-banner" style="display:none">
       <b>First time in Recovery.</b> Add the secret below to your authenticator app
       (Aegis, Google Authenticator, 1Password) and then type the current code to confirm.
       This TOTP is SEPARATE from the main panel's 2FA.
     </div>
 
-    <!-- QR + secret. Visible only during enroll. -->
     <div class="enroll-box" id="enroll-box" style="display:none">
       <img id="enroll-qr" alt="QR code for the recovery TOTP">
       <div class="secret-row">

@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.first
 
-/** A `PackageInstaller` result, already unwrapped from the Intent. */
 data class InstallStatusEvent(
     val sessionId: Int,
     val phase: String,
@@ -24,12 +23,6 @@ data class InstallStatusEvent(
     val message: String?,
 )
 
-/**
- * Bridge between the `BroadcastReceiver` (called by the system, possibly in a
- * fresh process) and the coroutine driving the update. `replay` is non-zero so a
- * result arriving before collection starts is not lost; events are filtered by
- * `sessionId` + `phase`, so replays from old sessions are ignored.
- */
 object InstallStatusBus {
     private val _events = MutableSharedFlow<InstallStatusEvent>(replay = 8, extraBufferCapacity = 16)
     val events: SharedFlow<InstallStatusEvent> = _events
@@ -39,66 +32,28 @@ object InstallStatusBus {
     }
 }
 
-/** Outcome of [ApkInstaller.requestPreapproval]. */
 sealed interface PreapprovalOutcome {
-    /** The owner confirmed before the download. */
     data object Approved : PreapprovalOutcome
 
-    /** The owner declined. Download nothing. */
     data object Declined : PreapprovalOutcome
 
-    /**
-     * The device could not ask beforehand. Carry on without pre-approval: the
-     * system's regular dialog appears at `commit`.
-     */
     data class Unsupported(val detail: String) : PreapprovalOutcome
 }
 
-/** Outcome of [ApkInstaller.commit]. */
 sealed interface InstallOutcome {
-    /** The system has taken the APK; the process may be killed at any moment from here on. */
     data object Committed : InstallOutcome
 
-    /**
-     * [blocked]: the device refuses installs from outside the store (Android 16
-     * Advanced Protection or enterprise policy). Retrying does not help, so the UI
-     * must not offer "try again".
-     */
     data class Failed(val message: String, val blocked: Boolean) : InstallOutcome
 }
 
-/**
- * Installs an APK with `PackageInstaller`, which (unlike the deprecated
- * `ACTION_INSTALL_PACKAGE`) returns `EXTRA_STATUS_MESSAGE` explaining failures.
- *
- * Updates skip the system dialog when possible: consent is the tap on "Update"
- * in the app, and the system dialog is where Samsung's Auto Blocker interrupts
- * the update. `SilentUpdatePolicy` throttling only triggers for updates seconds
- * apart. This requires a known install origin, see [installSourceKnown].
- *
- * [requestPreapproval] runs BEFORE the download so the owner is not asked after
- * spending data (API 34, which is the `minSdk`).
- */
 class ApkInstaller(context: Context) : ApkInstallerPort {
 
     private val appContext = context.applicationContext
     private val installer: PackageInstaller
         get() = appContext.packageManager.packageInstaller
 
-    /** False while "install unknown apps" is off for this app. */
     override fun canInstallFromUnknownSources(): Boolean = appContext.packageManager.canRequestPackageInstalls()
 
-    /**
-     * Whether Android knows who installed this app.
-     *
-     * A sideloaded app (installer `null`) whose session declares its own package
-     * as a "self update" fails with `INSTALL_FAILED_ABORTED: Self update is
-     * blocked by unknown source package`. The installer record cannot be set
-     * without the privileged `INSTALL_PACKAGES`, so in that case the session does
-     * not declare the package and becomes a regular install through the
-     * "install unknown apps" dialog. The cost is losing pre-approval, which
-     * requires `setAppPackageName`.
-     */
     override fun installSourceKnown(): Boolean = try {
         appContext.packageManager
             .getInstallSourceInfo(appContext.packageName)
@@ -107,14 +62,6 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
         false
     }
 
-    /**
-     * Hands the APK to the standard system install screen: the last fallback
-     * when the `PackageInstaller` session is refused. The SHA-256 was already
-     * checked by `:patch-engine`, so [UpdateCoordinator]'s rule still holds.
-     *
-     * Returns false when nothing can open an APK (e.g. work profiles that block
-     * sideloading).
-     */
     override fun openSystemInstaller(apk: File): Boolean {
         val uri = try {
             FileProvider.getUriForFile(appContext, "${appContext.packageName}$AUTHORITY_SUFFIX", apk)
@@ -132,29 +79,14 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
         }
     }
 
-    /**
-     * Opens this app's own "install unknown apps" switch; the `package:` `Uri`
-     * skips the general app list.
-     */
     fun unknownSourcesSettingsIntent(): Intent =
         Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${appContext.packageName}"))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-    /**
-     * Creates the install session. [apkSizeBytes] goes into `setSize` so the
-     * system reserves its space before we write.
-     */
     override fun createSession(apkSizeBytes: Long, declarePackage: Boolean): Int? = try {
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
-            // Declaring the package is required for pre-approval but marks the
-            // session as a "self update", which Android aborts when the install
-            // origin is unknown. See [installSourceKnown].
             if (declarePackage) {
                 setAppPackageName(appContext.packageName)
-                // No system dialog. Android only honours this on a declared
-                // session when this app is its own recorded installer; otherwise
-                // it is ignored and the dialog appears. Consent was the tap on
-                // "Update"; the dialog is where Samsung's Auto Blocker steps in.
                 setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
             }
             setSize(apkSizeBytes)
@@ -171,17 +103,9 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
         try {
             installer.abandonSession(sessionId)
         } catch (e: SecurityException) {
-            // Session already closed by the system — nothing to undo.
         }
     }
 
-    /**
-     * Asks the owner BEFORE spending their data.
-     *
-     * [label] must be EXACTLY the installed app's label: if it differs the system
-     * destroys the session with `INSTALL_FAILED_INTERNAL_ERROR: PreapprovalDetails
-     * ... inconsistent with app label`. Never append a version or suffix.
-     */
     override suspend fun requestPreapproval(sessionId: Int, label: CharSequence): PreapprovalOutcome {
         val details = try {
             PackageInstaller.PreapprovalDetails.Builder()
@@ -215,10 +139,6 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
         }
     }
 
-    /**
-     * Writes [apk] into the session and hands it to the system. The APK is kept
-     * on failure so a retry needs no new download.
-     */
     override suspend fun commit(sessionId: Int, apk: File): InstallOutcome {
         try {
             installer.openSession(sessionId).use { session ->
@@ -233,13 +153,8 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
         } catch (e: SecurityException) {
             return InstallOutcome.Failed("The system rejected the install session: ${e.message}", blocked = true)
         } catch (e: IllegalStateException) {
-            // Session already destroyed by the system (e.g. after a failed
-            // pre-approval). Without this catch the banner would stay stuck on
-            // "Installing…" with no retry.
             return InstallOutcome.Failed("The install session was no longer valid: ${e.message}", blocked = false)
         } catch (e: IllegalArgumentException) {
-            // With targetSdk 35+ an immutable PendingIntent makes commit throw
-            // this; see statusIntentSender.
             return InstallOutcome.Failed("Installation configuration error: ${e.message}", blocked = false)
         }
 
@@ -251,9 +166,6 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
                 blocked = true,
             )
             PackageInstaller.STATUS_FAILURE_ABORTED -> {
-                // The system aborts both when the owner cancels and when it
-                // refuses the session by policy; in the second case its message
-                // is the only clue, so show it when present.
                 val fromSystem = event.message
                 if (fromSystem.isNullOrBlank()) {
                     InstallOutcome.Failed("Installation canceled.", blocked = false)
@@ -268,13 +180,6 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
         }
     }
 
-    /**
-     * The `PendingIntent` MUST be mutable: the system fills
-     * `EXTRA_STATUS`/`EXTRA_STATUS_MESSAGE` into it, and with `targetSdk` 35+ an
-     * immutable one makes `commit()` throw. Lint suggests immutable, which is wrong
-     * here. The Intent is explicit (`setPackage` plus class), so only the system
-     * can address it.
-     */
     private fun statusIntentSender(sessionId: Int, phase: String): PendingIntent {
         val intent = Intent(appContext, UpdateInstallReceiver::class.java)
             .setAction(UpdateInstallReceiver.ACTION_INSTALL_STATUS)
@@ -289,15 +194,9 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
     }
 
     private fun requestCodeFor(sessionId: Int, phase: String): Int =
-        // Distinct codes per phase, or the second PendingIntent would replace the first.
         sessionId * 2 + if (phase == PHASE_PREAPPROVAL) 0 else 1
 
     companion object {
-        /**
-         * Suffix of the update FileProvider authority. Must match
-         * `android:authorities` in the :data manifest, or `getUriForFile` throws
-         * and the system-installer fallback silently disappears.
-         */
         private const val AUTHORITY_SUFFIX = ".update"
 
         const val PHASE_PREAPPROVAL = "preapproval"

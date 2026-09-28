@@ -1,4 +1,3 @@
-// Headless E2E test: opens the local Wisp tunnel and fetches example.com through the server's "exit".
 import { client } from "@mercuryworkshop/wisp-js/client";
 
 const WS = "ws://127.0.0.1:8090/wisp/";

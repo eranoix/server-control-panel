@@ -9,8 +9,6 @@ import (
 	"server-control-panel/internal/httpx"
 )
 
-// actionBody is the unified body of the write actions (each handler uses the
-// subset it needs). It keeps decoding simple and uniform.
 type actionBody struct {
 	Hash             string `json:"hash"`
 	Ref              string `json:"ref"`
@@ -29,8 +27,6 @@ type actionBody struct {
 	Prune            bool   `json:"prune"`
 }
 
-// runMutate runs a git action with lock + audit + a standardized response.
-// extra is merged into the success response (e.g. the new hash).
 func (s *svc) runMutate(w http.ResponseWriter, r *http.Request, repo config.GitRepo, caller, action string, args []string, extra map[string]any) {
 	var out string
 	err := withRepoWriteLock(repo.Path, func() error {
@@ -59,15 +55,12 @@ func (s *svc) runMutate(w http.ResponseWriter, r *http.Request, repo config.GitR
 	httpx.WriteJSON(w, resp)
 }
 
-// stashRef assembles a validated "stash@{N}".
 func stashRef(n int) (string, bool) {
 	if n < 0 || n > 9999 {
 		return "", false
 	}
 	return "stash@{" + strconv.Itoa(n) + "}", true
 }
-
-// ---- tags ----
 
 func (s *svc) handleTagCreate(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
@@ -106,8 +99,6 @@ func (s *svc) handleTagDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.runMutate(w, r, repo, caller, "tag_delete", []string{"tag", "-d", b.Name}, nil)
 }
-
-// ---- commit-level: cherry-pick / revert / merge / rebase / reset / drop ----
 
 func (s *svc) handleCherryPick(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
@@ -208,11 +199,8 @@ func (s *svc) handleDrop(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteErr(w, http.StatusBadRequest, "invalid hash")
 		return
 	}
-	// Removes a commit by rewriting history: rebase --onto <hash>^ <hash>.
 	s.runMutate(w, r, repo, caller, "drop", []string{"rebase", "--onto", b.Hash + "^", b.Hash}, nil)
 }
-
-// ---- branch ----
 
 func (s *svc) handleBranchRename(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
@@ -252,8 +240,6 @@ func (s *svc) handleBranchDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.runMutate(w, r, repo, caller, "branch_delete", []string{"branch", flag, b.Name}, nil)
 }
-
-// ---- stash ----
 
 func (s *svc) handleStashPush(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
@@ -309,8 +295,6 @@ func (s *svc) handleStashBranch(w http.ResponseWriter, r *http.Request) {
 	s.runMutate(w, r, repo, caller, "stash_branch", []string{"stash", "branch", b.Name, ref}, nil)
 }
 
-// ---- uncommitted ----
-
 func (s *svc) handleClean(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
 	if !ok {
@@ -327,10 +311,6 @@ func (s *svc) handleResetUncommitted(w http.ResponseWriter, r *http.Request) {
 	s.runMutate(w, r, repo, caller, "reset_uncommitted", []string{"reset", "--hard", "HEAD"}, nil)
 }
 
-// ---- remotes: fetch / pull / push ----
-
-// handleFetch: fetch is safe (it only updates tracking refs) and is allowed
-// even on a read-only repo — it uses the plain gate, not the writeGate.
 func (s *svc) handleFetch(w http.ResponseWriter, r *http.Request) {
 	caller, ok := s.gate(w, r)
 	if !ok {

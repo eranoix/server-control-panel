@@ -24,9 +24,6 @@ func TestIdempotencyRemembersAndReturnsSameResult(t *testing.T) {
 }
 
 func TestIdempotencyDoesNotLeakAcrossUsers(t *testing.T) {
-	// The key includes the user on purpose: two devices can generate the same
-	// identifier, and a result leaking between accounts would be worse than
-	// having no idempotency at all.
 	i := NewIdempotency(t.TempDir())
 	i.Remember("sam:k1", `{"status":"ok"}`, 200)
 
@@ -52,9 +49,6 @@ func TestIdempotencyExpiresAfterTTL(t *testing.T) {
 }
 
 func TestIdempotencySurvivesProcessRestart(t *testing.T) {
-	// The case that motivates writing to disk: a deploy restarts the server,
-	// and the retry from whoever was offline arrives AFTERWARDS. A table living
-	// only in memory would lose exactly the keys that matter most.
 	dir := t.TempDir()
 	first := NewIdempotency(dir)
 	first.Remember("sam:k1", `{"id":"abc"}`, 200)
@@ -74,7 +68,6 @@ func TestIdempotencyWithCorruptFileStartsEmptyInsteadOfBreaking(t *testing.T) {
 	i := NewIdempotency(dir)
 	i.Remember("sam:k1", "{}", 200)
 
-	// Corrupt the file and load it again.
 	if err := persistFile(i.file, "this is not json"); err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +75,6 @@ func TestIdempotencyWithCorruptFileStartsEmptyInsteadOfBreaking(t *testing.T) {
 	if _, _, ok := other.Recall("sam:k1"); ok {
 		t.Fatal("a corrupted table must start empty")
 	}
-	// And it has to stay usable, not merely not crash.
 	other.Remember("sam:k2", "{}", 200)
 	if _, _, ok := other.Recall("sam:k2"); !ok {
 		t.Fatal("after corruption, storing must still work")
@@ -90,8 +82,6 @@ func TestIdempotencyWithCorruptFileStartsEmptyInsteadOfBreaking(t *testing.T) {
 }
 
 func TestIdempotencyNilIsNoOp(t *testing.T) {
-	// The BFF can run without a dataDir (the spec generator, for one). A nil
-	// that blows up at runtime would be worse than the feature being absent.
 	var i *Idempotency
 	i.Remember("sam:k1", "{}", 200)
 	if _, _, ok := i.Recall("sam:k1"); ok {

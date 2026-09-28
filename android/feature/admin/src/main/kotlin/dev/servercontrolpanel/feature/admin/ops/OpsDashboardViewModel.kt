@@ -22,13 +22,6 @@ sealed interface OpsDashboardUiState {
     data class Success(val snapshot: OpsSnapshot) : OpsDashboardUiState
 }
 
-/**
- * Fetches `GET /api/mobile/v1/ops/status` once for initial state, then subscribes to the
- * `"ops.health"` live channel for every update thereafter — the dashboard never polls.
- * Collection of [EventsSubscriber.subscribe]'s [kotlinx.coroutines.flow.Flow] is tied to
- * [viewModelScope], so it is cancelled — which is this API's unsubscribe signal — the moment
- * this ViewModel is cleared (screen leaves composition).
- */
 class OpsDashboardViewModel(
     private val eventsClient: EventsSubscriber,
     private val repository: OpsSource = OpsRepository(),

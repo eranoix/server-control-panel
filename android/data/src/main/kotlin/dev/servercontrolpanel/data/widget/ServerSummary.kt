@@ -4,27 +4,16 @@ import android.content.Context
 import dev.servercontrolpanel.data.dashboard.DashboardSnapshot
 import dev.servercontrolpanel.data.dashboard.Severity
 
-/**
- * The summary the home screen widget shows: only what fits in a widget, not the
- * whole `DashboardSnapshot`, since the launcher process reads it from disk.
- *
- * Android updates widgets at most every 30 minutes (and postpones that under
- * battery saving), so a widget is a summary, never a monitor. [measuredAt] is
- * therefore mandatory: without it a stale value looks like a fresh reading.
- */
 data class ServerSummary(
     val cpu: String,
     val memory: String,
     val disk: String,
-    /** The sentence for the worst state, or `null` when nothing is past its threshold. */
     val alert: String?,
     val worst: Severity,
-    /** The DEVICE clock at the instant of the reading. See the class KDoc. */
     val measuredAt: Long,
 ) {
 
     companion object {
-        /** What to show before any reading — never zeros, which would be a lie. */
         val EMPTY = ServerSummary(
             cpu = "—",
             memory = "—",
@@ -36,19 +25,12 @@ data class ServerSummary(
     }
 }
 
-/**
- * Extracts the summary from a dashboard snapshot. It reuses the already judged
- * signals (`resourceSignals`, `attention`) so the widget and the app can never
- * disagree about what counts as a problem.
- */
 fun summaryOf(snapshot: DashboardSnapshot, nowMs: Long = System.currentTimeMillis()): ServerSummary {
     val signals = snapshot.resourceSignals.associateBy { it.id }
     val warning = snapshot.attention
     return ServerSummary(
         cpu = signals["cpu"]?.headline ?: "—",
         memory = signals["memory"]?.headline ?: "—",
-        // The disk is `disco:/mnt/x` — the first one to appear is the root,
-        // which is the fixed order of `gradeResources`.
         disk = signals.entries.firstOrNull { it.key.startsWith("disco:") }?.value?.headline ?: "—",
         alert = warning.firstOrNull()?.let { "${it.label}: ${it.headline}" },
         worst = warning.firstOrNull()?.severity ?: Severity.OK,
@@ -56,11 +38,6 @@ fun summaryOf(snapshot: DashboardSnapshot, nowMs: Long = System.currentTimeMilli
     )
 }
 
-/**
- * Where the summary lives between the app and the widget. `SharedPreferences`
- * rather than DataStore because the widget process may start before the app ever
- * ran and needs a small synchronous read.
- */
 object StoredSummary {
 
     private const val FILE = "panel_widget_summary"
@@ -79,8 +56,6 @@ object StoredSummary {
     fun read(context: Context): ServerSummary {
         val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         val measuredAt = p.getLong("measuredAt", 0L)
-        // With no reading ever written, hand back EMPTY instead of null
-        // strings turned into "null" on screen.
         if (measuredAt == 0L) return ServerSummary.EMPTY
         return ServerSummary(
             cpu = p.getString("cpu", "—").orEmpty(),
@@ -94,10 +69,6 @@ object StoredSummary {
     }
 }
 
-/**
- * How long ago the summary was measured, in words. Past a day it just says "over
- * a day ago": the exact count changes no decision.
- */
 fun ageInWords(measuredAt: Long, nowMs: Long = System.currentTimeMillis()): String {
     if (measuredAt <= 0L) return "no reading yet"
     val minutes = ((nowMs - measuredAt) / 60_000L).coerceAtLeast(0L)

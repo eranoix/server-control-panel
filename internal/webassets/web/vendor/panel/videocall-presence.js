@@ -1,24 +1,3 @@
-/* panel-videocall-presence — panel-wide "someone is calling" client.
- *
- * Opens a long-lived WS to /ws/videocall-presence and fires onIncoming when
- * the server pushes an `incoming-call` event. The user's main app handles
- * the UI (modal + ringtone + browser Notification).
- *
- * Public API:
- *   window.PanelPresence.connect({ token, onIncoming, onState })
- *   window.PanelPresence.disconnect()
- *   window.PanelPresence.playRing(durationMs)        // beeps via WebAudio (no asset)
- *   window.PanelPresence.stopRing()
- *
- * The ringtone is generated on the fly with WebAudio (two-tone, low volume)
- * so we don't need to vendor an .mp3 file. Total cost: ~3KB of code.
- */
-/* PanelDevice: stable identity of the DEVICE (not the tab), so the ringer
- * policy can be set per device. The id lives in localStorage (survives
- * reloads and browser restarts, unlike the per-tab client_id in
- * sessionStorage); the label is derived from the UA so the owner can
- * recognise it in the list.
- */
 (function () {
   'use strict';
   if (window.PanelDevice) return;
@@ -36,15 +15,12 @@
   function id() {
     try {
       let v = localStorage.getItem(KEY);
-      // Same alphabet the server accepts (sanitizeDeviceID).
       if (!v || !/^[A-Za-z0-9_-]{8,64}$/.test(v)) {
         v = uuid();
         localStorage.setItem(KEY, v);
       }
       return v;
     } catch (_) {
-      // localStorage blocked (private mode): no stable identity, so the
-      // device is outside the policy and always rings.
       return '';
     }
   }
@@ -58,8 +34,6 @@
     else if (/Android/i.test(ua)) os = 'Android';
     else if (/Linux/i.test(ua)) os = 'Linux';
     let br = 'Browser';
-    // Order matters: Edge/Opera also say "Chrome" and Chrome also says
-    // "Safari", so test the most specific first.
     if (/Edg\//i.test(ua)) br = 'Edge';
     else if (/OPR\/|Opera/i.test(ua)) br = 'Opera';
     else if (/Firefox\//i.test(ua)) br = 'Firefox';
@@ -86,7 +60,7 @@
   let cbEvent = function () {};
   let cbState = function () {};
   let curToken = '';
-  let curTicketProvider = null; // async function() -> ticket; preferred over token
+  let curTicketProvider = null;
   let audioCtx = null;
   let ringTimer = 0;
   let ringNodes = [];
@@ -94,12 +68,8 @@
   function connect(opts) {
     stopped = false;
     curToken = opts.token || '';
-    // ticketProvider fetches a one-shot 60s ticket (HttpOnly cookie auth), so
-    // the JWT never ends up in a URL or log.
     curTicketProvider = opts.ticketProvider || null;
     cbIncoming = opts.onIncoming || cbIncoming;
-    // onEvent gets ALL presence events, including the control ones
-    // (call-answered-elsewhere, call-ended) that cancel a ring in progress.
     cbEvent = opts.onEvent || cbEvent;
     cbState = opts.onState || cbState;
     open();
@@ -114,8 +84,6 @@
   async function open() {
     if (!curToken && !curTicketProvider) return;
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Identify the device so the server applies its ringer policy. A device
-    // without an id always rings: a failed localStorage must never lose a call.
     let devParam = '';
     try {
       const d = window.PanelDevice ? window.PanelDevice.info() : null;
@@ -134,17 +102,12 @@
       url = proto + '//' + location.host + '/ws/videocall-presence?token=' + encodeURIComponent(curToken) + devParam;
     }
     try { ws = new WebSocket(url); } catch (e) { schedReconnect(); return; }
-    // Reset backoff only once the WS is stable (5s without close, or a first
-    // message), so a server that handshakes and closes at once (bad token)
-    // does not count as a good connection.
     let stableTimer = setTimeout(() => { backoff = 1000; }, 5000);
     ws.onopen = () => { cbState({ type: 'connected' }); };
     ws.onmessage = (ev) => {
       backoff = 1000;
       if (stableTimer) { clearTimeout(stableTimer); stableTimer = 0; }
       let msg; try { msg = JSON.parse(ev.data); } catch (_) { return; }
-      // Forward everything; cbIncoming stays separate for callers that only
-      // want the ring.
       try { cbEvent(msg); } catch (_) {}
       if (msg.type === 'incoming-call') cbIncoming(msg);
     };
@@ -162,10 +125,6 @@
     backoff = Math.min(backoff * 2, 30000);
   }
 
-  // ---- Ringtone (WebAudio, no .mp3 asset) ----
-  // Plays a soft two-tone ring pattern: 880Hz + 660Hz beep, 500ms on / 500ms
-  // off, repeating until stopRing() or the durationMs timeout. Volume capped
-  // at -12dBFS so it won't blast people who forgot to lower system volume.
   function ensureAudio() {
     if (!audioCtx) {
       try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
@@ -178,11 +137,9 @@
     stopRing();
     const ctx = ensureAudio();
     if (!ctx) return;
-    // Some browsers require resume() after a user gesture. We try here; if
-    // it's still suspended the playback silently fails — acceptable.
     if (ctx.state === 'suspended') { try { ctx.resume(); } catch (_) {} }
     const start = ctx.currentTime;
-    const period = 1.0; // 1s = 0.5s on, 0.5s off
+    const period = 1.0;
     const count = Math.ceil((durationMs || 20000) / 1000);
     for (let i = 0; i < count; i++) {
       const t0 = start + i * period;
@@ -197,7 +154,6 @@
     osc.type = 'sine';
     osc.frequency.value = freq;
     const gain = ctx.createGain();
-    // Cosine ramp to avoid clicks at on/off.
     gain.gain.setValueAtTime(0, t0);
     gain.gain.linearRampToValueAtTime(0.18, t0 + 0.02);
     gain.gain.linearRampToValueAtTime(0.18, t1 - 0.05);

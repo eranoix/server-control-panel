@@ -15,8 +15,6 @@ func testCred(id byte) webauthn.Credential {
 	}
 }
 
-// 1. Round-trip through a "restart" of the store: written with one instance,
-// read back with another pointing at the same file.
 func TestWebAuthnCredentialsStore_RoundTripAcrossRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "alice.json")
 	cred := testCred(1)
@@ -43,8 +41,6 @@ func TestWebAuthnCredentialsStore_RoundTripAcrossRestart(t *testing.T) {
 	}
 }
 
-// 2. CredentialByID never leaks between users — each user has their own
-// file/store, and looking up A's ID in B's store finds nothing.
 func TestWebAuthnCredentialsStore_NoCrossUserLeak(t *testing.T) {
 	dir := t.TempDir()
 	storeA := NewWebAuthnCredentialsStore(filepath.Join(dir, "alice.json"))
@@ -70,7 +66,6 @@ func TestWebAuthnCredentialsStore_NoCrossUserLeak(t *testing.T) {
 	}
 }
 
-// 3. Add always starts out "pending": excluded from List(), present in ListAll().
 func TestWebAuthnCredentialsStore_AddDefaultsPending(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "alice.json")
 	store := NewWebAuthnCredentialsStore(path)
@@ -100,8 +95,6 @@ func TestWebAuthnCredentialsStore_AddDefaultsPending(t *testing.T) {
 	}
 }
 
-// 4. Approve flips the status; rejects an unknown/cross-user ID without
-// mutating the file.
 func TestWebAuthnCredentialsStore_ApproveRejectsUnknownWithoutMutation(t *testing.T) {
 	dir := t.TempDir()
 	storeA := NewWebAuthnCredentialsStore(filepath.Join(dir, "alice.json"))
@@ -136,7 +129,6 @@ func TestWebAuthnCredentialsStore_ApproveRejectsUnknownWithoutMutation(t *testin
 	}
 }
 
-// 5. Remove deletes regardless of status (pending or approved).
 func TestWebAuthnCredentialsStore_RemoveRegardlessOfStatus(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "alice.json")
 	store := NewWebAuthnCredentialsStore(path)
@@ -173,7 +165,6 @@ func TestWebAuthnCredentialsStore_RemoveRegardlessOfStatus(t *testing.T) {
 	}
 }
 
-// 6. UpdateCredential refreshes the blob (e.g. SignCount) while preserving status.
 func TestWebAuthnCredentialsStore_UpdateCredentialPreservesStatus(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "alice.json")
 	store := NewWebAuthnCredentialsStore(path)
@@ -204,13 +195,6 @@ func TestWebAuthnCredentialsStore_UpdateCredentialPreservesStatus(t *testing.T) 
 	}
 }
 
-// 7. List/ListAll/CredentialByID on a file that never existed return
-// empty/not-found WITHOUT an error — never an os.ErrNotExist handed back to the
-// caller. This is the property that underpins user-enumeration resistance in
-// FinishPasskeyLogin (internal/api/passkey.go): an unknown userHandle opens a
-// nonexistent file and lands on exactly the same path ("no credentials") as a
-// real user with no approved credentials — there is no distinct error behind
-// the two cases for an attacker to observe.
 func TestWebAuthnCredentialsStore_MissingFileBehavesAsEmpty(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing", "ghost.json")
 	if _, err := os.Stat(path); !os.IsNotExist(err) {

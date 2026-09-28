@@ -8,9 +8,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
-/**
- * Forward-compatibility checks against the shared fixtures, on the plain JVM.
- */
 class ForwardCompatTest {
 
     private class RecordingLogger : SduiLogger {

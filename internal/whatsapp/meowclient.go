@@ -14,14 +14,8 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 )
 
-// meowClient is the Backend implementation that talks to the free whatsmeow
-// daemon (cmd/wad) over loopback. It covers the send + status surface; the
-// remaining parity operations (reactions, history backfill, contacts, media
-// download, presence) are filled in across later phases. Until then they degrade
-// gracefully (no-op or a clear error) — the local Store still serves existing
-// chats/history and inbound events arrive via the daemon's webhook push.
 type meowClient struct {
-	baseURL string // daemon, e.g. http://127.0.0.1:8769
+	baseURL string
 	user    string
 	apiKey  string
 	httpc   *http.Client
@@ -73,8 +67,6 @@ func (m *meowClient) do(method, path string, body, dest any) error {
 	return nil
 }
 
-// --- send ---
-
 type wadSendReq struct {
 	Type     string `json:"type"`
 	ChatID   string `json:"chatId"`
@@ -110,8 +102,6 @@ func (m *meowClient) SendFile(chatJID, msgType, filename, mime, caption, quotedI
 	return out.ID, nil
 }
 
-// --- status / qr / lifecycle ---
-
 func (m *meowClient) GetSession() (*wahaSession, error) {
 	var st struct {
 		Status   string `json:"status"`
@@ -141,13 +131,8 @@ func (m *meowClient) GetQR() (string, error) {
 	if out.QR == "" {
 		return "", nil
 	}
-	// The daemon (wad) returns whatsmeow's RAW pairing string; the UI renders
-	// QRDataURL inside an <img> tag, so it has to be a data:image/png. We
-	// encode it here (the same library the MFA code in handlers_auth.go uses).
-	// Without this, <img src="<raw string>"> breaks — the QR bug on accounts
-	// running the wad backend.
 	if strings.HasPrefix(out.QR, "data:") {
-		return out.QR, nil // already an image (defensive)
+		return out.QR, nil
 	}
 	png, err := qrcode.Encode(out.QR, qrcode.Medium, 280)
 	if err != nil {
@@ -159,16 +144,8 @@ func (m *meowClient) GetQR() (string, error) {
 func (m *meowClient) StartSession() error   { return m.do("POST", "/reload", struct{}{}, nil) }
 func (m *meowClient) RestartSession() error { return m.do("POST", "/reload", struct{}{}, nil) }
 
-// The daemon is persistent and shared; stop/logout are not driven from here in
-// the current phase (the daemon owns connection lifecycle + reconnection).
 func (m *meowClient) StopSession() error                               { return nil }
-func (m *meowClient) EnsureExtraWebhook(_, _ string, _ []string) error { return nil } // daemon self-pushes
-
-// --- parity surface (filled in later phases) ---
-
-// --- still deferred: chat-list/name refresh, star, forward, history
-// backfill. The local Store already serves existing chats/history, so these
-// degrade to no-ops/empties rather than errors where safe. ---
+func (m *meowClient) EnsureExtraWebhook(_, _ string, _ []string) error { return nil }
 
 func (m *meowClient) ListChatsOverview() ([]wahaChatOverview, error) { return nil, nil }
 func (m *meowClient) GetContact(string) (*wahaContact, error)        { return nil, nil }
@@ -215,8 +192,6 @@ func (m *meowClient) GetChatMessagesWithMedia(string, int) ([]wahaHistoryMsg, er
 	return nil, nil
 }
 
-// --- wired to the daemon ---
-
 type wadActionReq struct {
 	Action string `json:"action"`
 	ChatID string `json:"chatId"`
@@ -235,19 +210,10 @@ func (m *meowClient) React(chatJID, msgID, emoji, senderJID string) error {
 	return m.do("POST", "/action", wadActionReq{Action: "react", ChatID: chatJID, MsgID: msgID, Emoji: emoji, Sender: senderJID}, nil)
 }
 
-// RequestHistory fires an on-demand history sync: it asks WhatsApp for the
-// `count` messages preceding a reference message (refMsgID/ts/fromMe). The
-// answer comes back as events.HistorySync on the daemon, which persists the
-// media keys and notifies the server (media.recovered). This recovers older
-// images whose key was lost.
 func (m *meowClient) RequestHistory(chatJID, refMsgID string, fromMe bool, ts int64, count int) error {
 	return m.do("POST", "/action", wadActionReq{Action: "histsync", ChatID: chatJID, MsgID: refMsgID, On: fromMe, TS: ts, Count: count}, nil)
 }
 
-// ResendMessage asks for a specific message to be resent
-// (PLACEHOLDER_MESSAGE_RESEND) — the reply arrives through onMessage WITH the
-// media key, recovering older images. senderJID is the message's author
-// (taken from the store).
 func (m *meowClient) ResendMessage(chatJID, senderJID, msgID string) error {
 	return m.do("POST", "/action", wadActionReq{Action: "resendmsg", ChatID: chatJID, MsgID: msgID, Sender: senderJID}, nil)
 }
@@ -270,8 +236,6 @@ func (m *meowClient) GetProfilePicture(jid string) (string, error) {
 	return out.URL, nil
 }
 
-// --- mute / block / edit / check-number / group-info ---
-
 func (m *meowClient) MuteChat(chatJID string, mute bool) error {
 	return m.do("POST", "/action", wadActionReq{Action: "mute", ChatID: chatJID, On: mute}, nil)
 }
@@ -284,8 +248,6 @@ func (m *meowClient) EditMessage(chatJID, msgID, text string) error {
 	return m.do("POST", "/action", wadActionReq{Action: "edit", ChatID: chatJID, MsgID: msgID, Text: text}, nil)
 }
 
-// CheckNumber asks the daemon whether a number is on WhatsApp and what its
-// canonical JID is. phone is digits only (with the country code), no suffix.
 func (m *meowClient) CheckNumber(phone string) (string, bool, error) {
 	var out struct {
 		JID  string `json:"jid"`
@@ -297,8 +259,6 @@ func (m *meowClient) CheckNumber(phone string) (string, bool, error) {
 	return out.JID, out.OnWA, nil
 }
 
-// GroupInfo fetches a group's name and participants. The daemon returns
-// {name, topic, participants:[{jid,isAdmin}]}; we map it to WAGroupParticipant.
 func (m *meowClient) GroupInfo(jid string) (string, []WAGroupParticipant, error) {
 	var out struct {
 		Name         string `json:"name"`
@@ -319,9 +279,6 @@ func (m *meowClient) GroupInfo(jid string) (string, []WAGroupParticipant, error)
 	return out.Name, parts, nil
 }
 
-// DownloadFile fetches inbound media bytes from the daemon. fileURL is the
-// "/api/files/<msgid>" marker pushed in the webhook; we turn it into an
-// authenticated GET to the daemon and stream the body into dst.
 func (m *meowClient) DownloadFile(fileURL string, dst io.Writer) (int64, string, error) {
 	idx := strings.Index(fileURL, "/api/files/")
 	if idx < 0 {

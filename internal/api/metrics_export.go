@@ -13,25 +13,6 @@ import (
 	"server-control-panel/internal/videocall"
 )
 
-// /metrics Prometheus-compatible text exposition.
-//
-// We do not import github.com/prometheus/client_golang, to keep the binary small
-// — we generate the format by hand (it is simple text). Covers:
-//   - panel_process_uptime_seconds            (gauge)
-//   - panel_process_memory_bytes              (gauge)
-//   - panel_goroutines                        (gauge)
-//   - panel_login_attempts_total              (counter)
-//   - panel_login_failures_total              (counter)
-//   - panel_http_requests_total{method,path}  (counter — top paths)
-//   - panel_ws_connections_active             (gauge)
-//   - panel_audit_events_total                (counter)
-//   - panel_subsystem_up{name}                (gauge — 1/0)
-//
-// To integrate with Grafana/Prometheus, scrape `/metrics` (or via an
-// internal IP/path if it sits behind a reverse proxy).
-
-// Exposed counters & gauges. Use atomic — the scrape's read races with
-// hot-path writes. Not persisted — reset on restart.
 var (
 	metricLoginAttempts int64
 	metricLoginFailures int64
@@ -96,10 +77,6 @@ func (r *Router) handlePrometheusMetrics(w http.ResponseWriter, _ *http.Request)
 	help("panel_http_requests_total", "counter", "HTTP requests served.")
 	counter("panel_http_requests_total", atomic.LoadInt64(&metricHTTPRequests))
 
-	// Video-call ringing, broken down by reason. `new-call` is a real
-	// ring; `rejoin`/`ongoing`/`resume-hint` are the rings the fix
-	// suppressed (before, each of them turned into a phantom notification in the
-	// middle of the call). If `new-call` fires with nobody calling, it regressed.
 	if r.videocall != nil {
 		help("panel_videocall_rings_total", "counter", "Video call ring decisions, by reason.")
 		stats := videocall.RingStats()
@@ -113,7 +90,6 @@ func (r *Router) handlePrometheusMetrics(w http.ResponseWriter, _ *http.Request)
 		}
 	}
 
-	// Subsystem up gauges: 1 if operational, 0 if disabled/degraded.
 	help("panel_subsystem_up", "gauge", "1 if the subsystem is operational, 0 otherwise.")
 	upVal := func(b bool) string {
 		if b {

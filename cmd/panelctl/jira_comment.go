@@ -1,15 +1,3 @@
-// jira_comment.go — panelctl jira-comment: posts a comment on a Jira issue
-// using the user's vault credentials — the SAME path the web backend takes
-// (jiraClientForOwner). It is server-control-panel itself doing the post; no session
-// JWT and no minted token needed.
-//
-//	panelctl jira-comment --user=sam --key=PROJ-68 --body-file=/tmp/block.txt
-//	panelctl jira-comment --user=sam --key=PROJ-69 --body="short text"
-//
-// Every credential flag comes from the vault (jira_site/jira_email/jira_token),
-// seeded beforehand via `panelctl jira-seed`. The body is plain text; the client
-// converts it to ADF (textToADF) just like the /api/jira/issue/{key}/comment
-// endpoint does.
 package main
 
 import (

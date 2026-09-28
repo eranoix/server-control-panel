@@ -1,11 +1,5 @@
 package api
 
-// handlers_datasaver.go — the "Data saver" panel (Security → Data saver): controls
-// the compression proxy (data saver). Same gated design as AdGuard/Devices:
-// the routes live on the `protected` sub-mux. The state lives in files on the host
-// (/opt/datasaver/state), read/edited via internal/datasaver; the CA is served
-// for download; changing the bypass list restarts the proxies (it is read at start).
-
 import (
 	"encoding/json"
 	"net/http"
@@ -18,9 +12,6 @@ func (r *Router) datasaverManager() *datasaver.Manager {
 	return datasaver.New(r.cfg.DatasaverStateDir, r.cfg.DatasaverCAPath)
 }
 
-// restartDatasaverProxies restarts the proxy containers (needed when the bypass
-// list changes — it is read at start). Best-effort; errors are returned for the
-// caller to report.
 func (r *Router) restartDatasaverProxies(req *http.Request) error {
 	if r.docker == nil {
 		return nil
@@ -33,7 +24,6 @@ func (r *Router) restartDatasaverProxies(req *http.Request) error {
 	return nil
 }
 
-// GET /api/datasaver/status: settings, bypass, bytes saved and has_ca.
 func (r *Router) handleDatasaverStatus(w http.ResponseWriter, req *http.Request) {
 	if auth.UserFrom(req) == "" {
 		writeErr(w, 401, "unauthorized")
@@ -46,8 +36,6 @@ func (r *Router) handleDatasaverStatus(w http.ResponseWriter, req *http.Request)
 	writeJSON(w, r.datasaverManager().Status())
 }
 
-// POST /api/datasaver/settings — {enabled,quality,maxdim,strip_trackers,greyscale}.
-// Hot-reloaded by the addon: no restart.
 func (r *Router) handleDatasaverSettings(w http.ResponseWriter, req *http.Request) {
 	if auth.UserFrom(req) == "" {
 		writeErr(w, 401, "unauthorized")
@@ -71,8 +59,6 @@ func (r *Router) handleDatasaverSettings(w http.ResponseWriter, req *http.Reques
 	writeJSON(w, map[string]any{"ok": true, "settings": mgr.LoadSettings()})
 }
 
-// GET  /api/datasaver/bypass — list of hosts that pass through without MITM.
-// POST /api/datasaver/bypass — {hosts:[...]} → writes and restarts the proxies.
 func (r *Router) handleDatasaverBypass(w http.ResponseWriter, req *http.Request) {
 	if auth.UserFrom(req) == "" {
 		writeErr(w, 401, "unauthorized")
@@ -94,7 +80,6 @@ func (r *Router) handleDatasaverBypass(w http.ResponseWriter, req *http.Request)
 			writeErr(w, 400, err.Error())
 			return
 		}
-		// bypass is read at container start → restart the proxies.
 		if err := r.restartDatasaverProxies(req); err != nil {
 			writeErr(w, 502, "bypass saved, but restarting the proxies failed: "+err.Error())
 			return
@@ -106,7 +91,6 @@ func (r *Router) handleDatasaverBypass(w http.ResponseWriter, req *http.Request)
 	}
 }
 
-// GET /api/datasaver/ca: downloads the CA certificate (to install on devices).
 func (r *Router) handleDatasaverCA(w http.ResponseWriter, req *http.Request) {
 	if auth.UserFrom(req) == "" {
 		writeErr(w, 401, "unauthorized")

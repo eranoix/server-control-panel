@@ -14,10 +14,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/**
- * Home state transitions: first load, a failed reload that keeps the current
- * data, and auto-refresh that stays idle when it should.
- */
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModelTest {
 
@@ -104,7 +100,6 @@ class HomeViewModelTest {
         vm.autoRefresh()
         advanceUntilIdle()
 
-        // Polling over an error would only make it flicker; the user decides to retry.
         assertEquals(afterFirst, calls)
     }
 

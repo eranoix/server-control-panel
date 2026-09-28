@@ -9,21 +9,6 @@ import (
 	"time"
 )
 
-// TestSinkAppendAcrossHandles is the test that actually exercises O_APPEND.
-//
-// Why it exists: swapping `os.O_APPEND` for `os.O_TRUNC` does NOT fail the
-// goroutine-concurrency test. An `*os.File` has a single offset, and the mutex
-// already serializes the writes — O_APPEND is not what makes that test pass.
-// Measured, not assumed.
-//
-// What O_APPEND buys is atomicity of (seek to end + write) across INDEPENDENT
-// DESCRIPTORS — two processes, or the same process after a deploy with the old
-// binary still alive, or a rotation that reopened the file. Without it, the
-// second descriptor opens at offset 0 and overwrites what the first one wrote:
-// the panel would report success and the file would hold fewer events.
-//
-// This test opens two Sinks over the same directory and alternates the writes.
-// With O_APPEND: 2*n lines. Without it: far fewer.
 func TestSinkAppendAcrossHandles(t *testing.T) {
 	dir := t.TempDir()
 	const n = 100
@@ -78,8 +63,6 @@ func TestSinkAppendAcrossHandles(t *testing.T) {
 	}
 }
 
-// TestSinkAppendAcrossHandlesConcurrent: the same invariant, now with both
-// descriptors writing in parallel, so -race has something to look at.
 func TestSinkAppendAcrossHandlesConcurrent(t *testing.T) {
 	dir := t.TempDir()
 	const n = 100

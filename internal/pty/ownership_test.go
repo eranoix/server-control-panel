@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// TestOwnershipRename checks that Rename carries the ownership over to the new
-// name, removes the old key and persists (surviving a reload).
 func TestOwnershipRename(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "own.json")
 	o, err := LoadOwnership(path)
@@ -25,7 +23,6 @@ func TestOwnershipRename(t *testing.T) {
 	if got := o.Owner("new-name"); got != "sam" {
 		t.Errorf("new name owner = %q, want sam", got)
 	}
-	// Persistence: reload from disk and confirm.
 	o2, err := LoadOwnership(path)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
@@ -34,7 +31,6 @@ func TestOwnershipRename(t *testing.T) {
 		t.Errorf("after reload owner = %q, want sam", got)
 	}
 
-	// Renaming a key that does not exist is a no-op (it creates no entry).
 	if err := o.Rename("ghost", "phantom"); err != nil {
 		t.Fatalf("Rename ghost: %v", err)
 	}

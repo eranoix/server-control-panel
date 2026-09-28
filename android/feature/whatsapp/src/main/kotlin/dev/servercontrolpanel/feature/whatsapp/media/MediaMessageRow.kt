@@ -28,14 +28,6 @@ import coil.request.ImageRequest
 import dev.servercontrolpanel.core.model.WhatsAppMessage
 import kotlinx.coroutines.launch
 
-/**
- * Renders a media [WhatsAppMessage] by type: image, video, audio or document, as the server
- * classifies them.
- *
- * [imageLoader] and [dataSourceFactory] own real resources and are built once per screen, not
- * per row. [sharedPlayer] is shared by every [AudioPlayerBar], so starting one voice note stops
- * the other.
- */
 @Composable
 fun MediaMessageRow(
     message: WhatsAppMessage,
@@ -82,7 +74,6 @@ fun MediaMessageRow(
 
 @Composable
 private fun ImageThumbnail(url: String, imageLoader: ImageLoader, onClick: () -> Unit) {
-    // SubcomposeAsyncImage so the first uncached download shows a spinner, not a blank box.
     SubcomposeAsyncImage(
         model = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
             .data(url)

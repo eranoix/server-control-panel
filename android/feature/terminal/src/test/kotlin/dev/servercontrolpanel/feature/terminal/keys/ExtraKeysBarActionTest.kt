@@ -10,12 +10,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Drives [PendingModifiers]' sticky OFF/ARMED/LOCKED cycle and
- * [tapExtraKey] (the row's own direct-tap encoding path), plus the
- * interaction between a sticky modifier and a genuinely physical one
- * arriving through [HardwareKeyHandler].
- */
 @RunWith(RobolectricTestRunner::class)
 class ExtraKeysBarActionTest {
 
@@ -46,9 +40,9 @@ class ExtraKeysBarActionTest {
     @Test
     fun `ctrl and alt cycle independently and combine`() {
         val pending = PendingModifiers()
-        pending.tapCtrl() // ARMED
-        pending.tapAlt() // ARMED
-        pending.tapAlt() // LOCKED -- must not affect ctrl
+        pending.tapCtrl()
+        pending.tapAlt()
+        pending.tapAlt()
         assertEquals(ModifierArmState.ARMED, pending.ctrl)
         assertEquals(ModifierArmState.LOCKED, pending.alt)
 
@@ -64,7 +58,7 @@ class ExtraKeysBarActionTest {
     @Test
     fun `armed sticky is consumed after exactly one keystroke from a direct tap`() {
         val pending = PendingModifiers()
-        pending.tapCtrl() // ARMED
+        pending.tapCtrl()
 
         val sink = mutableListOf<ByteArray>()
         tapExtraKey(KeyEvent.KEYCODE_MINUS, pending, KeyByteEncoder.CursorMode.NORMAL) { sink.add(it) }
@@ -77,7 +71,7 @@ class ExtraKeysBarActionTest {
     fun `locked sticky persists across multiple keystrokes until manually released`() {
         val pending = PendingModifiers()
         pending.tapCtrl()
-        pending.tapCtrl() // LOCKED
+        pending.tapCtrl()
 
         val sink = mutableListOf<ByteArray>()
         tapExtraKey(KeyEvent.KEYCODE_MINUS, pending, KeyByteEncoder.CursorMode.NORMAL) { sink.add(it) }
@@ -101,19 +95,15 @@ class ExtraKeysBarActionTest {
     @Test
     fun `a hardware ctrl press while a sticky ctrl is pending still produces one correct ctrl chord`() {
         val pending = PendingModifiers()
-        pending.tapCtrl() // ARMED, independently of any hardware key
+        pending.tapCtrl()
 
         val sink = RecordingByteSink()
         val handler = HardwareKeyHandler(sink, pendingModifiers = pending)
-        // A genuine hardware Ctrl+C: the physical event ALREADY carries
-        // META_CTRL_ON on its own, on top of the independently-armed sticky.
         val event = KeyEvent(0L, 0L, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_C, 0, KeyEvent.META_CTRL_ON, 1, 0)
 
         val consumed = handler.onKeyEvent(event)
 
         assertTrue(consumed)
-        // Ctrl+C is byte 0x03 regardless of whether Ctrl came from hardware,
-        // the sticky arm, or (as here) both at once -- OR-ing is idempotent.
         assertArrayEquals(byteArrayOf(0x03), sink.bytes())
         assertEquals("a real keystroke still consumes the one-shot arm", ModifierArmState.OFF, pending.ctrl)
     }
@@ -121,7 +111,7 @@ class ExtraKeysBarActionTest {
     @Test
     fun `a bare hardware ctrl press with no second key does not consume a pending sticky arm`() {
         val pending = PendingModifiers()
-        pending.tapCtrl() // ARMED
+        pending.tapCtrl()
 
         val sink = RecordingByteSink()
         val handler = HardwareKeyHandler(sink, pendingModifiers = pending)

@@ -1,17 +1,3 @@
-// handlers_scheduler.go — HTTP layer for the cron-driven scheduler (F2).
-//
-// Routes wired in NewRouter:
-//
-//	GET    /api/scheduler/jobs                  list (filtered by owner if non-primary)
-//	POST   /api/scheduler/jobs                  create
-//	GET    /api/scheduler/jobs/{id}             one job snapshot
-//	PUT    /api/scheduler/jobs/{id}             update
-//	DELETE /api/scheduler/jobs/{id}             delete
-//	POST   /api/scheduler/jobs/{id}/run-now     enqueue immediately
-//	GET    /api/scheduler/preview?expr=...&n=5  next-fires preview for the editor
-//
-// Authz: any authed user can manage their own jobs; primary sees and edits
-// all. A job with run_as_root=true requires primary on save.
 package api
 
 import (
@@ -47,7 +33,7 @@ func (r *Router) handleSchedulerJobs(w http.ResponseWriter, req *http.Request) {
 			writeErr(w, 400, "bad json")
 			return
 		}
-		in.ID = "" // always create
+		in.ID = ""
 		in.Owner = user
 		injectSchedOwner(&in)
 		if !r.authorizeKind(w, req, user, in.Kind) {
@@ -147,11 +133,6 @@ func (r *Router) handleSchedulerJobByID(w http.ResponseWriter, req *http.Request
 			writeErr(w, 405, "method not allowed")
 			return
 		}
-		// Revalidate the kind on every manual fire: the create/update gate
-		// above is not enough on its own, since an orphaned job (kind became
-		// primary-only after it was saved, or saved before this fix) could
-		// still be triggered here. cur.Owner == user or primary is already
-		// enforced at :94; this adds the kind-authz the queue requires.
 		if !r.authorizeKind(w, req, user, cur.Kind) {
 			return
 		}
@@ -163,7 +144,6 @@ func (r *Router) handleSchedulerJobByID(w http.ResponseWriter, req *http.Request
 		r.auditEvent(req, user, "scheduler.run_now", id+" -> "+qid)
 		writeJSON(w, map[string]string{"queue_job_id": qid})
 	case "history":
-		// Latest runs of this schedule (queue jobs carrying the job's source).
 		if r.queue == nil {
 			writeJSON(w, map[string]any{"runs": []any{}})
 			return
@@ -204,12 +184,6 @@ func (r *Router) handleSchedulerPreview(w http.ResponseWriter, req *http.Request
 	writeJSON(w, map[string]any{"fires": out})
 }
 
-// injectSchedOwner pins the owner inside the args of the per-user kinds (today only
-// session_backup). The runner does not receive the job's owner — it arrives through the args, as
-// with jira_ai_analysis — so the HTTP layer writes that owner on save. We ALWAYS overwrite
-// with the owner already decided server-side (in.Owner), never trusting what the
-// client sent: that way a user cannot schedule a backup of someone else's sessions
-// by forging "owner" in the JSON. Idempotent (re-injected on every save).
 func injectSchedOwner(in *scheduler.Job) {
 	if in.Kind != "session_backup" {
 		return

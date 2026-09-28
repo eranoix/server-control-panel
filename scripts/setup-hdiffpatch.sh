@@ -1,30 +1,14 @@
 #!/usr/bin/env bash
-# setup-hdiffpatch.sh: installs hdiffz/hpatchz (HDiffPatch, MIT license) on this
-# server. Idempotent: safe to run again at any time.
-#
-# hdiffz produces the binary patches between signed APKs (scripts/android-patches.sh).
-# hpatchz applies them; on the device that is libhpatchz.so, but having it here
-# lets the server VERIFY that a patch rebuilds bytes identical to the signed APK
-# before publishing it.
-#
-# Official static binary rather than a source build: the source build needs
-# submodules (lzma, zstd, libmd5) the GitHub tarball lacks, and the pinned
-# SHA-256 below guarantees the download is what was audited.
-# When upgrading, change VERSION and EXPECTED_SHA256 together and regenerate the
-# patches, since the output format may change between major versions.
 set -euo pipefail
 
 VERSION="v5.1.3"
 ARCHIVE="hdiffpatch_${VERSION}_bin_linux64.zip"
 URL="https://github.com/sisong/HDiffPatch/releases/download/${VERSION}/${ARCHIVE}"
 EXPECTED_SHA256="628963bf2ee9108a97260fa5eef44acd9ec94369b76090a957c9182b3abbb558"
-# DESTINATION is the install-dir override read from the environment.
 DEST="${DESTINATION:-/usr/local/bin}"
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
 
-# hdiffz/hpatchz with no arguments print the usage banner and exit non-zero,
-# which would abort under `set -e -o pipefail`; hence the `|| true`.
 version_of() { { "$1" 2>&1 || true; } | head -1; }
 
 if command -v hdiffz >/dev/null 2>&1 && command -v hpatchz >/dev/null 2>&1; then

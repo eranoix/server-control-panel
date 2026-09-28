@@ -14,9 +14,6 @@ const (
 	testSecret  = "s3cr3t"
 )
 
-// newTestClient brings up a fake hypervisor and returns a Client pointed at it.
-// The server is plain HTTP on loopback (httptest); the HTTPS path with a pinned
-// CA is exercised in tls_test.go.
 func newTestClient(t *testing.T, h http.HandlerFunc) (*Client, *httptest.Server) {
 	t.Helper()
 	srv := httptest.NewServer(h)
@@ -28,10 +25,6 @@ func newTestClient(t *testing.T, h http.HandlerFunc) (*Client, *httptest.Server)
 	return c, srv
 }
 
-// TestErrorClassification pins the rule that 401, 403, 5xx and a dead
-// transport MUST become DIFFERENT Kinds. internal/jira/client.go:145 merges 401
-// with 403 — here that would be a false green ("no credential" would show on
-// screen when the problem is an ACL, and vice versa).
 func TestErrorClassification(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -73,8 +66,6 @@ func TestErrorClassification(t *testing.T) {
 		})
 	}
 
-	// Unreachable: server closed BEFORE the call. This is the state that a short
-	// timeout would make the hypervisor's 401 (delayed 3 s on purpose) imitate.
 	t.Run("dead transport", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 		url := srv.URL
@@ -99,9 +90,6 @@ func TestErrorClassification(t *testing.T) {
 		}
 	})
 
-	// Antidote to the false green: a Kind is only useful if all four are distinct
-	// from one another. If someone collapses two of them into the same value, this
-	// fails.
 	t.Run("distinct kinds", func(t *testing.T) {
 		seen := map[Kind]string{}
 		for _, k := range []Kind{KindOK, KindNoCredential, KindForbidden, KindUnreachable, KindHypervisor} {
@@ -116,9 +104,6 @@ func TestErrorClassification(t *testing.T) {
 	})
 }
 
-// TestAuthHeader asserts the header byte by byte. The hypervisor requires
-// "PVEAPIToken=USER@REALM!ID=SECRET" with no space, and a token does not need
-// CSRFPreventionToken (HTTPServer.pm:122-129).
 func TestAuthHeader(t *testing.T) {
 	var seen http.Header
 	var seenPath, seenMethod string
@@ -152,10 +137,6 @@ func TestAuthHeader(t *testing.T) {
 	}
 }
 
-// TestTimeoutFloor: 10 s is a FLOOR, not a default. The hypervisor holds every
-// 401 response for 3 s on purpose (measured at 3.079 s) — with a smaller
-// timeout, a revoked token turns into "unreachable" and the classification goes
-// false green.
 func TestTimeoutFloor(t *testing.T) {
 	cases := []struct {
 		name string
@@ -182,10 +163,6 @@ func TestTimeoutFloor(t *testing.T) {
 	}
 }
 
-// TestTokenFromVault: the vault keeps "<tokenid>=<secret>" in a single string —
-// that was the real false green (every offline pin green, 401 on the first live
-// call). A bare secret, with no "!" in the id, MUST become an error in New,
-// never a silently broken header.
 func TestTokenFromVault(t *testing.T) {
 	id, secret, err := SplitTokenValue("panel@pve!audit=1234-abcd")
 	if err != nil {
@@ -202,7 +179,6 @@ func TestTokenFromVault(t *testing.T) {
 		}
 	}
 
-	// New accepts the whole vault value in TokenID, with Secret empty.
 	c, err := New(Config{BaseURL: "http://127.0.0.1:1", TokenID: "panel@pve!audit=1234-abcd"})
 	if err != nil {
 		t.Fatalf("New with the vault value: %v", err)
@@ -215,8 +191,6 @@ func TestTokenFromVault(t *testing.T) {
 	}
 }
 
-// TestErrorDoesNotLeakSecret: the error text is read in the log and on screen. The
-// body comes from the SERVER; the auth header never goes in.
 func TestErrorDoesNotLeakSecret(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -231,8 +205,6 @@ func TestErrorDoesNotLeakSecret(t *testing.T) {
 	}
 }
 
-// TestBodyTruncated: a giant body from the hypervisor does not become a giant
-// error in the log.
 func TestBodyTruncated(t *testing.T) {
 	big := strings.Repeat("x", maxBodyBytes*2)
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {

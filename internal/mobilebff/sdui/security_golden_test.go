@@ -1,9 +1,3 @@
-// Package sdui_test wires the eight Security/Network screens into the sdui
-// package's own golden-fixture test binary — same rationale as
-// docker_golden_test.go's header comment: golden_test.go's harness only sees
-// screens registered inside the SAME test binary process, and being an
-// external test package (sdui_test) is what lets this file import
-// internal/mobilebff/screens without an import cycle.
 package sdui_test
 
 import (
@@ -13,14 +7,6 @@ import (
 	"server-control-panel/internal/mobilebff/screens"
 )
 
-// securityGoldenBackend is a small in-memory stand-in for internal/api.Router's
-// real config/secrets/sessions/audit/UFW/AdGuard/singbox/netusage wiring —
-// enough to build all eight Security/Network screens and their rows/detail
-// endpoints deterministically for the golden corpus. It never touches real
-// config, secrets, sessions or an external daemon; the golden harness only
-// calls Build (via the sdui.Screen builder), never RunAction, so the
-// mutating closures below are unreachable from the harness and exist only
-// to satisfy SecurityDeps/NetworkDeps' shape.
 type securityGoldenBackend struct{}
 
 func (securityGoldenBackend) securityDeps() screens.SecurityDeps {
@@ -100,15 +86,6 @@ func (securityGoldenBackend) networkDeps() screens.NetworkDeps {
 	}
 }
 
-// init registers all eight Security/Network screens into this test binary's
-// process-global sdui registries exactly once — the same
-// RegisterSecurity(deps)/RegisterNetwork(deps) internal/api/api.go calls in
-// production, fed synthetic data instead of real config/secrets/sessions/
-// audit/UFW/AdGuard/singbox/netusage. This is what makes RegisteredScreens()
-// (used by TestGoldenScreens and its two role-omission checks) see
-// security.users, security.secrets, security.sessions, security.audit,
-// security.ufw, security.adguard, security.devices and security.savings at
-// all when running `go test ./internal/mobilebff/sdui/...`.
 func init() {
 	backend := securityGoldenBackend{}
 	screens.RegisterSecurity(backend.securityDeps())

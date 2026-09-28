@@ -10,10 +10,6 @@ import (
 	"server-control-panel/internal/deploy"
 )
 
-// handlers_deploy_preview.go — manual teardown of a preview env. The TTL is
-// handled by the scheduled runner deploy_preview_reap; this is the "tear it down" button.
-
-// POST /api/deploy/app/preview/teardown {name, slug}
 func (r *Router) handleDeployPreviewTeardown(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return

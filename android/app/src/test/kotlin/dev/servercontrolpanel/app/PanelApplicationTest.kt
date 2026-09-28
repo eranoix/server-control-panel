@@ -12,22 +12,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Exercises [PanelApplication.onCreate]'s real launch path. Robolectric runs the real
- * `onCreate()` before each test, so every `Bootstrap.step` has already fired; the assertions
- * check each step's independent side effect.
- *
- * Whether the WorkManager step succeeds depends on the Robolectric environment and is not
- * pinned. What is pinned is that its outcome never becomes an uncaught exception and never
- * blocks the other steps.
- */
 @RunWith(RobolectricTestRunner::class)
 class PanelApplicationTest {
 
     @Before
     fun setUp() {
-        // Do not reset IncomingCallDispatcher.handler here: onCreate() already set it, and that
-        // assignment is what the test observes. tearDown() resets it.
         Bootstrap.initFailures.clear()
     }
 
@@ -62,7 +51,6 @@ class PanelApplicationTest {
             IncomingCallDispatcher.handler,
         )
 
-        // The WorkManager step runs on a background thread; give it a bounded moment to settle.
         Thread.sleep(300)
         val appScopeFailures = Bootstrap.initFailures.filter { it.startsWith("appScope:") }
         assertTrue(

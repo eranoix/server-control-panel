@@ -19,11 +19,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Arrangement
 
-/**
- * Bottom control bar for an active call: mic mute, camera off, front/back switch, and
- * hang-up, each a distinct pressed/toggled visual state (background color + symbol both change,
- * never just the symbol) so a muted mic or disabled camera is unmistakable at a glance.
- */
 @Composable
 fun CallControls(
     micEnabled: Boolean,

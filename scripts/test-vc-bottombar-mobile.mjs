@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-// test-vc-bottombar-mobile.mjs — on the mobile layout, a menu item with long
-// text has to GROW, not overlap the one below it.
-//
-// `.vc-bottombar button { width:48px!important; height:48px!important }` is a
-// DESCENDANT selector: the popovers (mic, camera, settings) are children of the
-// bottombar itself, so the touch-target rule for the round buttons also landed on
-// the ~60 menu lines, which are wide and carry text that wraps. Squeezed into
-// 48x48 with no clip, they invaded one another — the text turned into illegible
-// soup.
-//
-// The pin does not read CSS: it mounts the REAL bottombar from index.html in a
-// chromium at mobile width and measures box by box.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -46,7 +34,6 @@ const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
 const tail = fs.readFileSync(path.join(WEB, 'tailwind.css'), 'utf8');
 const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n');
 
-// Cut out the REAL bottombar (with the popovers inside it, which is the bug's root).
 function clip(mark) {
   const ini = html.indexOf(mark);
   if (ini < 0) return null;
@@ -61,22 +48,17 @@ let bar = clip('<div class="vc-bottombar"');
 if (!bar) { no('vc-bottombar not found in index.html — the pin lost its target'); process.exit(1); }
 ok('vc-bottombar cut out of index.html (' + bar.length + ' bytes)');
 
-// Without Alpine, <template x-for> does not instantiate. Materialise each list
-// with REAL device labels (the ones from the report: long, and therefore the ones
-// that break).
 const LABELS = ['Default - Headset (Sonos Ace)', 'Communications - Headphones (Sonos Ace)', 'Default - Digital Output (Unknown)'];
 bar = bar.replace(/<template[^>]*x-for[^>]*>([\s\S]*?)<\/template>/g, (_, inner) =>
   LABELS.map((r) => inner.replace(/<span x-text="[^"]*"><\/span>/g, '<span>' + r + '</span>')).join(''));
 bar = bar.replace(/x-show="[^"]*"/g, '').replace(/x-text="[^"]*"/g, '').replace(/x-if="[^"]*"/g, '');
 
 const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
-// 320 (the old iPhone SE) up to 700. 767.98px is the project's mobile boundary.
 for (const larg of [320, 380, 430, 700]) {
   const page = await browser.newPage({ viewport: { width: larg, height: 780 } });
   await page.setContent('<style>' + tail + '</style><style>' + styles + '</style>'
     + '<body style="margin:0"><div id="vc-call-root" class="vc-call-root">'
     + '<div class="vc-stage"><div id="vc-videos" class="vc-videos"></div>' + bar + '</div></div></body>');
-  // The same lines production runs in _vcSetupPopoverBounds().
   await page.evaluate(() => {
     const el = document.getElementById('vc-call-root');
     if (el.clientHeight > 0) el.style.setProperty('--vc-root-h', el.clientHeight + 'px');
@@ -85,22 +67,14 @@ for (const larg of [320, 380, 430, 700]) {
   await page.waitForTimeout(120);
 
   const r = await page.evaluate(() => {
-    // First-level sheets only: a NESTED popover (the language picker, inside the
-    // settings one) only has a box while its parent is visible — measuring it in
-    // isolation would return 0px and report a defect that does not exist.
     const pops = [...document.querySelectorAll('.vc-bottombar .vc-popover')]
       .filter((p) => !p.parentElement.closest('.vc-popover'));
     const out = [];
     for (const [i, pop] of pops.entries()) {
-      // One popover at a time: on mobile they all become position:fixed and stack.
       pops.forEach((p) => { p.style.display = 'none'; });
       pop.style.display = 'block';
-      // A nested popover (the language picker) is position:fixed on mobile: its
-      // items would appear at the top of the screen and skew the overlap check.
       const ownHost = (el) => el.closest('.vc-popover') === pop;
       const items = [...pop.querySelectorAll('.vc-popover-item')].filter(ownHost);
-      // Wide coverage: quality pills, primary buttons and accordion headers
-      // suffered from the SAME selector and also had text squeezed.
       const others = [...pop.querySelectorAll('button')].filter(ownHost)
         .filter((b) => !b.classList.contains('vc-popover-item') && b.textContent.trim().length > 2);
       let clipped = 0, overlapping = 0, sample = '';
@@ -119,10 +93,6 @@ for (const larg of [320, 380, 430, 700]) {
       }
       out.push({ i, items: items.length, clipped, overlapping, sample, others: others.length, othersClipped, otherSample });
     }
-    // The mobile sheet has to fill the PANEL. .vc-bottombar has a transform and a
-    // backdrop-filter, so it becomes the containing block for its fixed
-    // descendants: `left:8;right:8` resolved against the little bar and the sheet
-    // was born its width. Without this measurement, the pin does not see the defect.
     const panel = document.getElementById('vc-call-root').getBoundingClientRect();
     const barEl = document.querySelector('.vc-bottombar');
     const bar = barEl.getBoundingClientRect();
@@ -133,8 +103,6 @@ for (const larg of [320, 380, 430, 700]) {
       pop.style.display = 'block';
       const r = pop.getBoundingClientRect();
       if (r.width < panel.width - 24) narrow.push(Math.round(r.width));
-      // The sheet must not cover the controls: with flex-wrap the bar becomes 2-3
-      // rows and a `bottom` fixed in px buries the first row of buttons.
       const cob = barButtons.filter((b) => {
         const rr = b.getBoundingClientRect();
         return rr.top < r.bottom - 1 && rr.bottom > r.top + 1 && rr.left < r.right - 1 && rr.right > r.left + 1;
@@ -143,12 +111,9 @@ for (const larg of [320, 380, 430, 700]) {
       if (r.top < panel.top - 0.5) leaking.push(Math.round(panel.top - r.top));
     }
     pops.forEach((p) => { p.style.display = 'none'; });
-    // The touch target of the round bar buttons has to survive the fix.
     const toolbar = [...document.querySelectorAll('.vc-bottombar .vc-btn')]
       .filter((b) => !b.closest('.vc-popover'));
     const small = toolbar.filter((b) => { const r = b.getBoundingClientRect(); return r.width < 44 || r.height < 44; }).length;
-    // The settings sheet has to be usable with a thumb: a sticky header with an X
-    // in the touch target, and a 44px menu line.
     const wide = document.querySelector('.vc-popover-wide');
     wide.style.display = 'block';
     const head = wide.querySelector('.vc-sheet-head');
@@ -206,9 +171,6 @@ for (const larg of [320, 380, 430, 700]) {
   await page.close();
 }
 
-// Counter-check in the source: the selector must not go back to being a descendant
-// one. It searches the WHOLE file — bounding the @media block with a non-greedy
-// regex stopped at the first `}` and the counter-check passed even with the old code.
 /\.vc-bottombar\s+button\s*[.{]/.test(html)
   ? no('the sizing rule went back to using `.vc-bottombar button` (it catches the ~60 popover buttons)')
   : ok('no rule sizes `.vc-bottombar button` by descendancy');

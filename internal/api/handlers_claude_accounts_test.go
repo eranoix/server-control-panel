@@ -8,8 +8,6 @@ import (
 	"testing"
 )
 
-// claudeAcctReq fires an authenticated request at the full router (through
-// auth.Middleware + mustPrimary). user="" sends no token.
 func claudeAcctReq(t *testing.T, r *Router, method, path, body, user string) *httptest.ResponseRecorder {
 	t.Helper()
 	var br *strings.Reader
@@ -32,16 +30,12 @@ func claudeAcctReq(t *testing.T, r *Router, method, path, body, user string) *ht
 }
 
 func TestClaudeAccountsGated(t *testing.T) {
-	r := newSmokeRouter(t) // Primary="sam"
+	r := newSmokeRouter(t)
 
-	// 1. No token → 401 (auth.Middleware). Never 404 (route must exist —
-	//    guards against a heal silent-delete; see feedback_heal_deletion).
 	if w := claudeAcctReq(t, r, "GET", "/api/claude/accounts", "", ""); w.Code != 401 {
 		t.Fatalf("no-token GET: got %d, want 401; body=%s", w.Code, w.Body.String())
 	}
 
-	// /ratelimits is gated identically (guard the route; don't hit the live
-	// network 200 path here — its data is validated by a throwaway smoke).
 	if w := claudeAcctReq(t, r, "GET", "/api/claude/accounts/ratelimits", "", ""); w.Code != 401 {
 		t.Fatalf("ratelimits no-token: got %d, want 401", w.Code)
 	}
@@ -49,12 +43,10 @@ func TestClaudeAccountsGated(t *testing.T) {
 		t.Fatalf("ratelimits non-admin: got %d, want 403", w.Code)
 	}
 
-	// 2. Non-admin token → 403 (mustPrimary). "bob" is not config.Primary.
 	if w := claudeAcctReq(t, r, "GET", "/api/claude/accounts", "", "bob"); w.Code != 403 {
 		t.Fatalf("non-admin GET: got %d, want 403; body=%s", w.Code, w.Body.String())
 	}
 
-	// 3. Admin (sam) → 200 + shape.
 	w := claudeAcctReq(t, r, "GET", "/api/claude/accounts", "", "sam")
 	if w.Code != 200 {
 		t.Fatalf("admin GET: got %d, want 200; body=%s", w.Code, w.Body.String())
@@ -90,14 +82,12 @@ func TestClaudeAccountsGated(t *testing.T) {
 func TestClaudeAccountAssignRoundTrip(t *testing.T) {
 	r := newSmokeRouter(t)
 
-	// Assign jobs → jordan (explicitly non-default; the default is now sam).
 	w := claudeAcctReq(t, r, "POST", "/api/claude/accounts/assign",
 		`{"consumer":"jobs","account_id":"jordan"}`, "sam")
 	if w.Code != 200 {
 		t.Fatalf("assign: got %d, want 200; body=%s", w.Code, w.Body.String())
 	}
 
-	// GET reflects the new assignment; terminal stays no default sam.
 	w = claudeAcctReq(t, r, "GET", "/api/claude/accounts", "", "sam")
 	var got struct {
 		Consumers []struct {
@@ -117,7 +107,6 @@ func TestClaudeAccountAssignRoundTrip(t *testing.T) {
 		t.Errorf("terminal should stay default sam, got %q", seen["terminal"])
 	}
 
-	// Invalid account → 400, no mutation.
 	if w := claudeAcctReq(t, r, "POST", "/api/claude/accounts/assign",
 		`{"consumer":"terminal","account_id":"ghost"}`, "sam"); w.Code != 400 {
 		t.Errorf("assign bogus account: got %d, want 400", w.Code)

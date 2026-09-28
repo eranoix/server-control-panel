@@ -1,14 +1,4 @@
 #!/bin/bash
-# End-to-end check of the ATTACHMENT flow from the terminal dock: pick a file,
-# upload it in chunks, and see its path TYPED into the session.
-#
-# The unit tests cover the pieces (pump, worker, name quoting); only this script
-# exercises the seam between them against a real server.
-#
-# PREREQUISITE NO SCRIPT CAN SOLVE: the app must be LOGGED IN. Log in once on the
-# emulator (or device) and run this afterwards; the session survives `force-stop`.
-#
-# Usage:  scripts/android-check-attachment.sh [source-file]
 set -euo pipefail
 
 A=${ADB:-/opt/android-sdk/platform-tools/adb}
@@ -19,9 +9,6 @@ DATA_DIR=${PANEL_DATA_DIR:-/opt/panel/data}
 INBOX="$DATA_DIR/mobile-inbox"
 STAGING="$DATA_DIR/.mobile-upload-staging"
 
-# The space in the name is deliberate: the name becomes part of a path pasted
-# into a shell, and quoting is what separates "one argument" from "two
-# arguments and an error".
 if [ -z "$SOURCE" ]; then
   SOURCE="$S/test attachment.txt"
   head -c 300000 /dev/urandom | base64 > "$SOURCE"
@@ -39,8 +26,8 @@ $A logcat -c
 $A shell am force-stop $PKG || true
 $A shell am start -n $PKG/dev.servercontrolpanel.app.MainActivity >/dev/null
 sleep 12
-$A shell input tap 74 214;  sleep 2   # drawer
-$A shell input tap 254 489; sleep 5   # Terminal
+$A shell input tap 74 214;  sleep 2
+$A shell input tap 254 489; sleep 5
 
 echo
 echo "== 3. YOUR TURN (the file picker belongs to the SYSTEM, not the app) =="
@@ -64,8 +51,6 @@ fi
 echo "OK: identical bytes"
 
 echo "== 5. is the staging area clean? =="
-# Leftovers mean CompleteUpload copied instead of renaming, or an abandoned
-# session; both turn into garbage that grows on its own.
 if [ -d "$STAGING" ] && [ -n "$(ls -A "$STAGING" 2>/dev/null)" ]; then
   echo "WARNING: leftovers in $STAGING:" >&2
   ls -la "$STAGING" >&2

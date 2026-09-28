@@ -1,11 +1,5 @@
 package mobilebff
 
-// update_test.go — covers the app's incremental update channel from the HTTP
-// side: patch selection by the base's SHA-256, fallback to the full path, the
-// authentication gate, and — what matters most on a bad connection — that the
-// byte route answers Range for real (206 + Content-Range + the right slice),
-// and not a 200 with the whole file.
-
 import (
 	"bytes"
 	"crypto/sha256"
@@ -23,9 +17,6 @@ import (
 	"server-control-panel/internal/config"
 )
 
-// labUpdate builds a complete and coherent update catalogue on disk (two real
-// artifacts, with real hashes) and returns the dataDir plus the hashes the
-// tests need to quote.
 type labUpdate struct {
 	dataDir     string
 	shaAPKNew   string
@@ -45,10 +36,6 @@ func buildLabUpdate(t *testing.T) labUpdate {
 		}
 	}
 
-	// The "APKs" here are arbitrary bytes: nothing in this test interprets the
-	// APK format — the server only serves files and compares hashes. The proof
-	// that the patch reconstructs a real APK lives in
-	// scripts/test-android-patches.sh, with real hdiffz/hpatchz.
 	shaAPKNew := hashHex([]byte("apk-new-version"))
 	shaAPKBase := hashHex([]byte("apk-old-version"))
 
@@ -124,8 +111,6 @@ func decodeUpdate(t *testing.T, rec *httptest.ResponseRecorder) AppUpdateRespons
 	return got
 }
 
-// TestAppUpdate_KnownBase_ReturnsPatch — the happy path: the app sends the
-// hash of the APK it has installed and receives the patch for that exact base.
 func TestAppUpdate_KnownBase_ReturnsPatch(t *testing.T) {
 	lab := buildLabUpdate(t)
 	rec := requestUpdate(t, lab.dataDir, "?base_sha256="+lab.shaAPKBase)
@@ -146,8 +131,6 @@ func TestAppUpdate_KnownBase_ReturnsPatch(t *testing.T) {
 	if got.Patch.URL != wantURL {
 		t.Fatalf("patch.url = %q, want %q", got.Patch.URL, wantURL)
 	}
-	// The full path ALWAYS comes along: if applying the patch fails on the
-	// device, the app does not need a second trip to the server.
 	if got.Full.SizeBytes != 1000 {
 		t.Fatalf("full.size_bytes = %d, want 1000", got.Full.SizeBytes)
 	}
@@ -159,9 +142,6 @@ func TestAppUpdate_KnownBase_ReturnsPatch(t *testing.T) {
 	}
 }
 
-// TestAppUpdate_UnknownBase_NullPatchAndFullPresent — the central guarantee
-// of keying by hash: a base we do not have NEVER turns into an approximate
-// patch. It is "no patch" + the full path.
 func TestAppUpdate_UnknownBase_NullPatchAndFullPresent(t *testing.T) {
 	lab := buildLabUpdate(t)
 	unknown := hashHex([]byte("apk-the-server-never-saw"))
@@ -181,8 +161,6 @@ func TestAppUpdate_UnknownBase_NullPatchAndFullPresent(t *testing.T) {
 	}
 }
 
-// TestAppUpdate_NoBase_OnlyFullPath — fresh install/APK of unknown
-// origin: with no base_sha256 there is nothing to match.
 func TestAppUpdate_NoBase_OnlyFullPath(t *testing.T) {
 	lab := buildLabUpdate(t)
 	got := decodeUpdate(t, requestUpdate(t, lab.dataDir, ""))
@@ -194,8 +172,6 @@ func TestAppUpdate_NoBase_OnlyFullPath(t *testing.T) {
 	}
 }
 
-// TestAppUpdate_AlreadyOnLatestVersion — an app that is already up to date needs to
-// learn that without downloading anything.
 func TestAppUpdate_AlreadyOnLatestVersion(t *testing.T) {
 	lab := buildLabUpdate(t)
 	got := decodeUpdate(t, requestUpdate(t, lab.dataDir, "?base_sha256="+lab.shaAPKNew))
@@ -207,8 +183,6 @@ func TestAppUpdate_AlreadyOnLatestVersion(t *testing.T) {
 	}
 }
 
-// TestAppUpdate_UppercaseHash — the app may compute the hash in any case; the
-// match must not depend on that.
 func TestAppUpdate_UppercaseHash(t *testing.T) {
 	lab := buildLabUpdate(t)
 	upper := ""
@@ -224,9 +198,6 @@ func TestAppUpdate_UppercaseHash(t *testing.T) {
 	}
 }
 
-// TestAppUpdate_NoManifest_503 — before the first publication. It is a normal
-// state of the server, not "not found": the app needs to tell "channel not
-// published yet" apart from "wrong resource".
 func TestAppUpdate_NoManifest_503(t *testing.T) {
 	rec := requestUpdate(t, t.TempDir(), "")
 	if rec.Code != http.StatusServiceUnavailable {
@@ -234,8 +205,6 @@ func TestAppUpdate_NoManifest_503(t *testing.T) {
 	}
 }
 
-// TestAppUpdate_Unauthenticated_401 — the patch reveals which parts of the code
-// changed; the repository is private. It may never leave without a session.
 func TestAppUpdate_Unauthenticated_401(t *testing.T) {
 	lab := buildLabUpdate(t)
 	mux := http.NewServeMux()
@@ -245,7 +214,7 @@ func TestAppUpdate_Unauthenticated_401(t *testing.T) {
 		"/api/mobile/v1/app/update?base_sha256=" + lab.shaAPKBase,
 		"/api/mobile/v1/app/update/artifact?file=" + url.QueryEscape(lab.fullFile),
 	} {
-		req := httptest.NewRequest(http.MethodGet, target, nil) // no auth.WithUser
+		req := httptest.NewRequest(http.MethodGet, target, nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != http.StatusUnauthorized {
@@ -271,9 +240,6 @@ func requestArtifact(t *testing.T, dataDir, file string, header map[string]strin
 	return rec
 }
 
-// TestAppUpdateArtifact_Range_206 is the test that justifies the route existing
-// with ServeContent: without Range, a 10 MB download on a bad connection
-// restarts from zero forever.
 func TestAppUpdateArtifact_Range_206(t *testing.T) {
 	lab := buildLabUpdate(t)
 	rec := requestArtifact(t, lab.dataDir, lab.fullFile, map[string]string{"Range": "bytes=100-199"})
@@ -293,8 +259,6 @@ func TestAppUpdateArtifact_Range_206(t *testing.T) {
 	}
 }
 
-// TestAppUpdateArtifact_ResumeFromMiddle — the shape the app actually uses when
-// resuming: "I already have N bytes, send from N onwards".
 func TestAppUpdateArtifact_ResumeFromMiddle(t *testing.T) {
 	lab := buildLabUpdate(t)
 	rec := requestArtifact(t, lab.dataDir, lab.fullFile, map[string]string{"Range": "bytes=600-"})
@@ -309,8 +273,6 @@ func TestAppUpdateArtifact_ResumeFromMiddle(t *testing.T) {
 	}
 }
 
-// TestAppUpdateArtifact_NoRange_Full200 — the common case is still a whole
-// download, with the correct Content-Length.
 func TestAppUpdateArtifact_NoRange_Full200(t *testing.T) {
 	lab := buildLabUpdate(t)
 	rec := requestArtifact(t, lab.dataDir, lab.fullFile, nil)
@@ -325,8 +287,6 @@ func TestAppUpdateArtifact_NoRange_Full200(t *testing.T) {
 	}
 }
 
-// TestAppUpdateArtifact_UnsatisfiableRange_416 — a range past the end must not turn
-// into a silent 200 with the entire file.
 func TestAppUpdateArtifact_UnsatisfiableRange_416(t *testing.T) {
 	lab := buildLabUpdate(t)
 	rec := requestArtifact(t, lab.dataDir, lab.fullFile, map[string]string{"Range": "bytes=99999-199999"})
@@ -335,16 +295,10 @@ func TestAppUpdateArtifact_UnsatisfiableRange_416(t *testing.T) {
 	}
 }
 
-// TestAppUpdateArtifact_NotInManifest_404 — the route opens a file by a name
-// that came off the network. The manifest is the allowlist: what is not in it
-// does not exist, even if it exists on disk. Includes the classic traversal
-// attempt.
 func TestAppUpdateArtifact_NotInManifest_404(t *testing.T) {
 	lab := buildLabUpdate(t)
 
-	// A real file, in the updates directory, but absent from the manifest.
 	writeOut(t, filepath.Join(androidupdate.Dir(lab.dataDir), "full", "intruder.hdiff"), []byte("x"))
-	// And a plausible secret outside the directory, the target of a traversal.
 	writeOut(t, filepath.Join(lab.dataDir, "secrets.vault"), []byte("SECRET"))
 
 	for _, name := range []string{

@@ -14,7 +14,6 @@ func TestDefaultAssignmentsAndConfigDir(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 
-	// Every consumer defaults to sam → ConfigDir = sam's provisioned dir.
 	samDir := filepath.Join(accountsBaseDir(), "sam")
 	for _, c := range []string{ConsumerJobs, ConsumerTerminal, ConsumerFork} {
 		if got := s.AccountIDFor(c); got != DefaultAccountID {
@@ -25,12 +24,10 @@ func TestDefaultAssignmentsAndConfigDir(t *testing.T) {
 		}
 	}
 
-	// Unknown consumer falls back to default (sam).
 	if got := s.ConfigDirFor("nonsense"); got != samDir {
 		t.Errorf("ConfigDirFor(unknown) = %q, want %q", got, samDir)
 	}
 
-	// The seed file must have been written.
 	if _, err := os.Stat(filepath.Join(dir, "claude_accounts.json")); err != nil {
 		t.Errorf("seed file not written: %v", err)
 	}
@@ -46,8 +43,6 @@ func TestAssignAndPersist(t *testing.T) {
 	if err := s.Assign(ConsumerJobs, "jordan"); err != nil {
 		t.Fatalf("Assign jobs→jordan: %v", err)
 	}
-	// Jobs → jordan (ConfigDir="" = the global ~/.claude); Terminal stays on the
-	// default sam (provisioned dir). Tests explicit-assignment vs default.
 	if got := s.ConfigDirFor(ConsumerJobs); got != "" {
 		t.Errorf("ConfigDirFor(jobs) = %q, want \"\" (jordan)", got)
 	}
@@ -55,7 +50,6 @@ func TestAssignAndPersist(t *testing.T) {
 		t.Errorf("ConfigDirFor(terminal) = %q, want sam dir (default)", got)
 	}
 
-	// Reopen → assignment persisted across process restart.
 	s2, err := Open(dir, "")
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
@@ -76,7 +70,6 @@ func TestAssignRejectsInvalid(t *testing.T) {
 	if err := s.Assign(ConsumerJobs, "bogus-account"); err == nil {
 		t.Error("Assign accepted unknown account")
 	}
-	// Rejected assignment must not have mutated state.
 	if got := s.AccountIDFor(ConsumerJobs); got != DefaultAccountID {
 		t.Errorf("state changed after rejected assign: %q", got)
 	}
@@ -84,7 +77,6 @@ func TestAssignRejectsInvalid(t *testing.T) {
 
 func TestGarbageAssignmentsDropped(t *testing.T) {
 	dir := t.TempDir()
-	// Hand-write a file with an unknown consumer and an unknown account.
 	bad := `{"assignments":{"jobs":"sam","ghost":"jordan","terminal":"who"}}`
 	if err := os.WriteFile(filepath.Join(dir, "claude_accounts.json"), []byte(bad), 0o600); err != nil {
 		t.Fatal(err)
@@ -96,11 +88,9 @@ func TestGarbageAssignmentsDropped(t *testing.T) {
 	if got := s.AccountIDFor(ConsumerJobs); got != "sam" {
 		t.Errorf("valid pair dropped: jobs=%q", got)
 	}
-	// Unknown account "who" for terminal → dropped → default.
 	if got := s.AccountIDFor(ConsumerTerminal); got != DefaultAccountID {
 		t.Errorf("terminal should fall back to default, got %q", got)
 	}
-	// Unknown consumer "ghost" never appears.
 	if _, ok := s.Assignments()["ghost"]; ok {
 		t.Error("unknown consumer survived load")
 	}
@@ -108,14 +98,11 @@ func TestGarbageAssignmentsDropped(t *testing.T) {
 
 func TestLoginStatusMetadataOnly(t *testing.T) {
 	dir := t.TempDir()
-	// Isolate sam's config dir into the tempdir so the test never reads the
-	// real host credential (/srv/agent-accounts/sam).
 	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", filepath.Join(dir, "accounts"))
 	home := filepath.Join(dir, "claude-home")
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// Default account (jordan): credential one dir, .claude.json its sibling.
 	exp := time.Now().Add(72 * time.Hour).UnixMilli()
 	cred := `{"claudeAiOauth":{"accessToken":"SECRET-DO-NOT-LEAK","refreshToken":"ALSO-SECRET","expiresAt":` +
 		itoa(exp) + `,"subscriptionType":"max"}}`
@@ -151,7 +138,6 @@ func TestLoginStatusMetadataOnly(t *testing.T) {
 		t.Error("expected CanRefresh=true (fixture has a refreshToken)")
 	}
 
-	// sam not provisioned in this tempdir → LoggedIn=false, declared email.
 	a := s.LoginStatus("sam")
 	if a.LoggedIn {
 		t.Error("sam should not be logged in in this tempdir")
@@ -161,10 +147,6 @@ func TestLoginStatusMetadataOnly(t *testing.T) {
 	}
 }
 
-// TestLoginStatusExpiredRefreshable covers the label fix: an expired access
-// token is BENIGN when a refresh token is present (CanRefresh=true → UI shows
-// "renews on its own"), and only a genuine relogin case when it is absent
-// (CanRefresh=false → UI shows "needs re-login").
 func TestLoginStatusExpiredRefreshable(t *testing.T) {
 	expired := time.Now().Add(-2 * time.Hour).UnixMilli()
 
@@ -216,7 +198,6 @@ func TestLoginStatusExpiredRefreshable(t *testing.T) {
 	}
 }
 
-// itoa avoids importing strconv just for the test fixture.
 func TestSetSessionAccount(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", dir)

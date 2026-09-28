@@ -34,14 +34,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.servercontrolpanel.data.security.SecurityPreferences
 import kotlinx.coroutines.launch
 
-/**
- * The defences that depend on this device.
- *
- * Every switch carries the REASON with it, not just the name. A security screen
- * whose items say only "Lock the app" and "Protect the screen" forces people to
- * guess what they are being protected against — and, in doubt, nobody turns
- * anything on. What settles it is knowing what you lose by leaving it off.
- */
 @Composable
 fun SecurityScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -51,10 +43,6 @@ fun SecurityScreen(modifier: Modifier = Modifier) {
     val lock by prefs.lockOnOpen.collectAsStateWithLifecycle(initialValue = false)
     val capture by prefs.protectFromCapture.collectAsStateWithLifecycle(initialValue = false)
 
-    // A switch that does nothing when turned on is worse than no switch at
-    // all: the person comes to believe they are protected. On a device with
-    // neither biometrics nor a PIN, the lock cannot be enforced — so it appears
-    // disabled, with the reason stated.
     val activity = context as? FragmentActivity
     val lockAvailable = remember(activity) {
         activity != null && AppLock.available(activity)
@@ -95,8 +83,6 @@ fun SecurityScreen(modifier: Modifier = Modifier) {
         ReturnAfterUpdate()
 
         Text(
-            // What is already protected, said once, so the screen does not
-            // read as a list of everything that is missing.
             text = "Your access is already stored encrypted by the device's key vault (Android " +
                 "Keystore) and never goes into backups. The options above are about whoever " +
                 "has the device in hand.",
@@ -130,46 +116,15 @@ private fun SecurityItem(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        // Material's Switch already guarantees the minimum touch target and is
-        // already announced with its state by the screen reader; the label comes
-        // from the text beside it, being on the same semantic row.
         Switch(checked = checked, onCheckedChange = onChange, enabled = enabled)
     }
 }
 
-/**
- * "Display over other apps", asked for by the REAL reason we ask for it.
- *
- * ## Why this row exists
- *
- * Updating kills the application process, and reopening our own screen from a
- * receiver is a "background Activity start" — which Android blocks. **Measured**:
- * neither a direct `startActivity` nor a `PendingIntent` with the two opt-ins
- * that `targetSdk` 36 requires gets through. The only exception on the official
- * list that an ordinary application can reach is this permission.
- *
- * ## Why it is a switch, and not a requirement
- *
- * Without it the application **works just the same**: after an update, a
- * one-tap notification leads to the same screen. With it, the return is
- * automatic. The permission trades **one tap for none** — and "Display over
- * other apps" is too sensitive to be demanded in exchange for that without the
- * person knowing what they are trading.
- *
- * ## Why it opens Settings instead of asking
- *
- * There is no question to ask: this is a special permission, with no runtime
- * dialog. The only route is the system screen, and that is where the button
- * leads.
- */
 @Composable
 private fun ReturnAfterUpdate() {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
 
-    // Re-read on every return to this screen: the grant happens OUTSIDE the
-    // application, in Android's Settings, and without re-reading the state the
-    // row would go on saying "off" after the person had turned it on.
     var granted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     DisposableEffect(lifecycle) {
         val observer = object : DefaultLifecycleObserver {
@@ -205,10 +160,6 @@ private fun ReturnAfterUpdate() {
         if (!granted) {
             TextButton(
                 onClick = {
-                    // The system screen, already filtered to this application.
-                    // Without the `package:`, it opens the list of ALL
-                    // applications and the person has to hunt for ours in the
-                    // middle of it.
                     val intent = Intent(
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                         Uri.parse("package:${context.packageName}"),

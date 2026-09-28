@@ -11,7 +11,6 @@ func (t *State) parse(c rune) {
 			return
 		}
 	}
-	// TODO: update selection; see st.c:2450
 
 	if t.mode&ModeWrap != 0 && t.cur.State&cursorWrapNext != 0 {
 		t.lines[t.cur.Y][t.cur.X].Mode |= attrWrap
@@ -19,7 +18,6 @@ func (t *State) parse(c rune) {
 	}
 
 	if t.mode&ModeInsert != 0 && t.cur.X+1 < t.cols {
-		// TODO: move shiz, look at st.c:2458
 		t.logln("insert mode not implemented")
 	}
 
@@ -42,48 +40,47 @@ func (t *State) parseEsc(c rune) {
 		next = t.parseEscCSI
 	case '#':
 		next = t.parseEscTest
-	case 'P', // DCS - Device Control String
-		'_', // APC - Application Program Command
-		'^', // PM - Privacy Message
-		']', // OSC - Operating System Command
-		'k': // old title set compatibility
+	case 'P',
+		'_',
+		'^',
+		']',
+		'k':
 		t.str.reset()
 		t.str.typ = c
 		next = t.parseEscStr
-	case '(': // set primary charset G0
+	case '(':
 		next = t.parseEscAltCharset
-	case ')', // set secondary charset G1 (ignored)
-		'*', // set tertiary charset G2 (ignored)
-		'+': // set quaternary charset G3 (ignored)
-	case 'D': // IND - linefeed
+	case ')',
+		'*',
+		'+':
+	case 'D':
 		if t.cur.Y == t.bottom {
 			t.scrollUp(t.top, 1)
 		} else {
 			t.moveTo(t.cur.X, t.cur.Y+1)
 		}
-	case 'E': // NEL - next line
+	case 'E':
 		t.newline(true)
-	case 'H': // HTS - horizontal tab stop
+	case 'H':
 		t.tabs[t.cur.X] = true
-	case 'M': // RI - reverse index
+	case 'M':
 		if t.cur.Y == t.top {
 			t.scrollDown(t.top, 1)
 		} else {
 			t.moveTo(t.cur.X, t.cur.Y-1)
 		}
-	case 'Z': // DECID - identify terminal
-		// TODO: write to our writer our id
-	case 'c': // RIS - reset to initial state
+	case 'Z':
+	case 'c':
 		t.reset()
-	case '=': // DECPAM - application keypad
+	case '=':
 		t.mode |= ModeAppKeypad
-	case '>': // DECPNM - normal keypad
+	case '>':
 		t.mode &^= ModeAppKeypad
-	case '7': // DECSC - save cursor
+	case '7':
 		t.saveCursor()
-	case '8': // DECRC - restore cursor
+	case '8':
 		t.restoreCursor()
-	case '\\': // ST - stop
+	case '\\':
 	default:
 		t.logf("unknown ESC sequence '%c'\n", c)
 	}
@@ -106,7 +103,7 @@ func (t *State) parseEscStr(c rune) {
 	switch c {
 	case '\033':
 		t.state = t.parseEscStrEnd
-	case '\a': // backwards compatiblity to xterm
+	case '\a':
 		t.state = t.parse
 		t.handleSTR()
 	default:
@@ -131,15 +128,15 @@ func (t *State) parseEscAltCharset(c rune) {
 	}
 	t.logf("%q", string(c))
 	switch c {
-	case '0': // line drawing set
+	case '0':
 		t.cur.Attr.Mode |= attrGfx
-	case 'B': // USASCII
+	case 'B':
 		t.cur.Attr.Mode &^= attrGfx
-	case 'A', // UK (ignored)
-		'<', // multinational (ignored)
-		'5', // Finnish (ignored)
-		'C', // Finnish (ignored)
-		'K': // German (ignored)
+	case 'A',
+		'<',
+		'5',
+		'C',
+		'K':
 	default:
 		t.logf("unknown alt. charset '%c'\n", c)
 	}
@@ -150,7 +147,6 @@ func (t *State) parseEscTest(c rune) {
 	if t.handleControlCodes(c) {
 		return
 	}
-	// DEC screen alignment test
 	if c == '8' {
 		for y := 0; y < t.rows; y++ {
 			for x := 0; x < t.cols; x++ {
@@ -166,35 +162,21 @@ func (t *State) handleControlCodes(c rune) bool {
 		return false
 	}
 	switch c {
-	// HT
 	case '\t':
 		t.putTab(true)
-	// BS
 	case '\b':
 		t.moveTo(t.cur.X-1, t.cur.Y)
-	// CR
 	case '\r':
 		t.moveTo(0, t.cur.Y)
-	// LF, VT, LF
 	case '\f', '\v', '\n':
-		// go to first col if mode is set
 		t.newline(t.mode&ModeCRLF != 0)
-	// BEL
 	case '\a':
-		// TODO: emit sound
-		// TODO: window alert if not focused
-	// ESC
 	case 033:
 		t.csi.reset()
 		t.state = t.parseEsc
-	// SO, SI
 	case 016, 017:
-		// different charsets not supported. apps should use the correct
-		// alt charset escapes, probably for line drawing
-	// SUB, CAN
 	case 032, 030:
 		t.csi.reset()
-	// ignore ENQ, NUL, XON, XOFF, DEL
 	case 005, 000, 021, 023, 0177:
 	default:
 		return false

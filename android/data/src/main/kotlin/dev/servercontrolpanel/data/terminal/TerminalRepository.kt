@@ -16,74 +16,40 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
 
-/** One session the authenticated user can see (own, or shared via `all` audience). */
 data class TerminalSession(val name: String, val attached: Boolean, val created: Long, val tab: String?)
 
-/** Outcome of `GET /api/mobile/v1/terminal/sessions`. */
 sealed interface TerminalSessionsResult {
     data class Success(val sessions: List<TerminalSession>) : TerminalSessionsResult
     data object Empty : TerminalSessionsResult
     data class Error(val reason: String) : TerminalSessionsResult
 }
 
-/**
- * The slice of [TerminalRepository] that `SessionListViewModel` depends on.
- * `:feature-terminal` cannot see [MobileApi], so its tests fake this interface.
- */
 interface TerminalSessionsSource {
     suspend fun sessions(): TerminalSessionsResult
 }
 
-/** Outcome of `GET /api/mobile/v1/terminal/scrollback`. */
 sealed interface ScrollbackResult {
     data class Success(val text: String) : ScrollbackResult
     data class Error(val reason: String) : ScrollbackResult
 }
 
-/**
- * A session's RAW log: the bytes the PTY wrote, escapes included. [total] is the
- * server-side log size; when `total > bytes.size` older history did not fit.
- */
 sealed interface RawLogResult {
     data class Success(val bytes: ByteArray, val total: Int) : RawLogResult
     data class Error(val reason: String) : RawLogResult
 }
 
-/**
- * Fetches the raw log so the app can prime its own emulator on attach. Separate
- * from [TerminalScrollbackSource], which returns text to be read rather than a
- * stream to be replayed. See `RawLogResponse` on the Go side.
- */
 interface TerminalRawLogSource {
     suspend fun rawLog(name: String, bytes: Int): RawLogResult
 
-    /**
-     * The rendered history: lines already scrolled off the screen, as
-     * append-only text. Preferred for the primer, because replaying the raw log
-     * duplicates lines (see `AttachReplay`); the server builds it with a live
-     * emulator on the session grid. Measured: 4096 KiB of raw log become 360 KiB
-     * of history.
-     *
-     * Empty is valid (new session, nothing scrolled yet); the primer then falls
-     * back to [rawLog].
-     */
     suspend fun history(name: String, bytes: Int): RawLogResult
 }
 
-/** The "load older" seam that `TerminalViewModel` tests fake. */
 interface TerminalScrollbackSource {
     suspend fun scrollback(name: String, lines: Int = 5000, plain: Boolean = false): ScrollbackResult
 }
 
-/**
- * The single call site into the generated BFF client for terminal sessions, WS
- * tickets, history and backups. No other module may reference [MobileApi] or its
- * model types; callers only see the sealed results here.
- */
 class TerminalRepository(
     private val mobileApi: MobileApi = MobileApi(),
-    // Kill, assign and peek live under the BFF's `terminal` tag, so the generator
-    // put them in a separate class (same base URL and auth).
     private val terminalApi: TerminalApi = TerminalApi(),
 ) : TerminalTicketSource,
     TerminalSessionsSource,
@@ -150,8 +116,6 @@ class TerminalRepository(
 
     override suspend fun history(name: String, bytes: Int): RawLogResult = try {
         val response = mobileApi.getTerminalHistory(name = name, bytes = bytes.toLong())
-        // Decode off the caller's dispatcher: a few MiB of base64 on the main
-        // thread is a visible freeze.
         withContext(Dispatchers.Default) {
             RawLogResult.Success(
                 bytes = java.util.Base64.getDecoder().decode(response.base64),
@@ -172,12 +136,8 @@ class TerminalRepository(
 
     override suspend fun rawLog(name: String, bytes: Int): RawLogResult = try {
         val response = mobileApi.getTerminalRawLog(name = name, bytes = bytes.toLong())
-        // The generated client returns to the caller's dispatcher before
-        // decoding, and up to ~22 MiB of base64 would freeze the main thread.
         withContext(Dispatchers.Default) {
             RawLogResult.Success(
-                // java.util's Base64 works on the device (minSdk 34) and on the
-                // JVM, so unit tests run the same path.
                 bytes = java.util.Base64.getDecoder().decode(response.base64),
                 total = response.total.toInt(),
             )
@@ -189,7 +149,6 @@ class TerminalRepository(
     } catch (e: IOException) {
         RawLogResult.Error("Connection failed while loading the history.")
     } catch (e: IllegalArgumentException) {
-        // Corrupt base64: better to open without history than crash the screen.
         RawLogResult.Error("The history arrived corrupted from the server.")
     } catch (e: IllegalStateException) {
         RawLogResult.Error("Configuration error while loading the history.")
@@ -240,8 +199,6 @@ class TerminalRepository(
         val r = mobileApi.restoreTerminalBackup(RestoreBackupRequest(id = id, name = session))
         val done = r.restored.toInt()
         val skipped = r.skipped.toInt()
-        // "Skipped" almost always means the name is already live (restore never
-        // overwrites a session in use), so say it explicitly.
         val text = when {
             done == 0 && skipped > 0 -> "Nothing restored — $skipped already existed or were over the limit."
             skipped > 0 -> "$done restored; $skipped skipped because they already exist."
@@ -267,7 +224,6 @@ class TerminalRepository(
     } catch (e: IOException) {
         enqueue(
             method = "DELETE",
-            // No body: the id goes in the path and the session in the query, as the route expects.
             path = "/terminal/backups/" + urlEncode(id) +
                 (session?.let { "?name=" + urlEncode(it) } ?: ""),
             bodyJson = "",
@@ -302,7 +258,6 @@ class TerminalRepository(
 
     override suspend fun assignSession(name: String, target: String): ActionResult = try {
         terminalApi.assignTerminalSession(AssignSessionRequest(name = name, target = target))
-        // State the result ("everyone can now see it"), not the action.
         val who = if (target == TARGET_ALL) "everyone" else target
         ActionResult.Ok("$name is now visible to $who.")
     } catch (e: IOException) {
@@ -318,8 +273,6 @@ class TerminalRepository(
     }
 
     override suspend fun assignmentTargets(): TargetsResult = try {
-        // The generated list is nullable; absent and empty both mean "no targets",
-        // and the screen disables the option.
         TargetsResult.Success(terminalApi.listAssignTargets().targets.orEmpty())
     } catch (e: Exception) {
         TargetsResult.Error(reasonOf(e, "list who the session can be shown to"))
@@ -333,14 +286,6 @@ class TerminalRepository(
     }
 }
 
-/**
- * Queues the action for when the network comes back, or returns the usual error
- * if the queue refuses it. Only called from `catch (IOException)`: 4xx and 5xx
- * mean the server heard and stay immediate errors.
- *
- * Uses [IdempotencyProof.KEY_IN_HEADER]: the five routes used here declare
- * `Idempotency-Key` on the BFF.
- */
 private fun enqueue(
     method: String,
     path: String,
@@ -362,11 +307,6 @@ private fun enqueue(
     }
 }
 
-/**
- * Builds the body by hand because the queue stores text that must survive app
- * restarts, and generated model objects are not stable across regenerations.
- * Null fields are omitted, since Go treats an absent field differently from `null`.
- */
 private fun bodyJson(vararg fields: Pair<String, String?>): String =
     kotlinx.serialization.json.JsonObject(
         fields.filter { it.second != null }
@@ -375,14 +315,8 @@ private fun bodyJson(vararg fields: Pair<String, String?>): String =
 
 private fun urlEncode(v: String): String = java.net.URLEncoder.encode(v, "UTF-8")
 
-/** The target meaning "everyone" in the server's assignment contract. */
 const val TARGET_ALL: String = "*"
 
-/**
- * Maps an exception to a user-facing sentence. Each type gets a distinct message
- * because "no network" and "server down" call for opposite actions, and
- * [action] names what failed since the message may appear far from its button.
- */
 private fun reasonOf(e: Exception, action: String): String = when (e) {
     is ClientException -> when (e.statusCode) {
         404 -> "Not found — it may have been removed from another device."

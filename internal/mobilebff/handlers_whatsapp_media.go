@@ -12,31 +12,13 @@ import (
 	"server-control-panel/internal/httpmw"
 )
 
-// maxMediaUploadBytes is the mobile BFF's media upload cap — the same cap the
-// panel uses in handleSendFile (see
-// internal/whatsapp/handlers_messages.go). httpmw.MaxBody applies 25 MiB by
-// default on every route; without the RegisterLargeBody in init() below, a real
-// media upload (a photo, a short video) would blow up well before the cap the
-// product promises — see the comment on RegisterLargeBody for why that cannot
-// be solved inside the handler itself.
 const maxMediaUploadBytes = 100 << 20
 
-// registerWhatsappMedia registers WhatsApp's two media routes: serve (with
-// on-demand download on a cache miss) and send. No domain logic lives here —
-// each handler delegates straight to
-// internal/whatsapp/service_export.go, the same wrappers
-// handlers_whatsapp.go already uses for text.
 func init() {
 	Register("whatsapp-media", registerWhatsappMedia)
 	httpmw.RegisterLargeBody(isWhatsAppMediaUpload, maxMediaUploadBytes)
 }
 
-// isWhatsAppMediaUpload matches exactly POST {Prefix}/whatsapp/chats/<jid>/media
-// — the only BFF route that needs the 100 MiB cap. Compared segment by segment
-// (not a plain HasPrefix) so as not to accidentally widen the cap for some
-// future route starting with the same prefix, nor confuse it with the download
-// route .../media/<msg_id> (which is a GET with no body, but it costs nothing to
-// be explicit rather than relying on the Method check alone).
 func isWhatsAppMediaUpload(r *http.Request) bool {
 	if r.Method != http.MethodPost {
 		return false
@@ -53,7 +35,7 @@ func isWhatsAppMediaUpload(r *http.Request) bool {
 	}
 	for i := 0; i < len(middle); i++ {
 		if middle[i] == '/' {
-			return false // would be .../media/<something>, not the upload route
+			return false
 		}
 	}
 	return true
@@ -64,9 +46,6 @@ type mediaGetInput struct {
 	MsgID string `path:"msg_id"`
 }
 
-// UploadMediaForm is the multipart body of POST .../media. File is required;
-// ClientMsgID guarantees idempotency (a network retry does not duplicate the
-// send) — the same contract sendMessageHandler already uses for text.
 type UploadMediaForm struct {
 	File        huma.FormFile `form:"file" required:"true" doc:"Media file to send"`
 	ClientMsgID string        `form:"client_msg_id" required:"true" doc:"Client-generated ID; resending with the same id does not duplicate the send"`
@@ -80,9 +59,6 @@ type mediaUploadInput struct {
 	RawBody huma.MultipartFormFiles[UploadMediaForm]
 }
 
-// UploadMediaResponse returns only the id — the same minimal shape
-// SendMessageResponse already uses for text; the app gets the rest of the
-// metadata (mime, size, url) on the next message poll, via MediaView.
 type UploadMediaResponse struct {
 	ID string `json:"id"`
 }
@@ -95,9 +71,6 @@ func registerWhatsappMedia(api huma.API, deps Deps) {
 	registerWhatsappMediaWithResolver(api, managerResolver(deps.WhatsAppMgr))
 }
 
-// registerWhatsappMediaWithResolver exists separately from registerWhatsappMedia
-// for the same reason as registerWhatsappWithResolver: tests inject a fake
-// whatsappResolver without needing a real *whatsapp.Manager.
 func registerWhatsappMediaWithResolver(api huma.API, resolve whatsappResolver) {
 	huma.Register(api, huma.Operation{
 		OperationID: "getWhatsAppMedia",
@@ -126,11 +99,6 @@ func registerWhatsappMediaWithResolver(api huma.API, resolve whatsappResolver) {
 	}, mediaUploadHandler(resolve))
 }
 
-// mediaGetHandler resolves the cache miss BEFORE returning the StreamResponse:
-// DownloadMediaForMessage (singleflight inside) may block on the network if
-// the media is not local yet, and only after that does ServeMediaRel step in
-// for the real Range/206/416 — the same pattern as downloadFile in
-// handlers_transfer.go and avatarHandler in handlers_whatsapp.go.
 func mediaGetHandler(resolve whatsappResolver) func(ctx context.Context, input *mediaGetInput) (*huma.StreamResponse, error) {
 	return func(ctx context.Context, input *mediaGetInput) (*huma.StreamResponse, error) {
 		svc, err := resolve(ctx)
@@ -139,8 +107,6 @@ func mediaGetHandler(resolve whatsappResolver) func(ctx context.Context, input *
 		}
 		rel, _, _, _, err := svc.DownloadMediaForMessage(input.JID, input.MsgID)
 		if err != nil {
-			// *whatsapp.DownloadMediaError implements huma.StatusError — returned
-			// directly, without rewriting the status mapping here.
 			return nil, err
 		}
 		return &huma.StreamResponse{
@@ -162,17 +128,8 @@ func mediaUploadHandler(resolve whatsappResolver) func(ctx context.Context, inpu
 		if !form.File.IsSet {
 			return nil, huma.Error400BadRequest("file is required")
 		}
-		// The same per-file cap the panel applies in handleSendFile
-		// (io.LimitReader(...,100<<20)) — the whole request body is already
-		// limited to maxMediaUploadBytes by httpmw.MaxBody (via
-		// RegisterLargeBody above); this LimitReader is the belt-and-braces
-		// against a multipart with several fields whose sum exceeds the size of
-		// ONE file, not a second line of defence against the same
-		// attack.
 		data, err := io.ReadAll(io.LimitReader(form.File, maxMediaUploadBytes))
 		if err != nil {
-			// Never echo err.Error() to the client — the same stance as
-			// handlers_screens.go/handlers_actions.go.
 			log.Printf("mobilebff: error reading the media file for %q: %v", input.JID, err)
 			return nil, huma.Error500InternalServerError("internal error")
 		}

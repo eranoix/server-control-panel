@@ -15,10 +15,6 @@ import (
 	"server-control-panel/internal/config"
 )
 
-// The file name comes from the browser — or from a forged POST. It is the only
-// string in this flow the client controls and that turns into a path on disk, so
-// it is the point where a mistake is expensive: a ".." that gets through writes
-// outside the tenant's directory.
 func TestSafeUploadName(t *testing.T) {
 	cases := []struct {
 		name string
@@ -50,9 +46,6 @@ func TestSafeUploadName(t *testing.T) {
 	}
 }
 
-// A huge name must not blow past the filesystem limit, and the extension has to
-// survive the truncation — it is what tells whoever reads the path (person or
-// tool) what the file is.
 func TestSafeUploadNameLimit(t *testing.T) {
 	long := ""
 	for i := 0; i < 500; i++ {
@@ -67,9 +60,6 @@ func TestSafeUploadNameLimit(t *testing.T) {
 	}
 }
 
-// Regression guard: the old handler returned 415 for anything that was not an
-// image. No result of safeUploadName may contain a separator — that is what
-// guarantees filepath.Join stays inside the tenant's dir.
 func TestSafeUploadNameNeverHasSeparator(t *testing.T) {
 	entries := []string{
 		"../x", "a/b", `a\b`, "/etc/passwd", `..\..\win.ini`,
@@ -87,11 +77,6 @@ func TestSafeUploadNameNeverHasSeparator(t *testing.T) {
 		}
 	}
 }
-
-// ── Handler E2E ─────────────────────────────────────────────────────────────
-// What this test proves, and the unit test above does not: a real POST, with a
-// real multipart, writes the file in the right place. It is the proof that the
-// image/* lock came out without opening a hole in the write path.
 
 func postFile(t *testing.T, r *Router, field, name string, body []byte) *httptest.ResponseRecorder {
 	t.Helper()
@@ -121,7 +106,6 @@ func testRouter(t *testing.T) (*Router, string) {
 
 func TestUploadAcceptsNonImage(t *testing.T) {
 	r, _ := testRouter(t)
-	// Minimal PDF: before the fix this hit 415 ("the file is not an image").
 	pdf := []byte("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n%%EOF\n")
 	w := postFile(t, r, "file", "client contract.pdf", pdf)
 	if w.Code != 200 {
@@ -137,7 +121,6 @@ func TestUploadAcceptsNonImage(t *testing.T) {
 	if resp.Size != int64(len(pdf)) {
 		t.Fatalf("size = %d, want %d", resp.Size, len(pdf))
 	}
-	// The user's name survives (a space becomes _): it is what orients whoever reads the path.
 	if !strings.HasSuffix(resp.Name, "client_contract.pdf") {
 		t.Fatalf("original name lost: %q", resp.Name)
 	}
@@ -148,7 +131,6 @@ func TestUploadAcceptsNonImage(t *testing.T) {
 	if !bytes.Equal(got, pdf) {
 		t.Fatalf("written content differs from what was sent (%d vs %d bytes)", len(got), len(pdf))
 	}
-	// 0o600: the file belongs to the tenant, not to the world.
 	if fi, err := os.Stat(resp.Path); err == nil && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("permission %v, wanted 0600", fi.Mode().Perm())
 	}
@@ -173,9 +155,6 @@ func TestUploadVariousTypes(t *testing.T) {
 	}
 }
 
-// Compatibility: cached tabs and the code-server extension still send the "image"
-// field. If that breaks, image pasting stops working in every browser that has not
-// reloaded the page — and nobody connects a bug like that to a deploy.
 func TestUploadAcceptsLegacyImageField(t *testing.T) {
 	r, _ := testRouter(t)
 	png := []byte("\x89PNG\r\n\x1a\n" + strings.Repeat("x", 40))
@@ -184,7 +163,6 @@ func TestUploadAcceptsLegacyImageField(t *testing.T) {
 	}
 }
 
-// A name carrying traversal must not escape the tenant's upload directory.
 func TestUploadStaysInsideDirectory(t *testing.T) {
 	r, dir := testRouter(t)
 	w := postFile(t, r, "file", "../../../../tmp/pwned.txt", []byte("x"))
@@ -225,7 +203,7 @@ func TestUploadRequiresAuth(t *testing.T) {
 	r, _ := testRouter(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/terminal/upload", strings.NewReader(""))
 	w := httptest.NewRecorder()
-	r.handleTerminalUpload(w, req) // sem auth.WithUser
+	r.handleTerminalUpload(w, req)
 	if w.Code != 401 {
 		t.Fatalf("no user in context should give 401, got %d", w.Code)
 	}

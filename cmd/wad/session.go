@@ -20,42 +20,33 @@ import (
 )
 
 func init() {
-	// whatsmeow's sqlstore opens with sql.Open("sqlite3", ...); modernc registers
-	// itself as "sqlite", so alias it under "sqlite3" (pure-Go, CGO-free).
 	sql.Register("sqlite3", &sqlited.Driver{})
 }
 
-// session wraps one whatsmeow client bound to a single WhatsApp account (one
-// server-control-panel user). It reuses the device already paired in the copied gows.db,
-// so no QR is needed on a healthy migration.
 type session struct {
 	user      string
 	dbPath    string
-	push      *pusher // emits WAHA-shaped webhook events to server-control-panel
+	push      *pusher
 	log       waLog.Logger
 	container *sqlstore.Container
 
 	mu     sync.RWMutex
 	client *whatsmeow.Client
-	qrCode string // current pairing QR (data when LoggedOut/unpaired), else ""
-	status string // WORKING / STARTING / SCAN_QR_CODE / FAILED / STOPPED
+	qrCode string
+	status string
 
-	// msgStore keeps recent messages by ID (FIFO-capped) so we can: download
-	// inbound media on demand (whatsmeow downloads by keys, not URL), build
-	// replies/forwards (need the quoted/source message + its author), and send
-	// read receipts (need the last inbound id+sender per chat).
 	mediaMu     sync.Mutex
 	msgs        map[string]*stashedMsg
 	msgOrder    []string
-	mediaStashN int                          // count of persisted media (prune throttle)
-	lastIn      map[string]lastInbound       // chatJID → last received message
-	unread      map[string][]types.MessageID // chatJID → unread inbound ids (markread marks ALL)
+	mediaStashN int
+	lastIn      map[string]lastInbound
+	unread      map[string][]types.MessageID
 }
 
 type stashedMsg struct {
 	msg    *waE2E.Message
-	sender string // JID of the message author (for reply ContextInfo)
-	fromMe bool   // whether we sent it (for star)
+	sender string
+	fromMe bool
 }
 
 type lastInbound struct {
@@ -76,15 +67,13 @@ func newSession(user, dbPath string, push *pusher) *session {
 	}
 }
 
-// connect opens the session DB and connects to WhatsApp, reusing the stored
-// device. Safe to call once at startup; whatsmeow handles reconnects internally.
 func (s *session) connect(ctx context.Context) error {
 	dsn := "file:" + s.dbPath + "?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
-	db.SetMaxOpenConns(1) // SQLite single-writer
+	db.SetMaxOpenConns(1)
 	s.container = sqlstore.NewWithDB(db, "sqlite3", s.log)
 	if err := s.container.Upgrade(ctx); err != nil {
 		return fmt.Errorf("upgrade: %w", err)
@@ -101,7 +90,6 @@ func (s *session) connect(ctx context.Context) error {
 	s.mu.Unlock()
 
 	if device.ID == nil {
-		// Not paired — surface a QR for re-pairing.
 		s.setStatus("SCAN_QR_CODE")
 		go s.pairLoop(ctx, cli)
 		return nil
@@ -113,21 +101,10 @@ func (s *session) connect(ctx context.Context) error {
 	return nil
 }
 
-// pairLoop drives the whatsmeow QR pairing channel while the account is
-// unpaired. whatsmeow emits ~6 rotating codes over ~150s and then closes the
-// channel with a "timeout", disconnecting the client. The previous version
-// stopped at that point, so s.qrCode froze on the last (already-expired) code
-// and every scan after the window failed with a pairing error. It also pushed a
-// status only on the FIRST code (setStatus is change-gated), so once the daemon
-// rotated, the UI kept showing a stale code. This version force-pushes on every
-// rotation (the server-control-panel re-pulls GetQR on each SCAN_QR_CODE event, so the
-// displayed QR stays in sync) and, when the window ends without a scan,
-// regenerates a fresh channel so a live QR is always available.
 func (s *session) pairLoop(ctx context.Context, cli *whatsmeow.Client) {
 	for {
 		qrChan, err := cli.GetQRChannel(ctx)
 		if err != nil {
-			// Already connected/paired, or ctx done — nothing to pair here.
 			s.log.Warnf("pair: GetQRChannel: %v", err)
 			return
 		}
@@ -142,9 +119,6 @@ func (s *session) pairLoop(ctx context.Context, cli *whatsmeow.Client) {
 				s.mu.Lock()
 				s.qrCode = evt.Code
 				s.mu.Unlock()
-				// Force a push on EVERY code: setStatus alone is change-gated
-				// and would drop mid-scan rotations, leaving the UI on a code
-				// that already expired on the daemon.
 				s.pushScanQR()
 			case "success":
 				s.mu.Lock()
@@ -152,16 +126,12 @@ func (s *session) pairLoop(ctx context.Context, cli *whatsmeow.Client) {
 				s.mu.Unlock()
 				outcome = "success"
 			default:
-				// Terminal non-success: "timeout" or an "err-*" pairing error.
 				outcome = evt.Event
 			}
 		}
 		if outcome == "success" || ctx.Err() != nil {
 			return
 		}
-		// whatsmeow already closed the channel, removed its handler and
-		// disconnected the client. Drop the stale code and regenerate a fresh
-		// QR after a short backoff so the user never scans an expired code.
 		s.log.Infof("pair: the QR channel closed (%s); regenerating a fresh QR", outcome)
 		s.mu.Lock()
 		s.qrCode = ""
@@ -174,9 +144,6 @@ func (s *session) pairLoop(ctx context.Context, cli *whatsmeow.Client) {
 	}
 }
 
-// pushScanQR marks the session SCAN_QR_CODE and unconditionally emits a status
-// event so the server-control-panel re-pulls the freshly rotated QR. setStatus only
-// pushes on transitions, which would drop the intermediate QR rotations.
 func (s *session) pushScanQR() {
 	s.mu.Lock()
 	s.status = "SCAN_QR_CODE"
@@ -231,10 +198,6 @@ func (s *session) selfPushNameLocked() string {
 	return ""
 }
 
-// --- sending ---
-
-// normalizeJID accepts "<num>@c.us" or "<num>@s.whatsapp.net" or "<num>" or a
-// group "<id>@g.us" and returns a parsed whatsmeow JID.
 func normalizeJID(raw string) (types.JID, error) {
 	raw = strings.TrimSpace(raw)
 	if strings.HasSuffix(raw, "@c.us") {
@@ -247,7 +210,7 @@ func normalizeJID(raw string) (types.JID, error) {
 }
 
 type sendReq struct {
-	Type     string `json:"type"` // text / image / video / document / voice
+	Type     string `json:"type"`
 	ChatID   string `json:"chatId"`
 	Text     string `json:"text"`
 	Caption  string `json:"caption"`
@@ -269,7 +232,7 @@ func (s *session) send(ctx context.Context, req sendReq, data []byte) (string, e
 		return "", fmt.Errorf("invalid jid: %w", err)
 	}
 
-	ci := s.replyContext(req.QuotedID) // nil when it is not a reply
+	ci := s.replyContext(req.QuotedID)
 	var msg *waE2E.Message
 	switch req.Type {
 	case "", "text":
@@ -331,14 +294,10 @@ func (s *session) send(ctx context.Context, req sendReq, data []byte) (string, e
 	if err != nil {
 		return "", fmt.Errorf("send: %w", err)
 	}
-	// Persist our own outbound in the server Store (so it survives reload).
-	// whatsmeow doesn't re-deliver a message this client just sent, so push it
-	// explicitly; the server dedups by ID. Stash media so /api/files works.
 	s.pushOwnSent(resp.ID, to, req, msg)
 	return resp.ID, nil
 }
 
-// pushOwnSent emits a fromMe `message` event for a message we just sent.
 func (s *session) pushOwnSent(id string, to types.JID, req sendReq, msg *waE2E.Message) {
 	selfJID := ""
 	if sid := s.selfStoreID(); sid != nil {
@@ -377,20 +336,12 @@ func strPtrOrNil(v string) *string {
 	return proto.String(v)
 }
 
-// --- inbound events → WAHA-shaped webhook pushes ---
-
 func (s *session) handleEvent(evt interface{}) {
 	switch v := evt.(type) {
 	case *events.Connected:
 		s.setStatus("WORKING")
 	case *events.Disconnected:
-		// whatsmeow auto-reconnects; don't flip to FAILED on transient drops.
 	case *events.StreamReplaced:
-		// Another client took over the SAME device (e.g. the WAHA container came
-		// back up). whatsmeow does NOT auto-reconnect after StreamReplaced → sending
-		// would start failing with "not connected" and the status would stay stuck
-		// on WORKING. Reflect the problem and try to reconnect once after a delay
-		// (if the intruder goes away — WAHA should be stopped/disabled — it recovers).
 		s.log.Warnf("StreamReplaced: another client took over the device; retrying the connection in 15s")
 		s.setStatus("FAILED")
 		go func() {
@@ -402,10 +353,6 @@ func (s *session) handleEvent(evt interface{}) {
 			}
 		}()
 	case *events.LoggedOut:
-		// Device was unlinked remotely (from the phone). whatsmeow cleared the
-		// store ID, so the account is unpaired again — restart the pairing loop
-		// to surface a fresh QR instead of freezing on SCAN_QR_CODE with no
-		// code. Disconnect first so GetQRChannel (needs !connected) succeeds.
 		s.setStatus("SCAN_QR_CODE")
 		if c := s.cli(); c != nil {
 			go func() {
@@ -420,7 +367,6 @@ func (s *session) handleEvent(evt interface{}) {
 	case *events.Receipt:
 		s.onReceipt(v)
 	case *events.Presence:
-		// Availability of a 1:1 contact (online / last seen).
 		state := "available"
 		if v.Unavailable {
 			state = "unavailable"
@@ -429,19 +375,14 @@ func (s *session) handleEvent(evt interface{}) {
 		if !v.LastSeen.IsZero() {
 			lastSeen = v.LastSeen.Unix()
 		}
-		// 1:1: the actor is the contact itself (an empty participant falls back to chatJID).
 		s.push.presence(s.user, v.From.ToNonAD().String(), "", state, lastSeen)
 	case *events.ChatPresence:
-		// Typing / recording in a chat.
-		state := string(v.State) // composing / paused
+		state := string(v.State)
 		if v.State == types.ChatPresencePaused {
 			state = "available"
 		} else if v.Media == types.ChatPresenceMediaAudio {
 			state = "recording"
 		}
-		// In a group the typist is v.Sender (not the group's JID in v.Chat) — the
-		// presence payload has per-participant entries, so Participant has to be the
-		// real typist. 1:1: falls back to the chat.
 		chatJID := v.Chat.ToNonAD().String()
 		participant := chatJID
 		if !v.Sender.IsEmpty() {
@@ -465,12 +406,10 @@ func (s *session) onMessage(evt *events.Message) {
 		return
 	}
 
-	// Reaction: attach it to the target message (never a bubble). Same shape WAHA emits.
 	if rxn := m.GetReactionMessage(); rxn != nil && rxn.GetKey() != nil {
 		s.push.reaction(s.user, chat, rxn.GetKey().GetID(), sender, rxn.GetText(), info.Timestamp.Unix())
 		return
 	}
-	// Revoke (delete for everyone): ProtocolMessage REVOKE → message.revoked.
 	if pm := m.GetProtocolMessage(); pm != nil && pm.GetType() == waE2E.ProtocolMessage_REVOKE {
 		if k := pm.GetKey(); k != nil && k.GetID() != "" {
 			s.push.event(s.user, "message.revoked", ackOut{ID: k.GetID(), From: chat})
@@ -484,7 +423,6 @@ func (s *session) onMessage(evt *events.Message) {
 		Timestamp:  info.Timestamp.Unix(),
 		NotifyName: info.PushName,
 	}
-	// Set from/to so the server's resolveChatJID(from,to,fromMe) yields `chat`.
 	if isGroup {
 		p.From = chat
 		p.To = selfJID
@@ -501,20 +439,15 @@ func (s *session) onMessage(evt *events.Message) {
 	if p.ID == "" || p.From == "" {
 		return
 	}
-	// Stash the message (for media download, reply, forward) + track last inbound
-	// per chat (for read receipts).
 	s.stashMsg(info.ID, m, sender, info.IsFromMe)
 	if !info.IsFromMe {
 		s.mediaMu.Lock()
 		s.lastIn[chat] = lastInbound{id: info.ID, sender: sender}
-		// Accumulate ALL unread inbound ids per chat — markread marks the whole batch
-		// (not just the last one). Cap ~200/chat so it cannot grow unbounded.
 		ids := append(s.unread[chat], types.MessageID(info.ID))
 		if len(ids) > 200 {
 			ids = ids[len(ids)-200:]
 		}
 		s.unread[chat] = ids
-		// Cap lastIn along with the stash (avoids unbounded growth per chat).
 		if len(s.lastIn) > 5000 {
 			for k := range s.lastIn {
 				delete(s.lastIn, k)
@@ -526,11 +459,6 @@ func (s *session) onMessage(evt *events.Message) {
 		}
 		s.mediaMu.Unlock()
 	}
-	// RESEND response (recovering old media via resendmsg): the key was already
-	// persisted by stashMsg above and the message ALREADY EXISTS in the server's
-	// store. Do not re-push "message" (that would duplicate it) — just tell the
-	// server to download the media now that the key is back. With no media, drop it
-	// (we already have the message).
 	if evt.UnavailableRequestID != "" {
 		if mime := mediaMimeOf(m); mime != "" {
 			s.push.event(s.user, "media.recovered", mediaRecoveredOut{Chat: chat, ID: info.ID, Mimetype: mime})
@@ -538,9 +466,6 @@ func (s *session) onMessage(evt *events.Message) {
 		}
 		return
 	}
-	// Media marker: contains "/api/files/" so the server's download worker skips
-	// the WAHA-only branch and calls Backend.DownloadFile, which (meowClient)
-	// turns it into an authenticated GET to this daemon.
 	if p.HasMedia {
 		p.MediaURL = "/api/files/" + info.ID
 	}
@@ -553,13 +478,6 @@ type mediaRecoveredOut struct {
 	Mimetype string `json:"mimetype"`
 }
 
-// onHistorySync processes WhatsApp history blobs (the sync on pairing OR an
-// on-demand one via RequestHistory/BuildHistorySyncRequest). The message protos
-// carry the media KEYS (mediaKey/directPath) → we persist the stash of every
-// media message, RECOVERING the ability to download old images/videos whose key
-// the daemon had lost (the in-memory stash is wiped on restart). For each
-// recovered media it tells the server (media.recovered) to enqueue the download
-// so the bubble swaps the "Download" button for the live image.
 func (s *session) onHistorySync(evt *events.HistorySync) {
 	if evt == nil || evt.Data == nil {
 		return
@@ -601,18 +519,12 @@ func (s *session) onHistorySync(evt *events.HistorySync) {
 					Chat: chatJID, ID: key.GetID(), Mimetype: mime,
 				})
 			}
-			// BACKFILL: insert the message itself into the server's Store (not
-			// only the media key). Without this, lost messages (e.g. dropped on a
-			// 401 while the hmac diverged) never came back — history sync only
-			// recovered media for messages that ALREADY existed. The server dedups
-			// by ID (handleMessage→HasMessage), so re-emitting is idempotent.
 			p := wahaMsgOut{
 				ID:         key.GetID(),
 				FromMe:     fromMe,
 				Timestamp:  int64(wmi.GetMessageTimestamp()),
 				NotifyName: wmi.GetPushName(),
 			}
-			// from/to same as in onMessage, so resolveChatJID yields `chatJID`.
 			if isGroup {
 				p.From, p.To = chatJID, selfJID
 			} else if fromMe {
@@ -622,8 +534,6 @@ func (s *session) onHistorySync(evt *events.HistorySync) {
 			}
 			p.Data.Info.Sender = sender
 			fillMessageContent(&p, m)
-			// Only insert what renders (text/media). Skip protocol/reaction/
-			// empty → no ghost bubbles.
 			if p.From == "" || (!p.HasMedia && p.Body == "") {
 				continue
 			}
@@ -642,7 +552,6 @@ func (s *session) onHistorySync(evt *events.HistorySync) {
 	}
 }
 
-// stashMsg keeps a message (with its author) by ID, FIFO-capped.
 func (s *session) stashMsg(id string, m *waE2E.Message, sender string, fromMe bool) {
 	s.mediaMu.Lock()
 	if _, ok := s.msgs[id]; ok {
@@ -663,9 +572,6 @@ func (s *session) stashMsg(id string, m *waE2E.Message, sender string, fromMe bo
 	}
 	s.mediaMu.Unlock()
 
-	// Persist the media keys OUTSIDE the lock (disk I/O must not serialise inbound
-	// handling). This makes the manual "Download" durable across daemon restarts —
-	// the in-memory stash above is wiped on every restart.
 	if hasDownloadableMedia(m) {
 		s.persistStashedMedia(id, sender, fromMe, m)
 		if prune {
@@ -674,11 +580,6 @@ func (s *session) stashMsg(id string, m *waE2E.Message, sender string, fromMe bo
 	}
 }
 
-// getStashed looks the message up in the in-memory stash; on a miss it tries to
-// reload it from disk (only media is persisted — the path that survives a
-// restart). Returns nil when it exists nowhere. It deliberately does NOT put it
-// back in memory: downloads are one-off user actions and reading a small JSON is
-// cheap — reinserting outside msgOrder's FIFO would leak memory with no cap.
 func (s *session) getStashed(id string) *stashedMsg {
 	s.mediaMu.Lock()
 	sm := s.msgs[id]
@@ -693,7 +594,7 @@ func fillMessageContent(p *wahaMsgOut, m *waE2E.Message) {
 	if m == nil {
 		return
 	}
-	m = unwrapMsg(m) // unwraps view-once before classifying type/content
+	m = unwrapMsg(m)
 	switch {
 	case m.Conversation != nil && *m.Conversation != "":
 		p.Type = "chat"
@@ -772,7 +673,7 @@ func (s *session) close() {
 	cli := s.client
 	s.mu.RUnlock()
 	if cli != nil {
-		cli.Disconnect() // clean; never Logout()
+		cli.Disconnect()
 	}
 }
 

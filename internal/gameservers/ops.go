@@ -14,10 +14,6 @@ import (
 	"strings"
 )
 
-// Maintenance operations: installed build, update, raw config, world
-// export/import and editing the server inventory.
-
-// BuildInfo reads the installed build from the SteamCMD manifest.
 type BuildInfo struct {
 	BuildID     string  `json:"buildId"`
 	LastUpdated int64   `json:"lastUpdated"`
@@ -62,15 +58,10 @@ func (m *Manager) Build(s Server) BuildInfo {
 	return out
 }
 
-// UpdateNow triggers the update check.
-//
-// The image runs steamcmd at container start, so restarting IS the update
-// trigger — there is no "update without restarting" path. The UI says so.
 func (m *Manager) UpdateNow(ctx context.Context, s Server) error {
 	return m.Action(ctx, s, "restart")
 }
 
-// RawConfig returns the game's configuration file as text.
 func (m *Manager) RawConfig(s Server) (string, string, error) {
 	p := m.adapter(s).ConfigPath(s)
 	if p == "" {
@@ -83,8 +74,6 @@ func (m *Manager) RawConfig(s Server) (string, string, error) {
 	return string(b), p, nil
 }
 
-// SaveRawConfig validates as JSON before writing and keeps a .bak. Without the
-// validation, a misplaced comma would leave the server unable to come up.
 func (m *Manager) SaveRawConfig(s Server, text string) error {
 	p := m.adapter(s).ConfigPath(s)
 	if p == "" {
@@ -97,16 +86,12 @@ func (m *Manager) SaveRawConfig(s Server, text string) error {
 	if _, ok := probe["userGroups"]; !ok {
 		return fmt.Errorf("the file lost userGroups — refusing so access is not locked out")
 	}
-	// The `.bak` also goes through the helper, with `ref` = the ORIGINAL file. A
-	// root:root .bak beside a 4711 config is the same class of defect, only
-	// quieter — nobody looks at a backup's owner until they need it.
 	if old, err := os.ReadFile(p); err == nil {
 		_ = writeAtomic(p+".bak", old, p)
 	}
 	return writeAtomic(p, []byte(text), p)
 }
 
-// ExportWorld zips a world's folder into a temporary file.
 func (m *Manager) ExportWorld(s Server, name string) (string, error) {
 	if err := safeName(name); err != nil {
 		return "", err
@@ -146,7 +131,6 @@ func (m *Manager) ExportWorld(s Server, name string) (string, error) {
 	return tmp.Name(), nil
 }
 
-// ImportWorld extracts a zip as a new world. It refuses to overwrite.
 func (m *Manager) ImportWorld(s Server, name, zipPath string) error {
 	if err := safeName(name); err != nil {
 		return err
@@ -161,9 +145,6 @@ func (m *Manager) ImportWorld(s Server, name, zipPath string) error {
 	}
 	defer zr.Close()
 
-	// Work out the save id from the file names: a world is a family
-	// <id>, <id>-1..-9, <id>-index, <id>_info*. Without this the panel does not
-	// know which id to rename to when activating it.
 	saveID := ""
 	for _, f := range zr.File {
 		b := filepath.Base(f.Name)
@@ -183,7 +164,7 @@ func (m *Manager) ImportWorld(s Server, name, zipPath string) error {
 		if f.FileInfo().IsDir() {
 			continue
 		}
-		base := filepath.Base(f.Name) // Zip Slip: never trust the path from inside
+		base := filepath.Base(f.Name)
 		if err := safeName(base); err != nil {
 			continue
 		}
@@ -209,18 +190,9 @@ func (m *Manager) ImportWorld(s Server, name, zipPath string) error {
 	if err := writeAtomic(filepath.Join(dst, ".saveid"), []byte(saveID+"\n"), s.Root); err != nil {
 		return err
 	}
-	// The owner comes from OBSERVING the disk, never from a constant. The value
-	// that used to be here — 4711 — is Enshrouded's uid; Palworld uses PUID 1000,
-	// and that is exactly how the defect was born the first time. A new constant
-	// in the agent is how the same defect reappears under another name.
-	//
-	// The reference is s.Root, and not `dst`'s immediate parent: the parent may be
-	// a directory the panel itself just created, already root:root. The server's
-	// root is the only point of the tree whose owner is reliably the game's.
 	return chownLikeRef(dst, s.Root, true)
 }
 
-// SaveInventory replaces gameservers.json and reloads it in memory.
 func (m *Manager) SaveInventory(list []Server) error {
 	seen := map[string]bool{}
 	for i := range list {
@@ -246,17 +218,6 @@ func (m *Manager) SaveInventory(list []Server) error {
 		if !filepath.IsAbs(s.Root) {
 			return fmt.Errorf("%s: the root must be an absolute path", s.ID)
 		}
-		// The root is checked on disk ONLY when the server lives on THIS host.
-		//
-		// No unconditional `os.Stat`: a server on ANOTHER node has a root that
-		// does not exist on the panel's disk; only that node's agent can see it.
-		//
-		// Kept for a server with no node (the local case), because there it catches
-		// the typo at registration time, far from the "restart" that would only fail
-		// later. For a server with a node the panel HAS NO WAY of checking from
-		// here, and pretending to check would be worse: it would approve a wrong
-		// path with an air of being validated. What flags a wrong path on a remote
-		// node is the first operation, its error coming from the agent, naming the machine.
 		if s.No == "" {
 			if _, err := os.Stat(s.Root); err != nil {
 				return fmt.Errorf("%s: folder %s does not exist on this host (a server with no node is treated as local)", s.ID, s.Root)
@@ -270,9 +231,6 @@ func (m *Manager) SaveInventory(list []Server) error {
 	if err != nil {
 		return err
 	}
-	// This one belongs to the PANEL, not the container — the owner matters less.
-	// What matters here is DURABILITY: without fsync, a power cut inside the ZFS
-	// txg window costs the whole inventory. `ref` is the file itself.
 	if err := writeAtomic(m.path, b, m.path); err != nil {
 		return err
 	}

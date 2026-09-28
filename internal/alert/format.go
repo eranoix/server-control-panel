@@ -6,25 +6,6 @@ import (
 	"strings"
 )
 
-// FormatMessage turns the Alertmanager payload into text ready for WhatsApp.
-//
-// Format:
-//
-//	1 alert:
-//	  🚨 *FIRING* [critical] BinaryDown
-//	  server-control-panel binary down
-//	  Instance 127.0.0.1:8765 has been down for > 3 minutes.
-//	  ⏱ 2026-06-08 15:30 UTC
-//
-//	N alerts (batch):
-//	  🚨 *Alertmanager* — firing: 2, resolved: 1
-//	  ─────────────
-//	  [critical] BinaryDown @ 127.0.0.1:8765
-//	  [warning] LoginFailuresHigh — Rate > 5/min for 2m.
-//	  ✅ [warning] WSCliff (resolved)
-//
-// Emojis stay only on the header line — the body is plain text so as not to
-// clutter the phone notification.
 func FormatMessage(p *Payload) string {
 	if len(p.Alerts) == 0 {
 		return ""
@@ -81,7 +62,6 @@ func formatBatch(p *Payload) string {
 	fmt.Fprintf(&b, "🚨 *Alertmanager* — firing: %d, resolved: %d\n", firing, resolved)
 	b.WriteString(strings.Repeat("─", 13) + "\n")
 
-	// Stable: firing first, then resolved; within each, by severity (critical>warning>info) and alertname.
 	sorted := make([]Alert, len(p.Alerts))
 	copy(sorted, p.Alerts)
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -135,7 +115,6 @@ func iconFor(status, severity string) string {
 	}
 }
 
-// severityRank gives an order for sort: lower number = more urgent.
 func severityRank(s string) int {
 	switch s {
 	case "critical":
@@ -149,8 +128,6 @@ func severityRank(s string) int {
 	}
 }
 
-// PassesFilter returns true if at least one alert in the payload has a severity
-// equal to or worse than minSeverity. Empty = no filter (everything passes).
 func PassesFilter(p *Payload, minSeverity string) bool {
 	if minSeverity == "" {
 		return true

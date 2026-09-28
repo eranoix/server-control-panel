@@ -2,24 +2,11 @@ package dev.servercontrolpanel.core.model
 
 import java.net.URI
 
-/**
- * Outcome of validating a raw server URL before it is ever persisted or
- * handed to a repository. Fails closed — anything that is not an
- * unambiguous, schemed, hostful absolute URL is [Invalid].
- */
 sealed interface ServerUrlValidation {
     data class Valid(val normalized: String) : ServerUrlValidation
     data class Invalid(val reason: String) : ServerUrlValidation
 }
 
-/**
- * Validates a candidate server base URL. This value decides where every
- * future WebAuthn ceremony and API credential is sent, so it is treated as
- * security-relevant: `https` is required unless [allowInsecureHttp] is
- * explicitly set — the one deliberate, opt-in development exception — and
- * malformed/schemeless/hostless input is always rejected rather than
- * guessed at.
- */
 fun validateServerUrl(rawUrl: String, allowInsecureHttp: Boolean = false): ServerUrlValidation {
     val trimmed = rawUrl.trim()
     if (trimmed.isEmpty()) {

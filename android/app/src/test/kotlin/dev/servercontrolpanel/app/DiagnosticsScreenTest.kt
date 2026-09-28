@@ -8,10 +8,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders the stateless [DiagnosticsScreen] for every combination of `initFailures` and
- * `lastCrash`.
- */
 @RunWith(RobolectricTestRunner::class)
 class DiagnosticsScreenTest {
 

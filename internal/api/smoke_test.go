@@ -1,20 +1,5 @@
 package api
 
-// smoke_test.go — Safety net for the big architectural refactor.
-//
-// It does not test business logic. It tests that critical routes:
-//   1. Exist (do not return 404)
-//   2. Answer with the expected status for valid/invalid input
-//   3. Do not panic
-//
-// Runs in <2s. Brings the Router up in memory via NewRouter(cfg), with a minimal
-// config (no supabase, no real secrets vault) — the point is to confirm that
-// routing and the middlewares keep answering after every commit of the
-// refactor.
-//
-// If a test in here breaks during the refactor: STOP. It was not a regression in
-// some detail — it was a route that vanished or a middleware that broke.
-
 import (
 	"encoding/json"
 	"net/http/httptest"
@@ -26,9 +11,6 @@ import (
 	"server-control-panel/internal/config"
 )
 
-// newSmokeRouter builds a Router through NewRouter with a minimal config — no
-// supabase, secrets disabled, queue/scheduler/whatsapp/videocall all
-// gracefully degraded. The focus is exercising the routing, not the features.
 func newSmokeRouter(t *testing.T) *Router {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "panel-smoke-")
@@ -37,7 +19,6 @@ func newSmokeRouter(t *testing.T) *Router {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 
-	// Write a minimal config straight into the DataDir
 	cfg := &config.Config{
 		SchemaVersion: 2,
 		Primary:       "sam",
@@ -48,7 +29,6 @@ func newSmokeRouter(t *testing.T) *Router {
 			{Username: "sam", PasswordHash: ""},
 		},
 	}
-	// Create the expected directory structure
 	if err := os.MkdirAll(filepath.Join(dir, "users", "sam"), 0o755); err != nil {
 		t.Fatalf("mkdir users: %v", err)
 	}
@@ -58,19 +38,12 @@ func newSmokeRouter(t *testing.T) *Router {
 		t.Fatalf("NewRouter: %v", err)
 	}
 	t.Cleanup(func() {
-		// Shutdown cleans up the sessions store + videocall.
-		// Uses context.Background to avoid contaminating the test with a timeout.
-		// Idempotent — calling it twice does not break anything.
-		// Note: NewRouter may have failed to initialize subsystems; Shutdown
-		// is defensive.
 		defer func() { _ = recover() }()
 		r.Shutdown(nil)
 	})
 	return r
 }
 
-// TestSmokePublicRoutes — every public route (no JWT) must answer without
-// a 404 or a 500. The status varies by route.
 func TestSmokePublicRoutes(t *testing.T) {
 	r := newSmokeRouter(t)
 
@@ -79,26 +52,22 @@ func TestSmokePublicRoutes(t *testing.T) {
 		method     string
 		path       string
 		body       string
-		wantStatus []int // any of them accepted
+		wantStatus []int
 	}{
 		{"health", "GET", "/api/health", "", []int{200}},
 		{"health-detailed", "GET", "/api/health/detailed", "", []int{200}},
 		{"metrics", "GET", "/metrics", "", []int{200}},
 		{"manifest", "GET", "/manifest.webmanifest", "", []int{200}},
 		{"sw.js", "GET", "/sw.js", "", []int{200}},
-		{"icon-192", "GET", "/icon-192.png", "", []int{200, 404}}, // no failure if the asset does not exist
+		{"icon-192", "GET", "/icon-192.png", "", []int{200, 404}},
 		{"recovery page", "GET", "/recovery", "", []int{200}},
-		{"forward-auth no token", "GET", "/api/forward-auth", "", []int{200}}, // 200 with no header
+		{"forward-auth no token", "GET", "/api/forward-auth", "", []int{200}},
 		{"index html", "GET", "/", "", []int{200}},
 		{"login bad json", "POST", "/api/auth/login", "not json", []int{400}},
 		{"login bad creds", "POST", "/api/auth/login", `{"username":"nope","password":"nope"}`, []int{401, 400, 423}},
 		{"login method get", "GET", "/api/auth/login", "", []int{405}},
-		// refresh-cookie is PUBLIC (outside the protected mux) — with no panel_refresh cookie
-		// it answers 401 from the handler ITSELF (not from the middleware). A 404 here = route gone.
 		{"refresh-cookie no cookie", "POST", "/api/auth/refresh-cookie", "", []int{401}},
 		{"refresh-cookie method get", "GET", "/api/auth/refresh-cookie", "", []int{405}},
-		// /_docs exists (not 404) and is gated: with no JWT → 401/403 via mustPrimary.
-		// Protects handleDocsReport + the route against silent removal by /heal.
 		{"docs gated unauth", "GET", "/_docs", "", []int{401, 403}},
 	}
 
@@ -137,12 +106,6 @@ func TestSmokePublicRoutes(t *testing.T) {
 	}
 }
 
-// TestRefreshCookieIsPublicAndWired — /api/auth/refresh-cookie MUST be public
-// (it renews the JWT through an HttpOnly cookie once the access token has
-// expired; that is what stops auto-logout tearing down the session/terminal in an
-// idle tab). With no panel_refresh cookie, the handler ITSELF answers 401 "no
-// refresh session" — not the middleware's "unauthorized". A 404 here = route gone
-// (a regression that would reopen the bug of the terminal dropping on its own).
 func TestRefreshCookieIsPublicAndWired(t *testing.T) {
 	r := newSmokeRouter(t)
 
@@ -157,23 +120,11 @@ func TestRefreshCookieIsPublicAndWired(t *testing.T) {
 	if w.Code != 401 {
 		t.Fatalf("without cookie expected 401, got %d; body=%s", w.Code, w.Body.String())
 	}
-	// Proves it was OUR handler (public route) and not the protected middleware:
-	// the body carries the handler's own specific message.
 	if body := w.Body.String(); !strings.Contains(body, "no refresh session") {
 		t.Fatalf("expected handler body ('no refresh session'), got: %s", body)
 	}
 }
 
-// TestSmokeDocsGated — the /_docs route (technical report) is gated by
-// mustPrimary: with no JWT it must answer 401/403, NEVER 404 (404 = route gone,
-// e.g. deleted by /heal) and never 200 (200 without auth = the gate leaked, and
-// the report is exposed to anyone).
-//
-// This test is the target of the comment-armor in handlers_docs.go and api.go
-// ("Do not remove without updating TestSmokeDocsGated"). It did NOT use to exist
-// as a function of its own — the real coverage was only the "docs gated unauth"
-// subtest inside TestSmokePublicRoutes, so the armor pointed at a ghost
-// (`go test -list` did not list it). Now the citation is true.
 func TestSmokeDocsGated(t *testing.T) {
 	r := newSmokeRouter(t)
 
@@ -183,7 +134,6 @@ func TestSmokeDocsGated(t *testing.T) {
 
 	switch w.Code {
 	case 401, 403:
-		// expected: the mustPrimary gate refused the unauthenticated access.
 	case 404:
 		t.Fatalf("GET /_docs: 404 — the /_docs route disappeared (deleted by /heal? handler removed?)")
 	default:
@@ -196,11 +146,6 @@ func TestSmokeDocsGated(t *testing.T) {
 	}
 }
 
-// TestSmokeGraphGated — the /_graph route (viewer for the Graphify knowledge
-// base) is gated by mustPrimary just like /_docs: with no JWT it must answer
-// 401/403, NEVER 404 (route gone, e.g. deleted by /heal) and never 200 (gate
-// leaked, exposing the graphs to anyone). Target of the comment-armor in
-// handlers_docs.go and api.go ("Do not remove without updating TestSmokeGraphGated").
 func TestSmokeGraphGated(t *testing.T) {
 	r := newSmokeRouter(t)
 
@@ -210,7 +155,6 @@ func TestSmokeGraphGated(t *testing.T) {
 
 	switch w.Code {
 	case 401, 403:
-		// expected: the mustPrimary gate refused the unauthenticated access.
 	case 404:
 		t.Fatalf("GET /_graph: 404 — the /_graph route disappeared (deleted by /heal? handler removed?)")
 	default:
@@ -223,13 +167,6 @@ func TestSmokeGraphGated(t *testing.T) {
 	}
 }
 
-// TestSmokeCodeGated — the /_code route (native VSCode / code-server) is gated by
-// mustPrimary just like /_docs and /_graph: with no JWT it must answer 401/403,
-// NEVER 404 (route gone, e.g. deleted by /heal) and never 200 (gate leaked — and
-// here the leak would be CRITICAL: /_code exposes a ROOT SHELL over the web). The
-// gate refuses before dialling the upstream, so the test does not depend on the
-// service being up. Target of the comment-armor in handlers_code.go and api.go
-// ("Do not remove without updating TestSmokeCodeGated").
 func TestSmokeCodeGated(t *testing.T) {
 	r := newSmokeRouter(t)
 
@@ -239,7 +176,6 @@ func TestSmokeCodeGated(t *testing.T) {
 
 	switch w.Code {
 	case 401, 403:
-		// expected: the mustPrimary gate refused the unauthenticated access.
 	case 404:
 		t.Fatalf("GET /_code/: 404 — the /_code route disappeared (deleted by /heal? handler removed?)")
 	default:
@@ -252,8 +188,6 @@ func TestSmokeCodeGated(t *testing.T) {
 	}
 }
 
-// TestSmokeProtectedRoutesRequire401 — protected routes must return 401
-// with no JWT. Confirms auth.Middleware is active.
 func TestSmokeProtectedRoutesRequire401(t *testing.T) {
 	r := newSmokeRouter(t)
 
@@ -316,8 +250,6 @@ func TestSmokeProtectedRoutesRequire401(t *testing.T) {
 	}
 }
 
-// TestSmokeHealthDetailedShape — confirms /api/health/detailed answers
-// structured JSON. Breaking that shape would break the dashboard.
 func TestSmokeHealthDetailedShape(t *testing.T) {
 	r := newSmokeRouter(t)
 
@@ -332,15 +264,11 @@ func TestSmokeHealthDetailedShape(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	// /api/health/detailed currently returns {subsystems: {...}, time: ...}.
-	// We lock that shape — the frontend depends on it.
 	if _, ok := resp["subsystems"]; !ok {
 		t.Fatalf("missing subsystems field; got %v", resp)
 	}
 }
 
-// TestSmokeHealthMinimalShape — `/api/health` has to return ok:true or
-// ok:false and carry "checks". The frontend depends on it to show the status bar.
 func TestSmokeHealthMinimalShape(t *testing.T) {
 	r := newSmokeRouter(t)
 
@@ -374,15 +302,6 @@ func TestSmokeSecurityHeaders(t *testing.T) {
 	}
 }
 
-// TestSmokeTelemetryWired: the 401 above proves /api/telemetry is NOT anonymous,
-// but it does NOT prove it EXISTS — auth.Middleware answers 401 BEFORE the
-// protected mux looks for the pattern, so a route that was never registered would
-// pass that test. A false green on a missing route would cost 14 days of an empty
-// file and leave the later analysis with no input (the same lesson an earlier plan
-// already taught).
-//
-// The sink is assigned in the SAME `else` that registers the route, so
-// telSink != nil implies the route is registered.
 func TestSmokeTelemetryWired(t *testing.T) {
 	r := newSmokeRouter(t)
 	if r.telSink == nil {

@@ -9,13 +9,6 @@ import (
 	"testing"
 )
 
-// TestClusterResources proves discovery against the REAL fixture of both views
-// (root and token). The assertion is on the SET, with a sort — never
-// `len(rs) == 7`. The acceptance criterion talks about "7 guests", but the
-// hypervisor returns NINE: the 7 provisioned earlier plus the panel (qemu/100)
-// and the pbs (lxc/202). A magic number would turn a new guest into a failure
-// and a removed guest into a wrong pass; the set says exactly WHO came in or
-// went out.
 func TestClusterResources(t *testing.T) {
 	expected := []int{100, 201, 202, 203, 204, 205, 206, 207, 208}
 
@@ -29,9 +22,6 @@ func TestClusterResources(t *testing.T) {
 				if r.URL.Path != "/api2/json/cluster/resources" {
 					t.Errorf("path = %q", r.URL.Path)
 				}
-				// The server-side filter is asked for, but it is NOT the defence: the root's
-				// view brings storage/network along and the parser has to ignore them on its
-				// own.
 				if got := r.URL.Query().Get("type"); got != "vm" {
 					t.Errorf("query type = %q, want \"vm\"", got)
 				}
@@ -56,7 +46,6 @@ func TestClusterResources(t *testing.T) {
 				t.Fatalf("set of VMIDs = %v, want %v", ids, expected)
 			}
 
-			// Fields the inventory publishes: name, node and status have to arrive.
 			for _, r := range rs {
 				if r.Name == "" || r.Node == "" || r.Status == "" {
 					t.Errorf("%s: required field empty (%+v)", r.ID, r)
@@ -69,10 +58,6 @@ func TestClusterResources(t *testing.T) {
 	}
 }
 
-// TestClusterResourcesEmpty: a hypervisor with no visible guest at all
-// is a legitimate answer (a narrow ACL), not a transport failure. What it must
-// NOT become is a mute error — deciding whether "empty" is suspicious is the
-// freshness layer's job.
 func TestClusterResourcesEmpty(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"data":[]}`))
@@ -86,9 +71,6 @@ func TestClusterResourcesEmpty(t *testing.T) {
 	}
 }
 
-// TestClusterResourcesPropagatesKind: the hypervisor's 403 (insufficient ACL) has
-// to arrive as KindForbidden, not as "no guests" — an empty inventory presented
-// as the truth is the false-green this whole design forbids.
 func TestClusterResourcesPropagatesKind(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -101,16 +83,6 @@ func TestClusterResourcesPropagatesKind(t *testing.T) {
 	}
 }
 
-// TestGuestAddress covers the three forms measured live on this lab's PVE
-// 9.2.2:
-//   - LXC static ...... net0 with ip=CIDR
-//   - QEMU cloud-init . ipconfig0 with ip=CIDR
-//   - DHCP ............ no ip= key at all → address ABSENT, and that is NOT an error
-//
-// The address is an optional field of the inventory: a guest on DHCP exists,
-// runs and is reachable — it just does not declare the IP in its config.
-// Treating absence as a failure would make the poller mark a healthy guest as
-// broken.
 func TestGuestAddress(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -178,10 +150,6 @@ func TestGuestAddress(t *testing.T) {
 	}
 }
 
-// TestGuestAddressInvalidType: "lxc" and "qemu" are the hypervisor's two
-// types. A third value would build a path that does not exist and take a 501
-// from the hypervisor — failing closed here is more honest than spending the
-// call.
 func TestGuestAddressInvalidType(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("called the hypervisor with an invalid type")
@@ -191,8 +159,6 @@ func TestGuestAddressInvalidType(t *testing.T) {
 	}
 }
 
-// TestGuestAddressPropagatesKind: a 403 on the config is "no permission", not "no
-// address". Merging the two would hide a missing ACL behind an empty field.
 func TestGuestAddressPropagatesKind(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)

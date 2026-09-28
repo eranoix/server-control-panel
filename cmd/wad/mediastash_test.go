@@ -8,9 +8,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// sampleImageMsg builds a waE2E.Message carrying an ImageMessage with the exact
-// fields whatsmeow needs to re-download + decrypt from the CDN (directPath +
-// mediaKey + enc hashes). This is what must survive a daemon restart.
 func sampleImageMsg() *waE2E.Message {
 	return &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
 		URL:           proto.String("https://mmg.whatsapp.net/o1/v/t24/example"),
@@ -24,9 +21,6 @@ func sampleImageMsg() *waE2E.Message {
 	}}
 }
 
-// TestMediaStashRoundTrip is the core proof for the bug fix: a media message's
-// download keys, once persisted, reload identically from disk — so a manual
-// "Download" works after the in-memory stash is wiped by a daemon restart.
 func TestMediaStashRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	s := &session{dbPath: filepath.Join(dir, "session.db")}
@@ -60,9 +54,6 @@ func TestMediaStashRoundTrip(t *testing.T) {
 	}
 }
 
-// TestGetStashedFallsBackToDisk proves getStashed recovers a media message from
-// disk on an in-memory miss (the post-restart scenario), and still returns nil
-// for an unknown id.
 func TestGetStashedFallsBackToDisk(t *testing.T) {
 	dir := t.TempDir()
 	s := &session{dbPath: filepath.Join(dir, "session.db"), msgs: map[string]*stashedMsg{}}
@@ -70,7 +61,6 @@ func TestGetStashedFallsBackToDisk(t *testing.T) {
 	const id = "ABCDEF0123456789"
 	s.persistStashedMedia(id, "self@s.whatsapp.net", true, sampleImageMsg())
 
-	// In-memory stash is empty (simulates a fresh daemon after restart).
 	if sm := s.getStashed(id); sm == nil {
 		t.Fatal("getStashed did not fall back to disk — media would 404 after restart")
 	} else if !sm.fromMe {
@@ -82,8 +72,6 @@ func TestGetStashedFallsBackToDisk(t *testing.T) {
 	}
 }
 
-// TestHasDownloadableMedia guards the predicate that gates persistence: text
-// messages must not be persisted (bounds disk growth), media must.
 func TestHasDownloadableMedia(t *testing.T) {
 	if hasDownloadableMedia(&waE2E.Message{Conversation: proto.String("oi")}) {
 		t.Error("text message wrongly classified as downloadable media")
@@ -94,7 +82,6 @@ func TestHasDownloadableMedia(t *testing.T) {
 	if !hasDownloadableMedia(sampleImageMsg()) {
 		t.Error("image message not classified as media")
 	}
-	// View-once wrapper must be unwrapped before the type switch.
 	viewOnce := &waE2E.Message{ViewOnceMessage: &waE2E.FutureProofMessage{Message: sampleImageMsg()}}
 	if !hasDownloadableMedia(viewOnce) {
 		t.Error("view-once image not classified as media")

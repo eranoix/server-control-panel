@@ -53,14 +53,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/** Test tag for a parent page's grid. */
 internal const val TAG_PARENT_GRID = "parent-grid"
 
-/**
- * Drives a parent page's grid. [childrenOf] is the intent; the server catalogue (`GET /screens`)
- * is what exists for this user. Sections the server does not offer are hidden, and sections the
- * app does not know are still shown under their prefix's parent ([parentOfSection]).
- */
 internal class ParentViewModel(
     private val parent: ParentPage,
     private val catalog: SduiCatalogPort = SduiCatalogRepository(),
@@ -68,13 +62,8 @@ internal class ParentViewModel(
 
     private val _children = MutableStateFlow<List<ChildPage>?>(null)
 
-    /** null while loading; a (possibly empty) list afterwards. */
     val children: StateFlow<List<ChildPage>?> = _children.asStateFlow()
 
-    /**
-     * All the panel's screens from every parent, for search. Search is global because users
-     * remember a screen's name, not which parent it belongs to.
-     */
     private val _all = MutableStateFlow<List<ChildPage>>(emptyList())
     val all: StateFlow<List<ChildPage>> = _all.asStateFlow()
 
@@ -87,7 +76,6 @@ internal class ParentViewModel(
             val declared = childrenOf(parent)
             val available = when (val r = catalog.sections()) {
                 is SduiSectionsResult.Success -> r.sections
-                // A failed catalogue call still leaves the native screens reachable.
                 is SduiSectionsResult.Error -> emptyList()
             }
             val availableIds = available.map { it.id }.toSet()
@@ -115,7 +103,6 @@ internal class ParentViewModel(
 
             _children.value = existing + unknown
 
-            // Full map: declared children of every parent the server offers, plus unknown sections.
             val declaredInAll = ParentPage.entries.flatMap { childrenOf(it) }
             val declaredIds = declaredInAll.mapNotNull {
                 (it.destination as? ChildDestination.Sdui)?.sectionId
@@ -138,10 +125,6 @@ internal class ParentViewModel(
     }
 }
 
-/**
- * A parent page's grid of child icons. Adaptive columns (104 dp minimum) fit four on a wide
- * phone and three on a narrow one without abbreviating labels.
- */
 @Composable
 internal fun ParentScreen(
     parent: ParentPage,
@@ -171,7 +154,6 @@ internal fun ParentScreen(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
         )
 
-        // While searching, the grid shows matching screens from any parent.
         val searching = query.isNotBlank()
         val result = if (searching) filterScreens(all, query) else children
 
@@ -222,10 +204,6 @@ internal fun ParentScreen(
     }
 }
 
-/**
- * Filters screens by title ("Vault") and by section id (`security.secrets`), since users may
- * know either one, for example from an error message.
- */
 internal fun filterScreens(screens: List<ChildPage>, query: String): List<ChildPage> {
     val term = query.trim().lowercase()
     if (term.isEmpty()) return screens
@@ -235,13 +213,8 @@ internal fun filterScreens(screens: List<ChildPage>, query: String): List<ChildP
     }
 }
 
-/** Label of the search field. The UI and the test read it from here. */
 internal const val SEARCH_SCREEN_LABEL = "Search screens"
 
-/**
- * The family's color. It is taxonomic only, so none is the green or red reserved for state and
- * urgency.
- */
 @Composable
 private fun parentColor(parent: ParentPage): Color = when (parent) {
     ParentPage.System -> Color(0xFF4F8FD9)
@@ -267,7 +240,6 @@ private fun ChildTile(
             .height(104.dp)
             .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            // One screen reader target instead of separate icon and label nodes.
             .semantics(mergeDescendants = true) { contentDescription = child.title },
     ) {
         Column(

@@ -11,7 +11,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Conversion of scroll pixels to lines, and where each line goes (viewport, wheel, arrows). */
 class ScrollbackGestureControllerTest {
 
     private val cellHeight = 20
@@ -48,7 +47,6 @@ class ScrollbackGestureControllerTest {
         return c.onScroll(px, Offset(5f, 5f))
     }
 
-    /** Less than one cell scrolls nothing, but the pixels accumulate so content follows the finger. */
     @Test
     fun dragSmallerThanCell_doesNotScrollButAccumulates() {
         val r = Recorder()
@@ -59,12 +57,10 @@ class ScrollbackGestureControllerTest {
         assertTrue("nothing should have scrolled yet", r.scrolls.isEmpty())
         drag(c, 8f)
         assertTrue(r.scrolls.isEmpty())
-        // 8+8+8 = 24 px, past one cell of 20.
         drag(c, 8f)
         assertEquals(listOf(-1), r.scrolls)
     }
 
-    /** Finger down shows the past (negative, same convention as the wheel). */
     @Test
     fun fingerDown_scrollsToPast() {
         val r = Recorder()
@@ -83,7 +79,6 @@ class ScrollbackGestureControllerTest {
         assertEquals(listOf(2), r.scrolls)
     }
 
-    /** A new gesture clears the remainder of the previous one. */
     @Test
     fun newGesture_resetsAccumulated() {
         val r = Recorder()
@@ -107,7 +102,6 @@ class ScrollbackGestureControllerTest {
         assertTrue("should not send any bytes to the PTY", r.bytes.isEmpty())
     }
 
-    /** With mouse tracking on (e.g. `htop`), the drag becomes wheel events and nothing scrolls locally. */
     @Test
     fun mouseActive_dragBecomesWheel_andDoesNotScrollLocally() {
         val r = Recorder()
@@ -135,7 +129,6 @@ class ScrollbackGestureControllerTest {
         assertEquals(listOf(MouseButton.WHEEL_DOWN, MouseButton.WHEEL_DOWN), r.wheels)
     }
 
-    /** Alternate screen with mode 1007 and no mouse (e.g. `less`): the drag becomes arrow keys. */
     @Test
     fun altScreenWithAltScroll_sendsArrows() {
         val r = Recorder()
@@ -163,7 +156,6 @@ class ScrollbackGestureControllerTest {
         assertArrayEquals("\u001bOA".toByteArray(), r.bytes.single())
     }
 
-    /** Alternate screen without 1007: nothing happens and the fling stops. */
     @Test
     fun altScreenWithoutAltScroll_doesNothingAndEndsFling() {
         val r = Recorder()
@@ -176,7 +168,6 @@ class ScrollbackGestureControllerTest {
         assertTrue(r.bytes.isEmpty())
     }
 
-    /** At the end of history the gesture returns `false` so the fling stops. */
     @Test
     fun atEndOfHistory_reportsNowhereToGo() {
         val r = Recorder()
@@ -186,7 +177,6 @@ class ScrollbackGestureControllerTest {
         assertFalse(drag(c, 40f))
     }
 
-    /** Wheel events belong to the remote program, so our history end does not apply. */
     @Test
     fun mouseActive_flingIsNeverStoppedByLocalEnd() {
         val r = Recorder()
@@ -197,7 +187,6 @@ class ScrollbackGestureControllerTest {
         assertTrue(drag(c, 40f))
     }
 
-    /** An absurd drag must not turn into hundreds of wheel events on the PTY. */
     @Test
     fun absurdDrag_hasWheelCapPerEvent() {
         val r = Recorder()

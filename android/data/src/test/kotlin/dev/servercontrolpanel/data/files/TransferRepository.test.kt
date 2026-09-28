@@ -147,7 +147,6 @@ class TransferRepositoryTest {
 
     @Test
     fun `a full server disk (507) is not treated as a temporary failure`() = runTest {
-        // Otherwise ENOSPC would retry forever in the background without telling the operator.
         server.enqueue(MockResponse().setResponseCode(507).setBody("""{"title":"no space left on device"}"""))
 
         val result = repositoryFor().uploadChunk("abc-123", 0, ByteArray(400))

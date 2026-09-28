@@ -42,30 +42,12 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-/**
- * Every message a 422 keyed to a form's fields splits into
- * (nothing a server said is ever dropped):
- *
- * - [fieldErrors]: keyed by [SduiFormField.key] — shown as that input's own
- *   supporting text.
- * - [confirmation]: keyed [ConfirmationFieldKey] — the server refused an
- *   unconfirmed destructive submit; shown next to the submit control, never
- *   attached to any input.
- * - [formLevel]: keyed to something the form does not declare — shown above
- *   the form instead of being silently discarded.
- */
 data class BoundErrors(
     val fieldErrors: Map<String, List<String>> = emptyMap(),
     val formLevel: List<String> = emptyList(),
     val confirmation: List<String> = emptyList(),
 )
 
-/**
- * Pure classification of a 422 `fields` map against [form]'s own field keys.
- * JVM-testable without any Compose infrastructure — this is what
- * `ValidationBindingTest` exercises directly; the composable below is only
- * this function's presentation.
- */
 fun bindErrors(form: SduiComponent.Form, fields: Map<String, List<String>>): BoundErrors {
     val knownKeys = form.fields.mapTo(mutableSetOf()) { it.key }
     val fieldErrors = mutableMapOf<String, List<String>>()
@@ -81,12 +63,6 @@ fun bindErrors(form: SduiComponent.Form, fields: Map<String, List<String>>): Bou
     return BoundErrors(fieldErrors = fieldErrors, formLevel = formLevel, confirmation = confirmation)
 }
 
-/**
- * The error state one form's UI holds, kept independent of Compose so
- * "submitting clears previously bound errors before dispatching" (Task 2
- * Test 4) can run as a plain JUnit test against this class rather than
- * needing a Compose test rule.
- */
 class FormErrorState {
     var bound: BoundErrors = BoundErrors()
         private set
@@ -95,35 +71,17 @@ class FormErrorState {
         bound = bindErrors(form, fields)
     }
 
-    /** Called the moment a new dispatch begins — a message from a previous
-     *  attempt must never survive past the start of the next one. */
     fun clearOnSubmit() {
         bound = BoundErrors()
     }
 }
 
-/**
- * [field]'s current text value coerced to the JSON shape its [SduiFormField.kind]
- * implies, so a `number`/`bool` field round-trips as a JSON number/boolean
- * rather than always as a JSON string. A kind this build does not recognize
- * falls back to a string — the server, not this renderer, owns the field
- * vocabulary.
- */
 private fun coerceValue(field: SduiFormField, raw: String): JsonElement = when (field.kind) {
     "number" -> raw.toDoubleOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(raw)
     "bool" -> JsonPrimitive(raw.toBooleanStrictOrNull() ?: false)
     else -> JsonPrimitive(raw)
 }
 
-/**
- * Renders a [SduiComponent.Form]: one input per [SduiFormField],
- * a submit button that dispatches `submit_action` through [actionRunner], and
- * per-field error slots bound from a 422 by [bindErrors]. If [confirmations]
- * declares a `confirm_destructive` for `submit_action.action_id`, submitting
- * opens that confirmation dialog first — the same index a table's row actions
- * and [dev.servercontrolpanel.sdui.action.ActionComponent] consult, never a
- * form-specific heuristic.
- */
 @Composable
 fun FormComponent(
     form: SduiComponent.Form,
@@ -253,9 +211,6 @@ private fun FormField(
             minLines = 3,
             modifier = Modifier.fillMaxWidth(),
         )
-        // "text", "number" and any kind this build does not specifically
-        // know all get a single-line input -- the value is always sent as
-        // whatever coerceValue() maps that kind to.
         else -> OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
@@ -274,9 +229,6 @@ private fun rememberRemoteOptionRows(source: SduiDataSource): List<JsonObject> {
     return (state as? ComponentDataState.Data)?.rows.orEmpty()
 }
 
-/** One dropdown entry: the value sent on selection, and the optional group
- *  header it is shown under -- present only when the server's option rows
- *  carry a `group` key of their own. */
 private data class OptionEntry(val value: String, val group: String? = null)
 
 private fun optionEntriesFor(field: SduiFormField, remoteRows: List<JsonObject>): List<OptionEntry> =

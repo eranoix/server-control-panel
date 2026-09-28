@@ -1,29 +1,10 @@
 package vt10x
 
-// serialize.go — a server-control-panel ADDITION. See `panel.go`.
-//
-// Converts a line of glyphs back into terminal bytes: the text with the
-// minimal SGR sequences needed to reproduce the colours and attributes.
-//
-// ## Why this exists, instead of keeping the original bytes
-//
-// The original bytes of a session with Claude Code are not history: they are the
-// record of a program that REDRAWS. Replaying them on a new grid makes
-// `ESC[nA` saturate at the top of the SCREEN — it does not reach the scrollback —
-// and the previous copy stays there, below the new one. That is the duplication the owner reported.
-//
-// The line that LEFT the screen, on the other hand, is already the result: the program
-// has finished working on it. Serialized back, it is append-only text, which
-// any terminal reproduces with no ambiguity at all.
-
 import (
 	"bytes"
 	"strconv"
 )
 
-// LineBytes serialises a line of glyphs into terminal bytes, ending in `\r\n`.
-// Trailing spaces are dropped: the grid is rectangular, the history does not
-// have to be.
 func LineBytes(line []Glyph) []byte {
 	done := len(line)
 	for done > 0 {
@@ -54,13 +35,6 @@ func LineBytes(line []Glyph) []byte {
 	return buf.Bytes()
 }
 
-// CropToBytes serialises only the columns [from, from+count) of the line — the
-// crop a client narrower than the session is able to show.
-//
-// Cropping instead of shrinking the session is the choice this file exists to
-// make possible: the program keeps painting at the wider client's width, and the
-// narrower one sees a piece of it. Shrinking the session to fit the smallest is
-// what made the phone shrink the desktop.
 func CropToBytes(line []Glyph, from, count int) []byte {
 	if from < 0 {
 		from = 0
@@ -75,16 +49,10 @@ func CropToBytes(line []Glyph, from, count int) []byte {
 	return withoutNewline(LineBytes(line[from:upTo]))
 }
 
-// withoutNewline strips the \r\n from the end: what positions the line is the caller,
-// with absolute addressing. Leaving the break in would scroll the screen on every line.
 func withoutNewline(b []byte) []byte {
 	return bytes.TrimSuffix(b, []byte("\r\n"))
 }
 
-// sgr builds the sequence that takes the terminal from the clean state to the
-// requested one. It always starts with a reset: that is shorter than computing
-// the exact difference and it cannot diverge from the real state of the reader's
-// terminal.
 func sgr(fg, bg Color, mode int16) []byte {
 	var buf bytes.Buffer
 	buf.WriteString("\x1b[0")
@@ -113,7 +81,7 @@ func writeColor(buf *bytes.Buffer, c Color, foreground bool) {
 	if (foreground && c == DefaultFG) || (!foreground && c == DefaultBG) {
 		return
 	}
-	if c >= 1<<24 { // other special colours (cursor): they have no SGR of their own
+	if c >= 1<<24 {
 		return
 	}
 	base := 48

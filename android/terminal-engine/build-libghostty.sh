@@ -1,19 +1,4 @@
 #!/usr/bin/env bash
-# Cross-compiles libghostty-vt.a for arm64-v8a and x86_64 from the pinned
-# Ghostty commit in toolchain.properties, and vendors the result.
-#
-# Builds from source deliberately (never downloads a prebuilt .a): we control
-# the compiler, the source commit and the flags, so an unaudited third-party
-# binary never enters the build.
-#
-# Idempotent: re-running reproduces identical checksums because the source is
-# a pinned commit and the flags are fixed here.
-#
-# Needs git, curl, python3, JDK 17 and the Android SDK (ANDROID_HOME or sdk.dir
-# in android/local.properties). Zig and the NDK are fetched when missing, see
-# toolchain-env.sh. Takes a few minutes and about 2 GB of disk.
-#
-# Usage: android/terminal-engine/build-libghostty.sh   (from anywhere)
 
 set -euo pipefail
 
@@ -37,8 +22,6 @@ if [ -z "$GHOSTTY_COMMIT" ] || [ -z "$GHOSTTY_REPO" ]; then
   exit 1
 fi
 
-# 40-char sha only, never a branch or tag: the C ABI is unstable and must be
-# pinned exactly.
 if ! [[ "$GHOSTTY_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
   echo "build-libghostty: GHOSTTY_COMMIT '$GHOSTTY_COMMIT' is not a 40-char sha" >&2
   exit 1

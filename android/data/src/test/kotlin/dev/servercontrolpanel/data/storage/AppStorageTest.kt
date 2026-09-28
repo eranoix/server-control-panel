@@ -9,7 +9,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-/** Pins the boundaries of the storage sweep: deleting the wrong file is worse than no sweep. */
 class AppStorageTest {
 
     @get:Rule
@@ -28,7 +27,6 @@ class AppStorageTest {
 
     @Test
     fun `a self-bounded store is never touched by the sweep`() {
-        // The HTTP cache and media have their own limits; deleting them only costs network later.
         val cache = tempDir.newFolder("bff-http")
         val old = file(cache, "response", 1_000, ageInDays = 90)
 
@@ -60,7 +58,6 @@ class AppStorageTest {
 
     @Test
     fun `an update in use is never deleted, even when newest`() {
-        // Deleting a download in flight wastes the network already spent on it.
         val staging = tempDir.newFolder("updates")
         val downloading = file(staging, "new.hdiff", 9_000, ageInDays = 0)
         val fromPreviousVersion = file(staging, "old.apk", 50_000, ageInDays = 0)
@@ -78,7 +75,6 @@ class AppStorageTest {
 
     @Test
     fun `in-transit files are removed when unused, regardless of age`() {
-        // A rebuilt APK is tens of MB, so it is not kept once installed.
         val staging = tempDir.newFolder("updates")
         val installedToday = file(staging, "already-installed.apk", 60_000, ageInDays = 0)
 
@@ -93,7 +89,6 @@ class AppStorageTest {
 
     @Test
     fun `a file without a valid date is not treated as old`() {
-        // `lastModified` returns 0 when unknown; that must not read as "1970, therefore old".
         val tmp = tempDir.newFolder("attachments")
         val noDate = file(tmp, "no-date", 1_500, ageInDays = 0)
         noDate.setLastModified(0)

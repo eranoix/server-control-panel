@@ -9,10 +9,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/**
- * The HTTP to [SduiSectionsResult] translation of the section catalogue. `MockWebServer` is only
- * allowed in `:data`, so the wire shape is pinned here.
- */
 class SduiCatalogRepositoryTest {
 
     private lateinit var server: MockWebServer
@@ -67,7 +63,6 @@ class SduiCatalogRepositoryTest {
         assertEquals("GET", request.method)
     }
 
-    /** A field from a newer server is ignored and the section stays usable. */
     @Test
     fun `an unknown server field is ignored, never fatal`() = runTest {
         respond(
@@ -83,7 +78,6 @@ class SduiCatalogRepositoryTest {
         assertEquals("system.ports", sections.single().id)
     }
 
-    /** A malformed entry is skipped without losing the rest of the list. */
     @Test
     fun `an entry without id or label is skipped and the rest survives`() = runTest {
         respond(
@@ -102,7 +96,6 @@ class SduiCatalogRepositoryTest {
         assertEquals(listOf("docker.images"), sections.map { it.id })
     }
 
-    /** A JSON `null` in the label must never become a section called "null". */
     @Test
     fun `a null label is treated as missing, not as the text null`() = runTest {
         respond(200, """{"sections":[{"id":"a.b","group":"Docker","label":null}]}""")
@@ -112,7 +105,6 @@ class SduiCatalogRepositoryTest {
         assertTrue("a section with a null label must be skipped: $sections", sections.isEmpty())
     }
 
-    /** A missing group becomes a neutral header instead of losing the section. */
     @Test
     fun `a missing group falls back to Other instead of dropping the section`() = runTest {
         respond(200, """{"sections":[{"id":"a.b","label":"Something"}]}""")
@@ -122,10 +114,6 @@ class SduiCatalogRepositoryTest {
         assertEquals("Other", sections.single().group)
     }
 
-    /**
-     * A user without permissions gets 200 with an empty list (the server filters by omission),
-     * which must be an empty success, not an error.
-     */
     @Test
     fun `an empty list is an empty success, never an error`() = runTest {
         respond(200, """{"sections":[]}""")
@@ -136,7 +124,6 @@ class SduiCatalogRepositoryTest {
         assertTrue((result as SduiSectionsResult.Success).sections.isEmpty())
     }
 
-    /** An old server without the catalogue endpoint gets a message about the server, not the user. */
     @Test
     fun `a catalogue 404 becomes a message about the server, not the user`() = runTest {
         respond(404, """{"error":"not_found"}""")

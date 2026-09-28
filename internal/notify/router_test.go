@@ -8,14 +8,12 @@ import (
 	"time"
 )
 
-// fakeChannel records what it was asked to send and can be made to fail or
-// block, exercising the breaker and overflow paths.
 type fakeChannel struct {
 	name    string
 	mu      sync.Mutex
 	sent    []Event
-	failErr error         // if set, every Send returns it
-	block   chan struct{} // if non-nil, Send waits on it before returning
+	failErr error
+	block   chan struct{}
 }
 
 func (f *fakeChannel) Name() string { return f.name }
@@ -41,8 +39,6 @@ func (f *fakeChannel) count() int {
 	return len(f.sent)
 }
 
-// harness wires a Router with a fake clock and an onHandled signal so tests can
-// await async processing deterministically.
 type harness struct {
 	r       *Router
 	handled chan Event
@@ -61,7 +57,6 @@ func (h *harness) now() int64 {
 	return h.clock
 }
 
-// wait blocks until n events have been handled or the test deadline passes.
 func (h *harness) wait(t *testing.T, n int) {
 	t.Helper()
 	for i := 0; i < n; i++ {
@@ -93,7 +88,6 @@ func ruleAll(id string, channels ...string) Rule {
 	return Rule{ID: id, Name: id, Enabled: true, Channels: channels}
 }
 
-// TestMatchTypeSeveritySource verifies the three prefix/rank predicates.
 func TestMatchTypeSeveritySource(t *testing.T) {
 	fc := &fakeChannel{name: "fake"}
 	h := newHarness(t, map[string]Channel{"fake": fc}, Options{})
@@ -106,13 +100,9 @@ func TestMatchTypeSeveritySource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Matches: job.failed + critical + scheduler source.
 	h.r.Dispatch(Event{Type: TypeJobFailed, Severity: SeverityCritical, Source: "scheduler:abc", DedupKey: "job:1"})
-	// Rejected by type.
 	h.r.Dispatch(Event{Type: TypeMetricThreshold, Severity: SeverityCritical, Source: "scheduler:abc", DedupKey: "m:1"})
-	// Rejected by severity (info < warning).
 	h.r.Dispatch(Event{Type: TypeJobDone, Severity: SeverityInfo, Source: "scheduler:abc", DedupKey: "job:2"})
-	// Rejected by source.
 	h.r.Dispatch(Event{Type: TypeJobFailed, Severity: SeverityCritical, Source: "user", DedupKey: "job:3"})
 	h.wait(t, 4)
 
@@ -121,7 +111,6 @@ func TestMatchTypeSeveritySource(t *testing.T) {
 	}
 }
 
-// TestThrottleDedup: a 2nd identical (DedupKey,rule) within the window sends once.
 func TestThrottleDedup(t *testing.T) {
 	fc := &fakeChannel{name: "fake"}
 	h := newHarness(t, map[string]Channel{"fake": fc}, Options{ThrottleWindow: 300})
@@ -135,7 +124,6 @@ func TestThrottleDedup(t *testing.T) {
 		t.Fatalf("dedup failed: expected 1 send for repeated DedupKey, got %d", got)
 	}
 
-	// After the window elapses, the same key sends again.
 	h.advance(301)
 	h.r.Dispatch(Event{Type: TypeJobFailed, Severity: SeverityCritical, DedupKey: "job:42"})
 	h.wait(t, 1)
@@ -144,19 +132,12 @@ func TestThrottleDedup(t *testing.T) {
 	}
 }
 
-// TestMetricEpisodesNotThrottled: the metric DedupKey is keyed per episode
-// ("metric:<rule>:<episode>"), so two DIFFERENT episodes of the SAME rule inside
-// the throttle window both send (a recovery-then-recross must notify again),
-// while a repeat of the SAME episode within the window is deduped (a held metric
-// notifies once). This is the throttle-side half of edge-triggered alerting.
 func TestMetricEpisodesNotThrottled(t *testing.T) {
 	fc := &fakeChannel{name: "fake"}
 	h := newHarness(t, map[string]Channel{"fake": fc}, Options{ThrottleWindow: 300})
 	def, _ := h.r.UpsertChannel(ChannelDef{ID: "c1", Type: "fake", Enabled: true})
 	h.r.UpsertRule(ruleAll("r1", def.ID))
 
-	// Same rule, episode 100 twice (held) then episode 200 (recrossed) — all
-	// well within the 300s window.
 	h.r.Dispatch(Event{Type: TypeMetricThreshold, Severity: SeverityWarning, DedupKey: "metric:cpu:100"})
 	h.r.Dispatch(Event{Type: TypeMetricThreshold, Severity: SeverityWarning, DedupKey: "metric:cpu:100"})
 	h.r.Dispatch(Event{Type: TypeMetricThreshold, Severity: SeverityWarning, DedupKey: "metric:cpu:200"})
@@ -167,7 +148,6 @@ func TestMetricEpisodesNotThrottled(t *testing.T) {
 	}
 }
 
-// TestThrottleEviction: many distinct keys then a window pass -> map drains.
 func TestThrottleEviction(t *testing.T) {
 	fc := &fakeChannel{name: "fake"}
 	h := newHarness(t, map[string]Channel{"fake": fc}, Options{ThrottleWindow: 60})
@@ -183,8 +163,6 @@ func TestThrottleEviction(t *testing.T) {
 		t.Fatalf("expected %d throttle entries, got %d", n, l)
 	}
 
-	// Advance past the window and push one more event: eviction runs on consume
-	// and sweeps the stale entries (only the fresh one remains).
 	h.advance(61)
 	h.r.Dispatch(Event{Type: TypeJobDone, Severity: SeverityInfo, DedupKey: "fresh"})
 	h.wait(t, 1)
@@ -208,7 +186,6 @@ func itoa(i int) string {
 	return string(b[p:])
 }
 
-// TestFanOutTwoChannels: one matching rule routes to two channels -> both get it.
 func TestFanOutTwoChannels(t *testing.T) {
 	a := &fakeChannel{name: "a"}
 	b := &fakeChannel{name: "b"}
@@ -224,8 +201,6 @@ func TestFanOutTwoChannels(t *testing.T) {
 	}
 }
 
-// TestOverflowNonBlocking: with the worker stuck in Send and the buffer full,
-// Dispatch must return immediately and increment dropped.
 func TestOverflowNonBlocking(t *testing.T) {
 	block := make(chan struct{})
 	fc := &fakeChannel{name: "fake", block: block}
@@ -233,8 +208,6 @@ func TestOverflowNonBlocking(t *testing.T) {
 	def, _ := h.r.UpsertChannel(ChannelDef{ID: "c1", Type: "fake", Enabled: true})
 	h.r.UpsertRule(ruleAll("r1", def.ID))
 
-	// First event is pulled by the worker and blocks inside Send. Subsequent
-	// events fill the buffer (2) then overflow.
 	for i := 0; i < 20; i++ {
 		start := time.Now()
 		h.r.Dispatch(Event{Type: TypeJobFailed, Severity: SeverityCritical, DedupKey: keyN(i)})
@@ -247,11 +220,9 @@ func TestOverflowNonBlocking(t *testing.T) {
 		close(block)
 		t.Fatalf("expected dropped > 0 under overflow, got 0")
 	}
-	close(block) // release the worker so Close doesn't hang
+	close(block)
 }
 
-// TestBreakerOpensAndRecovers: a failing channel trips the breaker after N
-// failures (further sends skipped), then half-opens after the open window.
 func TestBreakerOpensAndRecovers(t *testing.T) {
 	fc := &fakeChannel{name: "fake", failErr: errors.New("waha down")}
 	h := newHarness(t, map[string]Channel{"fake": fc}, Options{
@@ -260,15 +231,11 @@ func TestBreakerOpensAndRecovers(t *testing.T) {
 	def, _ := h.r.UpsertChannel(ChannelDef{ID: "c1", Type: "fake", Enabled: true})
 	h.r.UpsertRule(ruleAll("r1", def.ID))
 
-	// 6 distinct events: first 5 call Send (all fail) and trip the breaker; the
-	// 6th is skipped because the breaker is open.
 	for i := 0; i < 6; i++ {
 		h.r.Dispatch(Event{Type: TypeJobFailed, Severity: SeverityCritical, DedupKey: keyN(i)})
 	}
 	h.wait(t, 6)
 
-	// Switch the channel to succeed and advance past the open window: the next
-	// event should be attempted again (breaker half-open) and delivered.
 	fc.failErr = nil
 	h.advance(61)
 	h.r.Dispatch(Event{Type: TypeJobFailed, Severity: SeverityCritical, DedupKey: "after"})
@@ -278,8 +245,6 @@ func TestBreakerOpensAndRecovers(t *testing.T) {
 	}
 }
 
-// TestHistoryRecordedRegardlessOfMatch: Dispatch records history even when no
-// rule matches (the dry-run/feed depends on this).
 func TestHistoryRecordedRegardlessOfMatch(t *testing.T) {
 	h := newHarness(t, map[string]Channel{}, Options{})
 	h.r.Dispatch(Event{Type: TypeJobDone, Severity: SeverityInfo, Source: "user", DedupKey: "job:1"})
@@ -290,7 +255,6 @@ func TestHistoryRecordedRegardlessOfMatch(t *testing.T) {
 	}
 }
 
-// TestPersistenceRoundTrip: rules/channels survive a Router restart.
 func TestPersistenceRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	r1, err := New(Options{DataDir: dir})
@@ -318,7 +282,6 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	}
 }
 
-// TestDryRunNoSend: DryRun returns matching history without delivering.
 func TestDryRunNoSend(t *testing.T) {
 	fc := &fakeChannel{name: "fake"}
 	h := newHarness(t, map[string]Channel{"fake": fc}, Options{})

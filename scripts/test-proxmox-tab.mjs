@@ -1,24 +1,4 @@
 #!/usr/bin/env node
-// test-proxmox-tab.mjs — the pin for the Proxmox tab.
-//
-// House style (see test-sched-catalog.mjs): plain node, zero dependencies, and
-// the code under test is EXTRACTED FROM THE SERVED FILE instead of re-copied
-// here: a test that loads a copy proves the copy, not what goes to the browser.
-//
-// What it defends, and every item fails on its own:
-//
-//  1. pvxFormatAge is a DELIBERATE copy of nodesFormatAge. Both are extracted
-//     from BOTH files, executed, and have to produce IDENTICAL output. The
-//     copy is honest only while somebody proves it has not drifted.
-//  2. The new module does not read the browser clock and does not touch the
-//     neighbouring tab's timer (both checks ignore comments — a lesson this
-//     repository learned the hard way: `grep -c` counts prose).
-//  3. The SEVEN registration grafts exist, matched on a line of CODE.
-//  4. TEL_IDS still has NO `proxmox` key, AND the deliberate-absence comment
-//     mentions `proxmox`. The two halves together: the first alone would pass
-//     for forgetfulness; the second makes the absence a declared one.
-//
-//   run: node scripts/test-proxmox-tab.mjs
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -38,9 +18,6 @@ function check(name, cond, extra) {
   else { console.error('  ✗', name, extra === undefined ? '' : extra); failed++; }
 }
 
-// noComments strips line comments so that an ABSENCE check cannot be
-// satisfied (or violated) by prose. Only whole lines and trailing comments with
-// a space before the slashes — no literal in this project contains " //".
 function noComments(src) {
   return src.split('\n')
     .filter(l => !l.trimStart().startsWith('//'))
@@ -48,7 +25,6 @@ function noComments(src) {
     .join('\n');
 }
 
-// extracts the body of an object method indented by six spaces, by name.
 function extract(src, file, name, sig) {
   const re = new RegExp(name + '\\(' + sig + '\\) \\{([\\s\\S]*?)\\n      \\},');
   const m = src.match(re);
@@ -56,7 +32,6 @@ function extract(src, file, name, sig) {
   return m[1];
 }
 
-// ── 1. the copy has not drifted ────────────────────────────────────────────
 const nodesFormatAge = new Function('ageSeconds', extract(nodesJs, '40-nodes.js', 'nodesFormatAge', 'ageSeconds'));
 const pvxFormatAge = new Function('ageSeconds', extract(pvxJs, '41-proxmox.js', 'pvxFormatAge', 'ageSeconds'));
 
@@ -70,7 +45,6 @@ check('pvxFormatAge has not drifted from nodesFormatAge', diverged === '', diver
 check('-1 is still "never observed" (never "0s")', pvxFormatAge(-1) === 'never observed', pvxFormatAge(-1));
 check('0 is "data from 0s ago", not "never"', pvxFormatAge(0) === 'data from 0s ago', pvxFormatAge(0));
 
-// ── 2. the module reads neither the browser clock nor the neighbour timer ──
 const pvxCode = noComments(pvxJs);
 check('41-proxmox.js does not contain Date.now(', !pvxCode.includes('Date.now('));
 check('41-proxmox.js does not contain new Date(', !pvxCode.includes('new Date('));
@@ -78,14 +52,8 @@ check('41-proxmox.js does not mention nodesPollTimer', !pvxCode.includes('nodesP
 check('41-proxmox.js has a timer of its own (pvxPollTimer)', pvxCode.includes('pvxPollTimer'));
 check('41-proxmox.js exposes window.PanelProxmoxModule', /window\.PanelProxmoxModule\s*=\s*function/.test(pvxCode));
 
-// ── 3. the seven grafts ────────────────────────────────────────────────────
 const grafts = [
   ['index.html: the tab button', index, /^\s*<button class="tab-btn"[^>]*@click="setTab\('proxmox'\)"/m],
-  // The screen stopped being a <section x-show> and became a lazy mount under
-  // <template x-if>: with x-show Alpine evaluated the whole tree at boot, so a
-  // missing 41-proxmox.js module took down the WHOLE APP instead of just this
-  // tab. The graft checks the new contract — late mounting AND the fallback
-  // branch — not the old tag; asserting the old shape only kept the pin red.
   ['index.html: the screen mounts lazily', index,
     /^\s*<template x-if="currentView==='proxmox' && typeof pvxStaleStyle==='function'">$/m],
   ['index.html: fallback when the module is missing', index,
@@ -98,36 +66,11 @@ const grafts = [
 ];
 for (const [name, src, re] of grafts) check(name, re.test(src));
 
-// the module's script has to come AFTER 40-nodes.js: app() spreads in load
-// order, and a module that arrives before the shell does not exist for Alpine.
-//
-// 🔴 The comparison is between the <script> TAGS, not the first appearance of
-// the name in the file. An earlier version compared `indexOf('41-proxmox.js')`
-// with `indexOf('40-nodes.js')` and passed by accident: both names appear in a
-// COMMENT before they appear in a tag, and folding the two screens together
-// changed the comment order without changing load order. A pin that fails when
-// the code is right is as bad as one that passes when it is wrong.
 const tag = (arq) => index.indexOf('<script src="/vendor/panel/app/' + arq + '?v=__PANEL_BUILD__">');
 check('41-proxmox.js loads after 40-nodes.js (comparing the TAGS)',
   tag('40-nodes.js') > 0 && tag('41-proxmox.js') > tag('40-nodes.js'),
   `40-nodes=${tag('40-nodes.js')} 41-proxmox=${tag('41-proxmox.js')}`);
 
-// ── 4. TEL_IDS against the canonical list, and the declared absences ──────
-//
-// 🔴 This block was INVERTED at one point, and the inversion records a fact,
-// not a loosening. Until the list was re-cut, `proxmox` and `config` HAD to sit
-// outside TEL_IDS: the ids did not exist in the canonical list, and screens.txt
-// has to be byte-identical in both forks (sha256, by a parity check), so
-// inventing the key here would emit an id outside the allowlist and break that
-// parity. The list was re-cut IN BOTH FORKS in the same act, immediately before
-// the home fork was frozen — the window in which that was still possible. Now
-// the requirement is the symmetric one: the key HAS to exist, or a live screen
-// falls back into the `unknown` bucket.
-//
-// What was NOT loosened: the rule "no id outside the allowlist" still holds,
-// and it is now verified more strongly — against the FILE, and not against a
-// list of names re-copied here. Any invented id in TEL_IDS or in TEL_SUB fails,
-// including the ones nobody thought to list.
 const SCREENS = join(here, '..', 'internal', 'telemetry', 'screens.txt');
 const allowlist = new Set(readFileSync(SCREENS, 'utf8').split('\n').map(l => l.trim()).filter(Boolean));
 check('screens.txt has the re-cut canonical list (76 ids)', allowlist.size === 76, allowlist.size);
@@ -157,10 +100,6 @@ check('TEL_IDS HAS the config key, and it points at config',
   idOf('config') === 'config', idOf('config'),
 );
 
-// The absences that REMAIN are still declared absences: `nodes` (the screen was
-// folded into Proxmox and never becomes a currentView) and the two screens
-// whose ids are already in the canonical list but whose tab does not exist yet.
-// An undeclared absence is an absence somebody "fixes" later.
 const comment = shell.slice(shell.indexOf('DELIBERATE absences'), shell.indexOf('TEL_IDS: {'));
 for (const key of ['nodes', 'operations.backup', 'operations.embedded']) {
   check(`the absence of ${key} is DECLARED in the comment`, comment.includes(key),
@@ -172,29 +111,16 @@ for (const key of ['nodes', 'backup', 'embedded']) {
 }
 check('the declaration states the reason (screens-parity)', /byte-identical/.test(comment));
 
-// ── 5. storage capacity and zpool ──────────────────────────────────────────
-//
-// 🔴 The check that matters most here is the one on the GUARD. An earlier pass
-// put a banner on screen saying "this token cannot see /storage"; a later ACL
-// change made it vanish. The wrong way to make it vanish is to DELETE the
-// banner — then it never comes back, and the regression on the day the
-// privilege is withdrawn goes unnoticed. The right way is for the banner to
-// stay in the HTML, tied to the MEASURED verdict. These checks fail deleters.
-
 check('41-proxmox.js has pvxLoadStorage', /pvxLoadStorage\(\)/.test(pvxCode));
 check('41-proxmox.js has pvxLoadZfs', /pvxLoadZfs\(\)/.test(pvxCode));
 check('pvxInit loads capacity AND zpool',
   /pvxInit\(\) \{[\s\S]*?pvxLoadStorage\(\)[\s\S]*?pvxLoadZfs\(\)[\s\S]*?\},/.test(pvxCode));
 
-// Capacity is a HEARTBEAT: without being in the poll, the number freezes on the
-// screen while the age does not grow — stale data presented as live, again.
 const poll = extract(pvxJs, '41-proxmox.js', 'pvxStartPoll', '');
 check('capacity and zpool are in the 30 s poll (they are a heartbeat)',
   poll.includes('pvxLoadStorage()') && poll.includes('pvxLoadZfs()'),
   'without the poll the age never grows and the block lies in green');
 
-// The guard, in its three readings. `unmeasured` is the third, and it is the
-// one that stops the screen accusing a lack of permission nobody measured.
 const state = extract(pvxJs, '41-proxmox.js', 'pvxStorageState', '');
 for (const st of ['unmeasured', 'no-permission', 'ok']) {
   check(`pvxStorageState distinguishes '${st}'`, state.includes(`'${st}'`));
@@ -203,9 +129,6 @@ check('pvxStorageState demands the TIMESTAMP before accusing (observed_at)',
   state.includes('observed_at'),
   'without checking the timestamp, "I never asked" would turn into "no permission"');
 
-// The function is extracted from the file that is SERVED and really executed;
-// only the read of component state is swapped for the argument. Rewriting the
-// logic here would prove the copy, not what goes to the browser.
 const guardFn = new Function('panelStorage', state.replace(/this\.pvx\.storage/g, 'panelStorage'));
 check('guard: no timestamp → unmeasured', guardFn({ datastore_audit: { value: false, observed_at: 0 } }) === 'unmeasured');
 check('🔴 guard: measured and DENIED → no-permission (the banner COMES BACK)',
@@ -213,16 +136,9 @@ check('🔴 guard: measured and DENIED → no-permission (the banner COMES BACK)
 check('🔴 guard: measured and granted → ok (the banner GOES on its own)',
   guardFn({ datastore_audit: { value: true, observed_at: 1787000000 } }) === 'ok');
 
-// And the banner has to keep EXISTING in the HTML, tied to the verdict.
 check('index.html: the no-permission banner is still in the HTML',
   /x-show="pvxStorageState\(\) === 'no-permission'"/.test(index),
   'deleting the banner is removing the detector because the alarm stopped ringing');
-// 🔴 THESE TWO PINS USED TO LOCK THE TITLE, and the title is the cheapest part
-// to change and the one that matters least. The block was renamed from "Storage
-// capacity" to "Datastores" — more precise, because it went on to show type,
-// content, usage AND the pool behind each one — and the pin failed over a
-// better screen. A label pin protects a word; what needs a guard is that the
-// block EXISTS and iterates the datastores.
 check('index.html: the datastore block exists and iterates the pools',
   /pvxActiveTab\(\)==='storage'/.test(index) && /x-for="p in pvxStoragePools\(\)"/.test(index));
 check('index.html: the ZFS pool block exists and iterates the pools',
@@ -234,15 +150,11 @@ check('index.html: capacity has an age OF ITS OWN on screen',
 check('index.html: zpool has an age OF ITS OWN on screen',
   /pvxFormatAge\(pvx\.zfs \? pvx\.zfs\.age_seconds : null\)/.test(index));
 
-// Only ONLINE is green. A DEGRADED pool on a single-disk server cannot show up
-// in amber, because amber invites you to leave it for later.
 const zfsStyle = extract(pvxJs, '41-proxmox.js', 'pvxZfsStyle', 'p');
 const zfsStyleFn = new Function('p', zfsStyle);
 check('🔴 DEGRADED is not green', !zfsStyleFn({ health: 'DEGRADED', healthy: false }).includes('#22c55e'));
 check('ONLINE is green', zfsStyleFn({ health: 'ONLINE', healthy: true }).includes('#22c55e'));
 
-// The usage bar saturates, and the red band starts at 85% — filling a pool with
-// no redundancy is one of the few ways to lose data with no hardware failing.
 const usageStyle = extract(pvxJs, '41-proxmox.js', 'pvxUsageStyle', 'pct');
 const usageFn = new Function('pct', usageStyle);
 check('bar: 90% is red', usageFn(90).includes('#ef4444'));
@@ -251,25 +163,12 @@ check('bar: 7% is green', usageFn(6.87).includes('#22c55e'));
 check('bar: an absurd value saturates at 100%', usageFn(9999).includes('width:100%'));
 check('bar: null does not become NaN', usageFn(null).includes('width:0%'));
 
-// ── remote console and rollback ────────────────────────────────────────────
-//
-// 🔴 The first three items in this section are invariants of SECRET and of
-// AUDIT TRAIL, not of appearance. They fail the most tempting "improvement"
-// anyone could make to this file: handing the ticket back to the browser so it
-// can open the WebSocket straight at the hypervisor. That would work, and it
-// would put a shell credential in DevTools.
-
 check('🔴 41-proxmox.js does NOT know about a console ticket (vncticket)',
   !pvxCode.includes('vncticket') && !pvxCode.includes('PVEVNC'),
   'the ticket is a shell credential — it stays locked inside internal/pve');
 check('🔴 41-proxmox.js does NOT build a hypervisor URL (vncwebsocket)',
   !pvxCode.includes('vncwebsocket'),
   'the browser cannot reach hypervisor.local and has no TLS pin');
-// The check cuts out the WHOLE EXPRESSION of `new WebSocket(...)` — and not the
-// string literal of the route. An earlier version of this pin looked only at
-// the literal, and the mutation `... + '&token=' + localStorage.panel_token`
-// walked straight past it: the `token=` came from OUTSIDE the quotes. A pin
-// that fails like that is worse than none, because it looks like it is guarding.
 const wsExpr = (() => {
   const i = pvxCode.indexOf('new WebSocket(');
   if (i < 0) return '';
@@ -291,14 +190,10 @@ check('terminal output is written as BINARY (Uint8Array)',
   /term\.write\(new Uint8Array/.test(pvxCode),
   'going through a string would break ANSI and UTF-8 split across two frames');
 
-// The console HAS to close when you leave the tab: a live shell on a guest with
-// nobody watching is a session the trail records as hours, from one misclick.
 const stopPoll = extract(pvxJs, '41-proxmox.js', 'pvxStopPoll', '');
 check('🔴 leaving the tab CLOSES the console', /pvxCloseConsole\(\)/.test(stopPoll),
   'without this the shell stays alive with the tab closed');
 
-// A guest with no node token (CT 202, `pbs`) gets no console — and the screen
-// SAYS why instead of offering a button that fails.
 const conState = extract(pvxJs, '41-proxmox.js', 'pvxConsoleGuestState', 'g');
 const conStateFn = new Function('g', conState);
 check('🔴 missing credential → console unavailable WITH A REASON',
@@ -314,11 +209,6 @@ check('index.html: the console block, now in the side panel of the node',
 check('index.html: the terminal is IN-PAGE (div#pvx-console), with no iframe',
   /id="pvx-console"/.test(index) && !/<iframe[^>]*console/i.test(index));
 
-// 🔴 The console guard was RAISED A LEVEL. It used to be a `:disabled` on an
-// <option> of the selector: calling `pvxOpenConsole` by any other path (side
-// panel, palette, browser console) opened the WebSocket against a guest with no
-// token. A widget guard is a convenience; the rule now lives in the FUNCTION,
-// and the button stays disabled WITH A REASON on top of it.
 const openCon = extract(pvxJs, '41-proxmox.js', 'pvxOpenConsole', 'nodeId');
 check('🔴 pvxOpenConsole REFUSES a guest with no credential in the function itself',
   /pvxConsoleCan\(g\)/.test(openCon) && /return;/.test(openCon),
@@ -327,7 +217,6 @@ check('index.html: the console button disables with a reason (and does not vanis
   /:disabled="!pvxConsoleCan\(pvxOpenNode\(\)\)"/.test(index) &&
   /pvxConsoleReason\(pvxOpenNode\(\)\)/.test(index));
 
-// Rollback: exposed, confirmed by TYPING, and suspend left OUT.
 check('🔴 rollback uses requireText (confirmation by typing)',
   /requireText:\s*label/.test(pvxCode),
   'what is lost has no second copy: the pool is single-disk');
@@ -343,34 +232,15 @@ check('the reason suspend is left out is WRITTEN in the code',
   /CRIU|criu/.test(pvxJs) && /lxc-checkpoint/.test(pvxJs),
   'an absence with no written reason becomes a ticket; with a reason, it becomes a decision');
 
-// The guest list has to arrive together with the tab — anyone landing straight
-// on Proxmox found the selector empty, with no error at all.
 const init = extract(pvxJs, '41-proxmox.js', 'pvxInit', '');
 check('🔴 pvxInit loads the node list (otherwise the selector is born empty)',
   /loadNodes\(\)/.test(init));
 
-// ══════════════════════════════════════════════════════════════════════════
-// the folded screen, with the node as its axis
-// ══════════════════════════════════════════════════════════════════════════
-//
-// These rules are PURE functions on purpose, and that is why this pin can
-// EXECUTE them instead of hunting for substrings. Every `check` below fails on
-// its own for one specific regression, and each of them was verified by
-// mutation before this file was committed.
-
-// 🔴 The ABSENCE checks need a slice: the whole `index` holds thirty-odd
-// screens, and "there is no <select> with auto-submit" would be failed by a
-// <select> from another tab this work never touched. The slice is the section.
 const pvxSection = index.slice(index.indexOf("currentView==='proxmox'"), index.indexOf('Deploy / Heroku-style PaaS'));
 
-// ── the Nodes tab left the menu WITHOUT breaking the three ways in ─────────
 check('🔴 the Nodes tab left the menu', !/setTab\('nodes'\)/.test(index),
   'the screen was folded in; the button cannot keep leading nowhere');
 check('🔴 the currentView===\'nodes\' section no longer exists', !/currentView==='nodes'/.test(index));
-// 🔴 The check above is an ABSENCE check, and absence does not prove reach. It
-// stayed green while the tab opened BLACK: the old section had indeed gone, and
-// no other one became reachable, because `tabToView` resolved the tab to the
-// alias 'nodes'. Every absence pin needs the positive counterpart below.
 check('🔴 tabToView resolves by the CANONICAL key, not by key order',
   /const canonical = this\.PAGE_REMAP\[tab\];/.test(shell),
   'without this an aliased tab (nodes/proxmox) resolves to the alias and the screen opens black');
@@ -382,7 +252,6 @@ check('🔴 the Proxmox tab resolves to a section that exists',
         /^\s*([A-Za-z0-9_]+):\s*\['(\w+)',\s*'([\w-]+)'\]/gm)) remap[m[1]] = [m[2], m[3]];
     const canonical = remap['proxmox'];
     if (!canonical || canonical[0] !== 'operations' || canonical[1] !== 'proxmox') return false;
-    // same rule as the shell: canonical first
     return new RegExp("currentView==='proxmox'").test(index);
   })(),
   'the section has to EXIST and the resolution has to reach it — both halves');
@@ -392,9 +261,6 @@ check('🔴 PAGE_REMAP keeps `nodes` REDIRECTING to proxmox',
 check('🔴 the command palette still finds "nodes"/"inventory"',
   /kind:'page',\s*page:'proxmox',\s*kw:'nodes inventory/.test(shell),
   'whoever types "nodes" wants the inventory — it changed address, not subject');
-// 🔴 The check is about CODE, not about prose: the comment that explains the
-// removal names the removed function, and a raw grep would fail precisely
-// because of the explanation. It is the same trap, and it has caught us before.
 const shellCode = noComments(shell);
 check('🔴 _triggerViewLoaders no longer calls the removed timer',
   !/nodesStartPoll|nodesStopPoll/.test(shellCode),
@@ -407,11 +273,7 @@ check('40-nodes.js is still the data layer (nodesCredLabel lives there)',
   're-copying the four credential states would create two truths about "revoked"');
 check('TEL_IDS still has NO nodes key', !/^\s*nodes:\s*'/m.test(telBlock[1]));
 
-// ── the vocabulary of states, executed ────────────────────────────────────
 const nodeState = new Function('n', extract(pvxJs, '41-proxmox.js', 'pvxNodeState', 'n')
-  // pvxGaugePct lives outside the object (precisely so this function can be
-  // pure); here it enters as a MINIMAL reimplementation, only to exercise the
-  // precedence. The measurement rules have checks of their own further down.
   .replace('pvxGaugePct(n, which)', '(n.__pct ? n.__pct[which] : null)'));
 
 const live = (extra) => Object.assign({
@@ -420,9 +282,6 @@ const live = (extra) => Object.assign({
 }, extra || {});
 
 check('state: a healthy node is `ok`', nodeState(live()) === 'ok');
-// 🔴 And the screen has to OBEY: the function returning 'ok' does not stop the
-// template drawing a green badge on every row. Measured by mutation: deleting
-// the x-show sailed straight past the check above.
 check('🔴 an `ok` node draws NO state badge on the row',
   /x-show="pvxNodeState\(n\) !== 'ok'"/.test(pvxSection),
   'with eleven nodes, nine green badges spend attention where there is no news');
@@ -441,7 +300,6 @@ check('state: 69.9% is still ok', nodeState(live({ __pct: { ram: 69.9 } })) === 
 check('state: the WORST gauge wins (cpu ok + disk critical = critical)',
   nodeState(live({ __pct: { cpu: 1, disco: 95 } })) === 'critical');
 
-// ── thresholds with hysteresis ────────────────────────────────────────────
 const tier = new Function('pct', 'anterior', extract(pvxJs, '41-proxmox.js', 'pvxTier', 'pct, anterior'));
 check('threshold: 91% with no history is critical', tier(91, undefined) === 'critical');
 check('threshold: 75% with no history is attention', tier(75, undefined) === 'warning');
@@ -454,7 +312,6 @@ check('hysteresis: attention lets go below 67%', tier(66.9, 'warning') === 'ok')
 check('hysteresis: attention does NOT stop a climb to critical', tier(95, 'warning') === 'critical');
 check('threshold: a missing value (-1) does not become an alarm', tier(-1, undefined) === 'ok');
 
-// ── a missing measurement NEVER becomes zero ──────────────────────────────
 const pctSource = pvxJs.match(/function pvxGaugePct\(n, which\) \{([\s\S]*?)\n  \}/);
 if (!pctSource) { console.error('FATAL: pvxGaugePct not found'); process.exit(2); }
 const pct = new Function('n', 'which', pctSource[1]);
@@ -475,7 +332,6 @@ check('cpu arrives as a FRACTION and becomes a percentage without multiplying by
 check('a zeroed total does not become a division by zero',
   pct({ disk_used: stamp(10), disk_total: stamp(0) }, 'disco') === null);
 
-// ── the gauge goes GREY when the node is not live ─────────────────────────
 const color = new Function('m', extract(pvxJs, '41-proxmox.js', 'pvxGaugeColor', 'm'));
 const GRAY = '#64748b';
 check('🔴 the gauge of a STALE/stopped node goes GREY, even with a low value',
@@ -487,12 +343,6 @@ check('a gauge with no measurement goes grey', color({ measured: false, live: tr
 check('a live and critical gauge is red', color({ measured: true, live: true, tier: 'critical' }) === '#ef4444');
 check('a live and ok gauge is green', color({ measured: true, live: true, tier: 'ok' }) === '#22c55e');
 
-// 🔴 No RENDERING expression may write to reactive state.
-//
-// `pvxGauge` is called from inside x-text/:style/:aria-valuenow, and it needs
-// to remember the previous tier for the hysteresis to work. Keeping that memory
-// in `this.pvx.*` would make the write invalidate the effect that produced it —
-// a render loop. The memory lives in a Map in the closure of the IIFE.
 const gaugeBody = extract(pvxJs, '41-proxmox.js', 'pvxGauge', 'n, which');
 check('🔴 pvxGauge does NOT write to reactive Alpine state',
   !/this\.pvx\.[^=;\n]*=[^=]/.test(gaugeBody),
@@ -501,13 +351,8 @@ check('the hysteresis memory lives outside the component (a Map in the closure)'
   /const hysteresisTiers = new Map\(\);/.test(pvxJs) &&
   /hysteresisTiers\.set/.test(gaugeBody));
 
-// ── the `field:value` filter ──────────────────────────────────────────────
 const filter = new Function('list', 'text', 'segment', 'stateOf',
   extract(pvxJs, '41-proxmox.js', 'pvxFilterNodes', 'list, text, segment, stateOf'));
-// The list is the real lab, cut down: `games` healthy, `pbs` (CT 202) with no
-// node token — which is its REAL state in the vault —, `dev` stopped and the
-// hypervisor itself. `transport` matters: `pvxNodeState` only demands a
-// credential from whatever speaks over the PVE API.
 const LIST = [
   { id: 'lxc/201', name: 'games', kind: 'guest', transport: 'pve-api', status: { value: 'running' }, credential: { state: 'ok' } },
   { id: 'lxc/202', name: 'pbs', kind: 'guest', transport: 'pve-api', status: { value: 'running' }, credential: { state: 'absent' } },
@@ -534,7 +379,6 @@ check('the segment of the health band filters together with the text',
 check('a segment with no match returns empty (and empty is not an error)',
   filter(LIST, '', 'critical', fakeState).length === 0);
 
-// ── 🔴 re-scoping the selection — Portainer #4430 ─────────────────────────
 const rescope = new Function('sel', 'visible', extract(pvxJs, '41-proxmox.js', 'pvxRescope', 'sel, visible'));
 check('🔴 the selection is RE-SCOPED when the filter changes',
   rescope(['lxc/201', 'lxc/202', 'qemu/208'], filter(LIST, 'type:lxc', '', fakeState)).join(',') === 'lxc/201,lxc/202',
@@ -543,18 +387,6 @@ check('re-scoping empties the selection when nothing visible is left',
   rescope(['lxc/201'], filter(LIST, 'status:stopped', '', fakeState)).length === 0);
 check('re-scoping preserves the order and invents no id',
   rescope(['qemu/208'], LIST).join(',') === 'qemu/208');
-// 🔴 This is the check that EXECUTES the three paths, and it exists because the
-// previous version was BLIND — measured by mutation in that same session.
-//
-// The previous version looked for the string `pvxRescope(this.pvx.sel` inside
-// each of the three methods. The mutation "pvxSetSegment returns early, before
-// re-scoping" WALKED PAST it: the new `return` made the line unreachable, and
-// an unreachable line is still text in the file. It is the exact sibling of the
-// mistake already made with `'&token=' + localStorage`.
-//
-// A pin that checks for the presence of text cannot see reachability. This one
-// builds a fake component, calls the three methods FOR REAL and looks at what
-// happened to the selection.
 const fakeComponent = () => {
   const comp = {
     pvx: { filter: '', segment: '', sel: [], tiers: {} },
@@ -578,14 +410,12 @@ const fakeComponent = () => {
   return comp;
 };
 
-// path 1 — change the filter TEXT
 let c = fakeComponent();
 c.pvx.sel = ['lxc/201', 'lxc/202', 'qemu/208'];
 c.pvxSetFilter('type:lxc');
 check('🔴 EXECUTED: pvxSetFilter re-scopes the selection',
   c.pvx.sel.join(',') === 'lxc/201,lxc/202', c.pvx.sel.join(','));
 
-// path 2 — change the SEGMENT of the health band
 c = fakeComponent();
 c.pvx.sel = ['lxc/201', 'lxc/202', 'qemu/208'];
 c.pvxSetSegment('no-credential');
@@ -594,7 +424,6 @@ check('🔴 EXECUTED: pvxSetSegment re-scopes the selection',
 check('EXECUTED: clicking the ALREADY ACTIVE segment turns the filter off',
   (() => { c.pvxSetSegment('no-credential'); return c.pvx.segment === ''; })());
 
-// path 3 — clear
 c = fakeComponent();
 c.pvxSetSegment('stopped');
 c.pvx.sel = ['qemu/208'];
@@ -602,7 +431,6 @@ c.pvxClearFilter();
 check('EXECUTED: pvxClearFilter clears text AND segment',
   c.pvx.filter === '' && c.pvx.segment === '');
 
-// "select all" — the VISIBLE ones, never the existing ones
 c = fakeComponent();
 c.pvxSetFilter('type:lxc');
 c.pvxSelAll();
@@ -611,7 +439,6 @@ check('🔴 EXECUTED: "all" means the VISIBLE ones, never the existing ones',
 check('EXECUTED: "all" again clears everything (two exits)',
   (() => { c.pvxSelAll(); return c.pvx.sel.length === 0; })());
 
-// ── 🔴 filter still dismissible with no dataset value — Portainer #12938 ───
 check('🔴 "Showing: X ×" comes from the FILTER STATE, not from the data',
   /x-show="pvxHasFilter\(\)"/.test(index) && /aria-label="Clear filter"/.test(index),
   'Portainer #12938: the chip vanished while STILL active and the list had no way to clear it');
@@ -628,24 +455,6 @@ check('the result count is ALWAYS in the DOM (role=status, aria-atomic)',
   'a region that is only born after the change is not announced by a screen reader');
 check('the filter field has a stable id and lives outside what the refresh redraws',
   /id="pvx-filter"/.test(index) && !/x-show="pvx.loading"[\s\S]{0,400}id="pvx-filter"/.test(index));
-// 🔴 THIS PIN USED TO BE "no <select> on this screen", AND IT WAS TOO GENERAL.
-//
-// It was born of two REAL and different defects, and it banned the whole
-// category to catch both:
-//   (1) a `<select>` that fires an action on @change — a screen reader walks the
-//       options with the arrow keys, so going through the list EXECUTES every
-//       option on the way;
-//   (2) two dropdowns to choose WHICH guest, when the guest is already selected
-//       in the list beside them — typing where a list already existed.
-//
-// The blanket ban cost dearly when it came to choosing a PARAMETER: where to
-// send the copy and in what mode. There is no alternative list there, and the
-// project rule is exactly the opposite — anything with a group becomes a
-// dropdown, typing is the last resort. A `<select>` that only binds an x-model
-// and waits for a button has neither of the two defects.
-//
-// The pin now asserts the TWO properties that describe the defects, instead of
-// the category:
 const selects = [...pvxSection.matchAll(/<select\b[\s\S]*?<\/select>/g)].map((m) => m[0]);
 check('🔴 no <select> ACTS on @change — walking the options with the arrows would run every one',
   selects.every((sel) => !/@change|x-on:change/.test(sel)),
@@ -657,18 +466,8 @@ check('every <select> has an accessible name (aria-label or <label>)',
   selects.every((sel) => /aria-label="/.test(sel)),
   'a select with no name is a "combo box" and nothing more to anyone on a screen reader');
 
-// ── segments: the count stays visible, zero included ──────────────────────
 const segs = new Function('list', 'stateOf', extract(pvxJs, '41-proxmox.js', 'pvxSegments', 'list, stateOf'));
 const R = segs(LIST, fakeState);
-// 🔴 THIS PIN USED TO LOCK THE NUMBER SIX and failed the day the band gained
-// a new state (`gone`, for the node the hypervisor stopped listing) —
-// complaining about a legitimate addition instead of checking the thing it
-// exists to protect.
-//
-// The property is written into the pin below: the band DOES NOT SHRINK with the
-// data. It draws EVERY state the component declares, always, the zeroed ones
-// included — because a band that shrinks moves the click target during the
-// incident. That is what is asserted now, and it holds for six, seven or twenty.
 {
   const declared = [...new Set([...pvxJs.matchAll(/return '([a-z-]+)';/g)]
     .map((m) => m[1]))].filter((e) => /^(stale|no-credential|critical|warning|stopped|gone|ok)$/.test(e));
@@ -685,7 +484,6 @@ check('🔴 a zeroed segment is still drawn, with its zero',
 check('the segment counts match the list',
   R.find(x => x.key === 'no-credential').n === 1 && R.find(x => x.key === 'stopped').n === 1);
 
-// ── the confirmation ladder ───────────────────────────────────────────────
 const step = new Function('action', 'howMany', extract(pvxJs, '41-proxmox.js', 'pvxStep', 'action, howMany'));
 check('step 1: STARTING a node asks nothing', step('start', 1) === 1);
 check('step 2: a graceful shutdown confirms', step('shutdown', 1) === 2);
@@ -704,23 +502,11 @@ check('the bulk confirmation ENUMERATES who will be affected AND who is left out
   /THEY ARE:/.test(pvxJs) && /LEFT OUT/.test(pvxJs),
   '"7 selected" hides that two of them will be skipped in silence');
 
-// ── a control without permission: DISABLED WITH A REASON, never gone ──────
 const action = new Function('n', 'action', extract(pvxJs, '41-proxmox.js', 'pvxActionState', 'n, action'));
 const noCred = { kind: 'guest', vmid: 202, status: { value: 'running' }, credential: { state: 'absent' } };
 check('🔴 no credential: the control closes WITH A REASON',
   action(noCred, 'start').can === false && /no node token in the vault/.test(action(noCred, 'start').reason),
   'Portainer removes the button (`if (!authorized) return null`); Coolify disables it and explains');
-// 🔴 The list of actions being walked has to be FULL. Measured by mutation:
-// swapping the `x-for` for an empty list kept the reason expression in the file
-// and the previous check passed — over a screen that showed no reason at all.
-// 🔴 THIS PIN USED TO LOCK THE LITERAL LIST ['start','shutdown','stop','revoke']
-// and failed the day the screen gained restart, clone and keep-a-copy —
-// complaining about the NEW actions instead of checking whether they were
-// covered.
-//
-// The right property is stronger, not looser: EVERY action the screen offers as
-// a button has to appear in the list of VISIBLE reasons. That way, forgetting
-// to cover a new action fails; adding a covered action does not.
 {
   const offered = new Set(
     [...pvxSection.matchAll(/pvxActionState\(pvxOpenNode\(\),\s*'([a-z]+)'\)/g)].map((m) => m[1]));
@@ -743,9 +529,6 @@ check('🔴 the control still exists in the HTML (there is no v-if erasing it)',
 check('the host neither starts nor stops from the panel, and the screen SAYS why',
   action({ kind: 'host', vmid: 0, status: { value: 'online' }, credential: { state: 'ok' } }, 'start').can === false &&
   /physical button/.test(action({ kind: 'host', vmid: 0, status: { value: 'online' }, credential: { state: 'ok' } }, 'start').reason));
-// 🔴 The `canary` node (kind `external`, transport `agent`) exists in the live
-// inventory, and its reason is a DIFFERENT one. A wrong reason is worse than a
-// missing reason: it sends the operator looking in the wrong place.
 check('🔴 an EXTERNAL node gets its own reason, not the hypervisor one',
   /lab agent/.test(action({ kind: 'external', vmid: 0, transport: 'agent', status: { value: '' }, credential: { state: 'ok' } }, 'start').reason));
 check('🔴 something already on refuses "start" — the `VM 208 already running` defect, measured',
@@ -760,7 +543,6 @@ check('an EXPIRED credential can still be revoked (revoking is cleanup)',
 check('a MISSING credential has nothing to revoke, and the screen says so',
   action(noCred, 'revoke').can === false && /there is no credential to revoke/.test(action(noCred, 'revoke').reason));
 
-// ── the TWO clocks on the screen ──────────────────────────────────────────
 check('🔴 the screen shows the POLLER clock (when it last tried)',
   /nodes\.poll[\s\S]{0,200}poller: checked/.test(index),
   'without it, "the node went quiet" and "the poller stopped" are the same screen');
@@ -772,7 +554,6 @@ check('40-nodes.js keeps the second clock as it comes from the server',
   /this\.nodes\.poll = d\.poll \|\| null;/.test(nodesJs),
   'the age of the attempt also arrives READY — the browser subtracts no clocks');
 
-// ── adaptive refresh, with no interval selector ───────────────────────────
 const cad = new Function('pvx', extract(pvxJs, '41-proxmox.js', 'pvxCadence', '').replace(/this\.pvx/g, 'pvx'));
 check('🔴 the cadence is DERIVED from the server TTL, not chosen on the screen',
   cad({ ttl: 90 }) === 30000 && cad({ ttl: 300 }) === 100000,
@@ -793,7 +574,6 @@ check('🔴 the scroll suspension does NOT read the browser clock',
   !/Date\.now|performance\.now/.test(pvxCode),
   'the "just this once" exception is what makes the next person compute an age here');
 
-// ── a failure does not erase the data already on the screen ───────────────
 const loadTasks = extract(pvxJs, '41-proxmox.js', 'pvxLoadTasks', '');
 check('🔴 a failure fetching tasks does NOT clear the list',
   !/this\.pvx\.tasks = \[\];/.test(loadTasks),
@@ -801,7 +581,6 @@ check('🔴 a failure fetching tasks does NOT clear the list',
 check('a failure fetching disks does not clear either',
   !/this\.pvx\.disks = \[\];/.test(extract(pvxJs, '41-proxmox.js', 'pvxLoadDisks', '')));
 
-// ── the skeleton, and the THREE empties ──────────────────────────────────
 const empty = new Function('pvx', 'nodes', 'list', 'filtered',
   extract(pvxJs, '41-proxmox.js', 'pvxEmpty', '')
     .replace(/this\.pvxFilteredNodes\(\)/g, 'filtered')
@@ -824,7 +603,6 @@ check('a skeleton, not a spinner, on the first load',
   /panel-skel/.test(index.slice(index.indexOf("currentView==='proxmox'"))) &&
   /pvx\.firstLoad/.test(index));
 
-// ── rate: a hole rendered as a hole ──────────────────────────────────────
 const rate = new Function('v', extract(pvxJs, '41-proxmox.js', 'pvxRate', 'v')
   .replace('this.pvxBytes(v)', 'String(v)'));
 check('🔴 an INCOMPUTABLE rate (-1) never becomes "0 B/s"',
@@ -833,7 +611,6 @@ check('🔴 an INCOMPUTABLE rate (-1) never becomes "0 B/s"',
 check('a missing rate is an em dash, not zero', rate(null) === '—');
 check('a real rate is formatted per second', rate(100000) === '100000/s');
 
-// ── no action hidden behind hover ────────────────────────────────────────
 check('🔴 no action appears only on hover (this screen opens on a phone mid-incident)',
   !/group-hover|hover:opacity-100|opacity-0 hover/.test(pvxSection));
 

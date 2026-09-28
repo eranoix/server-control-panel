@@ -1,19 +1,3 @@
-// handlers_queue.go — HTTP layer for the background-jobs queue.
-//
-// Routes wired in NewRouter:
-//
-//	POST   /api/queue                 body {kind, args, source?}  → enqueue
-//	GET    /api/queue?status=&limit=                              → list
-//	GET    /api/queue/{id}                                        → job snapshot
-//	DELETE /api/queue/{id}                                        → remove finished job + log
-//	POST   /api/queue/{id}/cancel                                 → signal cancel
-//	POST   /api/queue/{id}/rerun                                  → restart same job in place
-//	GET    /api/queue/{id}/log?n_bytes=                           → tail of persisted log
-//	GET    /ws/queue/{id}                                         → live events + log
-//
-// Authz happens via Runner.AuthorizedFor on enqueue. The "shell" runner
-// (arbitrary command) is primary-only; everything else is open to any
-// authed user.
 package api
 
 import (
@@ -49,7 +33,6 @@ func (r *Router) handleQueue(w http.ResponseWriter, req *http.Request) {
 			limit = 100
 		}
 		owner := ""
-		// non-primary only sees their own jobs
 		if !r.isPrimary(user) {
 			owner = user
 		} else if u := q.Get("owner"); u != "" {
@@ -66,7 +49,6 @@ func (r *Router) handleQueue(w http.ResponseWriter, req *http.Request) {
 			writeErr(w, 400, "bad json")
 			return
 		}
-		// Authz: look up the runner and ask if user may submit this kind.
 		runner, ok := r.queueRunner(body.Kind)
 		if !ok {
 			writeErr(w, 400, "unknown kind: "+body.Kind)
@@ -119,7 +101,6 @@ func (r *Router) handleQueueByID(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, 404, "not found")
 		return
 	}
-	// non-primary only sees own
 	if !r.isPrimary(user) && j.Owner != user {
 		writeErr(w, 403, "forbidden")
 		return
@@ -187,14 +168,11 @@ func (r *Router) handleQueueByID(w http.ResponseWriter, req *http.Request) {
 		r.auditEvent(req, user, "queue.cancel", "id="+id)
 		writeJSON(w, map[string]string{"status": "cancel-requested"})
 	case "log":
-		// Default to last 256KiB. Before this, omitting n_bytes (or
-		// passing <=0) returned the ENTIRE log — a 100MB apt-upgrade
-		// log would OOM the server's response buffer + the browser.
 		maxBytes, _ := strconv.ParseInt(req.URL.Query().Get("n_bytes"), 10, 64)
 		if maxBytes <= 0 {
 			maxBytes = 256 * 1024
 		} else if maxBytes > 10*1024*1024 {
-			maxBytes = 10 * 1024 * 1024 // hard cap 10MiB
+			maxBytes = 10 * 1024 * 1024
 		}
 		data, err := r.queue.ReadLog(id, maxBytes)
 		if err != nil {
@@ -245,7 +223,6 @@ func (r *Router) handleQueueWS(w http.ResponseWriter, req *http.Request) {
 		return nil
 	})
 
-	// Replay existing log (truncated to 64 KiB so reconnects don't OOM the client).
 	if log, _ := r.queue.ReadLog(id, 64*1024); len(log) > 0 {
 		_ = conn.SetWriteDeadline(time.Now().Add(dockerWsWriteWait))
 		_ = conn.WriteJSON(queue.Event{Type: "log", JobID: id, LogLine: string(log), TS: time.Now().Unix()})
@@ -256,7 +233,6 @@ func (r *Router) handleQueueWS(w http.ResponseWriter, req *http.Request) {
 	events, unsub := r.queue.Subscribe(id)
 	defer unsub()
 
-	// reader goroutine cancels writer on close
 	done := make(chan struct{})
 	go func() {
 		for {
@@ -286,7 +262,6 @@ func (r *Router) handleQueueWS(w http.ResponseWriter, req *http.Request) {
 			if err := conn.WriteJSON(ev); err != nil {
 				return
 			}
-			// On terminal status, send a final frame and close.
 			if ev.Type == "status" && (ev.Status == queue.StatusDone || ev.Status == queue.StatusFailed || ev.Status == queue.StatusCancelled || ev.Status == queue.StatusInterrupted) {
 				return
 			}
@@ -294,9 +269,6 @@ func (r *Router) handleQueueWS(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// queueRunner exposes the runner for a kind without leaking the registry
-// pointer outside the package. Stored in r.queueRunners; populated in
-// NewRouter alongside r.queue.Register.
 func (r *Router) queueRunner(kind string) (queue.Runner, bool) {
 	r.cfgMu.Lock()
 	defer r.cfgMu.Unlock()

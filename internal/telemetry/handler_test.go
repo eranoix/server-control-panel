@@ -13,8 +13,6 @@ import (
 
 const fixedDay = "2026-08-06"
 
-// newHandler returns a handler with its sink in a temp directory and a frozen
-// clock, plus the path of the day's file.
 func newHandler(t *testing.T) (http.HandlerFunc, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -27,7 +25,6 @@ func newHandler(t *testing.T) (http.HandlerFunc, string) {
 	return Handler(s, "server-control-panel"), filepath.Join(dir, fixedDay+".jsonl")
 }
 
-// content returns the day's file, or "" if it never even came into existence.
 func content(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -59,8 +56,6 @@ func post(h http.HandlerFunc, ct, body string) *httptest.ResponseRecorder {
 }
 
 func TestHandler(t *testing.T) {
-	// 1. Valid batch with 2 events → 204 and 2 lines, with the server's ts, the
-	//    build's fork and the sid from the body.
 	t.Run("valid-batch-2-events", func(t *testing.T) {
 		h, p := newHandler(t)
 		before := time.Now().Add(-time.Second)
@@ -105,14 +100,12 @@ func TestHandler(t *testing.T) {
 			} else if pt.Before(before) || pt.After(time.Now().Add(time.Second)) {
 				t.Errorf("line %d ts is not the server's (outside the window): %q", i+1, ts)
 			}
-			// The schema is closed at 6 fields: nothing else can leak out.
 			if len(m) != 6 {
 				t.Errorf("line %d has %d fields, expected=6: %q", i+1, len(m), l)
 			}
 		}
 	})
 
-	// 2. Body above 64 KiB → 400 and zero lines.
 	t.Run("body-over-64kib", func(t *testing.T) {
 		h, p := newHandler(t)
 		huge := strings.Repeat("a", 70000)
@@ -126,7 +119,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 3. Batch with 201 events → 400 and zero lines.
 	t.Run("batch-201-events", func(t *testing.T) {
 		h, p := newHandler(t)
 		evs := make([]string, 201)
@@ -143,7 +135,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 3b. The limit itself: 200 passes.
 	t.Run("batch-of-200-events-passes", func(t *testing.T) {
 		h, p := newHandler(t)
 		evs := make([]string, 200)
@@ -160,7 +151,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 4. origin outside {default,nav} → 400 and zero lines.
 	t.Run("invalid-origin", func(t *testing.T) {
 		for _, org := range []string{"NAV", "", "click", "nav\n", "default "} {
 			h, p := newHandler(t)
@@ -178,7 +168,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 5. sid outside ^[a-f0-9]{8,32}$ → 400 and zero lines.
 	t.Run("malformed-sid", func(t *testing.T) {
 		for _, sid := range []string{
 			"", "1234567", "9F3A1C72", "9f3a1c7g", "../../etc/passwd",
@@ -197,7 +186,6 @@ func TestHandler(t *testing.T) {
 				t.Errorf("sid=%q: wrote %d line(s)", sid, n)
 			}
 		}
-		// And the valid format passes at both extremes.
 		for _, sid := range []string{"abcdef01", strings.Repeat("0f", 16)} {
 			h, _ := newHandler(t)
 			b, _ := json.Marshal(map[string]any{
@@ -210,8 +198,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 6. screen outside the allowlist → 204, 1 line holding "unknown", and the
-	//    raw id does NOT appear anywhere in the file.
 	t.Run("unknown-screen-becomes-unknown", func(t *testing.T) {
 		h, p := newHandler(t)
 		rec := post(h, "application/json",
@@ -231,7 +217,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 6b. Hostile payload in screen: none of it may touch the file.
 	t.Run("hostile-screen-does-not-touch-the-file", func(t *testing.T) {
 		for _, sc := range []string{
 			`<script>alert(1)</script>`,
@@ -256,7 +241,6 @@ func TestHandler(t *testing.T) {
 			if n := countLines(c); n != 1 {
 				t.Errorf("screen=%q: expected=1 observed=%d lines", sc, n)
 			}
-			// The record has to stay one line and valid JSON.
 			var m map[string]any
 			l := strings.TrimSuffix(c, "\n")
 			if err := json.Unmarshal([]byte(l), &m); err != nil {
@@ -267,10 +251,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 7. Extra field in the event: the value must not appear in the JSONL.
-	//    DisallowUnknownFields applies recursively, so the whole batch is a 400 —
-	//    and the file is left with zero lines, which is even stronger than "the
-	//    value does not appear".
 	t.Run("extra-field-in-the-event", func(t *testing.T) {
 		h, p := newHandler(t)
 		rec := post(h, "application/json",
@@ -287,7 +267,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 7b. Extra field in the BATCH (not in the event) — same rule.
 	t.Run("extra-field-in-the-batch", func(t *testing.T) {
 		h, p := newHandler(t)
 		rec := post(h, "application/json",
@@ -300,7 +279,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 8. GET → 405.
 	t.Run("method-get-405", func(t *testing.T) {
 		h, p := newHandler(t)
 		req := httptest.NewRequest(http.MethodGet, "/api/telemetry", nil)
@@ -321,7 +299,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 9. Body that is not JSON → 400, no panic.
 	t.Run("body-not-json", func(t *testing.T) {
 		for _, body := range []string{
 			"", "this is not json", "[]", "null", `{"v":1,"s":`, "\x00\x01\x02",
@@ -337,7 +314,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 10. A successful response has an empty body (zero bytes).
 	t.Run("success-response-empty-body", func(t *testing.T) {
 		h, _ := newHandler(t)
 		rec := post(h, "application/json",
@@ -350,10 +326,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 11. THE sendBeacon BRANCH: this fork has no CSRF on /api/*, so the front end
-	//     uses navigator.sendBeacon — which sends Content-Type: text/plain;charset=UTF-8.
-	//     If the handler demanded application/json, every event would be refused in
-	//     SILENCE and the usage report would get 14 days of empty file.
 	t.Run("content-type-text-plain-from-sendBeacon", func(t *testing.T) {
 		for _, ct := range []string{
 			"text/plain;charset=UTF-8",
@@ -361,7 +333,7 @@ func TestHandler(t *testing.T) {
 			"text/plain",
 			"application/json",
 			"application/json; charset=utf-8",
-			"", // sendBeacon with an untyped Blob
+			"",
 		} {
 			h, p := newHandler(t)
 			rec := post(h, ct,
@@ -375,7 +347,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 11b. Content-Type outside the set → 415, zero lines.
 	t.Run("unsupported-content-type", func(t *testing.T) {
 		h, p := newHandler(t)
 		rec := post(h, "multipart/form-data; boundary=x",
@@ -388,7 +359,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 12. Empty batch → 400 (there is nothing to measure and the cost is the same).
 	t.Run("empty-batch", func(t *testing.T) {
 		h, p := newHandler(t)
 		rec := post(h, "application/json", `{"v":1,"s":"9f3a1c72","e":[]}`)
@@ -400,8 +370,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 13. COMPLETE validation before writing: one invalid event at the end of the
-	//     batch must not leave the preceding ones written.
 	t.Run("partially-invalid-batch-writes-zero", func(t *testing.T) {
 		h, p := newHandler(t)
 		rec := post(h, "application/json",
@@ -414,9 +382,6 @@ func TestHandler(t *testing.T) {
 		}
 	})
 
-	// 14. No free-form field from the browser survives: the record is assembled
-	//     from a closed struct. Proof by difference — the batch's `dropped` is
-	//     accepted on input and is NOT written.
 	t.Run("dropped-accepted-but-not-written", func(t *testing.T) {
 		h, p := newHandler(t)
 		rec := post(h, "application/json",
@@ -425,10 +390,6 @@ func TestHandler(t *testing.T) {
 			t.Fatalf("expected=204 observed=%d", rec.Code)
 		}
 		c := content(t, p)
-		// Check by KEY, never by substring: the server's `ts` carries the time,
-		// and a `strings.Contains(c, "47")` matches 12:47:56. That test failed
-		// because of the clock, not because of a defect — a false alarm, which
-		// this project treats as worse than no test at all.
 		var m map[string]any
 		if err := json.Unmarshal([]byte(strings.TrimSpace(c)), &m); err != nil {
 			t.Fatalf("the record is not JSON: %q", c)
@@ -448,8 +409,6 @@ func TestHandler(t *testing.T) {
 	})
 }
 
-// TestHandlerSurvivesDeadSink: a sink error can never become a UI error
-// nor a panic (accepted disposition).
 func TestHandlerSurvivesDeadSink(t *testing.T) {
 	dir := t.TempDir()
 	s, err := NewSink(dir)
@@ -457,7 +416,6 @@ func TestHandlerSurvivesDeadSink(t *testing.T) {
 		t.Fatal(err)
 	}
 	freeze(s, fixedDay)
-	// Directory removed out from under the sink: the OpenFile will fail.
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}

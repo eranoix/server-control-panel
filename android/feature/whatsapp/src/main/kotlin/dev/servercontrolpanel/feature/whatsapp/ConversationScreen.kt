@@ -47,16 +47,6 @@ import dev.servercontrolpanel.feature.whatsapp.send.AttachmentBar
 import dev.servercontrolpanel.feature.whatsapp.send.PickedAttachment
 import dev.servercontrolpanel.feature.whatsapp.send.UploadProgressBubble
 
-/**
- * Renders [ConversationUiState]: history loaded over REST, then kept live over the WebSocket.
- * Media messages render via [MediaMessageRow] backed by [MediaCache].
- *
- * The image loader, data source factory and shared player own real resources (disk cache lock,
- * ExoPlayer), so they are built once per screen, never per recomposition or row.
- *
- * `UnstableApi` uses androidx `RequiresOptIn`, so it needs `androidx.annotation.OptIn`, which
- * keeps the opt-in from propagating to callers.
- */
 @OptIn(markerClass = [UnstableApi::class])
 @Composable
 fun ConversationScreen(
@@ -211,8 +201,6 @@ private fun MessageBubble(
         ) {
             Column(modifier = Modifier.widthIn(max = 280.dp).padding(10.dp)) {
                 if (uploadState != null) {
-                    // In-flight upload: shows the local file with its own progress and retry
-                    // until the message reconciles with the server copy.
                     UploadProgressBubble(
                         message = message,
                         uploadState = uploadState,
@@ -241,7 +229,6 @@ private fun MessageBubble(
             }
         }
         if (uploadState == null) {
-            // Media uploads show their own status in UploadProgressBubble; this row is for text only.
             when (message.sendStatus) {
                 MessageSendStatus.SENDING -> Text(
                     text = "Sending…",
@@ -253,7 +240,6 @@ private fun MessageBubble(
                         Text("Try again")
                     }
                 }
-                // No retry for QUEUED: it will send on its own, and a retry would duplicate it.
                 MessageSendStatus.QUEUED -> Text(
                     text = "Queued — sends when the internet is back",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

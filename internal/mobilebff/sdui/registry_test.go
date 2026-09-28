@@ -19,12 +19,10 @@ func testCfg() *config.Config {
 	}
 }
 
-// Test 1: Register then Build returns the builder's envelope, with
-// SDUIVersion stamped by the registry regardless of what the builder set.
 func TestRegistry_RegisterAndBuild_StampsVersion(t *testing.T) {
 	Register("test.registry.basic", func(ctx context.Context, v Viewer) (*Envelope, error) {
 		return &Envelope{
-			SDUIVersion: 999, // a builder may not declare its own version
+			SDUIVersion: 999,
 			Screen:      Screen{ID: "test.registry.basic", Title: "Basic"},
 		}, nil
 	})
@@ -41,7 +39,6 @@ func TestRegistry_RegisterAndBuild_StampsVersion(t *testing.T) {
 	}
 }
 
-// Test 2: Build on an unregistered id returns ErrScreenNotFound.
 func TestRegistry_Build_UnregisteredID(t *testing.T) {
 	_, err := Build(context.Background(), "test.registry.does.not.exist", Viewer{})
 	if !errors.Is(err, ErrScreenNotFound) {
@@ -49,7 +46,6 @@ func TestRegistry_Build_UnregisteredID(t *testing.T) {
 	}
 }
 
-// Test 3: registering the same id twice panics at init time.
 func TestRegistry_Register_DuplicatePanics(t *testing.T) {
 	Register("test.registry.duplicate", func(ctx context.Context, v Viewer) (*Envelope, error) {
 		return &Envelope{}, nil
@@ -65,8 +61,6 @@ func TestRegistry_Register_DuplicatePanics(t *testing.T) {
 	})
 }
 
-// Test 4: ViewerFrom resolves admin status through the single existing RBAC
-// check, defaulting to non-admin for unknown/empty identities.
 func TestViewerFrom_ResolvesAdminStatus(t *testing.T) {
 	cfg := testCfg()
 
@@ -86,8 +80,6 @@ func TestViewerFrom_ResolvesAdminStatus(t *testing.T) {
 	}
 }
 
-// Test 5: RegisteredScreens returns ids sorted, for deterministic
-// enumeration.
 func TestRegistry_RegisteredScreens_Sorted(t *testing.T) {
 	Register("test.registry.zzz", func(ctx context.Context, v Viewer) (*Envelope, error) { return &Envelope{}, nil })
 	Register("test.registry.aaa", func(ctx context.Context, v Viewer) (*Envelope, error) { return &Envelope{}, nil })

@@ -35,8 +35,6 @@ class DeepLinkConsumptionStateTest {
 
     @Test
     fun `a state restored already-consumed never re-navigates — the rotation case`() {
-        // Models MainActivity restoring `consumed = true` from onSaveInstanceState after a
-        // configuration change recreates the activity with the same launch Intent.
         val state = DeepLinkConsumptionState(consumed = true)
 
         assertNull(state.consumeOnce("admin/scheduler.jobs"))

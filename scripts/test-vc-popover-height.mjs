@@ -1,15 +1,4 @@
 #!/usr/bin/env node
-// test-vc-popover-height.mjs — the video-call settings menu must not be clipped
-// when the window is short.
-//
-// The popover lives INSIDE #vc-call-root, which is a panel (below the tabs, above
-// the status bar) with overflow:hidden — not the viewport. While max-height was
-// calc(100dvh - 88px), in a short window the menu ended up taller than the panel
-// and the container clip ate the top of it: the user saw the first section cut in
-// half with no way to scroll up to it.
-//
-// The pin does not read CSS: it mounts the REAL popover from index.html inside a
-// panel shorter than the viewport, in a chromium, and measures the computed geometry.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -45,7 +34,6 @@ const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
 const tail = fs.readFileSync(path.join(WEB, 'tailwind.css'), 'utf8');
 const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n');
 
-// Cut out the REAL settings popover, matching <div> tags until it closes.
 function clipPopover() {
   const ini = html.indexOf('<div x-show="videocall.settingsPopOpen" class="vc-popover vc-popover-wide"');
   if (ini < 0) return null;
@@ -61,13 +49,8 @@ function clipPopover() {
 let pop = clipPopover();
 if (!pop) { no('settings popover not found in index.html — the pin lost its target'); process.exit(1); }
 ok('settings popover cut out of index.html (' + pop.length + ' bytes)');
-// Without Alpine, x-show/x-if do not evaluate. Strip x-show so every accordion
-// group stays OPEN — the worst case for height, which is exactly what to measure.
 pop = pop.replace(/x-show="[^"]*"/g, '').replace(/x-text="[^"]*"/g, '');
 
-// A panel SHORTER than the viewport: this is the bug scenario (tabs above, status
-// bar below). If the popover measured itself against the viewport, it would
-// overflow from here.
 const TOP = 120, BASE = 90;
 const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
 
@@ -82,7 +65,6 @@ for (const [larg, alt] of [[1015, 800], [1280, 720], [1400, 1080]]) {
     + '        <button class="vc-btn">⚙</button>' + pop
     + '      </div></div></div></div></body>');
 
-  // The same line production runs in _vcSetupPopoverBounds().
   await page.evaluate(() => {
     const el = document.getElementById('vc-call-root');
     const h = el.clientHeight;
@@ -106,13 +88,10 @@ for (const [larg, alt] of [[1015, 800], [1280, 720], [1400, 1080]]) {
   g.popBase <= g.baseRoot + 0.5
     ? ok(tag + ': the bottom of the menu is inside the panel')
     : no(tag + ': the bottom of the menu is CLIPPED — ' + Math.round(g.popBase - g.baseRoot) + 'px below the panel');
-  // Clipping is not the same as scrolling: content that did not fit has to be reachable.
   (!g.rolavel || g.visible > 200)
     ? ok(tag + ': content reachable by scrolling (' + g.content + 'px inside ' + g.visible + 'px of window)')
     : no(tag + ': the scroll window is far too small (' + g.visible + 'px)');
 
-  // Counter-check: without the panel measurement the bug comes back. If THIS
-  // passes, the pin has stopped testing what the fix fixes.
   const noVar = await page.evaluate(() => {
     const root = document.getElementById('vc-call-root');
     root.style.removeProperty('--vc-root-h');
@@ -126,7 +105,6 @@ for (const [larg, alt] of [[1015, 800], [1280, 720], [1400, 1080]]) {
   await page.close();
 }
 
-// Counter-check in the source: if anyone reintroduces the viewport measurement, it falls.
 const rule = (html.match(/\.vc-popover \{[^}]*\}/) || [''])[0];
 /max-height:\s*calc\(var\(--vc-root-h/.test(rule)
   ? ok('the .vc-popover rule measures against the panel (--vc-root-h)')

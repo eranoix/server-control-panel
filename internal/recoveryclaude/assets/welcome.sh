@@ -1,6 +1,4 @@
 #!/bin/bash
-# First screen of the "Claude (independent)" tab in /recovery: where you are,
-# what this environment reaches, and what to do when the login is missing.
 echo
 echo -e "\033[1;36m  Recovery Claude: independent connection\033[0m"
 echo -e "  \033[2mDirect API connection and its own login: it keeps working"

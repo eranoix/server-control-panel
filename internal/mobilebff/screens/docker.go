@@ -25,8 +25,6 @@ import (
 	"server-control-panel/internal/mobilebff/sdui"
 )
 
-// Screen ids — also the golden fixture filename stems (docker.containers.*,
-// etc, see contracts/sdui/fixtures/screens/).
 const (
 	dockerContainersScreenID = "docker.containers"
 	dockerImagesScreenID     = "docker.images"
@@ -36,9 +34,6 @@ const (
 	dockerPruneScreenID      = "docker.prune"
 )
 
-// Rows endpoints — one per table screen. Prune has no table, so no rows
-// endpoint. Absolute paths (carry mobilebff.Prefix), same convention as
-// schedulerJobsRowsEndpoint.
 const (
 	dockerContainersRowsEndpoint = mobilebff.Prefix + "/docker/containers"
 	dockerImagesRowsEndpoint     = mobilebff.Prefix + "/docker/images"
@@ -47,15 +42,8 @@ const (
 	dockerComposeRowsEndpoint    = mobilebff.Prefix + "/docker/compose"
 )
 
-// dockerTimestampFormat mirrors schedulerTimestampFormat — every timestamp
-// in these six screens is rendered server-side, never a raw epoch.
 const dockerTimestampFormat = "2006-01-02 15:04 UTC"
 
-// RegisterDocker wires the six Docker screens, their actions and their rows
-// endpoints. Called explicitly by internal/api/api.go, mirroring Register
-// (scheduler.go) — a second top-level Register with a different parameter
-// type is not legal Go, so this batch gets its own name; every later
-// section in this phase follows the same RegisterX convention.
 func RegisterDocker(deps DockerDeps) {
 	sdui.Register(dockerContainersScreenID, func(_ context.Context, v sdui.Viewer) (*sdui.Envelope, error) {
 		return buildDockerContainersScreen(v), nil
@@ -76,13 +64,6 @@ func RegisterDocker(deps DockerDeps) {
 		return buildDockerPruneScreenForViewer(v)
 	})
 
-	// Catalog entries (the app's section picker). The labels qualify the
-	// generic noun — "Images", "Volumes" and "Networks" on their own do not say
-	// Docker, and the label has to make sense read outside the group (in a
-	// search, in a recent item). Only docker.prune is adminOnly: it is the
-	// only one of the six whose builder (buildDockerPruneScreenForViewer)
-	// refuses a non-admin with ErrScreenNotFound; the other five assemble for
-	// any viewer and merely omit destructive actions from inside the Envelope.
 	sdui.RegisterCatalog(dockerContainersScreenID, sdui.GroupDocker, "Containers", alwaysVisible)
 	sdui.RegisterCatalog(dockerImagesScreenID, sdui.GroupDocker, "Docker images", alwaysVisible)
 	sdui.RegisterCatalog(dockerVolumesScreenID, sdui.GroupDocker, "Docker volumes", alwaysVisible)
@@ -108,16 +89,6 @@ func RegisterDocker(deps DockerDeps) {
 		registerDockerComposeRows(api, deps, mbDeps)
 	})
 
-	// Forbidden-for-non-admin ledger: containers/images/compose each hide
-	// their one destructive row action id from non-admin. Rows themselves
-	// are NOT filtered — internal/docker (and the web panel's own
-	// handleContainers/handleImages/handleCompose) apply no per-viewer
-	// scoping beyond admin/non-admin today, so the non-admin envelope keeps
-	// every row and omits only the destructive action (see PLAN.md Risks:
-	// "the non-admin screens simply omit every destructive action and keep
-	// all rows"). Volumes and networks have no destructive action for any
-	// viewer, so they are registered in screensWithNoRoleDifference instead
-	// (golden_test.go), not here.
 	sdui.RegisterForbiddenForNonAdmin(dockerContainersScreenID, func() []string {
 		return []string{dockerActionContainerRemove}
 	})
@@ -128,22 +99,10 @@ func RegisterDocker(deps DockerDeps) {
 		return []string{dockerActionComposeDown}
 	})
 	sdui.RegisterForbiddenForNonAdmin(dockerPruneScreenID, func() []string {
-		// The whole screen is admin-only (ErrScreenNotFound above), so
-		// there is no non-admin envelope to omit anything FROM — the
-		// forbidden set only needs to cover the case where the harness
-		// still probes prune.run's action id directly (see
-		// TestGoldenScreens_NonAdminNeverContainsForbiddenStrings and
-		// Task 2 Test 3: non-admin invoking it gets ErrActionNotFound).
 		return []string{dockerActionPruneRun}
 	})
 }
 
-// buildDockerContainersScreen builds the containers-table screen. Row
-// actions (start/stop/restart) are visible to every viewer — the web panel
-// applies no admin gate to container lifecycle control today (verified
-// against handlers_docker.go); remove is destructive and admin-only, and is
-// dropped from the table for non-admins via DropRowActions, the only
-// sanctioned removal mechanism (filter.go).
 func buildDockerContainersScreen(v sdui.Viewer) *sdui.Envelope {
 	table := sdui.TableComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeTable, ID: "containers-table"},
@@ -182,8 +141,6 @@ func buildDockerContainersScreen(v sdui.Viewer) *sdui.Envelope {
 	return &sdui.Envelope{Screen: screen}
 }
 
-// buildDockerImagesScreen builds the images-table screen. remove is
-// destructive and admin-only.
 func buildDockerImagesScreen(v sdui.Viewer) *sdui.Envelope {
 	table := sdui.TableComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeTable, ID: "images-table"},
@@ -215,11 +172,6 @@ func buildDockerImagesScreen(v sdui.Viewer) *sdui.Envelope {
 	return &sdui.Envelope{Screen: screen}
 }
 
-// buildDockerVolumesScreen builds the volumes-table screen: list-only for
-// EVERY viewer, admin included — internal/docker exposes no single-item
-// volume delete anywhere (only the bulk VolumesPrune reachable from
-// docker.prune). No row actions, no confirm_destructive component; identical
-// for admin and non-admin (screensWithNoRoleDifference in golden_test.go).
 func buildDockerVolumesScreen() *sdui.Envelope {
 	table := sdui.TableComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeTable, ID: "volumes-table"},
@@ -235,10 +187,6 @@ func buildDockerVolumesScreen() *sdui.Envelope {
 	return &sdui.Envelope{Screen: screen}
 }
 
-// buildDockerNetworksScreen builds the networks-table screen: list-only for
-// every viewer, same reasoning as buildDockerVolumesScreen — internal/docker
-// exposes no single-item network delete anywhere, and system networks
-// (bridge/host/none) must never gain a remove action regardless of RBAC.
 func buildDockerNetworksScreen() *sdui.Envelope {
 	table := sdui.TableComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeTable, ID: "networks-table"},
@@ -254,9 +202,6 @@ func buildDockerNetworksScreen() *sdui.Envelope {
 	return &sdui.Envelope{Screen: screen}
 }
 
-// buildDockerComposeScreen builds the compose-table screen. up is visible to
-// every viewer (same no-admin-gate-on-lifecycle reasoning as containers);
-// down is destructive and admin-only.
 func buildDockerComposeScreen(v sdui.Viewer) *sdui.Envelope {
 	table := sdui.TableComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeTable, ID: "compose-table"},
@@ -290,20 +235,6 @@ func buildDockerComposeScreen(v sdui.Viewer) *sdui.Envelope {
 	return &sdui.Envelope{Screen: screen}
 }
 
-// buildDockerPruneScreen builds the prune-form screen — form only, no
-// table, per PLAN.md's shape ("prune is form + confirm_destructive only").
-// Only reachable by an admin viewer (RegisterDocker gates Build itself).
-// RequireTypedConfirmation is set (unlike scheduler.job.delete's empty
-// value) because a system prune is a genuinely irreversible, root-adjacent,
-// potentially large-blast-radius operation — the opposite case from a
-// recreatable scheduler job, where scheduler.go deliberately left this
-// empty to avoid training the user to type without reading.
-// buildDockerPruneScreenForViewer applies the admin-only gate (a non-admin's
-// Build call returns ErrScreenNotFound, the same 404-never-403 posture every
-// other admin-only surface in this package uses — never an emptied envelope
-// that still confirms the screen exists) and delegates to
-// buildDockerPruneScreen. Split out, like buildSchedulerJobsScreen, so tests
-// can exercise the gate directly without going through the global registry.
 func buildDockerPruneScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	if !v.IsAdmin() {
 		return nil, sdui.ErrScreenNotFound
@@ -337,8 +268,6 @@ func buildDockerPruneScreen() *sdui.Envelope {
 	}
 	return &sdui.Envelope{Screen: screen}
 }
-
-// --- Rows endpoints -------------------------------------------------------
 
 func registerDockerContainersRows(api huma.API, deps DockerDeps, mbDeps mobilebff.Deps) {
 	registerDockerRows(api, "getDockerContainerRows", "/docker/containers", "Rows of docker.containers", mbDeps.Cfg,
@@ -418,10 +347,6 @@ func registerDockerComposeRows(api huma.API, deps DockerDeps, mbDeps mobilebff.D
 		})
 }
 
-// registerDockerRows is the shared plumbing for all five Docker rows
-// endpoints: authenticate, resolve Viewer, call fetch, wrap as {"rows":[...]}
-// — the same wire shape scheduler.jobs' rows endpoint established
-// (registerSchedulerRows), reused here instead of re-deriving it five times.
 func registerDockerRows(api huma.API, opID, path, summary string, cfg *config.Config, fetch func(context.Context, sdui.Viewer) ([]map[string]any, error)) {
 	huma.Register(api, huma.Operation{
 		OperationID: opID,
@@ -474,10 +399,6 @@ func serveDockerRows(cfg *config.Config, fetch func(context.Context, sdui.Viewer
 	}
 }
 
-// --- Row shaping -----------------------------------------------------------
-
-// dockerContainerRow shapes one types.Container into the row wire format.
-// Wire shape: {"id","name","image","status","created"}.
 func dockerContainerRow(c types.Container) map[string]any {
 	name := c.ID
 	if len(c.Names) > 0 {
@@ -492,8 +413,6 @@ func dockerContainerRow(c types.Container) map[string]any {
 	}
 }
 
-// dockerImageRow shapes one image.Summary into the row wire format.
-// Wire shape: {"id","repo_tag","size","created"}.
 func dockerImageRow(im image.Summary) map[string]any {
 	repoTag := "(untagged)"
 	if len(im.RepoTags) > 0 {
@@ -507,12 +426,6 @@ func dockerImageRow(im image.Summary) map[string]any {
 	}
 }
 
-// dockerVolumeRow shapes one volume.Volume into the row wire format. Size
-// comes from UsageData, which is only populated by the disk-usage
-// aggregation, not the plain list call docker.Client.Volumes makes — a
-// volume whose usage was never computed shows an empty size, never a
-// misleading 0 B or -1.
-// Wire shape: {"id","name","driver","size"}.
 func dockerVolumeRow(v volume.Volume) map[string]any {
 	size := ""
 	if v.UsageData != nil && v.UsageData.Size >= 0 {
@@ -526,8 +439,6 @@ func dockerVolumeRow(v volume.Volume) map[string]any {
 	}
 }
 
-// dockerNetworkRow shapes one network.Summary into the row wire format.
-// Wire shape: {"id","name","driver","scope"}.
 func dockerNetworkRow(n network.Summary) map[string]any {
 	return map[string]any{
 		"id":     n.ID,
@@ -537,11 +448,6 @@ func dockerNetworkRow(n network.Summary) map[string]any {
 	}
 }
 
-// dockerComposeRow shapes one docksvc.ComposeProject into the row wire
-// format. Wire shape: {"id","stack","status"} — "id" and "stack" are both
-// the project name (compose has no separate id), kept as two keys so the
-// client's generic row-rendering code (which reads "id" for row identity on
-// every table) stays uniform across all six Docker screens.
 func dockerComposeRow(p docksvc.ComposeProject) map[string]any {
 	return map[string]any{
 		"id":     p.Name,
@@ -550,9 +456,6 @@ func dockerComposeRow(p docksvc.ComposeProject) map[string]any {
 	}
 }
 
-// formatDockerTimestamp renders a Unix epoch as the server-formatted display
-// string every timestamp in these six screens uses — mirrors
-// formatSchedulerTimestamp's zero-is-empty rule.
 func formatDockerTimestamp(epoch int64) string {
 	if epoch == 0 {
 		return ""
@@ -560,10 +463,6 @@ func formatDockerTimestamp(epoch int64) string {
 	return time.Unix(epoch, 0).UTC().Format(dockerTimestampFormat)
 }
 
-// formatDockerBytes renders a byte count as a human-readable, display-ready
-// string (never a raw number) — -1 (Docker's "not calculated" sentinel,
-// used by both image.Summary.Size and volume.UsageData.Size) renders as
-// empty, matching formatDockerTimestamp's "unknown/unset" convention.
 func formatDockerBytes(n int64) string {
 	if n < 0 {
 		return ""

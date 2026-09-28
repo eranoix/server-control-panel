@@ -13,8 +13,6 @@ import (
 	"server-control-panel/internal/config"
 )
 
-// fakeUserEmailMapper simulates authSvc.UUIDMap() without going through
-// LoadUUIDMap when the test does not need a real mapping.
 type fakeUserEmailMapper struct {
 	uuidMap *auth.UUIDMap
 }
@@ -166,11 +164,6 @@ func TestHandleMe_Unauthenticated(t *testing.T) {
 	}
 }
 
-// TestHandleMe_NoDuplicatedAuthLogic is the proxy test: the handler must not
-// contain direct references to bcrypt, jwt.Parse or auth-store types — only
-// calls to auth.UserFrom/UserFromContext and
-// authSvc.UUIDMap()/EmailFor, exactly as internal/api/handlers_auth.go
-// already does in handleMe.
 func TestHandleMe_NoDuplicatedAuthLogic(t *testing.T) {
 	src, err := os.ReadFile("handlers_session.go")
 	if err != nil {

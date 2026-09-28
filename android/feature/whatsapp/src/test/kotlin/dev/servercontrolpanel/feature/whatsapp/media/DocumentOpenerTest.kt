@@ -9,10 +9,6 @@ import org.junit.Test
 import org.robolectric.RobolectricTestRunner
 import org.junit.runner.RunWith
 
-/**
- * The intent [DocumentOpener] builds always carries a `content://` URI (never `file://`) with
- * a revocable read grant. Real [androidx.core.content.FileProvider] resolution needs a device.
- */
 @RunWith(RobolectricTestRunner::class)
 class DocumentOpenerTest {
 

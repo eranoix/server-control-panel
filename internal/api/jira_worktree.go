@@ -1,17 +1,5 @@
 package api
 
-// jira_worktree.go: one worktree per agent for "Work on it now".
-//
-// When the mapped repo path for a ticket is a git repo, the agent session runs
-// in a DEDICATED git worktree on its own branch (agent/<ticket-slug>) instead of
-// the shared checkout — so concurrent tickets never fight over the working tree
-// or HEAD. Guarded and idempotent: non-git paths fall back to the shared path
-// unchanged, and reattaching to an existing worktree reuses it in place.
-//
-// Anti-injection: git is always invoked with argv slices (never a
-// shell) and the ticket key is reduced to a strict [a-z0-9-] slug before it
-// reaches a branch name or filesystem path.
-
 import (
 	"context"
 	"os"
@@ -24,7 +12,6 @@ import (
 
 var worktreeSlugRe = regexp.MustCompile(`[^a-z0-9]+`)
 
-// ticketSlug reduces a Jira key to a collision-resistant, path/branch-safe slug.
 func ticketSlug(key string) string {
 	s := strings.ToLower(strings.TrimSpace(key))
 	s = worktreeSlugRe.ReplaceAllString(s, "-")
@@ -35,8 +22,6 @@ func ticketSlug(key string) string {
 	return s
 }
 
-// gitCmdEnv is a minimal, non-interactive git environment (no pager, no
-// credential/terminal prompts that could hang the spawn).
 func gitCmdEnv() []string {
 	return append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
@@ -64,7 +49,6 @@ func isDir(p string) bool {
 	return err == nil && fi.IsDir()
 }
 
-// worktreeRegistered reports whether wt is a worktree git currently knows about.
 func worktreeRegistered(ctx context.Context, repoPath, wt string) bool {
 	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "worktree", "list", "--porcelain")
 	cmd.Env = gitCmdEnv()
@@ -83,11 +67,6 @@ func worktreeRegistered(ctx context.Context, repoPath, wt string) bool {
 	return false
 }
 
-// ensureTicketWorktree returns the cwd the agent session should use for a ticket
-// and whether a dedicated git worktree was set up. Guarded: only when repoPath
-// is a git repo; otherwise returns (repoPath, false) unchanged. Idempotent:
-// reuses an existing worktree/branch for the ticket on reattach; falls back to
-// the shared repo on any git failure so "Work on it now" never hard-breaks.
 func ensureTicketWorktree(ctx context.Context, repoPath, key string) (string, bool) {
 	if repoPath == "" || !isGitRepo(ctx, repoPath) {
 		return repoPath, false
@@ -99,23 +78,17 @@ func ensureTicketWorktree(ctx context.Context, repoPath, key string) (string, bo
 	wt := filepath.Join(repoPath, ".claude", "worktrees", "agent-"+slug)
 	branch := "agent/" + slug
 
-	// Idempotent reuse: an existing, git-registered worktree is used as-is.
 	if isDir(wt) {
 		if worktreeRegistered(ctx, repoPath, wt) {
 			return wt, true
 		}
-		// Stale directory not tracked by git — don't clobber it; fall back.
 		return repoPath, false
 	}
 
-	// git worktree add creates the leaf dir but not deep parents.
 	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
 		return repoPath, false
 	}
 
-	// Fresh branch off the current HEAD. If the branch already exists (a prior
-	// run whose worktree was pruned), attach it instead of recreating it. As a
-	// final guard against any residual collision, mint a timestamped branch.
 	if runGitOK(ctx, repoPath, "worktree", "add", "-b", branch, wt, "HEAD") {
 		return wt, true
 	}

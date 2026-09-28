@@ -13,9 +13,6 @@ import (
 	"server-control-panel/internal/pve"
 )
 
-// maintenanceRouter builds the router with a fake vault and a fake hypervisor.
-// NO test in this file clones or backs up for real: the fake COUNTS the calls,
-// so we can assert "nothing was fired" without ever firing anything.
 func maintenanceRouter(t *testing.T, nodes []inventory.Node, withPanel bool) (*Router, *[]string) {
 	t.Helper()
 	var seen []string
@@ -41,8 +38,6 @@ func testGuest() []inventory.Node {
 	return []inventory.Node{n}
 }
 
-// TestCloneUsesPanelTokenNotNodeToken: the node token has neither VM.Allocate on
-// /vms/<newid> nor Datastore.AllocateSpace, so using it would yield an opaque 403.
 func TestCloneUsesPanelTokenNotNodeToken(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
 	w, out := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"new_id":991,"name":"apps-copy","snapshot":"base"}`)
@@ -59,7 +54,6 @@ func TestCloneUsesPanelTokenNotNodeToken(t *testing.T) {
 	if !strings.Contains(used, "pve.clone:lxc/207->991:apps-copy:snap=base") {
 		t.Errorf("the clone did not reach the hypervisor with source, destination and name: %v", *seen)
 	}
-	// Accepted, never "ok": the clone was not waited for.
 	if out["status"] != "accepted" {
 		t.Errorf("status = %v, want \"accepted\" — the task was not awaited", out["status"])
 	}
@@ -68,7 +62,6 @@ func TestCloneUsesPanelTokenNotNodeToken(t *testing.T) {
 	}
 }
 
-// TestCloneWithoutPanelCredentialExplainsWhy: the refusal names the missing key.
 func TestCloneWithoutPanelCredentialExplainsWhy(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), false)
 	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"new_id":991,"snapshot":"base"}`)
@@ -85,8 +78,6 @@ func TestCloneWithoutPanelCredentialExplainsWhy(t *testing.T) {
 	}
 }
 
-// TestCloneGETFiresNothing: the GET only asks for the next free id; loading the
-// screen must never create guests.
 func TestCloneGETFiresNothing(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
 	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/clone", "")
@@ -109,9 +100,6 @@ func TestCloneGETFiresNothing(t *testing.T) {
 	}
 }
 
-// TestCloneOfRunningContainerRequiresSnapshot: PVE refuses a full clone of a
-// running container without `snapname`. The panel refuses first, with a message
-// that says what to do (take a snapshot, or shut the guest down).
 func TestCloneOfRunningContainerRequiresSnapshot(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
 	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"new_id":991,"name":"x"}`)
@@ -127,7 +115,6 @@ func TestCloneOfRunningContainerRequiresSnapshot(t *testing.T) {
 		}
 	}
 
-	// With a snapshot it goes through — and the snapname REACHES the hypervisor.
 	r2, seen2 := maintenanceRouter(t, testGuest(), true)
 	w2, _ := callAPI(t, r2, http.MethodPost, "/api/nodes/lxc/207/clone", `{"new_id":991,"name":"x","snapshot":"before-upgrade"}`)
 	if w2.Code != 200 {
@@ -138,8 +125,6 @@ func TestCloneOfRunningContainerRequiresSnapshot(t *testing.T) {
 	}
 }
 
-// TestCloneOfStoppedGuestNeedsNoSnapshot: the snapshot requirement only applies
-// to a running container.
 func TestCloneOfStoppedGuestNeedsNoSnapshot(t *testing.T) {
 	n := testNode("lxc/207", "apps", 207, testNow)
 	n.Status.Value = "stopped"
@@ -153,8 +138,6 @@ func TestCloneOfStoppedGuestNeedsNoSnapshot(t *testing.T) {
 	}
 }
 
-// TestCloneGETWarnsSnapshotNeeded: the screen learns about the requirement before
-// the form is submitted.
 func TestCloneGETWarnsSnapshotNeeded(t *testing.T) {
 	r, _ := maintenanceRouter(t, testGuest(), true)
 	_, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/clone", "")
@@ -166,8 +149,6 @@ func TestCloneGETWarnsSnapshotNeeded(t *testing.T) {
 	}
 }
 
-// TestCloneRejectsWithoutDestination: without a target id (from the GET), nothing
-// is fired.
 func TestCloneRejectsWithoutDestination(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
 	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"name":"x"}`)
@@ -199,8 +180,6 @@ func TestBackupPassesModeAndCompressionAndUsesPanel(t *testing.T) {
 	}
 }
 
-// TestBackupDefaultsAreUnsurprising: the default is `snapshot`+`zstd`, which does
-// not stop the guest (a `stop` default would power it off).
 func TestBackupDefaultsAreUnsurprising(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
 	if w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/backup", `{"storage":"pbs"}`); w.Code != 200 {
@@ -211,7 +190,6 @@ func TestBackupDefaultsAreUnsurprising(t *testing.T) {
 	}
 }
 
-// TestBackupRejectsWithoutStorage: where the copy goes cannot be guessed.
 func TestBackupRejectsWithoutStorage(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
 	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/backup", `{}`)
@@ -225,8 +203,6 @@ func TestBackupRejectsWithoutStorage(t *testing.T) {
 	}
 }
 
-// TestMaintenanceRejectsHostWithDistinctReason: the host and an external node get
-// different refusals because the operator's next step differs.
 func TestMaintenanceRejectsHostWithDistinctReason(t *testing.T) {
 	host := testNode("node/pve", "pve", 0, testNow)
 	host.Kind = inventory.NodeKindHost
@@ -247,8 +223,6 @@ func TestMaintenanceRejectsHostWithDistinctReason(t *testing.T) {
 	}
 }
 
-// TestRebootGoesThroughWaitTask: reboot waits for the task, because a guest that
-// ignores the request stays up and only the task result shows it.
 func TestRebootGoesThroughWaitTask(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
 	w, out := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/power", `{"action":"reboot"}`)
@@ -262,7 +236,6 @@ func TestRebootGoesThroughWaitTask(t *testing.T) {
 	if !strings.Contains(used, "pve.wait") {
 		t.Errorf("reboot did NOT wait for the task — a guest that ignores ACPI would be reported as rebooted: %v", *seen)
 	}
-	// Reboot uses the NODE's token, not the panel's: it is the node acting on itself.
 	if !strings.Contains(used, "token=panel@pve!node-apps") {
 		t.Errorf("reboot did not use the node's token: %v", *seen)
 	}
@@ -271,9 +244,6 @@ func TestRebootGoesThroughWaitTask(t *testing.T) {
 	}
 }
 
-// TestRebootOutsideAllowlistNeverDials: anything that is not one of the four
-// actions never reaches the hypervisor. Normalization (trim + lowercase) runs
-// before an exact match, so it loosens nothing; both halves are asserted.
 func TestRebootOutsideAllowlistNeverDials(t *testing.T) {
 	t.Run("normalization accepted, and that is on purpose", func(t *testing.T) {
 		for _, action := range []string{"reboot", " reboot ", "REBOOT", "Reboot", "reboot\n", "\treboot"} {
@@ -321,8 +291,6 @@ func noteRouter(t *testing.T, nodes []inventory.Node, text string) (*Router, *[]
 	return r, &seen
 }
 
-// TestGuestNoteComesFromPVE: the note is read from the hypervisor, the single
-// source of truth.
 func TestGuestNoteComesFromPVE(t *testing.T) {
 	const text = "## apps: the applications\n\n**What it does:** nothing yet."
 	r, seen := noteRouter(t, testGuest(), text)
@@ -341,10 +309,7 @@ func TestGuestNoteComesFromPVE(t *testing.T) {
 	}
 }
 
-// TestHOSTNoteReadsNODEConfig: the hypervisor's own note lives at
-// /nodes/<node>/config, not under a guest vmid.
 func TestHOSTNoteReadsNODEConfig(t *testing.T) {
-	// VMID 999, not 0, so the test fails if the handler used the inventory vmid.
 	host := testNode("node/pve", "pve", 999, testNow)
 	host.Kind = inventory.NodeKindHost
 	r, seen := noteRouter(t, []inventory.Node{host}, "# pve: the home server")
@@ -355,7 +320,6 @@ func TestHOSTNoteReadsNODEConfig(t *testing.T) {
 	if !strings.Contains(out["markdown"].(string), "home server") {
 		t.Errorf("markdown = %v", out["markdown"])
 	}
-	// vmid 0 tells the client to read /nodes/<node>/config.
 	used := strings.Join(*seen, " ")
 	if !strings.Contains(used, "/0 ") && !strings.HasSuffix(used, "/0") {
 		t.Errorf("did not ask for the NODE's config (vmid 0): %v", *seen)
@@ -366,7 +330,6 @@ func TestHOSTNoteReadsNODEConfig(t *testing.T) {
 	}
 }
 
-// TestEmptyNoteIsNotError: "empty" must stay distinct from "could not be read".
 func TestEmptyNoteIsNotError(t *testing.T) {
 	r, _ := noteRouter(t, testGuest(), "   \n  ")
 	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/note", "")
@@ -378,8 +341,6 @@ func TestEmptyNoteIsNotError(t *testing.T) {
 	}
 }
 
-// TestNoteOfEXTERNALNodeSkipsPVE: an external node has no PVE config, which is an
-// absent source rather than a failure.
 func TestNoteOfEXTERNALNodeSkipsPVE(t *testing.T) {
 	ext := testNode("canary", "canary", 0, testNow)
 	ext.Kind = inventory.NodeKindExternal
@@ -402,8 +363,6 @@ func TestNoteOfEXTERNALNodeSkipsPVE(t *testing.T) {
 	}
 }
 
-// TestNoteOfNodeGoneFromHypervisor: the inventory lists a deleted guest for one
-// more cycle; the PVE 500 about a missing config file becomes a plain message.
 func TestNoteOfNodeGoneFromHypervisor(t *testing.T) {
 	r, _ := noteRouter(t, testGuest(), "")
 	r.pveDial = func(value string) (hypervisorOps, error) {
@@ -427,8 +386,6 @@ func TestNoteOfNodeGoneFromHypervisor(t *testing.T) {
 	}
 }
 
-// TestNoteWithHypervisorDownIsStillError is the negative control: a hypervisor
-// that is down must not be reported as a deleted guest.
 func TestNoteWithHypervisorDownIsStillError(t *testing.T) {
 	r, _ := noteRouter(t, testGuest(), "")
 	r.pveDial = func(value string) (hypervisorOps, error) {
@@ -440,8 +397,6 @@ func TestNoteWithHypervisorDownIsStillError(t *testing.T) {
 	}
 }
 
-// TestWriteNoteUsesWRITECredential: writing (VM.Config.Options) goes through the
-// panel credential; reading goes through the read credential.
 func TestWriteNoteUsesWRITECredential(t *testing.T) {
 	const text = "## apps\n\n**What it does:** serves the applications."
 	r, seen := noteRouter(t, testGuest(), "")
@@ -461,9 +416,6 @@ func TestWriteNoteUsesWRITECredential(t *testing.T) {
 		t.Errorf("origin = %v", out["origin"])
 	}
 
-	// hypervisorReadSecret() prefers the panel token when present, so the paths
-	// only differ without it: reading falls back to the audit token, writing is
-	// refused and names the missing key.
 	r2, seen2 := noteRouter(t, testGuest(), text)
 	r2.nodeVaultFn = func() (nodeVault, error) {
 		return &fakeVault{seen: seen2, data: map[string]string{"pve_token_audit": "panel@pve!audit=a"}}, nil
@@ -483,8 +435,6 @@ func TestWriteNoteUsesWRITECredential(t *testing.T) {
 	}
 }
 
-// TestWriteNoteRejectsHugeText: the size cap is enforced before calling the
-// hypervisor.
 func TestWriteNoteRejectsHugeText(t *testing.T) {
 	r, seen := noteRouter(t, testGuest(), "")
 	body, _ := json.Marshal(map[string]string{"markdown": strings.Repeat("a", pve.MaxNoteSize+1)})
@@ -499,8 +449,6 @@ func TestWriteNoteRejectsHugeText(t *testing.T) {
 	}
 }
 
-// TestNoteTrailOmitsCONTENT: the audit trail records size and target, never the
-// note's content.
 func TestNoteTrailOmitsCONTENT(t *testing.T) {
 	const secret = "the safe is behind the painting in the living room"
 	r, _ := noteRouter(t, testGuest(), "")

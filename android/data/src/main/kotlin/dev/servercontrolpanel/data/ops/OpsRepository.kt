@@ -12,7 +12,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
-/** One currently-firing alert rule, screen-shaped straight from `GET /api/mobile/v1/ops/status`. */
 data class OpsAlert(
     val name: String,
     val severity: String,
@@ -23,14 +22,6 @@ data class OpsAlert(
     val firedSinceEpoch: Long? = null,
 )
 
-/**
- * The full `GET /api/mobile/v1/ops/status` snapshot — health checks, queue depth, fired alerts
- * and, more recently, the machine's resources in [system].
- *
- * [system] is nullable because the app runs against servers that may be older than it is: a
- * BFF without the field returns `null`, and the Home screen hides the resources card instead of
- * drawing zero — an invented number on an operations dashboard is worse than a missing field.
- */
 data class OpsSnapshot(
     val health: Map<String, String>,
     val healthOk: Boolean,
@@ -50,7 +41,6 @@ sealed interface TriggerDeployResult {
     data class Error(val reason: String) : TriggerDeployResult
 }
 
-/** One `GET /api/mobile/v1/ops/deploy/{jobID}` poll — the fallback paint when the socket is down. */
 data class DeployStatus(
     val status: String,
     val progress: Long,
@@ -63,12 +53,6 @@ sealed interface DeployStatusResult {
     data class Error(val reason: String) : DeployStatusResult
 }
 
-/**
- * One `deploy.<jobID>` live event (`internal/queue.Event`, forwarded verbatim by
- * `events_bridge_ops.go`): `type` is one of `"status"`/`"progress"`/`"step"`/`"log"` —
- * `OpsDashboardViewModel`/`DeployTriggerViewModel` never invent a fifth kind, they render
- * whichever of the optional fields is present for the event's `type`.
- */
 @Serializable
 data class DeployLogEvent(
     val type: String,
@@ -101,38 +85,24 @@ private fun AlertSummary.toOpsAlert() = OpsAlert(
     firedSinceEpoch = firedSince,
 )
 
-/** Decodes a `MobileEvent.data` payload delivered on the `"ops.health"` channel. */
 fun decodeOpsSnapshot(data: JsonElement): OpsSnapshot? = try {
     eventJson.decodeFromJsonElement(OpsStatus.serializer(), data).toSnapshot()
 } catch (e: Exception) {
     null
 }
 
-/** Decodes a `MobileEvent.data` payload delivered on a `"deploy.<jobID>"` channel. */
 fun decodeDeployEvent(data: JsonElement): DeployLogEvent? = try {
     eventJson.decodeFromJsonElement(DeployLogEvent.serializer(), data)
 } catch (e: Exception) {
     null
 }
 
-/**
- * Abstraction `OpsDashboardViewModel`/`DeployTriggerViewModel` (`:feature-admin`) depend on, so
- * their unit tests supply a fake instead of touching the generated mobile BFF client directly
- * same convention as [dev.servercontrolpanel.data.push.NotifyPreferencesSource].
- */
 interface OpsSource {
     suspend fun fetchStatus(): OpsStatusResult
     suspend fun triggerDeploy(): TriggerDeployResult
     suspend fun fetchDeployStatus(jobId: String): DeployStatusResult
 }
 
-/**
- * The single call site into the generated mobile BFF client for `/ops/status` and
- * `/ops/deploy` — mirrors [dev.servercontrolpanel.data.push.NotifyPreferencesRepository]'s shape.
- * [triggerDeploy] always sends `confirm: true`: the caller (a confirmed dialog in
- * `DeployTriggerScreen`) is the only place this function is ever invoked from, so there is
- * no path in this repository that can send `confirm: false` or omit it.
- */
 class OpsRepository(
     private val mobileApi: MobileApi = MobileApi(),
 ) : OpsSource {

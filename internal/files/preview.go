@@ -9,8 +9,6 @@ import (
 	"strings"
 )
 
-// Preview serves the file with a suitable Content-Type, inline (not as an attachment).
-// Hard limit of 50 MB for previewing in the browser — larger files should use /download.
 const previewMax int64 = 50 * 1024 * 1024
 
 func handlePreview(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +42,6 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 	ext := strings.ToLower(filepath.Ext(p))
 	ct := mime.TypeByExtension(ext)
 	if ct == "" {
-		// Basic sniff when the extension is unknown.
 		f, err := os.Open(p)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
@@ -74,7 +71,6 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 }
 
 func itoa(n int64) string {
-	// tiny on purpose: avoids pulling in "strconv" just for this
 	if n == 0 {
 		return "0"
 	}

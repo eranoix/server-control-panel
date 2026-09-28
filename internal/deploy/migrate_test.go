@@ -18,9 +18,6 @@ import (
 	"server-control-panel/internal/auth"
 )
 
-// setupLegacyAppsDir builds a <dataDir>/deploy/apps.json in the REAL v1 shape
-// measured in production (a RAW array, no envelope) and returns the dataDir.
-// The analogue of setupLegacyDataDir in internal/config/migrate_test.go.
 func setupLegacyAppsDir(t *testing.T, apps ...App) string {
 	t.Helper()
 	dataDir := t.TempDir()
@@ -37,8 +34,6 @@ func setupLegacyAppsDir(t *testing.T, apps ...App) string {
 	return dataDir
 }
 
-// writeRawApps writes an arbitrary apps.json (used for the shapes the
-// migration has to REFUSE).
 func writeRawApps(t *testing.T, body string) string {
 	t.Helper()
 	dataDir := t.TempDir()
@@ -64,8 +59,6 @@ func readEnvelope(t *testing.T, dataDir string) File {
 	return f
 }
 
-// bakCount counts the .bak.<ts> backups next to apps.json. Cast from
-// TestMigrateV1ToV2_Idempotent, which counts <dataDir>.bak.* in the parent directory.
 func bakCount(t *testing.T, dataDir string) int {
 	t.Helper()
 	entries, err := os.ReadDir(filepath.Join(dataDir, "deploy"))
@@ -91,9 +84,6 @@ func sha256Of(t *testing.T, path string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// TestMigrateAppsHappyPath: a v1 array with 2 apps → a v2 envelope with 2
-// projects and 2 deployments stamped with the local node, a backup taken before
-// the write, and not one v1 field lost along the way.
 func TestMigrateAppsHappyPath(t *testing.T) {
 	dataDir := setupLegacyAppsDir(t,
 		App{
@@ -128,7 +118,6 @@ func TestMigrateAppsHappyPath(t *testing.T) {
 		}
 	}
 
-	// No v1 field may have evaporated: the migration is of the FORMAT, not of the data.
 	var hello Deployment
 	for _, d := range f.Deployments {
 		if d.ProjectID == "hello" {
@@ -146,8 +135,6 @@ func TestMigrateAppsHappyPath(t *testing.T) {
 	}
 }
 
-// TestMigrateAppsIdempotent: running it twice creates no new backup and does
-// not rewrite. Cast exactly from TestMigrateV1ToV2_Idempotent.
 func TestMigrateAppsIdempotent(t *testing.T) {
 	dataDir := setupLegacyAppsDir(t, App{Name: "hello", Branch: "main"})
 
@@ -169,10 +156,6 @@ func TestMigrateAppsIdempotent(t *testing.T) {
 	}
 }
 
-// TestMigrateAppsDetectByShape: detection goes BY SHAPE (v1 apps.json has
-// nowhere to keep a version — one of the traps the research named). BOTH
-// branches: already-v2 is a no-op with no backup; an unknown shape is a hard
-// error WITHOUT touching the file.
 func TestMigrateAppsDetectByShape(t *testing.T) {
 	t.Run("already-v2-is-a-no-op", func(t *testing.T) {
 		dataDir := writeRawApps(t, `{"schema_version":2,"projects":[{"id":"a","name":"a"}],"deployments":[]}`)
@@ -201,11 +184,6 @@ func TestMigrateAppsDetectByShape(t *testing.T) {
 			if err == nil {
 				t.Fatalf("shape %q was ACCEPTED by the migration", body)
 			}
-			// The message has to say WHICH shape this is, not just "it errored":
-			// without "unknown format"+schema_version, a binary that merely
-			// trips over deserialisation by accident would pass this pin
-			// (measured: the mutation "treat unknown as v1" passed until this
-			// assertion existed).
 			if !strings.Contains(err.Error(), "apps.json") ||
 				!strings.Contains(err.Error(), "unknown format") ||
 				!strings.Contains(err.Error(), "schema_version") {
@@ -231,11 +209,6 @@ func TestMigrateAppsDetectByShape(t *testing.T) {
 	})
 }
 
-// TestMigrateAppsRollbackOnWriteFailure: proving the migration works does not
-// prove the ROLLBACK works. The failure is injected where it can really happen
-// — in the atomic write — by pre-creating the .new temporary as a DIRECTORY
-// (EISDIR brings the open down even for root, unlike a permission bit).
-// After the failure apps.json has to still be the original v1, byte for byte.
 func TestMigrateAppsRollbackOnWriteFailure(t *testing.T) {
 	dataDir := setupLegacyAppsDir(t, App{Name: "hello", Branch: "main", Port: 8091})
 	before := sha256Of(t, appsPath(dataDir))
@@ -254,22 +227,12 @@ func TestMigrateAppsRollbackOnWriteFailure(t *testing.T) {
 	if after := sha256Of(t, appsPath(dataDir)); after != before {
 		t.Fatalf("the rollback did NOT restore the v1 apps.json (sha %s → %s)", before, after)
 	}
-	// The restored v1 has to still read as v1 (not a half-written envelope).
 	sh, _, derr := DetectShape(dataDir)
 	if derr != nil || sh != ShapeV1Array {
 		t.Fatalf("after the rollback the shape is %q (err=%v), want %q", sh, derr, ShapeV1Array)
 	}
 }
 
-// TestMigrateAppsConcurrentLock: cast from TestMigrateV1ToV2_ConcurrentLock,
-// but with a real PROCESS holding the lock.
-//
-// Goroutines would not do: appsFileMu is package-level, so the mutex alone
-// would already serialise the two — the test would pass with the flock REMOVED,
-// and the flock is precisely what covers the real case (the post-receive hook
-// runs inside panelctl, which is another process). The child is this very test
-// binary, re-executed with an environment variable, and it holds the lock until
-// the parent closes its stdin — no sleep, no waiting on a clock.
 func TestMigrateAppsConcurrentLock(t *testing.T) {
 	dataDir := setupLegacyAppsDir(t, App{Name: "hello", Branch: "main"})
 	before := sha256Of(t, appsPath(dataDir))
@@ -292,7 +255,6 @@ func TestMigrateAppsConcurrentLock(t *testing.T) {
 		_ = child.Wait()
 	}()
 
-	// Wait for the child to announce that the lock is his.
 	sc := bufio.NewScanner(stdout)
 	locked := false
 	for sc.Scan() {
@@ -316,8 +278,6 @@ func TestMigrateAppsConcurrentLock(t *testing.T) {
 		t.Fatalf("the losing migration created %d backup(s)", n)
 	}
 
-	// Release the lock and prove the migration now completes (failing closed is
-	// for retrying, not for giving up — systemd retries the boot).
 	_ = stdin.Close()
 	if err := child.Wait(); err != nil {
 		t.Fatalf("child: %v", err)
@@ -330,8 +290,6 @@ func TestMigrateAppsConcurrentLock(t *testing.T) {
 	}
 }
 
-// TestHelperHoldsLock is not a test: it is TestMigrateAppsConcurrentLock's
-// child process. Without the environment variable, it skips.
 func TestHelperHoldsLock(t *testing.T) {
 	dataDir := os.Getenv("DEPLOY_LOCK_DATADIR")
 	if dataDir == "" {
@@ -346,12 +304,10 @@ func TestHelperHoldsLock(t *testing.T) {
 		t.Fatalf("flock: %v", err)
 	}
 	fmt.Println("LOCKED")
-	// Hold on until the parent closes stdin.
 	_, _ = io.Copy(io.Discard, os.Stdin)
 	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 }
 
-// TestMigrateAppsAuditAppended: cast from TestMigrateV1ToV2_AuditAppended.
 func TestMigrateAppsAuditAppended(t *testing.T) {
 	dataDir := setupLegacyAppsDir(t, App{Name: "hello", Branch: "main"})
 	auditLog, err := auth.NewAuditLog(filepath.Join(dataDir, "audit.log"))
@@ -373,16 +329,12 @@ func TestMigrateAppsAuditAppended(t *testing.T) {
 		t.Fatalf("the migration.apps.v2 event (user=system) is not on the audit trail: %+v", auditLog.Tail(10))
 	}
 
-	// An unavailable audit must NOT undo a migration that is already committed.
 	dataDir2 := setupLegacyAppsDir(t, App{Name: "hello"})
 	if err := MigrateApps(AppsMigration{DataDir: dataDir2, Audit: nil}); err != nil {
 		t.Fatalf("migration without audit: %v", err)
 	}
 }
 
-// TestGuardCLIRejectsShapes: the guard panelctl calls BEFORE touching the file.
-// It accepts only what this binary knows how to read; the rest is a refusal
-// that NAMES the binary — never a rewrite.
 func TestGuardCLIRejectsShapes(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -428,17 +380,6 @@ func TestGuardCLIRejectsShapes(t *testing.T) {
 	})
 }
 
-// TestMigrateAppsDryRunWithRealFile runs the migration over a COPY of the
-// production apps.json and proves both directions: the way out (it becomes v2
-// without losing an app) and the way back (restoring the .bak gives the file
-// back byte for byte).
-//
-// Skipped by default — proving a migration with real data demands the real data:
-//
-//	DEPLOY_REHEARSAL_APPS=/path/to/apps.json go test ./internal/deploy/ \
-//	    -run TestMigrateAppsDryRunWithRealFile -v
-//
-// The file it points at is NOT modified: the test works on a copy.
 func TestMigrateAppsDryRunWithRealFile(t *testing.T) {
 	origin := os.Getenv("DEPLOY_REHEARSAL_APPS")
 	if origin == "" {
@@ -464,7 +405,6 @@ func TestMigrateAppsDryRunWithRealFile(t *testing.T) {
 		t.Fatalf("envelope: schema=%d projects=%d deployments=%d, want %d/%d/%d",
 			f.SchemaVersion, len(f.Projects), len(f.Deployments), AppsSchemaVersion, len(v1), len(v1))
 	}
-	// Set against set: no app may vanish and none may appear.
 	names := map[string]bool{}
 	for _, a := range v1 {
 		names[a.Name] = true
@@ -479,7 +419,6 @@ func TestMigrateAppsDryRunWithRealFile(t *testing.T) {
 		t.Fatalf("apps from the real file that vanished in the migration: %v", names)
 	}
 
-	// The way back: the operator restores the .bak and the file is identical to the original.
 	entries, _ := os.ReadDir(filepath.Join(dataDir, "deploy"))
 	bak := ""
 	for _, e := range entries {

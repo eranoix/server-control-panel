@@ -8,9 +8,6 @@ import (
 	"testing"
 )
 
-// readTail reaches across the rotation without loading the whole log. What it
-// returns has to be byte for byte what the naive read would return — otherwise
-// the panel's primer rebuilds a screen different from the one the terminal would give.
 func TestReadTailMatchesFullRead(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s.log")
@@ -40,8 +37,6 @@ func TestReadTailMatchesFullRead(t *testing.T) {
 	}
 }
 
-// With no previous generation, and with an empty log: the two edge cases the
-// server meets on a freshly created session.
 func TestReadTailAtEdges(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s.log")

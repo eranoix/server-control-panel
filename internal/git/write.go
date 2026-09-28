@@ -13,13 +13,8 @@ import (
 	"server-control-panel/internal/httpx"
 )
 
-// maxFileBytes bounds the size of a file read/written by the editor.
-const maxFileBytes = 8 << 20 // 8 MiB
+const maxFileBytes = 8 << 20
 
-// jailPath resolves a relative path against the repo root and GUARANTEES the
-// result stays inside it. validRelPath has already refused ".." and absolute
-// paths; this is the second barrier (defense-in-depth) that makes up for the
-// missing jail in the files package. It returns the safe absolute path or an error.
 func jailPath(repoRoot, rel string) (string, error) {
 	if !validRelPath(rel) {
 		return "", os.ErrInvalid
@@ -32,18 +27,12 @@ func jailPath(repoRoot, rel string) (string, error) {
 	return abs, nil
 }
 
-// Distinct file-read errors, so the handler can give a clear message (and so
-// the front end does NOT open the editor on a binary/huge file — a cause of
-// Monaco freezing).
 var (
 	errIsDir    = errors.New("is a directory")
 	errTooLarge = errors.New("file too large for the editor")
 	errBinary   = errors.New("binary file — not editable as text")
 )
 
-// readRepoFile reads a text file from the working tree, jailed. It refuses a
-// directory, a file > maxFileBytes and a binary one (NUL bytes), because
-// throwing any of those at Monaco freezes the tab.
 func readRepoFile(repoRoot, rel string) (string, error) {
 	abs, err := jailPath(repoRoot, rel)
 	if err != nil {
@@ -63,7 +52,6 @@ func readRepoFile(repoRoot, rel string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Binary heuristic: a NUL in the first 8KB (git's own criterion).
 	probe := b
 	if len(probe) > 8192 {
 		probe = probe[:8192]
@@ -74,9 +62,6 @@ func readRepoFile(repoRoot, rel string) (string, error) {
 	return string(b), nil
 }
 
-// writeGate is the common preamble of the write routes: POST + MustPrimary +
-// resolve repo + demand a write policy. It returns (caller, repo, ok); on
-// ok=false the error response has already been written.
 func (s *svc) writeGate(w http.ResponseWriter, r *http.Request) (string, config.GitRepo, bool) {
 	if r.Method != http.MethodPost {
 		httpx.WriteErr(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -98,13 +83,11 @@ func (s *svc) writeGate(w http.ResponseWriter, r *http.Request) (string, config.
 	return caller, repo, true
 }
 
-// decodeBody reads the request's JSON body into a destination. It bounds the size.
 func decodeBody(r *http.Request, dst any) error {
 	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxFileBytes+1<<16))
 	return dec.Decode(dst)
 }
 
-// translateLockErr maps errLocked → 409 and returns true when it has handled it.
 func translateLockErr(w http.ResponseWriter, err error) bool {
 	if err == errLocked {
 		httpx.WriteErr(w, http.StatusConflict, "repository is busy — try again")
@@ -112,8 +95,6 @@ func translateLockErr(w http.ResponseWriter, err error) bool {
 	}
 	return false
 }
-
-// ---- POST /write (save a file to the working tree) ----
 
 func (s *svc) handleWrite(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
@@ -154,8 +135,6 @@ func (s *svc) handleWrite(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"ok": true, "path": body.Path})
 }
 
-// ---- POST /stage e /unstage ----
-
 func (s *svc) handleStage(w http.ResponseWriter, r *http.Request)   { s.stageOp(w, r, true) }
 func (s *svc) handleUnstage(w http.ResponseWriter, r *http.Request) { s.stageOp(w, r, false) }
 
@@ -185,7 +164,6 @@ func (s *svc) stageOp(w http.ResponseWriter, r *http.Request, stage bool) {
 	if stage {
 		args = append([]string{"add", "--"}, paths...)
 	} else {
-		// restore --staged undoes the staging without touching the working tree.
 		args = append([]string{"restore", "--staged", "--"}, paths...)
 		action = "git.unstage"
 	}
@@ -210,8 +188,6 @@ func (s *svc) stageOp(w http.ResponseWriter, r *http.Request, stage bool) {
 	httpx.WriteJSON(w, map[string]any{"ok": true})
 }
 
-// ---- POST /commit (identity forced per repo + defense against drift) ----
-
 func (s *svc) handleCommit(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
 	if !ok {
@@ -219,10 +195,10 @@ func (s *svc) handleCommit(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Message    string   `json:"message"`
-		IdentityID string   `json:"identity_id"` // choice of account/author
+		IdentityID string   `json:"identity_id"`
 		Amend      bool     `json:"amend"`
-		Signoff    bool     `json:"signoff"`   // adds a Signed-off-by trailer
-		CoAuthors  []string `json:"coauthors"` // "Name <email>" → Co-authored-by trailers
+		Signoff    bool     `json:"signoff"`
+		CoAuthors  []string `json:"coauthors"`
 	}
 	if err := decodeBody(r, &body); err != nil {
 		httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
@@ -233,8 +209,6 @@ func (s *svc) handleCommit(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteErr(w, http.StatusBadRequest, "empty message")
 		return
 	}
-	// Co-authors become trailers at the end of the message (the GitHub
-	// convention). Each one is sanitized (1 line, no CR/LF) and empty ones, or ones without "<email>", are ignored.
 	if len(body.CoAuthors) > 0 && msg != "" {
 		var trailers []string
 		for _, ca := range body.CoAuthors {
@@ -249,10 +223,6 @@ func (s *svc) handleCommit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The commit's effective identity. Priority: the identity chosen by the user
-	// (the account selector) → the repo's expected identity → error. The user's
-	// choice is AUTHORITATIVE (they asked for the selector); the repo only
-	// supplies the default. Divergence becomes a warning, not a block.
 	name, email := repo.ExpName, repo.ExpEmail
 	if body.IdentityID != "" {
 		id, ok := resolveIdentity(s.cfg, body.IdentityID)
@@ -310,8 +280,6 @@ func (s *svc) handleCommit(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ---- POST /branch/create ----
-
 func (s *svc) handleBranchCreate(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
 	if !ok {
@@ -354,8 +322,6 @@ func (s *svc) handleBranchCreate(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"ok": true, "branch": body.Name, "checked_out": body.Checkout})
 }
 
-// ---- POST /checkout ----
-
 func (s *svc) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
 	if !ok {
@@ -372,7 +338,6 @@ func (s *svc) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteErr(w, http.StatusBadRequest, "invalid ref")
 		return
 	}
-	// Never -f: a checkout that would overwrite local changes fails cleanly.
 	err := withRepoWriteLock(repo.Path, func() error {
 		res, e := run(r.Context(), repo.Path, "checkout", body.Ref)
 		if e != nil {
@@ -394,8 +359,6 @@ func (s *svc) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"ok": true, "ref": body.Ref})
 }
 
-// ---- POST /discard (reverts working tree changes on tracked paths) ----
-
 func (s *svc) handleDiscard(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
 	if !ok {
@@ -413,8 +376,6 @@ func (s *svc) handleDiscard(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteErr(w, http.StatusBadRequest, "invalid path")
 		return
 	}
-	// restore (without --staged) reverts the working tree to the index/HEAD. It
-	// does NOT use -f and does NOT remove untracked files — discard only undoes edits to tracked files.
 	err := withRepoWriteLock(repo.Path, func() error {
 		res, e := run(r.Context(), repo.Path, append([]string{"restore", "--"}, paths...)...)
 		if e != nil {
@@ -436,12 +397,6 @@ func (s *svc) handleDiscard(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"ok": true})
 }
 
-// ---- POST /apply (staging by HUNK: applies/reverts a patch on the index) ----
-
-// handleApply takes a unified patch (usually a single hunk with its file
-// header) and applies it TO THE INDEX with `git apply --cached`. Reverse
-// removes the hunk from the index (unstage by hunk). It is the basis of "stage
-// by hunk and by line" (the client assembles the patch of the selected hunk/line).
 func (s *svc) handleApply(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
 	if !ok {
@@ -463,14 +418,10 @@ func (s *svc) handleApply(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteErr(w, http.StatusRequestEntityTooLarge, "patch too large")
 		return
 	}
-	// git apply reads the patch from stdin (no file argument). --cached applies it
-	// to the index; --recount tolerates imprecise line counts from the client;
-	// --whitespace=nowarn avoids noise. --unidiff-zero is not used (hunks carry ctx).
 	args := []string{"apply", "--cached", "--recount", "--whitespace=nowarn"}
 	if body.Reverse {
 		args = append(args, "--reverse")
 	}
-	// Normalize line endings to LF and guarantee a final newline (git apply demands it).
 	patch := strings.ReplaceAll(body.Patch, "\r\n", "\n")
 	if !strings.HasSuffix(patch, "\n") {
 		patch += "\n"
@@ -500,10 +451,6 @@ func (s *svc) handleApply(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"ok": true})
 }
 
-// ---- helpers ----
-
-// sanitizePaths validates every path in the list (validRelPath). It refuses
-// the entire set when any one of them is invalid — it fails closed.
 func sanitizePaths(in []string) ([]string, error) {
 	out := make([]string, 0, len(in))
 	for _, p := range in {
@@ -515,13 +462,10 @@ func sanitizePaths(in []string) ([]string, error) {
 	return out, nil
 }
 
-// gitError carries the stderr of a git that exited with code != 0, so it can
-// become a friendly error message (one line) — never a huge raw dump.
 type gitError struct{ stderr string }
 
 func (e *gitError) Error() string { return e.stderr }
 
-// gitMsg extracts the first non-empty line of git's stderr, with a fallback.
 func gitMsg(err error, fallback string) string {
 	ge, ok := err.(*gitError)
 	if !ok {

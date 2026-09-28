@@ -10,19 +10,8 @@ import (
 	"time"
 )
 
-// TestCompress_RangeRequest_NotGzipped proves, with a real HTTP request (not by
-// reading the code), that a response to a Range request for a compressible
-// Content-Type (text/plain) is NOT wrapped in gzip by the middleware — even when
-// the client sends Accept-Encoding: gzip.
-//
-// Why it matters: http.ServeContent computes Content-Range from the byte
-// positions of the ORIGINAL file. If this middleware compressed the response
-// body, the Content-Range would go on describing the uncompressed file while the
-// actual body would be gzip bytes — the client (a resumable download in the
-// Android app) would receive data inconsistent with the header that says where
-// it belongs in the final file.
 func TestCompress_RangeRequest_NotGzipped(t *testing.T) {
-	content := strings.Repeat("really-compressible-content ", 200) // > minGzipBytes
+	content := strings.Repeat("really-compressible-content ", 200)
 	handler := Compress(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.ServeContent(w, r, "file.txt", time.Now(), strings.NewReader(content))
 	}))
@@ -48,9 +37,6 @@ func TestCompress_RangeRequest_NotGzipped(t *testing.T) {
 	}
 }
 
-// TestCompress_NonRangeRequest_StillGzipped makes sure the bypass above is
-// Range-specific — an ordinary compressible response goes on being
-// gzip-compressed as always.
 func TestCompress_NonRangeRequest_StillGzipped(t *testing.T) {
 	content := strings.Repeat("really-compressible-content ", 200)
 	handler := Compress(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,11 +54,8 @@ func TestCompress_NonRangeRequest_StillGzipped(t *testing.T) {
 	}
 }
 
-// TestMaxBody_DefaultLimitRejectsOver25MiB proves the default ceiling with a real
-// body larger than 25 MiB: the handler never gets to read it all, the Read returns
-// MaxBytesReader's error first.
 func TestMaxBody_DefaultLimitRejectsOver25MiB(t *testing.T) {
-	body := bytes.Repeat([]byte("a"), 26<<20) // 26 MiB > the 25 MiB ceiling
+	body := bytes.Repeat([]byte("a"), 26<<20)
 	var readErr error
 	handler := MaxBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, readErr = io.Copy(io.Discard, r.Body)
@@ -87,13 +70,8 @@ func TestMaxBody_DefaultLimitRejectsOver25MiB(t *testing.T) {
 	}
 }
 
-// TestMaxBody_RegisterLargeBody_OverridesForMatchedRoute proves, with a real
-// 30 MiB body (larger than the default ceiling), that a route registered through
-// RegisterLargeBody can read the whole body — and that ANY other route (not
-// registered) stays pinned to the 25 MiB ceiling, i.e. the exception is a one-off
-// and does not leak into the rest of the server.
 func TestMaxBody_RegisterLargeBody_OverridesForMatchedRoute(t *testing.T) {
-	body := bytes.Repeat([]byte("b"), 30<<20) // 30 MiB
+	body := bytes.Repeat([]byte("b"), 30<<20)
 	RegisterLargeBody(func(r *http.Request) bool {
 		return r.URL.Path == "/large-route"
 	}, 100<<20)
@@ -115,8 +93,6 @@ func TestMaxBody_RegisterLargeBody_OverridesForMatchedRoute(t *testing.T) {
 		t.Fatalf("read %d bytes, want %d (whole body)", gotN, len(body))
 	}
 
-	// Another route, not registered, stays at the 25 MiB ceiling — the exception
-	// did not leak outside the match.
 	var otherErr error
 	otherHandler := MaxBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, otherErr = io.Copy(io.Discard, r.Body)

@@ -1,7 +1,3 @@
-// uuid_map_test.go — tests for migration-uuid-map.json (the
-// username ↔ email/supabase_uuid mapping). Covers the happy path, a missing
-// file, an invalid schema_version, a malformed entry, and case-insensitive
-// lookups.
 package auth
 
 import (
@@ -88,20 +84,16 @@ func TestLoadUUIDMap_Happy_LookupAndCase(t *testing.T) {
 	if !ok || uuid != "cc18b0cd-b7b7-4c4d-90cb-7507af88370c" || email != "Sam@Northwind.example" {
 		t.Fatalf("Lookup(sam): got email=%q uuid=%q ok=%v", email, uuid, ok)
 	}
-	// Lookup is exact-match (case-sensitive on username).
 	if _, _, ok := m.Lookup("ARTHUR"); ok {
 		t.Fatal("Lookup should be case-sensitive on username")
 	}
-	// LookupByEmail is case-insensitive.
 	uname, ok := m.LookupByEmail("SAM@northwind.example")
 	if !ok || uname != "sam" {
 		t.Fatalf("LookupByEmail mixed-case: got %q ok=%v", uname, ok)
 	}
-	// EmailFor preserves the original case.
 	if got := m.EmailFor("sam"); got != "Sam@Northwind.example" {
 		t.Fatalf("EmailFor: expected case preserved, got %q", got)
 	}
-	// A nil receiver does not panic.
 	var nilMap *UUIDMap
 	if _, _, ok := nilMap.Lookup("anyone"); ok {
 		t.Fatal("nil UUIDMap.Lookup should return ok=false")

@@ -27,8 +27,6 @@ import (
 	"server-control-panel/internal/auth"
 )
 
-// --- Service tests -----------------------------------------------------
-
 func TestCreateRoom_AssignsIDAndPersists(t *testing.T) {
 	s := openTempService(t)
 	r, err := s.CreateRoom("alice", "Living Room")
@@ -96,7 +94,6 @@ func TestAddMember_Idempotent(t *testing.T) {
 func TestDeleteRoom_OwnerOnly_EvictsPeers(t *testing.T) {
 	s := openTempService(t)
 	r, _ := s.CreateRoom("alice", "x")
-	// Plant a fake peer in the hub for the room.
 	peer := &Peer{ID: randomID(), User: "alice", RoomID: r.ID, SendCh: make(chan SignalingMsg, 4), closed: make(chan struct{})}
 	if _, err := s.Hub.Join(peer); err != nil {
 		t.Fatal(err)
@@ -112,7 +109,6 @@ func TestDeleteRoom_OwnerOnly_EvictsPeers(t *testing.T) {
 	}
 	select {
 	case <-peer.closed:
-		// good — peer was evicted
 	case <-time.After(time.Second):
 		t.Fatal("peer was not evicted on room delete")
 	}
@@ -148,11 +144,9 @@ func TestRemoveMember_EvictsOnlyMatchingUser(t *testing.T) {
 func TestRenameRoom_OwnerOnly(t *testing.T) {
 	s := openTempService(t)
 	r, _ := s.CreateRoom("alice", "Old")
-	// a non-owner is rejected
 	if err := s.RenameRoom("eve", r.ID, "Hack"); err == nil {
 		t.Fatal("eve should not rename")
 	}
-	// the owner may
 	if err := s.RenameRoom("alice", r.ID, "Nova"); err != nil {
 		t.Fatalf("alice rename: %v", err)
 	}
@@ -160,7 +154,6 @@ func TestRenameRoom_OwnerOnly(t *testing.T) {
 	if got.Name != "Nova" {
 		t.Fatalf("expected Nova, got %q", got.Name)
 	}
-	// an empty one is rejected
 	if err := s.RenameRoom("alice", r.ID, "   "); err == nil {
 		t.Fatal("an empty name should fail")
 	}
@@ -184,9 +177,6 @@ func TestListForUser_OwnerAndMembership(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("alice should see 2 rooms, got %d", len(got))
 	}
-	// Both rooms must be present; exact order is not tested here because
-	// CreatedAt is unix-seconds and a same-second tie is broken by ID
-	// (random hex), making strict ordering brittle in tests.
 	found := map[string]bool{}
 	for _, r := range got {
 		found[r.ID] = true
@@ -198,8 +188,6 @@ func TestListForUser_OwnerAndMembership(t *testing.T) {
 		t.Fatal("eve should see no rooms")
 	}
 }
-
-// --- Hub tests ---------------------------------------------------------
 
 func TestHub_Join_BroadcastsPeerJoined(t *testing.T) {
 	h := NewHub(4)
@@ -215,7 +203,6 @@ func TestHub_Join_BroadcastsPeerJoined(t *testing.T) {
 	if len(existing) != 1 || existing[0].ID != "a" {
 		t.Fatalf("bob should see alice in existing peers, got %+v", existing)
 	}
-	// Alice should have received peer-joined for bob.
 	select {
 	case msg := <-a.SendCh:
 		if msg.Type != "peer-joined" || msg.From != "b" {
@@ -236,7 +223,6 @@ func TestHub_Forward_ACL_SameRoomOnly(t *testing.T) {
 	_, _ = h.Join(c)
 	drain(a, b, c)
 
-	// a → b same room: OK
 	err := h.Forward("a", SignalingMsg{Type: "offer", To: "b", Payload: json.RawMessage(`{}`)})
 	if err != nil {
 		t.Fatalf("same-room forward failed: %v", err)
@@ -250,7 +236,6 @@ func TestHub_Forward_ACL_SameRoomOnly(t *testing.T) {
 		t.Fatal("b didn't receive offer")
 	}
 
-	// a → c different room: REJECTED
 	err = h.Forward("a", SignalingMsg{Type: "offer", To: "c", Payload: json.RawMessage(`{}`)})
 	if !errors.Is(err, ErrTargetNotInRoom) {
 		t.Fatalf("expected ErrTargetNotInRoom, got %v", err)
@@ -259,13 +244,10 @@ func TestHub_Forward_ACL_SameRoomOnly(t *testing.T) {
 	case msg := <-c.SendCh:
 		t.Fatalf("c should NOT have received cross-room offer: %+v", msg)
 	case <-time.After(100 * time.Millisecond):
-		// good
 	}
 }
 
 func TestHub_Forward_StampsFrom_IgnoresClientFrom(t *testing.T) {
-	// Client-supplied `from` is untrusted — server MUST overwrite with the
-	// actual peer id. Defends against spoofing.
 	h := NewHub(4)
 	a := mkPeer("a", "alice", "R")
 	b := mkPeer("b", "bob", "R")
@@ -352,18 +334,12 @@ func TestHub_Leave_BroadcastsPeerLeft(t *testing.T) {
 	}
 }
 
-// --- reconnect eviction by ClientID ----------------------------------------
-
-// mkPeerCID is mkPeer + a stable ClientID, to test ghost eviction.
 func mkPeerCID(id, user, room, clientID string) *Peer {
 	p := mkPeer(id, user, room)
 	p.ClientID = clientID
 	return p
 }
 
-// (a) Two Joins with the SAME ClientID: the 2nd (the reconnect) evicts the 1st
-// (the ghost), emits peer-left to the rest, and the room is left with 1 peer per
-// client — no duplicate tile. Covers "guest becomes a 2nd tile" and "auth blocked".
 func TestHub_Reconnect_SameClientID_EvictsGhost(t *testing.T) {
 	h := NewHub(4)
 	a := mkPeerCID("a", "alice", "R", "cid-1")
@@ -372,19 +348,16 @@ func TestHub_Reconnect_SameClientID_EvictsGhost(t *testing.T) {
 	_, _ = h.Join(b)
 	drain(a, b)
 
-	// alice reconnects: NEW peer id, same ClientID.
 	a2 := mkPeerCID("a2", "alice", "R", "cid-1")
 	existing, err := h.Join(a2)
 	if err != nil {
 		t.Fatalf("a reconnect with the same ClientID must succeed, got %v", err)
 	}
-	// The snapshot for a2 must NOT include the ghost "a".
 	for _, pi := range existing {
 		if pi.ID == "a" {
 			t.Fatal("the existing snapshot cannot contain the evicted ghost 'a'")
 		}
 	}
-	// b must receive peer-left for the ghost "a".
 	gotLeft := false
 	for drained := false; !drained; {
 		select {
@@ -399,27 +372,22 @@ func TestHub_Reconnect_SameClientID_EvictsGhost(t *testing.T) {
 	if !gotLeft {
 		t.Fatal("b should have received peer-left from the evicted ghost 'a'")
 	}
-	// The ghost's a.closed must be signalled.
 	select {
 	case <-a.closed:
 	default:
 		t.Fatal("a.closed should be flagged after the eviction")
 	}
-	// The room has exactly 2 peers (a2, b) — not 3.
 	if got := len(h.PeersInRoom("R")); got != 2 {
 		t.Fatalf("the room should have 2 peers after the eviction, got %d", got)
 	}
 }
 
-// (b) A reconnect with the same ClientID in a FULL room (cap=2, all ghosts/peers)
-// must NOT return ErrRoomFull — the eviction runs BEFORE the cap check.
 func TestHub_Reconnect_SameClientID_FullRoom_NoRoomFull(t *testing.T) {
 	h := NewHub(2)
 	a := mkPeerCID("a", "alice", "R", "cid-1")
 	b := mkPeerCID("b", "bob", "R", "cid-2")
 	_, _ = h.Join(a)
 	_, _ = h.Join(b)
-	// Room full. alice reconnects with the same ClientID — evicts "a" and enters.
 	a2 := mkPeerCID("a2", "alice", "R", "cid-1")
 	if _, err := h.Join(a2); err != nil {
 		t.Fatalf("a reconnect into a full room must evict+succeed, got %v", err)
@@ -429,9 +397,6 @@ func TestHub_Reconnect_SameClientID_FullRoom_NoRoomFull(t *testing.T) {
 	}
 }
 
-// (c) Two empty ClientIDs ("") coexist — no cross eviction. Covers the fallback
-// for old clients (which send no client_id) and guards against a regression
-// where "" would match "" and take down legitimate peers.
 func TestHub_EmptyClientID_Coexist(t *testing.T) {
 	h := NewHub(4)
 	a := mkPeerCID("a", "guest:Ana", "R", "")
@@ -447,17 +412,12 @@ func TestHub_EmptyClientID_Coexist(t *testing.T) {
 	}
 }
 
-// (d) An eviction followed by the old reader's late Leave(oldID) is a no-op with
-// NO panic. It covers strictly evictLocked's delete-before-close order: inverted,
-// the double close(p.closed) would give "close of closed channel".
 func TestHub_EvictThenLeave_NoPanic(t *testing.T) {
 	h := NewHub(4)
 	a := mkPeerCID("a", "alice", "R", "cid-1")
 	_, _ = h.Join(a)
 	a2 := mkPeerCID("a2", "alice", "R", "cid-1")
-	_, _ = h.Join(a2) // evicts "a"
-	// The old reader for "a" runs its late defer Hub.Leave("a"): it must fall into
-	// the early return (peers["a"] already absent) with no panic and without touching a2.
+	_, _ = h.Join(a2)
 	h.Leave("a")
 	if _, ok := h.PeerUser("a2"); !ok {
 		t.Fatal("a2 should still be present after a late Leave(a)")
@@ -467,25 +427,6 @@ func TestHub_EvictThenLeave_NoPanic(t *testing.T) {
 	}
 }
 
-// --- E2E: HandleWS reads client_id from the query → eviction → peer-left ----
-//
-// Exercises the REAL deployed path (not just the Hub in isolation): parsing of
-// the ?client_id= query, wiring into Peer.ClientID, eviction at Join and delivery
-// of peer-left to the observer over a real WebSocket. Simulates "the internet
-// dropped and it reconnected by itself in the same tab" (same client_id, 2 conns).
-
-// wsTestServer injects the user (?user=) into the context before HandleWS — it
-// replicates what auth.Middleware does in production, with no JWT/ticket in the test.
-//
-// A WebSocket handler keeps running after the upgrade hijacks its connection,
-// and httptest.Server.Close does not wait for hijacked connections. On the way
-// out HandleWS runs onPeerGone, which writes the call registry into the data
-// directory. If the test has already returned, that write races t.TempDir's
-// RemoveAll and the cleanup fails with "directory not empty". So the cleanup
-// here closes the server side of every hijacked connection and waits for each
-// handler to return. It is registered after openTempService, and cleanups run
-// last in, first out, so it finishes before Service.Close and the directory
-// removal.
 func wsTestServer(t *testing.T, s *Service) *httptest.Server {
 	t.Helper()
 	var (
@@ -556,12 +497,10 @@ func TestHandleWS_Reconnect_SameClientID_EvictsGhost_E2E(t *testing.T) {
 	srv := wsTestServer(t, s)
 	defer srv.Close()
 
-	// The observer (alice, the owner) joins and stays in the room.
 	obs := wsDial(t, srv, "alice", r.ID, "alice-cid")
 	defer obs.Close()
 	wsReadUntil(t, obs, "joined")
 
-	// bob joins (connection 1) with a stable client_id.
 	bob1 := wsDial(t, srv, "bob", r.ID, "bob-cid")
 	wsReadUntil(t, bob1, "joined")
 	ghost := wsReadUntil(t, obs, "peer-joined").From
@@ -569,15 +508,12 @@ func TestHandleWS_Reconnect_SameClientID_EvictsGhost_E2E(t *testing.T) {
 		t.Fatal("peer-joined with no From (bob's peer id, connection 1)")
 	}
 
-	// bob RECONNECTS (connection 2) — SAME client_id (same tab, network came back).
-	// The eviction runs BEFORE the User guard, so bob2 does NOT get error-conflict.
 	bob2 := wsDial(t, srv, "bob", r.ID, "bob-cid")
 	defer bob2.Close()
 	if m := wsReadUntil(t, bob2, "joined"); m.Type != "joined" {
 		t.Fatalf("bob2 should receive joined (no conflict), got %q", m.Type)
 	}
 
-	// The observer MUST receive peer-left for the ghost (bob, connection 1).
 	if pl := wsReadUntil(t, obs, "peer-left"); pl.From != ghost {
 		t.Fatalf("expected peer-left from the ghost %q, got from=%q", ghost, pl.From)
 	}
@@ -585,8 +521,6 @@ func TestHandleWS_Reconnect_SameClientID_EvictsGhost_E2E(t *testing.T) {
 }
 
 func TestHub_RateLimit_DropsExcessive(t *testing.T) {
-	// Burst more than rateBurst from a single peer; some forwards should be
-	// rejected with ErrRateLimited.
 	h := NewHub(4)
 	a := mkPeer("a", "alice", "R")
 	b := mkPeer("b", "bob", "R")
@@ -604,8 +538,6 @@ func TestHub_RateLimit_DropsExcessive(t *testing.T) {
 		t.Fatal("expected at least one rate-limited message")
 	}
 }
-
-// --- History tests -----------------------------------------------------
 
 func TestRecordCallSession_AppendsAndFiltersByUser(t *testing.T) {
 	s := openTempService(t)
@@ -656,7 +588,7 @@ func TestRecordCallSession_PersistsAcrossReload(t *testing.T) {
 		RoomID: r.ID, User: "alice", StartedAt: 1000, DurationS: 60,
 		BytesSent: 1, BytesRecv: 2,
 	})
-	_ = s.save() // force rooms write so reload doesn't lose the room
+	_ = s.save()
 	s2 := openServiceAt(t, dir)
 	got := s2.HistoryForUser("alice", 10)
 	if len(got) != 1 || got[0].BytesSent != 1 {
@@ -664,25 +596,19 @@ func TestRecordCallSession_PersistsAcrossReload(t *testing.T) {
 	}
 }
 
-// --- HandleRecordingUpload authz (HTTP integration) -------------------
-
 func TestHandleRecordingUpload_RejectsNonMember(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Open(Options{DataDir: dir})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	// Setup: recording store via /tmp/blobs.
 	recStore, err := openRecordingStore(dir, t.TempDir())
 	if err != nil {
 		t.Fatalf("openRecordingStore: %v", err)
 	}
 	s.Recordings = recStore
-	// Alice creates a room, Bob is a stranger.
 	room, _ := s.CreateRoom("alice", "Room")
 
-	// Helper to assemble a multipart upload request simulating 'bob' trying to
-	// upload to alice's room.
 	makeUploadReq := func(user, roomID string) *http.Request {
 		body := &bytes.Buffer{}
 		w := multipart.NewWriter(body)
@@ -694,12 +620,10 @@ func TestHandleRecordingUpload_RejectsNonMember(t *testing.T) {
 		_ = w.Close()
 		req := httptest.NewRequest("POST", "/api/videocall/recordings", body)
 		req.Header.Set("Content-Type", w.FormDataContentType())
-		// Inject the user into the context the way the middleware would.
 		req = req.WithContext(auth.WithUser(req.Context(), user))
 		return req
 	}
 
-	// Bob (a stranger) tries to upload → must get 404 (existence is not leaked).
 	wRec := httptest.NewRecorder()
 	s.HandleRecordingUpload(wRec, makeUploadReq("bob", room.ID))
 	if wRec.Code != http.StatusNotFound {
@@ -709,7 +633,6 @@ func TestHandleRecordingUpload_RejectsNonMember(t *testing.T) {
 		t.Fatal("bob should NOT have a saved recording")
 	}
 
-	// Alice (the owner) uploads → 200 + the recording saved.
 	wOk := httptest.NewRecorder()
 	s.HandleRecordingUpload(wOk, makeUploadReq("alice", room.ID))
 	if wOk.Code != http.StatusOK {
@@ -720,21 +643,16 @@ func TestHandleRecordingUpload_RejectsNonMember(t *testing.T) {
 	}
 }
 
-// --- RoomForUser visibility (protection against leaks) ----------------
-
 func TestRoomForUser_NonMemberSeesNotFound(t *testing.T) {
 	s := openTempService(t)
 	r, _ := s.CreateRoom("alice", "Private")
-	// The owner sees it.
 	if got, ok := s.RoomForUser("alice", r.ID); !ok || got.ID != r.ID {
 		t.Fatal("the owner should see their room")
 	}
-	// A member sees it.
 	_ = s.AddMember("alice", r.ID, "bob")
 	if _, ok := s.RoomForUser("bob", r.ID); !ok {
 		t.Fatal("a member should see the room")
 	}
-	// A stranger does NOT (important: same response as "does not exist" — no leak).
 	if _, ok := s.RoomForUser("eve", r.ID); ok {
 		t.Fatal("eve, a non-member, should NOT see it")
 	}
@@ -743,16 +661,11 @@ func TestRoomForUser_NonMemberSeesNotFound(t *testing.T) {
 	}
 }
 
-// --- PIN rate limit cleanup --------------------------------------------
-
 func TestPinAllow_CleansEmptyBuckets(t *testing.T) {
-	// Reset the global state. Important: never hold mu while calling
-	// pinAllow (which tries to Lock inside — that would deadlock).
 	pinRateLimiter.mu.Lock()
 	pinRateLimiter.buckets = make(map[string]*pinBucket)
 	pinRateLimiter.mu.Unlock()
 
-	// Create the bucket with the first call.
 	if !pinAllow("1.2.3.4") {
 		t.Fatal("the first attempt should pass")
 	}
@@ -760,31 +673,17 @@ func TestPinAllow_CleansEmptyBuckets(t *testing.T) {
 		t.Fatal("bucket not created")
 	}
 
-	// Simulate the trim: replace the bucket's hits with old entries (already
-	// outside the 1min window). The next pinAllow trims those, adds 1 new one
-	// (allowed) → at the end hits has 1, and the bucket STAYS in the map.
 	long := time.Now().Add(-2 * time.Minute)
 	setHits("1.2.3.4", []time.Time{long, long, long, long, long, long})
 
-	// Since hits >= 5 (after the filter only 0 remain), allowed=true; the current
-	// code adds 1 new one → hits=[now]. The bucket stays alive.
 	if !pinAllow("1.2.3.4") {
 		t.Fatal("trimming the old ones should free it up")
 	}
 
-	// Cleanup scenario: the bucket EXISTS but hits is full of the past, and we
-	// clear it before calling pinAllow to simulate the window where the bucket
-	// would be orphaned. We add 5 old hits without an allow. The next call trims
-	// down to 0 → allow=true, adds 1 → the bucket is left with 1 hit.
-	// To force a real cleanup we would need denied + trim simultaneously
-	// (which only happens in real windows of >5 recent hits).
-	// What matters: validating that many calls from different IPs do not make
-	// the map explode.
 	for i := 0; i < 200; i++ {
 		ip := fmt.Sprintf("10.0.0.%d", i)
 		pinAllow(ip)
 	}
-	// The map must hold at most 201 (1.2.3.4 + 200).
 	pinRateLimiter.mu.Lock()
 	n := len(pinRateLimiter.buckets)
 	pinRateLimiter.mu.Unlock()
@@ -807,8 +706,6 @@ func setHits(ip string, hits []time.Time) {
 	}
 }
 
-// --- Recording store tests ---------------------------------------------
-
 func TestRecording_AddListGetDelete(t *testing.T) {
 	dir := t.TempDir()
 	blobs := t.TempDir()
@@ -827,7 +724,6 @@ func TestRecording_AddListGetDelete(t *testing.T) {
 	if !ok || got.RoomID != "r1" {
 		t.Fatalf("get failed: %+v", got)
 	}
-	// Wrong user is denied.
 	if _, ok := st.Get("eve", rec.ID); ok {
 		t.Fatal("eve should not see alice's recording")
 	}
@@ -846,7 +742,7 @@ func TestRecording_AddListGetDelete(t *testing.T) {
 func TestRecording_HardLimitRejects(t *testing.T) {
 	st, _ := openRecordingStore(t.TempDir(), t.TempDir())
 	rec := &Recording{User: "alice", RoomID: "r1"}
-	err := st.Add(rec, strings.NewReader("toomuchdata"), 4) // limit 4 bytes
+	err := st.Add(rec, strings.NewReader("toomuchdata"), 4)
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("expected size limit error, got %v", err)
 	}
@@ -854,8 +750,6 @@ func TestRecording_HardLimitRejects(t *testing.T) {
 
 func TestRecording_FIFOTrimPerUser(t *testing.T) {
 	st, _ := openRecordingStore(t.TempDir(), t.TempDir())
-	// Force the cap down so test stays fast; can't change const but we
-	// rely on default 20. Add 22 and check 20 remain.
 	for i := 0; i < recordingMaxPerUser+2; i++ {
 		rec := &Recording{User: "alice", RoomID: "r", CreatedAt: int64(i + 1)}
 		if err := st.Add(rec, strings.NewReader("x"), 1<<20); err != nil {
@@ -884,8 +778,6 @@ func TestRecording_SummaryRoundTrip(t *testing.T) {
 	}
 }
 
-// --- TURN tests --------------------------------------------------------
-
 func TestTURN_HMAC_MatchesCoturnFormula(t *testing.T) {
 	cfg := &TURNConfig{
 		Secret: "test-secret-32-bytes-aaaaaaaaaaaaaaa",
@@ -895,7 +787,6 @@ func TestTURN_HMAC_MatchesCoturnFormula(t *testing.T) {
 	if creds.Username == "" || creds.Credential == "" {
 		t.Fatalf("missing creds: %+v", creds)
 	}
-	// Parse: <exp>:<user>
 	parts := strings.SplitN(creds.Username, ":", 2)
 	if len(parts) != 2 {
 		t.Fatalf("malformed username: %q", creds.Username)
@@ -907,8 +798,6 @@ func TestTURN_HMAC_MatchesCoturnFormula(t *testing.T) {
 	if expTS < time.Now().Unix() {
 		t.Fatalf("expiration in the past: %d", expTS)
 	}
-	// Recompute HMAC and compare — this is exactly what coturn does on the
-	// server side. If this passes, coturn will accept the credential.
 	mac := hmac.New(sha1.New, []byte(cfg.Secret))
 	mac.Write([]byte(creds.Username))
 	want := base64.StdEncoding.EncodeToString(mac.Sum(nil))
@@ -930,19 +819,11 @@ func TestTURN_DisabledFallsBackToSTUN(t *testing.T) {
 func TestTURN_UsernameSanitized(t *testing.T) {
 	cfg := &TURNConfig{Secret: "s"}
 	creds := cfg.MintTURNCredentials("alice:hax", time.Hour)
-	// ':' in the application username would break coturn's exp:user split.
 	parts := strings.SplitN(creds.Username, ":", 2)
 	if strings.Contains(parts[1], ":") {
 		t.Fatalf("colon leaked into user portion: %q", creds.Username)
 	}
 }
-
-// --- Push wiring tests ---------------------------------------------------
-//
-// The VAPID + subscription store itself now lives in internal/webpush
-// (see internal/webpush/store_test.go for its unit tests). These tests
-// cover only what's specific to videocall: the SendIncomingCall wrapper
-// and Options.Push injection.
 
 func TestSendIncomingCall_NoSubs_NoCrash(t *testing.T) {
 	s, err := Open(Options{DataDir: t.TempDir()})
@@ -972,8 +853,6 @@ func TestOpen_ReusesInjectedPushStore(t *testing.T) {
 		t.Fatalf("public key mismatch: %q vs %q", s.Push.PublicKey(), injected.PublicKey())
 	}
 }
-
-// --- Presence tests ----------------------------------------------------
 
 func TestPresence_NotifyUsers_FansToAllSubs(t *testing.T) {
 	p := NewPresenceHub()
@@ -1005,7 +884,6 @@ func TestPresence_NotifyUsers_ExcludesSender(t *testing.T) {
 	case ev := <-aSub.Ch:
 		t.Fatalf("sender should not be notified: %+v", ev)
 	case <-time.After(100 * time.Millisecond):
-		// good
 	}
 }
 
@@ -1016,7 +894,6 @@ func TestPresence_Unsubscribe_StopsDelivery(t *testing.T) {
 	p.NotifyUsers([]string{"alice"}, "", PresenceEvent{Type: "x"})
 	select {
 	case ev := <-sub.Ch:
-		// Channel may have been closed-ish via Done; ignore drained events.
 		_ = ev
 	case <-time.After(50 * time.Millisecond):
 	}
@@ -1024,8 +901,6 @@ func TestPresence_Unsubscribe_StopsDelivery(t *testing.T) {
 		t.Fatal("alice should be offline after unsubscribe")
 	}
 }
-
-// --- helpers -----------------------------------------------------------
 
 func openTempService(t *testing.T) *Service {
 	t.Helper()
@@ -1038,15 +913,6 @@ func openServiceAt(t *testing.T, dataDir string) *Service {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	// Open starts flusher() and callHeartbeat(), which write into dataDir.
-	// Without shutting them down they kept writing AFTER the test — and
-	// t.TempDir()'s RemoveAll failed intermittently with "directory not empty"
-	// (seen in TestHandleWS_Reconnect_SameClientID_EvictsGhost_E2E, which
-	// passes 3/3 in isolation and only breaks under the whole package's load).
-	// Close() is synchronous (it waits on flusherDone/callTickerDone) and
-	// idempotent — the tests that already `defer s.Close()` stay valid.
-	// Cleanup is LIFO and TempDir registered its own BEFORE, so this one runs
-	// first: the goroutines die, then the directory disappears.
 	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
@@ -1061,8 +927,6 @@ func mkPeer(id, user, room string) *Peer {
 	}
 }
 
-// drain consumes the peer-joined notifications that Hub.Join queues so the
-// tests can focus on the messages they actually care about.
 func drain(peers ...*Peer) {
 	for _, p := range peers {
 		for {

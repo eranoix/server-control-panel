@@ -26,11 +26,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders [SduiScreen] under Robolectric against the real SDUI fixtures. Data and
- * actions go through inert fakes provided via [LocalScreenState]/[LocalActionRunner],
- * the same seam `PayloadPreviewScreen` uses to stay off the network.
- */
 @RunWith(RobolectricTestRunner::class)
 class SduiScreenTest {
 
@@ -70,24 +65,18 @@ class SduiScreenTest {
 
         renderInertly(envelope)
 
-        // LazyColumn only composes visible items, so scroll each one into view first.
-        composeRule.onNodeWithText("No running containers").assertExists() // table (index 0)
+        composeRule.onNodeWithText("No running containers").assertExists()
 
         composeRule.onNode(hasScrollAction()).performScrollToIndex(1)
-        composeRule.onNodeWithText("Rule name").assertExists() // form (index 1)
+        composeRule.onNodeWithText("Rule name").assertExists()
 
         composeRule.onNode(hasScrollAction()).performScrollToIndex(4)
-        composeRule.onNodeWithText("Deploy").assertExists() // action (index 4)
+        composeRule.onNodeWithText("Deploy").assertExists()
 
         composeRule.onNode(hasScrollAction()).performScrollToIndex(6)
-        composeRule.onRoot().assertExists() // chart + confirm_destructive (indices 5-6) render without crashing
+        composeRule.onRoot().assertExists()
     }
 
-    /**
-     * A table with rows must render inside [SduiScreen]'s `LazyColumn`: a nested
-     * lazy list would crash with an infinite-height `IllegalStateException`. Real
-     * rows are needed, since an empty fetcher never reaches the row branch.
-     */
     @Test
     fun `a table with rows renders without a nested vertical scroll`() {
         val envelope = parseScreen(

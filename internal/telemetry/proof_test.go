@@ -9,9 +9,6 @@ import (
 	"time"
 )
 
-// TestProofExternalFile exists only to produce a REAL file outside t.TempDir(),
-// so it can be checked by python3 from outside Go (the second acceptance
-// criterion). Runs only when TELEMETRY_PROOF_DIR is set.
 func TestProofExternalFile(t *testing.T) {
 	dir := os.Getenv("TELEMETRY_PROOF_DIR")
 	if dir == "" {

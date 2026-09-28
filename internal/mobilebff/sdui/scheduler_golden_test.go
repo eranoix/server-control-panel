@@ -1,15 +1,3 @@
-// Package sdui_test wires the scheduler.jobs screen into the sdui package's
-// own golden-fixture test binary. It lives here, and not in
-// internal/mobilebff/screens, because golden_test.go's harness
-// (TestGoldenScreens, TestGoldenScreens_RoleOmissionIsReasoned,
-// TestGoldenScreens_NonAdminNeverContainsForbiddenStrings — all package
-// sdui, internal) only ever sees screens registered inside the SAME test
-// binary process, and Go links every _test.go file in a directory into one
-// binary regardless of package (sdui vs sdui_test). Being an EXTERNAL test
-// package (sdui_test) is what lets this file import
-// internal/mobilebff/screens without creating an import cycle (screens
-// already imports sdui; a non-test file in package sdui could never import
-// screens back).
 package sdui_test
 
 import (
@@ -19,27 +7,10 @@ import (
 	"server-control-panel/internal/scheduler"
 )
 
-// schedulerGoldenBackend is a small in-memory stand-in for
-// internal/api.Router's *scheduler.Scheduler + queue runner registry —
-// enough to build the screen and its rows deterministically for the golden
-// corpus. It never runs a real cron or queue; the golden harness only calls
-// Build (via the sdui.Screen builder), never RunAction.
 type schedulerGoldenBackend struct {
 	jobs map[string]*scheduler.Job
 }
 
-// newSchedulerGoldenBackend seeds a fixed, deliberately non-trivial data set
-// so the admin and non-admin goldens actually differ (RBAC-by-omission is
-// only provable if there is something to omit):
-//   - a job owned by golden-admin with run_as_root=true and an admin-only
-//     kind (system_reboot) — proves both run_as_root AND the admin-only kind
-//     are omitted from the non-admin row data;
-//   - a job owned by golden-user (the non-admin viewer) with an open kind
-//     (docker_prune) — visible to golden-user, and to golden-admin too since
-//     admin sees every job;
-//   - a job owned by a THIRD user (someone-else) — proves ListJobs("") vs
-//     ListJobs(owner) ownership filtering the same way handlers_scheduler.go
-//     filters for the panel.
 func newSchedulerGoldenBackend() *schedulerGoldenBackend {
 	return &schedulerGoldenBackend{
 		jobs: map[string]*scheduler.Job{
@@ -62,13 +33,6 @@ func newSchedulerGoldenBackend() *schedulerGoldenBackend {
 	}
 }
 
-// deps adapts the backend into a SchedulerDeps exactly as
-// internal/api/api.go's real wiring does, minus persistence: ListJobs
-// filters by owner (empty = every job, mirroring handlers_scheduler.go),
-// AuthorizedKinds returns docker_prune for everyone and adds system_reboot
-// only for admin (the same shape testSchedulerDeps/testSchedulerBackend use
-// in scheduler_test.go/scheduler_actions_test.go, kept consistent here so
-// the golden fixtures and the unit tests agree on what "admin-only" means).
 func (b *schedulerGoldenBackend) deps() screens.SchedulerDeps {
 	return screens.SchedulerDeps{
 		ListJobs: func(owner string) []*scheduler.Job {
@@ -109,12 +73,6 @@ func (b *schedulerGoldenBackend) deps() screens.SchedulerDeps {
 	}
 }
 
-// init registers scheduler.jobs into this test binary's process-global sdui
-// registries exactly once — the same Register(deps) internal/api/api.go
-// calls in production, just fed synthetic data instead of a real
-// *scheduler.Scheduler. This is what makes RegisteredScreens() (used by
-// TestGoldenScreens and its two role-omission checks) see "scheduler.jobs"
-// at all when running `go test ./internal/mobilebff/sdui/...`.
 func init() {
 	screens.Register(newSchedulerGoldenBackend().deps())
 }

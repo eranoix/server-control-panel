@@ -1,25 +1,9 @@
 #!/usr/bin/env node
-// test-pane-outbox.mjs — regression guard: typing during a connection outage
-// (a deploy) must never be lost.
-//
-// THE BUG: `term.onData` did `if (ws.readyState===1) ws.send(...)` and, outside
-// that, DISCARDED the keystroke silently. A deploy takes the server down for
-// ~2s; everything the user typed in that window vanished — a whole command was
-// typed and nothing happened.
-//
-// This test extracts `_paneSendInput` FROM THE REAL FILE (not a copy, which
-// would drift) and exercises it against a fake WebSocket. It covers the happy
-// path, the outage, the flush order and the byte ceiling.
-//
-// Usage: node scripts/test-pane-outbox.mjs
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-// Optional target via argv: lets the test run against a MUTATED COPY of
-// 00-shell.js and prove it fails when the bug comes back (a test that only ever
-// passes proves nothing).
 const target = process.argv[2] || join(root, 'internal/webassets/web/vendor/panel/app/00-shell.js');
 const src = readFileSync(target, 'utf8');
 
@@ -29,16 +13,6 @@ const no = (m) => { console.log('  ✗ ' + m); fail++; };
 
 console.log('=== test-pane-outbox ===');
 
-// ── extracts the real function ──────────────────────────────────────────────
-// `new Function` here is NOT injection: the only source is the 00-shell.js of
-// THIS repo, read from disk — the same code already running in the browser.
-// Testing the real text is the point: a copy of the logic inside the test would
-// drift from the product unnoticed (that is how an earlier bug in the agent
-// coordination tool stayed invisible).
-// The typing path became a FAMILY of functions (send, flush, offline queue,
-// local echo, latency probe). We extract ALL of them and assemble the object —
-// testing only _paneSendInput would test half a truth: the "never drops a
-// keystroke" guarantee is now split between it and _paneTxFlush.
 const extract = (name, args) => {
   const re = new RegExp('^ {4}' + name + '\\(' + args.join(', ').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\)\\{\\n([\\s\\S]*?)^ {4}\\},$', 'm');
   const mm = src.match(re);
@@ -53,23 +27,13 @@ const app = {
   _paneEchoOffline: extract('_paneEchoOffline', ['pane', 'd']),
   _looksLikePasswordLine: extract('_looksLikePasswordLine', ['pane']),
   _markSend: extract('_markSend', ['pane', 'd']),
-  // Sending now also fires the predictive echo. It is inert in the cases in
-  // this file (a pane with no term, or a socket that is down), but it has to
-  // exist — this is the real path we exercise, not a pruned version of it. The
-  // boundaries of the prediction have their own suite: test-predictive-echo.mjs.
   _predictEcho: extract('_predictEcho', ['pane', 'd']),
   _canPredict: extract('_canPredict', ['pane', 'd']),
 };
 const _paneSendInput = (pane, d) => app._paneSendInput(pane, d);
 
-// The flush became a microtask (it coalesces a burst from the same tick without
-// delaying anyone), so whoever asserts on what "was sent" must let it drain.
 const tick = () => new Promise(r => setTimeout(r, 0));
 
-// ── fake WebSocket ──────────────────────────────────────────────────────────
-// Sending is now BINARY (no JSON envelope): the server writes every binary frame
-// straight into the PTY. The fake decodes it so the test can keep reasoning in
-// text — and the check that it really is binary lives in case 7.
 const dec = new TextDecoder();
 const newPane = (readyState) => ({
   id: 'p1',
@@ -79,14 +43,12 @@ const newPane = (readyState) => ({
   },
 });
 
-// Fake terminal: only what the local echo uses — write and the cursor line.
 const fakeTerm = (written, line) => ({
   write(x){ written.push(x); },
   buffer: { active: { baseY: 0, cursorY: 0,
     getLine: () => ({ translateToString: () => line }) } },
 });
 
-// 1) socket open → goes straight out, nothing queued
 {
   const p = newPane(1);
   const r = _paneSendInput(p, 'ls');
@@ -96,53 +58,41 @@ const fakeTerm = (written, line) => ({
     : no('socket open: wrong behaviour');
 }
 
-// 2) socket down → does NOT drop: it queues instead of discarding (the bug)
 {
-  const p = newPane(3);                       // 3 = CLOSED
+  const p = newPane(3);
   const r = _paneSendInput(p, 'my command');
   r === false && (p._outbox||[]).join('') === 'my command' && p.ws.sent.length === 0
     ? ok('socket down: queues instead of discarding (the original bug)')
     : no('socket down: the keystroke was LOST');
 }
 
-// 3) order preserved — the typing is reassembled exactly
 {
-  const p = newPane(0);                       // 0 = CONNECTING
+  const p = newPane(0);
   for (const c of ['g','i','t',' ','s','t','a','t','u','s','\r']) _paneSendInput(p, c);
   (p._outbox||[]).join('') === 'git status\r'
     ? ok('order preserved during the outage ("git status\\r")')
     : no('order scrambled/lost: ' + JSON.stringify((p._outbox||[]).join('')));
 }
 
-// 4) byte ceiling: does not grow unbounded and MARKS the drop (never silent)
 {
   const p = newPane(3);
-  _paneSendInput(p, 'x'.repeat(128 * 1024));   // fills the ceiling exactly
+  _paneSendInput(p, 'x'.repeat(128 * 1024));
   const before = p._outboxBytes;
-  _paneSendInput(p, 'y');                      // overflows it
+  _paneSendInput(p, 'y');
   p._outboxDropped === true && p._outboxBytes === before
     ? ok('128KB ceiling: stops growing and marks the drop so it can warn')
     : no('byte ceiling not honoured');
 }
 
-// 5) empty/null input does not dirty the queue
 {
   const p = newPane(3);
   _paneSendInput(p, ''); _paneSendInput(p, null); _paneSendInput(p, undefined);
   !p._outbox ? ok('empty/null input ignored') : no('empty input dirtied the queue');
 }
 
-// 6) a send that throws (socket dying between check and send) is queued
 {
   const p = newPane(1);
   p.ws.send = () => { throw new Error('socket died'); };
-  // The old code called send() WITHOUT try/catch: the exception escaped and
-  // took down the whole typing handler. We catch it here to report a readable
-  // failure instead of aborting the suite halfway.
-  // The send now happens in a microtask, so the return value is no longer where
-  // the failure shows up — the GUARANTEE (the keystroke does not vanish) is what
-  // the test has to assert, and it still holds: the catch in the flush puts the
-  // text back in the queue.
   let blewUp = false;
   try { _paneSendInput(p, 'abc'); } catch(_) { blewUp = true; }
   await tick();
@@ -151,10 +101,6 @@ const fakeTerm = (written, line) => ({
     : no(blewUp ? 'send that throws: the exception escaped and would take typing down' : 'send that throws: keystroke lost');
 }
 
-// ── binary frames ───────────────────────────────────────────────────────────
-// 7) the keystroke goes out RAW, in a binary frame: the JSON envelope cost ~30
-//    bytes per character, and on a lossy link every extra byte is one more
-//    chance of stalling the whole TCP queue.
 {
   const p = newPane(1);
   _paneSendInput(p, 'a');
@@ -165,8 +111,6 @@ const fakeTerm = (written, line) => ({
     : no('the per-keystroke JSON envelope is back: ' + JSON.stringify(String(b)));
 }
 
-// 8) a burst from the same tick (auto-repeat, paste, IME) becomes ONE frame —
-//    and even so nothing is reordered or delayed by a timer.
 {
   const p = newPane(1);
   for (const c of ['g','i','t',' ','p','u','l','l']) _paneSendInput(p, c);
@@ -176,8 +120,6 @@ const fakeTerm = (written, line) => ({
     : no('coalescing failed: ' + p.ws.raw.length + ' frames, ' + JSON.stringify(p.ws.sent.join('')));
 }
 
-// 9) with no socket, the keystroke APPEARS on screen (dimmed) instead of
-//    vanishing — exactly the "sometimes it types nothing" from the report.
 {
   const written = [];
   const p = newPane(3);
@@ -189,11 +131,7 @@ const fakeTerm = (written, line) => ({
     : no('with no socket the screen went dead: ' + JSON.stringify(output));
 }
 
-// 10) the local echo must NEVER leak a password: not when the line is a
-//     password prompt, not when the server had already stopped echoing.
 {
-  // The prompts that really show up day to day — the sudo one has the keyword
-  // FAR from the colon, and it failed the first version of the rule.
   for (const prompt of [
     '[sudo] password for sam:',
     'Password:',
@@ -209,8 +147,6 @@ const fakeTerm = (written, line) => ({
       ? ok('does not echo at ' + JSON.stringify(prompt))
       : no('ECHOED the password at ' + JSON.stringify(prompt) + ': ' + JSON.stringify(written.join('')));
   }
-  // And the converse: an ordinary prompt has to keep echoing, otherwise the
-  // protection would have eaten the whole feature.
   {
     const written = [];
     const p = newPane(3);
@@ -224,15 +160,13 @@ const fakeTerm = (written, line) => ({
   const written2 = [];
   const p2 = newPane(3);
   p2.term = fakeTerm(written2, '$ ');
-  p2._serverEchoes = false;          // server stopped echoing before the outage
+  p2._serverEchoes = false;
   _paneSendInput(p2, 'secret');
   written2.length === 0
     ? ok('server was not echoing before the outage: no echo (the mosh rule)')
     : no('ECHOED while the server was in no-echo mode: ' + JSON.stringify(written2.join('')));
 }
 
-// 11) control characters are not guessed: Enter/Ctrl-* have effects only the
-//     shell on the other end knows. They go to the queue silently.
 {
   const written = [];
   const p = newPane(3);
@@ -244,12 +178,6 @@ const fakeTerm = (written, line) => ({
     : no('improper control-character echo: ' + JSON.stringify(output));
 }
 
-// ── repaint decision on reattach ────────────────────────────────────────────
-// The wobble (-8 cols/-4 rows) was the visible "refresh" on every deploy. It now
-// fires only with PROOF that the screen is unusable. This block makes sure the
-// proof is right in both directions: do not escalate when there is content (no
-// more jolt) and do escalate when the screen is black or when it CANNOT be
-// decided (otherwise the original bug returns, and that is worse than a jolt).
 {
   const mp = src.match(/^ {4}_viewportNeedsRepaint\(term\)\{\n([\s\S]*?)^ {4}\},$/m);
   if (!mp) { no('could not extract _viewportNeedsRepaint'); }
@@ -275,12 +203,6 @@ const fakeTerm = (written, line) => ({
   }
 }
 
-// ── are the fast backoff and the silence still in the code? ─────────────────
-// These two checks used to look at the exact SPELLING (`const FAST = [300, 700,
-// 1500]`, `QUIET_MS = 6000`) and failed any refactor that preserved the
-// guarantee — which is what happened when both became conditional expressions.
-// They now evaluate the VALUE: it is the guarantee that must not regress, not
-// the way it happens to be written.
 {
   const m = src.match(/const FAST = ([^;]+);/);
   if (!m) {
@@ -312,8 +234,6 @@ const fakeTerm = (written, line) => ({
 /term\.write\('\\x18'\)/.test(src)
   ? ok('CAN (0x18) aborting a truncated sequence — the surgical fix')
   : no('CAN is gone: a truncated sequence would jam the parser again');
-// The wobble may only exist INSIDE the escalation path. If it shows up loose in
-// onopen again, the jolt on every deploy comes back with it.
 {
   const mr = src.match(/^ {4}_reattachRepaint\(state\)\{\n([\s\S]*?)^ {4}\},$/m);
   const total = (src.match(/resize\(rc - 8, rr - 4\)/g) || []).length;
@@ -323,21 +243,12 @@ const fakeTerm = (written, line) => ({
     : no(`wobble outside the escalation (total=${total}, inside=${inside}) — the jolt is back`);
 }
 
-// ── atomic repaint on reattach ──────────────────────────────────────────────
-// The user reported, with a screenshot, that on every deploy the terminal "wipes
-// everything and then loads again". It was not the server (no wobble in the log):
-// on reconnect the new dtach client sends SIGWINCH and the TUI app clears the
-// screen and repaints — and writing that flow in pieces leaves the MIDDLE of the
-// process visible. The hold window keeps the old screen until the frame is whole.
 /state\._holdUntil = Date\.now\(\) \+ \d+;/.test(src)
   ? ok('hold window armed on reattach')
   : no('the reattach hold is gone — the user sees the screen wipe and reload again');
 /if \(state\._holdUntil\) \{[\s\S]{0,900}?return;   \/\/ keeps queueing, without painting/.test(src)
   ? ok('flushTerm holds the queue during the hold (nothing is discarded)')
   : no('flushTerm does not respect the hold');
-// The hold has to be ADAPTIVE, not a fixed timer: the first version held a flat
-// 260ms and the window expired in the MIDDLE of the repaint when the app took
-// longer — the user saw the fragment. The right criterion is "the burst went quiet".
 /quiet < 90/.test(src) && /_lastDataAt/.test(src)
   ? ok('the hold releases on the SILENCE of the burst, not on a fixed timer')
   : no('the hold is a fixed timer again — a long repaint shows up half-drawn');
@@ -348,23 +259,9 @@ const fakeTerm = (written, line) => ({
   ? ok('the hold is cleared on close (no state stuck between connections)')
   : no('the hold is not cleared on close — the render could freeze');
 
-// ── image paste through the native event ────────────────────────────────────
-// navigator.clipboard.read() needs permission and fails with NotAllowedError; the
-// 'paste' event already carries the bytes. Text stays with xterm.
 /addEventListener\('paste'/.test(src)
   ? ok('native paste listener present (images without needing permission)')
   : no('the native paste listener is gone — pasting an image fails again');
-// The GUARANTEE here is "pasting text never becomes an upload", and what holds
-// it up is the text/plain early-return in _clipboardFiles. This pin
-// asserted instead a literal regex of the listener that first shipped the
-// feature — and twice that left it out of step with the product: the filter was
-// later widened on purpose (any file type, not only images, so PDF/CSV can go
-// to the AI) and that listener was removed, being a duplicate that uploaded the
-// file twice. Asserting the mechanism instead of the property turned a correct
-// change into a failure.
-//
-// The in-browser verification of this property lives in
-// scripts/test-paste-single.mjs ("a paste with text/plain stays text").
 /_clipboardFiles\(ev\)\{[\s\S]{0,400}?types\.includes\('text\/plain'\)\) return null;/.test(src)
   ? ok('pasting text never becomes an upload (text/plain early-return)')
   : no('the text/plain guard is gone — pasting from Excel/Word would upload');

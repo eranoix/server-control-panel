@@ -29,11 +29,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Measures the terminal chrome in dp: the connection banner costs 0 dp when healthy,
- * occasional controls cost 0 dp with the sheet closed, and in steady state only the
- * key bar sits below the grid.
- */
 @RunWith(RobolectricTestRunner::class)
 class TerminalChromeHeightTest {
 
@@ -51,7 +46,6 @@ class TerminalChromeHeightTest {
             }
         }
 
-        // Only reconnecting, disconnected, stalled and ended states show a banner.
         composeRule.onNodeWithTag(bannerTag).assertHeightIsEqualTo(0.dp)
     }
 
@@ -93,7 +87,6 @@ class TerminalChromeHeightTest {
 
         composeRule.onNodeWithText("Font size").assertExists()
         composeRule.onNodeWithText("Line spacing").assertExists()
-        // History is read by scrolling the terminal itself, not from the sheet.
         composeRule.onNodeWithText("Load earlier history").assertDoesNotExist()
         composeRule.onNodeWithText("current grid: 54 columns × 46 rows").assertExists()
         composeRule.onNodeWithText("Visible lines").assertExists()
@@ -106,16 +99,10 @@ class TerminalChromeHeightTest {
         composeRule.setContent { TerminalColumn(optionsOpen = false) }
 
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(40.dp)
-        // The grid uses `weight(1f)`, not `fillMaxSize()`, which would squeeze the key
-        // bar to 0 dp.
         val grid = composeRule.onNodeWithTag(gridTag).fetchSemanticsNode().size.height
         assert(grid > 0) { "the grid must keep some height" }
     }
 
-    /**
-     * The column `TerminalRoute` composes, without the ViewModel or socket. The sheet is
-     * its [TerminalOptionsContent], without the `ModalBottomSheet` window around it.
-     */
     @androidx.compose.runtime.Composable
     private fun TerminalColumn(optionsOpen: Boolean) {
         var keysBarState by remember { mutableStateOf(ExtraKeysBarState.ONE_ROW) }

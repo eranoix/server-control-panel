@@ -9,25 +9,6 @@ import (
 	"testing"
 )
 
-// minified_test.go — closes the CLASS of the stale-bundle bug.
-//
-// The actual defect: a stale `00-shell.min.js` went on being served after
-// `00-shell.js` gained the AdGuard state. index.html referenced `adguardLoaded`,
-// the served bundle did not have the property, and Alpine blew up with
-// `ReferenceError: adguardLoaded is not defined` evaluating a template at boot —
-// taking down the whole SPA, not just the Security tab.
-//
-// A test that only looked for `adguardLoaded` would close the CASE. These close
-// the class: no minified file without proven provenance may stand in for the
-// source, today or in any asset that comes to exist.
-
-// TestServedMinifiedMatchesCurrentSource is the main pin: for every app asset, if
-// the server is going to swap the .js for the .min.js, the minified file MUST be
-// derived from the source that is in this same binary.
-//
-// It runs against the embed, so it gets exactly what the binary would serve —
-// which is where the defect lived: on disk both files existed, only from
-// different eras.
 func TestServedMinifiedMatchesCurrentSource(t *testing.T) {
 	sub := SubFS()
 	entries, err := fs.ReadDir(sub, appDir)
@@ -50,15 +31,10 @@ func TestServedMinifiedMatchesCurrentSource(t *testing.T) {
 		min, ok := MinifiedOf(source)
 		if !ok {
 			if exists == nil {
-				// Runtime is safe (it falls back to the original), but this is a BUILD
-				// DEFECT: there is an obsolete bundle embedded in the binary and every
-				// client silently downloads twice as much — in a project that has a data
-				// savings panel, silence will not do. Block it.
 				t.Errorf("%s is in the embed but does NOT match %s (stamp missing or "+
 					"from another source). Run `make minify`. Until then the binary carries "+
 					"dead bytes and serves the original.", expected, source)
 			}
-			// No .min.js at all: legitimate fail-open (esbuild missing).
 			continue
 		}
 
@@ -90,9 +66,6 @@ func TestServedMinifiedMatchesCurrentSource(t *testing.T) {
 	}
 }
 
-// TestStaleMinifiedIsNotServed measures the DECISION, not the state of
-// the disk: faced with a stamp that does not match the source, the answer has to
-// be "serve the original" — never "send it anyway".
 func TestStaleMinifiedIsNotServed(t *testing.T) {
 	source := []byte("var x = 1;\n")
 	sum := sha256.Sum256(source)
@@ -123,12 +96,6 @@ func TestStaleMinifiedIsNotServed(t *testing.T) {
 	}
 }
 
-// TestAdguardStateReachesServedBundle is the pin for the concrete case that broke.
-//
-// It exists alongside the class pin because the link that failed is between TWO
-// files: index.html evaluates `adguardLoaded` at boot and the served bundle has
-// to declare it. The stamp guarantees "the min came from the js"; this one
-// guarantees the js in question is the one the HTML expects.
 func TestAdguardStateReachesServedBundle(t *testing.T) {
 	sub := SubFS()
 	index, err := fs.ReadFile(sub, "index.html")

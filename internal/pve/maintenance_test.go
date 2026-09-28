@@ -10,10 +10,6 @@ import (
 	"time"
 )
 
-// TestRebootBuildsRightRoute — reboot is a /status verb like the others, and the
-// pin exists so that it does NOT turn into stop+start in a distracted
-// refactoring: the two look alike on the screen and are very different for
-// whoever is inside the guest.
 func TestRebootBuildsRightRoute(t *testing.T) {
 	var seen string
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -31,11 +27,6 @@ func TestRebootBuildsRightRoute(t *testing.T) {
 	}
 }
 
-// 🔴 TestCloneUsesRightNameParamPerType — the defect this pin exists to
-// prevent is SILENT: LXC uses `hostname`, QEMU uses `name`, and sending the
-// wrong one raises no error. The hypervisor simply ignores it, and the clone is
-// born without a name. It only turns up days later, looking at a list with an
-// anonymous guest in it.
 func TestCloneUsesRightNameParamPerType(t *testing.T) {
 	cases := []struct {
 		typ, wantKey, notWant string
@@ -63,7 +54,6 @@ func TestCloneUsesRightNameParamPerType(t *testing.T) {
 		if q.Get("newid") != "991" {
 			t.Errorf("%s: newid = %q", cs.typ, q.Get("newid"))
 		}
-		// full=1 always: a normal guest does not accept a linked clone.
 		if q.Get("full") != "1" {
 			t.Errorf("%s: full = %q, want 1 — a guest that is not a template only accepts a full copy", cs.typ, q.Get("full"))
 		}
@@ -73,10 +63,6 @@ func TestCloneUsesRightNameParamPerType(t *testing.T) {
 	}
 }
 
-// TestCloneRejectsBeforeDialing — a destination equal to the source, an invalid
-// id and a name that escapes the parameter all have to die HERE. A clone with
-// the wrong destination has no cheap undo: either a guest nobody asked for is
-// born, or the POST turns into another route.
 func TestCloneRejectsBeforeDialing(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -108,11 +94,6 @@ func TestCloneRejectsBeforeDialing(t *testing.T) {
 	}
 }
 
-// TestVZDumpNeitherPrunesNorNeedsExtraPrivilege — the pin that guards the most
-// important decision of this route. `prune-backups` would make a command the
-// operator presses to GAIN a copy end up DELETING others;
-// `bwlimit`/`ionice`/`performance` would require Sys.Modify on '/'. None of them
-// may show up in the query.
 func TestVZDumpNeitherPrunesNorNeedsExtraPrivilege(t *testing.T) {
 	var q url.Values
 	var path string
@@ -145,9 +126,6 @@ func TestVZDumpNeitherPrunesNorNeedsExtraPrivilege(t *testing.T) {
 	}
 }
 
-// TestVZDumpRejectsOutsideAllowlist — mode, compression and storage go into the
-// body of a POST to the hypervisor. A free string would give the panel the
-// chance to send anything a future hypervisor version might come to accept there.
 func TestVZDumpRejectsOutsideAllowlist(t *testing.T) {
 	cases := []struct{ name, storage, mode, compress string }{
 		{"made-up mode", "pbs", "fast", "zstd"},
@@ -178,9 +156,6 @@ func TestVZDumpRejectsOutsideAllowlist(t *testing.T) {
 	}
 }
 
-// TestNextIDReadsStringAndNumber — /cluster/nextid returns the number as a JSON
-// STRING. A parser that only accepts a number returns zero in silence, and zero
-// becomes "invalid vmid" further down the line, far from the cause.
 func TestNextIDReadsStringAndNumber(t *testing.T) {
 	for _, body := range []string{`{"data":"991"}`, `{"data":991}`} {
 		c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -199,17 +174,6 @@ func TestNextIDReadsStringAndNumber(t *testing.T) {
 	}
 }
 
-// 🔴 TestWaitTaskSeparatesWarningFromFailure — the distinction that the live proof of the
-// clone forced into existence.
-//
-// The clone transferred 768 MB, created the guest and finished in `WARNINGS: 1`,
-// with a single warning: "Systemd 257 detected. You may need to enable
-// nesting.". Treating that as a failure would tell the operator the clone did
-// not happen — and it did. Swallowing it would be worse: the warning is exactly
-// what nobody else reads.
-//
-// The pin proves BOTH directions, because loosening this in the wrong direction
-// would turn a real failure into a silent success.
 func TestWaitTaskSeparatesWarningFromFailure(t *testing.T) {
 	cases := []struct {
 		exit        string
@@ -222,8 +186,6 @@ func TestWaitTaskSeparatesWarningFromFailure(t *testing.T) {
 		{"unable to create CT 991 - storage full", false, true},
 		{"", false, true},
 		{"command 'lxc-start' failed: exit code 1", false, true},
-		// 🔴 The negative control that matters: a failure that MENTIONS the word
-		// cannot become a warning. Only an exitstatus that BEGINS with WARNINGS: counts.
 		{"failed with WARNINGS: something", false, true},
 	}
 	for _, cs := range cases {

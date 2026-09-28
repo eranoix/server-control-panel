@@ -1,17 +1,4 @@
 #!/usr/bin/env node
-// test-vc-devices.mjs — the video call must not lock the user out because
-// of ONE missing device.
-//
-// The report: "it isn't identifying any of my devices now". The lobby screen
-// showed "No camera or microphone was found" AND empty pickers — what looked like
-// two symptoms was ONE: getUserMedia({audio,video}) is all-or-nothing, so missing
-// JUST the camera returns NotFoundError as if nothing existed; the lobby then
-// returned before enumerating, leaving the lists empty, and the Join button
-// disabled. With no camera, the user could not even join by audio.
-//
-// This pin asserts nothing about the text of the code: it LOADS the real engine
-// in a chromium and injects hardware scenarios (mic only / camera only / neither /
-// both), exercising the per-kind probe and the degradation in Call.start.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -36,8 +23,6 @@ const SOURCE_SHELL = path.join(WEB, 'vendor', 'panel', 'app', '00-shell.js');
 const srcVC = fs.readFileSync(SOURCE_VC, 'utf8');
 const srcShell = fs.readFileSync(SOURCE_SHELL, 'utf8');
 
-// Hardware stub: decides what getUserMedia does per requested kind. Reproduces the
-// real browser semantics — a COMBINED request fails if EITHER side is missing.
 const STUB = (hasAudio, hasVideo) => `
   window.__gumCalls = [];
   const fakeTrack = (kind) => ({
@@ -86,8 +71,6 @@ async function scenario(browser, name, hasAudio, hasVideo) {
   return r;
 }
 
-// Same browser resolution as the other pins: the playwright-core in .tools/
-// downloads no browser, so it points at the cache or system chromium.
 function findBrowser() {
   const c = [];
   if (process.env.PANEL_CHROMIUM) c.push(process.env.PANEL_CHROMIUM);
@@ -102,7 +85,6 @@ const exe = findBrowser();
 if (!exe) { console.error('FAILED: no Chromium found — skipping would be faking coverage.'); process.exit(1); }
 const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
 
-// ── 1. Microphone only (the reported case) ───────────────────────────────
 {
   const { probe, devs } = await scenario(browser, 'so-mic', true, false);
   probe.ok === true   ? ok('mic only: probe.ok (joining is possible)') : no('mic only: probe.ok=' + probe.ok + ' — this would lock the user out');
@@ -112,7 +94,6 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
   devs.mics.length === 1 ? ok('mic only: enumerateDevices lists the microphone') : no('mic only: mics=' + devs.mics.length);
 }
 
-// ── 2. Camera only ───────────────────────────────────────────────────────
 {
   const { probe, devs } = await scenario(browser, 'so-cam', false, true);
   probe.ok === true    ? ok('camera only: probe.ok') : no('camera only: probe.ok=' + probe.ok);
@@ -121,21 +102,18 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
   devs.cameras.length === 1 ? ok('camera only: enumerateDevices lists the camera') : no('camera only: cameras=' + devs.cameras.length);
 }
 
-// ── 3. Neither one — the only case that blocks ───────────────────────────
 {
   const { probe } = await scenario(browser, 'none', false, false);
   probe.ok === false ? ok('nothing at all: probe.ok=false (it really does block)') : no('nothing at all: probe.ok=' + probe.ok);
   (probe.audio === false && probe.video === false) ? ok('nothing at all: both sides reported missing') : no('nothing at all: audio=' + probe.audio + ' video=' + probe.video);
 }
 
-// ── 4. Everything present — ONE prompt only (no regression on the happy path)
 {
   const { probe, gum } = await scenario(browser, 'all', true, true);
   (probe.ok && probe.audio && probe.video) ? ok('all ok: complete probe') : no('all ok: ' + JSON.stringify(probe));
   gum.length === 1 ? ok('all ok: a single getUserMedia (no extra prompt)') : no('all ok: ' + gum.length + ' getUserMedia calls — duplicated prompt');
 }
 
-// ── 5. Engine degradation: the combined request fails, it joins audio-only
 {
   const page = await browser.newPage();
   await page.addInitScript(STUB(true, false));
@@ -158,17 +136,11 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
   degraded ? ok('engine: emitted devices-degraded') : no('engine: no devices-degraded — events=' + JSON.stringify(r.events.map(e=>e.type)));
   const note = (r.events.find(e => e.type === 'devices-degraded') || {}).note || '';
   /camera/i.test(note) ? ok('engine: the note says the camera was missing ("' + note + '")') : no('engine: unexpected note: ' + note);
-  // The last gUM attempt has to have been audio-without-video.
   const last = r.gum[r.gum.length - 1] || {};
   (last.audio === true && last.video === false) ? ok('engine: fell back to audio-only') : no('engine: the last attempt was ' + JSON.stringify(last));
-  // The final error must NOT be the getUserMedia one — it has to have got past it.
   !/getUserMedia|camera or microphone/i.test(r.error) ? ok('engine: got past getUserMedia (it failed later, at the signalling)') : no('engine: stuck at getUserMedia: ' + r.error);
 }
 
-// ── 6. Counter-check of the original bug, in the lobby source ────────────
-// The `return` between the probe and vcRefreshDevices was what emptied the lists.
-// If it comes back, the symptom comes back whole — and none of the runtime tests
-// above would catch it, because the lobby lives in 00-shell and not in the engine.
 {
   const i = srcShell.indexOf('async vcLobbyOpen(');
   const j = srcShell.indexOf('await this.vcRefreshDevices();', i);
@@ -178,10 +150,6 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
   /lobbyCaps/.test(srcShell) ? ok('lobby: per-kind capabilities (lobbyCaps) present') : no('lobby: lobbyCaps is gone');
 }
 
-// ── 7. The lobby notice, RENDERED ────────────────────────────────────────
-// A coloured band with no message at all went live once (an empty lobbyError
-// plus an x-show that only tested for "truthy"). Here the real markup and the
-// real CSS are mounted with the real Alpine and measured.
 {
   const tail = fs.readFileSync(path.join(WEB, 'tailwind.css'), 'utf8');
   const alpine = fs.readFileSync(path.join(WEB, 'vendor', 'alpine', 'alpine.min.js'), 'utf8');
@@ -234,11 +202,6 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
   }
 }
 
-// ── 8. The redesigned lobby, MEASURED ────────────────────────────────────
-// The control bar inside the frame only works if the three pills fit on one line;
-// the labels may only exist for the screen reader (Tailwind's .sr-only gets purged
-// and they come back as visible text); and the title has to be legible in BOTH
-// themes (.fm-modal-head h3 pins #fff).
 {
   const tail = fs.readFileSync(path.join(WEB, 'tailwind.css'), 'utf8');
   const alpine = fs.readFileSync(path.join(WEB, 'vendor', 'alpine', 'alpine.min.js'), 'utf8');
@@ -311,10 +274,6 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
   await page.close();
 }
 
-// ── 9. The in-call devices modal ─────────────────────────────────────────
-// The same language as the lobby, but over the modal surface — the dark glass of
-// the pill only works over video, and the test button used translucent white,
-// which disappears in the light theme.
 {
   const tail = fs.readFileSync(path.join(WEB, 'tailwind.css'), 'utf8');
   const alpine = fs.readFileSync(path.join(WEB, 'vendor', 'alpine', 'alpine.min.js'), 'utf8');
@@ -364,7 +323,6 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
     const crL = ratio(r.rowColor, r.rowBackground);
     crL >= 4.5 ? ok('in-call: line text legible in the ' + theme + ' theme (' + crL.toFixed(1) + ':1)') : no('in-call: line ' + crL.toFixed(2) + ':1 in theme ' + theme);
     const crB = ratio(r.testBorder, r.testBackground);
-    // The border has to stand out from the button's own background, or it vanishes.
     (r.testBorder !== r.testBackground) ? ok('in-call: the test button is visible in theme ' + theme) : no('in-call: the test button is invisible in the ' + theme + ' theme (border == background)');
   }
   await page.close();

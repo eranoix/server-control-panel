@@ -94,9 +94,6 @@ func TestTerminalWSTicket_NewSessionName_AllowsAnyAuthenticatedUser(t *testing.T
 	}
 }
 
-// TestTerminalWSTicket_OwnedByOtherUser_404NotFound is the ownership test: a
-// name already claimed by ANOTHER specific user (not AudienceAll) never
-// gets a ticket — 404, never 403, so as not to leak existence.
 func TestTerminalWSTicket_OwnedByOtherUser_404NotFound(t *testing.T) {
 	own := newTestOwnership(t)
 	if err := own.Claim("jordans-private", "jordan"); err != nil {
@@ -116,9 +113,6 @@ func TestTerminalWSTicket_OwnedByOtherUser_404NotFound(t *testing.T) {
 	}
 }
 
-// TestTerminalWSTicket_AudienceAllSession_AllowsAnyUser proves that "Everyone"
-// stays attachable by any authenticated user — the exception the threat
-// model's "(non-AudienceAll)" parenthesis asks for.
 func TestTerminalWSTicket_AudienceAllSession_AllowsAnyUser(t *testing.T) {
 	own := newTestOwnership(t)
 	if err := own.Assign("shared-room", ptysvc.AudienceAll); err != nil {
@@ -188,9 +182,6 @@ func TestTerminalScrollback_NotOwned_404NotFound(t *testing.T) {
 	}
 }
 
-// The raw log is the terminal's literal transcript — its ownership gate
-// matters more than that of any other route in this file, which is why both
-// of its sides are tested here instead of being left to the general gate.
 func TestTerminalRawLog_Unauthenticated(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{})

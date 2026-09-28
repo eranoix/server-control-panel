@@ -9,44 +9,20 @@ import (
 	"testing"
 )
 
-// tab_routing_test.go — the pin the Proxmox tab demanded by opening BLACK.
-//
-// 🔴 WHY THIS TEST EXISTS
-//
-// The Proxmox tab opened black in production. The invariant that should have
-// caught it was TEXTUAL: it counted the string `currentView==='proxmox'` in the
-// index.html. The section EXISTED — it just never RENDERED, because `tabToView`
-// resolved that tab to 'nodes'. The grep passed green over a black screen.
-//
-// This test does not look for text: it REIMPLEMENTS the tab->view resolution
-// from the maps read out of 00-shell.js itself, and demands that EVERY tab
-// declared in index.html lands on a <section x-show="currentView==='X'"> that
-// exists. It closes the whole CLASS of the defect, not the case that showed up.
-//
-// If one day the panel gains a tab with no section, or loses the section of a
-// live tab, or reorders PAGE_REMAP in a way that changes the resolution — this
-// test fails NAMING the group/tab pair. No operator has to discover that by
-// opening the browser.
-
 const (
 	shellFile = "web/vendor/panel/app/00-shell.js"
 	indexFile = "web/index.html"
 )
 
 var (
-	reRemapEntry    = regexp.MustCompile(`(?m)^\s*([A-Za-z0-9_]+):\s*\[\s*'(\w+)'\s*,\s*'([\w-]+)'\s*\]`)
-	reDefaultsEntry = regexp.MustCompile(`(?m)^\s*([A-Za-z0-9_]+):\s*'([\w-]+)'`)
-	// The source of truth for "a tab button exists" is the setTab('X') call.
-	// Checking only `tabs.G==='A'` left 7 of the 40 tabs out: the Containers button,
-	// for instance, is written `(tabs.docker||'containers')==='containers'`.
-	// The group comes from the `tabs.<group>` that appears on the SAME line as the button.
+	reRemapEntry      = regexp.MustCompile(`(?m)^\s*([A-Za-z0-9_]+):\s*\[\s*'(\w+)'\s*,\s*'([\w-]+)'\s*\]`)
+	reDefaultsEntry   = regexp.MustCompile(`(?m)^\s*([A-Za-z0-9_]+):\s*'([\w-]+)'`)
 	reTabLine         = regexp.MustCompile(`(?m)^.*setTab\('([\w-]+)'\).*$`)
 	reGroupInLine     = regexp.MustCompile(`tabs\.(\w+)`)
 	reDeclaredSection = regexp.MustCompile(`currentView\s*===\s*'([\w-]+)'`)
 	reTabToView       = regexp.MustCompile(`(?s)tabToView\(group, tab\) \{(.*?)\n    \},`)
 )
 
-// block slices a level-2 object literal out of the shell (`    NAME: {` up to `\n    },`).
 func block(t *testing.T, source, name string) string {
 	t.Helper()
 	i := strings.Index(source, name+": {")
@@ -60,17 +36,6 @@ func block(t *testing.T, source, name string) string {
 	return source[i : i+j]
 }
 
-// resolveTab reimplements tabToView from 00-shell.js.
-//
-// The rule: the CANONICAL key of a tab is the one with the SAME NAME as the tab;
-// aliases (several keys for the same destination) are a fallback. Without that
-// the answer would depend on the order the keys were written in, which is an
-// accident and not a contract — that is exactly how the screen went black.
-//
-// canonicalFirst reflects what 00-shell.js REALLY does today: it is read from
-// the file, not assumed. If somebody reverts the JS to the naive scan, this
-// resolver reverts with it and the test fails NAMING the tab that goes black —
-// instead of staying green because the right rule lives only in the Go.
 func resolveTab(remap map[string][2]string, order []string, group, tab string, canonicalFirst bool) string {
 	if canonicalFirst {
 		if c, ok := remap[tab]; ok && c[0] == group && c[1] == tab {
@@ -95,7 +60,6 @@ func readSource(t *testing.T, path string) string {
 	return string(b)
 }
 
-// TestEveryTabResolvesToAnExistingSection is the main pin.
 func TestEveryTabResolvesToAnExistingSection(t *testing.T) {
 	shell := readSource(t, shellFile)
 	index := readSource(t, indexFile)
@@ -111,14 +75,10 @@ func TestEveryTabResolvesToAnExistingSection(t *testing.T) {
 		defaults[m[1]] = m[2]
 	}
 
-	// Coverage guard: a pin that reads zero entries protects nothing. A regex that
-	// stopped matching would come out "green" without checking a single tab — the
-	// same vacuity this test exists in order not to repeat.
 	if len(remap) < 10 || len(defaults) < 3 {
 		t.Fatalf("insufficient coverage: PAGE_REMAP=%d GROUP_DEFAULTS=%d — the regexes stopped matching and the guard went blind", len(remap), len(defaults))
 	}
 
-	// Read from the shell ITSELF which rule is in force, instead of presuming the right one.
 	mt := reTabToView.FindStringSubmatch(shell)
 	if mt == nil {
 		t.Fatalf("method tabToView not found in %s — the guard went blind", shellFile)
@@ -135,11 +95,6 @@ func TestEveryTabResolvesToAnExistingSection(t *testing.T) {
 		tab := line[1]
 		g := reGroupInLine.FindStringSubmatch(line[0])
 		if g == nil {
-			// A setTab without `tabs.<group>` on the line is not the DECLARATION of a
-			// tab: it is NAVIGATION to it (a "Go to Compose" button, a tooltip
-			// shortcut, or a mention inside a comment). We keep the target to check
-			// just below that it exists as a real tab — navigating to a tab nobody
-			// declares leads nowhere.
 			navigations = append(navigations, tab)
 			continue
 		}
@@ -176,7 +131,7 @@ func TestEveryTabResolvesToAnExistingSection(t *testing.T) {
 		parts := strings.SplitN(p, "|", 2)
 		group, tab := parts[0], parts[1]
 		if _, hasDefault := defaults[group]; !hasDefault {
-			continue // group with no tabs: currentView is the page itself
+			continue
 		}
 		checked++
 		view := resolveTab(remap, order, group, tab, canonicalFirst)
@@ -189,15 +144,11 @@ func TestEveryTabResolvesToAnExistingSection(t *testing.T) {
 	}
 	if len(broken) > 0 {
 		t.Errorf("%d of %d tabs render nothing:\n  %s", len(broken), checked, strings.Join(broken, "\n  "))
-		return // do not announce "all resolve" right below a failure
+		return
 	}
 	t.Logf("%d tabs checked against %d sections (shell rule: canonical-first=%v); all of them resolve", checked, len(sections), canonicalFirst)
 }
 
-// TestShellTabToViewIsDeterministic proves that the SERVED FILE uses the
-// canonical-key rule. Without this counterpart, somebody could revert
-// 00-shell.js to the naive scan and the test above would keep passing — because
-// it reimplements the rule in Go instead of reading the JS.
 func TestShellTabToViewIsDeterministic(t *testing.T) {
 	shell := readSource(t, shellFile)
 	m := reTabToView.FindStringSubmatch(shell)
@@ -213,10 +164,6 @@ func TestShellTabToViewIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestPageRemapAliasesStayAlive protects the other half: the legacy alias
-// must NOT be deleted. An old link, a bookmark, a memorized shortcut and the
-// command-palette entry all depend on `nodes` landing on the screen that
-// inherited the content. Deleting the key would send them all nowhere.
 func TestPageRemapAliasesStayAlive(t *testing.T) {
 	shell := readSource(t, shellFile)
 	remap := map[string][2]string{}

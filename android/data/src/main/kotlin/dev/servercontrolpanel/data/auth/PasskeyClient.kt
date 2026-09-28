@@ -44,19 +44,10 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.Call
 
-/**
- * Thrown by [verifyRpId] when the server's relying-party id does not match the
- * configured host. Surfaces to the user only as [PasskeyError.RpIdMismatch].
- */
 class RpIdMismatchException(val expected: String, val actual: String?) : Exception(
     "Challenge RP ID ($actual) does not match the configured host ($expected)",
 )
 
-/**
- * The go-webauthn server (`internal/api/passkey.go`) wraps the options under a
- * top-level `"publicKey"` key, like the browser API, while Android's Credential
- * Manager expects the inner object. Every raw challenge goes through this unwrap.
- */
 private fun unwrapPublicKey(challengeJson: String): String {
     val root = Json.parseToJsonElement(challengeJson).jsonObject
     val publicKey = root["publicKey"]
@@ -64,24 +55,10 @@ private fun unwrapPublicKey(challengeJson: String): String {
     return publicKey.toString()
 }
 
-/**
- * Builds the `requestJson` for `CreatePublicKeyCredentialRequest` from the
- * `/auth/passkey/register/begin` options, unwrapped (see [unwrapPublicKey]).
- */
 fun buildCreateRequestJson(challengeJson: String): String = unwrapPublicKey(challengeJson)
 
-/**
- * Builds the `requestJson` for `GetPublicKeyCredentialOption` from the
- * `/auth/passkey/login/begin` options, unwrapped (see [unwrapPublicKey]).
- */
 fun buildGetRequestJson(challengeJson: String): String = unwrapPublicKey(challengeJson)
 
-/**
- * Confirms the relying-party id in a WebAuthn challenge matches the host of
- * [configuredBaseUrl] (the server's `Config.PublicHostname`). Registration nests
- * it at `publicKey.rp.id`, login at `publicKey.rpId`. A mismatched or missing RP
- * ID fails closed: never run a ceremony against a host the app was not configured for.
- */
 fun verifyRpId(challengeJson: String, configuredBaseUrl: String): Result<Unit> {
     val publicKeyJson = try {
         unwrapPublicKey(challengeJson)
@@ -103,10 +80,6 @@ fun verifyRpId(challengeJson: String, configuredBaseUrl: String): Result<Unit> {
     }
 }
 
-/**
- * Every distinct, actionable failure of a passkey ceremony. [message] is safe to
- * show verbatim and never echoes a raw exception message.
- */
 sealed interface PasskeyError {
     val message: String
 
@@ -145,35 +118,18 @@ sealed interface PasskeyError {
     data class Unknown(override val message: String) : PasskeyError
 }
 
-/** Outcome of [PasskeyClient.register]. */
 sealed interface RegistrationResult {
-    /**
-     * The only success `register/finish` returns: the credential exists but stays
-     * inert until approved from an authenticated desktop session. Never a login.
-     */
     data object PendingApproval : RegistrationResult
     data class Failed(val error: PasskeyError) : RegistrationResult
 }
 
-/** Outcome of [PasskeyClient.login]. */
 sealed interface LoginResult {
     data class Success(val accessToken: String, val refreshToken: String, val expiresIn: Long) : LoginResult
 
-    /**
-     * The credential matched but is not approved yet (`{"error":"pending_approval"}`
-     * in `auth_passkey.go`). Show it differently from [Failed]: the credential is correct.
-     */
     data object PendingApproval : LoginResult
     data class Failed(val error: PasskeyError) : LoginResult
 }
 
-/**
- * Drives the passkey registration and discoverable login ceremonies: begin,
- * Credential Manager, finish. Extends [AuthApi] only to reuse
- * [ApiClient.request]: the generated models for these operations declare their
- * payloads as `@Contextual Any?` with no serializer registered, so the typed
- * methods would throw `SerializationException`. [SduiDataClient] uses the same bypass.
- */
 open class PasskeyClient(
     private val serverConfigRepository: ServerConfigRepository,
     basePath: String = serverConfigRepository.currentBaseUrl()?.let { "$it/api/mobile/v1" } ?: AuthApi.defaultBasePath,
@@ -218,19 +174,9 @@ open class PasskeyClient(
         else -> PasskeyError.Unknown("Unexpected response from the server.")
     }
 
-    /**
-     * The configured server from [serverConfigRepository], never a guess. Starting a
-     * ceremony without one is a caller bug (every screen is gated behind server
-     * setup), so this fails loudly.
-     */
     private fun currentBaseUrl(): String = serverConfigRepository.currentBaseUrl()
         ?: error("Server not configured — set up the server before authenticating.")
 
-    /**
-     * Completes the QR pairing registration for [regToken] (from
-     * [PairingClient.consume]): begin, RP ID check, `createCredential`, finish.
-     * Never yields a session; see [RegistrationResult.PendingApproval].
-     */
     suspend fun register(context: Context, regToken: String, label: String? = null): RegistrationResult {
         val beginBody = try {
             rawPost(
@@ -313,11 +259,6 @@ open class PasskeyClient(
         }
     }
 
-    /**
-     * Completes a discoverable passkey login: begin, RP ID check, `getCredential`,
-     * finish. A credential not yet approved yields [LoginResult.PendingApproval],
-     * never [LoginResult.Failed].
-     */
     suspend fun login(context: Context): LoginResult {
         val beginBody = try {
             rawPost("auth/passkey/login/begin", body = null)

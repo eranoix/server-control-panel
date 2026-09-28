@@ -163,11 +163,6 @@
   <button onclick="downloadEvidence()" title="saves the terminal screen and the action log to a file (post-mortem)">Save evidence</button>
   <span class="status" id="action-status"></span>
 </div>
-<!-- Its own panel for the output of the quick actions. It used to be
-     written INSIDE xterm, which (a) threw — `term` does not even exist in this
-     scope, so a successful rollback showed up in red as though it had
-     failed, inviting the operator to click again; (b) repainted over a
-     command in flight; and (c) vanished on the first `clear`. -->
 <div class="console" id="console" hidden>
   <div class="cab">
     <strong>Action output</strong>
@@ -182,9 +177,6 @@
 </div>
 <div id="term" class="panel"></div>
 <div id="term-claude" class="panel" hidden></div>
-<!-- Shown when the Claude container is not up. In an emergency,
-     "it will not connect" without saying why is the worst possible outcome — so
-     the tab says what happened and offers the action that fixes it. -->
 <div id="claude-off" class="warning" hidden>
   <h3>The recovery Claude is not running</h3>
   <p id="claude-off-txt">
@@ -199,7 +191,6 @@
   </p>
 </div>
 
-<!-- xterm core + addons (same path as the main SPA: fit.js, not xterm-addon-fit.js) -->
 <script src="/vendor/xterm/xterm.js"></script>
 <script src="/vendor/xterm/fit.js"></script>
 <script>

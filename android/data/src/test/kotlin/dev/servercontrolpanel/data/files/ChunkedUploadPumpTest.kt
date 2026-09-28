@@ -6,10 +6,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The chunked upload loop against a fake [TransferRepository]. The focus is resumption: the right
- * offset after a drop, the server's byte count winning over ours, and non-retryable errors not retrying.
- */
 class ChunkedUploadPumpTest {
 
     private class FakeTransferRepository(
@@ -46,7 +42,6 @@ class ChunkedUploadPumpTest {
 
         pump.send(sourceOf(ByteArray(10)), "s1", startOffset = 8, totalSize = 10, onProgress = {})
 
-        // The first 8 bytes were already on the server and are not sent again.
         assertEquals(listOf(8L to 2), repo.receivedChunks)
     }
 
@@ -107,7 +102,6 @@ class ChunkedUploadPumpTest {
 
         val outcome = pump.send(sourceOf(ByteArray(10)), "s1", 0, 10, onProgress = {})
 
-        // The server knows what became durable on disk, so its count wins.
         assertEquals(6L, (outcome as ChunkedUploadOutcome.Interrupted).bytesSent)
     }
 

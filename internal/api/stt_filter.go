@@ -6,25 +6,7 @@ import (
 	"unicode/utf8"
 )
 
-// stt_filter.go — a Bag-of-Hallucinations (BoH) filter for Whisper's outputs.
-//
-// Whisper hallucinates specific output during silence and background noise. The
-// Barański et al. ICASSP 2025 paper (arXiv:2501.11378) catalogued the recurring
-// hallucinations and showed that filtering them cuts erroneous outputs by 67%.
-//
-// Mechanism: a blocklist of exact phrases + heuristics (repetitions,
-// punctuation only, minimum length). Applied BEFORE emitting partial/final
-// to the client — if the filter spots a hallucination, dropping it loses
-// nothing real (those outputs did not match the user's speech anyway).
-//
-// Cost: about 5-20μs per segment. No perceptible impact on latency.
-
-// hallucinationPhrases is the BoH compiled from the literature + empirical
-// observation. Comparison is case-insensitive + trimmed. Whisper was trained on
-// YouTube subtitles, which are full of Amara.org credits and "thanks for
-// watching".
 var hallucinationPhrases = []string{
-	// English — YouTube video boilerplate
 	"thank you for watching",
 	"thanks for watching",
 	"thank you for watching!",
@@ -41,7 +23,6 @@ var hallucinationPhrases = []string{
 	"bye bye",
 	"goodbye",
 
-	// More sign-off boilerplate common in the training data
 	"thank you for your attention",
 	"thanks for your attention",
 	"subscribe to the channel",
@@ -50,12 +31,10 @@ var hallucinationPhrases = []string{
 	"see you soon",
 	"see you in the next one",
 
-	// Amara.org subtitle credits (extremely common)
 	"subtitles by the amara.org community",
 	"subtitles by the amara community",
 	"subtitles made by the amara.org community",
 
-	// Music and silence markers (Whisper transcribes silence + noise as [Music])
 	"[music]",
 	"♪♪",
 	"♪ music ♪",
@@ -63,7 +42,6 @@ var hallucinationPhrases = []string{
 	"[silence]",
 	"[blank_audio]",
 
-	// Other Whisper boilerplate during silence
 	"you",
 	"yeah",
 	"uh",
@@ -74,8 +52,6 @@ var hallucinationPhrases = []string{
 	",",
 }
 
-// hallucinationPhrasesLower is the pre-normalised version (lower + trimmed) for
-// an O(1) match with no allocation on the hot path.
 var hallucinationPhrasesLower = func() map[string]struct{} {
 	m := make(map[string]struct{}, len(hallucinationPhrases))
 	for _, p := range hallucinationPhrases {
@@ -84,13 +60,8 @@ var hallucinationPhrasesLower = func() map[string]struct{} {
 	return m
 }()
 
-// puncOnlyRegex matches strings that are ONLY punctuation/whitespace/symbols.
 var puncOnlyRegex = regexp.MustCompile(`^[\p{P}\p{S}\s]+$`)
 
-// hasRepetitionLoop detects the "X X X X..." pattern (the same word 3+ times
-// in a row). Whisper loops like that during prolonged silence. Go's regex
-// engine (RE2) has no backreferences, so we do it by hand: split on
-// whitespace, count runs of identical words, case-insensitively.
 func hasRepetitionLoop(s string) bool {
 	fields := strings.Fields(strings.ToLower(s))
 	if len(fields) < 3 {
@@ -110,19 +81,6 @@ func hasRepetitionLoop(s string) bool {
 	return false
 }
 
-// isHallucination decides whether a Whisper output is a hallucination.
-// Returns (true, reason) when it should be dropped; (false, "") for real speech.
-//
-// Criteria (check order, cheapest first):
-//  1. Empty / whitespace only → drop
-//  2. Length < 2 chars (after trim) → drop (Whisper emits a lone ".")
-//  3. Punctuation/symbols only → drop ("♪", "...", "..!?")
-//  4. An exact match in the BoH list (lower-cased) → drop
-//  5. A partial match on a BoH phrase covering > 80% of the text → drop
-//  6. Repetition "X X X X" (3+ times) → drop (a loop hallucination)
-//
-// Criterion 5 is the more permissive one (substring), so as to catch variations
-// like "Thanks for watching guys!" that carry the boilerplate inside them.
 func isHallucination(text string) (bool, string) {
 	t := strings.TrimSpace(text)
 	if t == "" {
@@ -138,13 +96,10 @@ func isHallucination(text string) (bool, string) {
 	if _, exact := hallucinationPhrasesLower[lower]; exact {
 		return true, "exact-bag-of-hallucinations"
 	}
-	// Substring match — it only fires when the BoH phrase covers ≥80% of the
-	// text. Otherwise a legitimate long text that MENTIONS "thanks for watching"
-	// inside a sentence would be filtered by mistake.
 	if len(lower) > 0 {
 		for phrase := range hallucinationPhrasesLower {
 			if len(phrase) < 8 {
-				continue // too short for a substring match
+				continue
 			}
 			if strings.Contains(lower, phrase) {
 				ratio := float64(len(phrase)) / float64(len(lower))

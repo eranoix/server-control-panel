@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-// lines returns the non-empty lines of a file, plus the raw content.
 func lines(t *testing.T, path string) ([]string, string) {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -74,11 +73,9 @@ func TestSinkRejectsTooLong(t *testing.T) {
 	if err := s.Write(rec); !errors.Is(err, ErrTooLong) {
 		t.Fatalf("expected=ErrTooLong observed=%v", err)
 	}
-	// Nothing may have been written — not even the file may exist.
 	if _, err := os.Stat(filepath.Join(dir, "2026-08-06.jsonl")); !os.IsNotExist(err) {
 		t.Fatalf("a refused record created/touched the file: %v", err)
 	}
-	// The limit itself: exactly 4000 passes.
 	if err := s.Write(rec[:4000]); err != nil {
 		t.Fatalf("4000 bytes should pass, observed=%v", err)
 	}
@@ -96,7 +93,6 @@ func TestSinkRejectsEmbeddedNewline(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "2026-08-06.jsonl")); !os.IsNotExist(err) {
 		t.Fatalf("a record with an embedded \\n created the file: %v", err)
 	}
-	// A trailing \n is an embedded \n too: Write receives the record WITHOUT a break.
 	if err := s.Write([]byte("{\"a\":1}\n")); !errors.Is(err, ErrEmbedded) {
 		t.Fatalf("trailing \\n: expected=ErrEmbedded observed=%v", err)
 	}
@@ -186,7 +182,7 @@ func TestSinkConcurrentWrites(t *testing.T) {
 			defer wg.Done()
 			rec, _ := json.Marshal(map[string]any{
 				"i":   i,
-				"pad": strings.Repeat("p", 200), // a fat record raises the chance of interleaving
+				"pad": strings.Repeat("p", 200),
 			})
 			errs[i] = s.Write(rec)
 		}(i)
@@ -228,7 +224,7 @@ func TestReadDayToleratesTruncatedLine(t *testing.T) {
 	content := "{\"screen\":\"dev.code\"}\n" +
 		"{\"screen\":\"docker.containers.logs\"}\n" +
 		"{\"screen\":\"dashboard\"}\n" +
-		"{\"screen\":\"operations.gi" // crash mid-write: partial line, no \n
+		"{\"screen\":\"operations.gi"
 	if err := os.WriteFile(p, []byte(content), 0640); err != nil {
 		t.Fatal(err)
 	}
@@ -317,9 +313,6 @@ func TestNewSinkCreatesDir(t *testing.T) {
 	}
 }
 
-// TestSinkWriteDoesNotMutateCaller: Write must not write into the caller's array.
-// `append(rec,'\n')` with spare capacity does exactly that — and the handler's
-// json.Marshal returns a slice with spare capacity.
 func TestSinkWriteDoesNotMutateCaller(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewSink(dir)
@@ -328,7 +321,7 @@ func TestSinkWriteDoesNotMutateCaller(t *testing.T) {
 
 	buf := make([]byte, 0, 64)
 	buf = append(buf, []byte("{\"a\":1}")...)
-	sentinel := buf[:cap(buf)][len(buf)] // the byte right after the record
+	sentinel := buf[:cap(buf)][len(buf)]
 	if err := s.Write(buf); err != nil {
 		t.Fatal(err)
 	}

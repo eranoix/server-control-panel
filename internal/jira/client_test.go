@@ -141,7 +141,6 @@ func TestADFEmptyText(t *testing.T) {
 }
 
 func TestADFLegacyString(t *testing.T) {
-	// Server occasionally returns a plain JSON string for description.
 	if got := adfToText(json.RawMessage(`"just a string"`)); got != "just a string" {
 		t.Errorf("legacy string fallback failed: %q", got)
 	}
@@ -155,7 +154,6 @@ func TestCreateIssueRequiresFields(t *testing.T) {
 	}
 }
 
-// `parent` is the system field covering epic-child AND subtask on create.
 func TestCreateIssueSetsParent(t *testing.T) {
 	var body map[string]any
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -177,9 +175,6 @@ func TestCreateIssueSetsParent(t *testing.T) {
 	}
 }
 
-// Critical guard rail. epic_link WITHOUT epic_link_field must emit no
-// customfield at all (a dual set on our own create = 400). With both, it emits
-// the field.
 func TestCreateIssueEpicLinkGating(t *testing.T) {
 	var body map[string]any
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -188,7 +183,6 @@ func TestCreateIssueEpicLinkGating(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"id":"1","key":"X-3"}`))
 	})
-	// EpicLinkKey only (no field) → no customfield_ may appear.
 	if _, err := c.CreateIssue(context.Background(), CreateIssueRequest{
 		ProjectKey: "X", IssueType: "Story", Summary: "s", EpicLinkKey: "X-1",
 	}); err != nil {
@@ -200,7 +194,6 @@ func TestCreateIssueEpicLinkGating(t *testing.T) {
 			t.Errorf("epic_link with no field must NOT emit a customfield, leaked %q", k)
 		}
 	}
-	// Both filled in → the named field is emitted.
 	body = nil
 	if _, err := c.CreateIssue(context.Background(), CreateIssueRequest{
 		ProjectKey: "X", IssueType: "Story", Summary: "s",
@@ -214,7 +207,6 @@ func TestCreateIssueEpicLinkGating(t *testing.T) {
 	}
 }
 
-// The UI needs subtask/hierarchyLevel to require a parent / label an Epic.
 func TestIssueTypesParsesHierarchy(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

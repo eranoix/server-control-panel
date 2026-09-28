@@ -44,7 +44,6 @@ func ListUnits() ([]Unit, error) {
 			Sub:    fields[3],
 		}
 		if len(fields) > 4 {
-			// Reconstruct description by finding position after the 4th field
 			rest := line
 			for i := 0; i < 4; i++ {
 				rest = strings.TrimLeft(rest, " \t")
@@ -68,7 +67,6 @@ func Status(unit string) (string, error) {
 	}
 	cmd := exec.Command("systemctl", "status", unit, "--no-pager", "--lines=0")
 	out, _ := cmd.CombinedOutput()
-	// systemctl status returns non-zero for inactive units, but output is still useful
 	return string(out), nil
 }
 

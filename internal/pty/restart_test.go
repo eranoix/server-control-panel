@@ -10,13 +10,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// This test brings up a REAL websocket and checks the close code that reaches the
-// client. It is the only honest way to prove the fix: the promise here is not
-// "the function was called", it is "the browser learns it was a restart".
-//
-// Without the notice, the process dies and the hijacked connection vanishes with
-// no close frame — the browser reports 1006 (abnormal closure), identical to a
-// network drop.
 func TestNotifyRestartDeliversCode1012(t *testing.T) {
 	ready := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +22,6 @@ func TestNotifyRestartDeliversCode1012(t *testing.T) {
 		unregister := registerLive(c)
 		defer unregister()
 		close(ready)
-		// Hold the connection open until the test has finished reading.
 		time.Sleep(2 * time.Second)
 	}))
 	defer srv.Close()
@@ -52,7 +44,6 @@ func TestNotifyRestartDeliversCode1012(t *testing.T) {
 	if n := NotifyRestart(); n != 1 {
 		t.Fatalf("NotifyRestart notified %d connections, wanted 1", n)
 	}
-	// The close arrives on the next read.
 	_ = cli.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, _, _ = cli.ReadMessage()
 
@@ -66,8 +57,6 @@ func TestNotifyRestartDeliversCode1012(t *testing.T) {
 	}
 }
 
-// A leaked registration would hold the connection alive in memory and make the
-// notice write into a dead socket on every deploy after that.
 func TestRegisterLiveUnregisters(t *testing.T) {
 	before := LiveCount()
 	c := &websocket.Conn{}
@@ -79,14 +68,12 @@ func TestRegisterLiveUnregisters(t *testing.T) {
 	if LiveCount() != before {
 		t.Fatalf("LiveCount = %d after unregistering, wanted %d", LiveCount(), before)
 	}
-	// Idempotent: a double defer must not break the count.
 	done()
 	if LiveCount() != before {
 		t.Fatalf("duplicate unregister messed up the count: %d", LiveCount())
 	}
 }
 
-// nil must not take down the shutdown path — the deploy has to happen.
 func TestRegisterLiveNilDoesNotBreak(t *testing.T) {
 	before := LiveCount()
 	done := registerLive(nil)
@@ -96,7 +83,6 @@ func TestRegisterLiveNilDoesNotBreak(t *testing.T) {
 	}
 }
 
-// With nobody connected, the notice is a silent no-op.
 func TestNotifyRestartNoConnections(t *testing.T) {
 	liveMu.Lock()
 	liveConns = map[*websocket.Conn]struct{}{}

@@ -27,10 +27,6 @@ func idsDe(inv Inventory) []string {
 	return out
 }
 
-// TestStoreOpenMissingIsEmpty — a missing file is a LEGITIMATE empty
-// inventory. Mistaking that for an error would make the first boot fail;
-// mistaking the opposite (corrupt read as empty) would erase the inventory on
-// the next write — which is why the two cases have separate tests.
 func TestStoreOpenMissingIsEmpty(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Open(dir)
@@ -49,8 +45,6 @@ func TestStoreOpenMissingIsEmpty(t *testing.T) {
 	}
 }
 
-// TestStoreDurableWrite — after Replace the directory holds inventory.json and
-// NO orphaned temporary; the content comes back through a fresh Open.
 func TestStoreDurableWrite(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Open(dir)
@@ -78,7 +72,6 @@ func TestStoreDurableWrite(t *testing.T) {
 		t.Fatalf("inventory.json does not exist after the Replace (%v); directory: %v", err, names)
 	}
 
-	// Reload through a NEW Store — it is what the other process does.
 	s2, err := Open(dir)
 	if err != nil {
 		t.Fatalf("reOpen: %v", err)
@@ -94,8 +87,6 @@ func TestStoreDurableWrite(t *testing.T) {
 		t.Fatalf("persisted schema_version = %d, want %d", inv.SchemaVersion, SchemaVersion)
 	}
 
-	// Snapshot returns a COPY: touching the result does not change what is on
-	// disk.
 	inv.Nodes[0].Name = "hijacked"
 	inv2, err := s2.Snapshot()
 	if err != nil {
@@ -118,8 +109,6 @@ func reflect_DeepEqualStrings(a, b []string) bool {
 	return true
 }
 
-// TestStoreCorruptFile — a truncated/corrupt file is a HARD ERROR naming the
-// path. Starting empty in silence would erase the inventory on the next write.
 func TestStoreCorruptFile(t *testing.T) {
 	cases := map[string]string{
 		"truncated": `{"schema_version":1,"nodes":[{"id":"lxc/2`,
@@ -147,8 +136,6 @@ func TestStoreCorruptFile(t *testing.T) {
 		})
 	}
 
-	// A FUTURE version envelope is an error too — and the error names the binary,
-	// the way internal/config/config_io.go does.
 	t.Run("future-version", func(t *testing.T) {
 		dir := t.TempDir()
 		if err := os.MkdirAll(filepath.Join(dir, "inventory"), 0o700); err != nil {
@@ -168,10 +155,6 @@ func TestStoreCorruptFile(t *testing.T) {
 	})
 }
 
-// TestStoreConcurrent — N goroutines doing Replace at the same time, under
-// -race. Without read-modify-write under ONE lock this becomes lost-update and
-// the final set comes out smaller (it is the bug the comment in
-// deploy/store.go:73 documents).
 func TestStoreConcurrent(t *testing.T) {
 	dir := t.TempDir()
 	const n = 40
@@ -182,9 +165,6 @@ func TestStoreConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			// One Store per goroutine ON PURPOSE: that is the real scenario
-			// (the queue runner and HTTP call Open() separately), and it is
-			// what defeats a per-instance mutex.
 			s, err := Open(dir)
 			if err != nil {
 				errs[i] = err
@@ -220,7 +200,6 @@ func TestStoreConcurrent(t *testing.T) {
 			len(got), n, missingFrom(wanted, got))
 	}
 
-	// And the file is still valid JSON, not a hybrid of two writes.
 	b, err := os.ReadFile(s.Path())
 	if err != nil {
 		t.Fatal(err)
@@ -245,11 +224,6 @@ func missingFrom(wanted, got []string) []string {
 	return out
 }
 
-// TestStoreCrossProcess — the proof of the FLOCK, which the goroutine test
-// does NOT give: the package mutex on its own already serialises goroutines,
-// so only a second PROCESS tells the two locks apart. It re-executes the test
-// binary itself (the post-receive hook runs inside panelctl, a separate
-// process — this is that scenario).
 func TestStoreCrossProcess(t *testing.T) {
 	if os.Getenv("INVENTORY_CHILD_DIR") != "" {
 		t.Skip("child process")
@@ -303,9 +277,6 @@ func TestStoreCrossProcess(t *testing.T) {
 	}
 }
 
-// TestStoreChildAppend is the body of the child process of
-// TestStoreCrossProcess. Without the environment variables it is a no-op — not
-// a real test.
 func TestStoreChildAppend(t *testing.T) {
 	dir := os.Getenv("INVENTORY_CHILD_DIR")
 	if dir == "" {
@@ -329,15 +300,6 @@ func TestStoreChildAppend(t *testing.T) {
 	}
 }
 
-// TestStoreWritePathIsDurable — the STRUCTURAL pin for durability.
-//
-// fsync has no observable effect without cutting the machine's power, and this
-// server has a UPS with NO data cable: an abrupt cut is an expected failure
-// mode, not a theoretical one. Since the behaviour is not testable in-process,
-// the pin reads the source itself and demands the four pieces: Sync of the
-// FILE, Sync of the DIRECTORY, flock, and the absence of os.WriteFile on the
-// persistence path (which is exactly the omission in
-// internal/deploy/store.go:149-165).
 func TestStoreWritePathIsDurable(t *testing.T) {
 	b, err := os.ReadFile("store.go")
 	if err != nil {
@@ -365,9 +327,6 @@ func TestStoreWritePathIsDurable(t *testing.T) {
 	}
 }
 
-// TestStoreRejectsInvalidNode — the closed set of transports is only truly
-// closed if the disk refuses one too. An invalid node fails the ENTIRE write
-// and the previous file stays intact (no writing half of it).
 func TestStoreRejectsInvalidNode(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Open(dir)

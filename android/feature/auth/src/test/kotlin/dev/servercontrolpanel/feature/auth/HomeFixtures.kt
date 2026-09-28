@@ -13,11 +13,6 @@ import dev.servercontrolpanel.data.ops.NetSnapshot
 import dev.servercontrolpanel.data.ops.OpsSnapshot
 import dev.servercontrolpanel.data.ops.SystemSnapshot
 
-/**
- * A real `/ops/status` response: swap at 99.998%, CPU at 91% with load 11.97 on
- * 8 cores and 7% steal, yet `alerts` empty and `health_ok = true`. A naive
- * dashboard would show this as all fine.
- */
 internal fun systemReal(
     swapUsedPercent: Double = 99.99814033419625,
     memUsedPercent: Double = 63.13659490136221,
@@ -83,7 +78,6 @@ internal fun snapshotReal(
     fetchedAtEpochMs = fetchedAtEpochMs,
 )
 
-/** A machine where nothing crossed a threshold and nothing fired. */
 internal fun calmSnapshot() = snapshotReal(
     ops = opsReal(systemReal(swapUsedPercent = 12.0, steal = 0.0, load1 = 1.2, rootUsedPercent = 30.0)),
     deploys = listOf(DeploySummary("hello", "ok", "2026-07-19 13:17 UTC")),

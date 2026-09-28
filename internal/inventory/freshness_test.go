@@ -9,15 +9,11 @@ import (
 	"time"
 )
 
-// t0 is the fixed instant of the tests. The clock is INJECTED — no test in
-// this file waits for wall-clock time to pass.
 var t0 = time.Date(2026, 8, 18, 23, 30, 0, 0, time.UTC)
 
-// TestFreshness — age is born on the SERVER, with an injected clock, and
-// expiry is proved in milliseconds instead of waiting out the TTL.
 func TestFreshness(t *testing.T) {
 	c := NewClock()
-	c.now = func() time.Time { return t0 } // only possible inside the SAME package
+	c.now = func() time.Time { return t0 }
 
 	const ttl = 90 * time.Second
 
@@ -40,9 +36,6 @@ func TestFreshness(t *testing.T) {
 	if !seen[0].Stale {
 		t.Fatalf("a node seen 300 s ago with a 90 s TTL had to be expired")
 	}
-	// A negative pair is mandatory: without it the test would pass with `Stale =
-	// true` nailed down, and "everything stale" is just as much of a lie as
-	// "everything fresh".
 	if seen[1].AgeSeconds != 30 {
 		t.Fatalf("age of the new node = %d s, want 30", seen[1].AgeSeconds)
 	}
@@ -50,8 +43,6 @@ func TestFreshness(t *testing.T) {
 		t.Fatal("a node seen 30 s ago with a 90 s TTL canNOT be expired")
 	}
 
-	// Advancing the injected clock by 10 min expires what was fresh — with no new
-	// poll and no waiting (it is the antidote to leaning on the wall clock).
 	c.now = func() time.Time { return t0.Add(10 * time.Minute) }
 	after := c.View(Inventory{Nodes: []Node{fresh}}, ttl)
 	if after[0].AgeSeconds != 630 {
@@ -61,8 +52,6 @@ func TestFreshness(t *testing.T) {
 		t.Fatal("the node had to expire when the clock advanced")
 	}
 
-	// The NODE's age is that of the most RECENT timestamp: if any field was
-	// updated, the panel heard the node at that instant.
 	mixed := Node{ID: "lxc/205", Name: "observ", Transport: TransportPVEAPI, Kind: NodeKindGuest,
 		Status: Observe("running", t0.Add(-10*time.Second).Unix()),
 		Uptime: Observe(int64(1), t0.Add(-1*time.Hour).Unix()),
@@ -72,9 +61,6 @@ func TestFreshness(t *testing.T) {
 		t.Fatalf("age with different timestamps = %d, want 10 (the most recent)", v[0].AgeSeconds)
 	}
 
-	// 🔴 Never observed is NOT "0 s ago". Zero on the screen reads as just-seen —
-	// the exact false green this pin exists to forbid. The marker is a negative
-	// age.
 	never := Node{ID: "lxc/299", Name: "new", Transport: TransportSSH, Kind: NodeKindGuest}
 	v := c.View(Inventory{Nodes: []Node{never}}, ttl)
 	if v[0].AgeSeconds >= 0 {
@@ -85,9 +71,6 @@ func TestFreshness(t *testing.T) {
 	}
 }
 
-// TestCredentialStates — the FOUR states exist separately. The hypervisor's
-// 401 is indistinguishable between revoked and expired; what breaks the tie is
-// the `expire` stored locally, and it is what feeds the expiry warning.
 func TestCredentialStates(t *testing.T) {
 	cases := []struct {
 		name string
@@ -110,8 +93,6 @@ func TestCredentialStates(t *testing.T) {
 		})
 	}
 
-	// The strings are a screen contract. Changing them here changes what the
-	// operator reads — and the four have to be DISTINCT from one another.
 	seen := map[string]bool{}
 	for _, s := range []string{CredOK, CredMissing, CredRevoked, CredExpired} {
 		if seen[s] {
@@ -124,7 +105,6 @@ func TestCredentialStates(t *testing.T) {
 			CredOK, CredMissing, CredRevoked, CredExpired)
 	}
 
-	// View resolves the state, so nobody has to recompute it in the route.
 	c := NewClock()
 	c.now = func() time.Time { return t0 }
 	inv := Inventory{Nodes: []Node{{ID: "lxc/207", Name: "apps", Transport: TransportPVEAPI,
@@ -134,8 +114,6 @@ func TestCredentialStates(t *testing.T) {
 	}
 }
 
-// TestViewAlwaysCarriesAge — the pin extended to the view: what the route
-// serializes carries age_seconds AND observed_at, always.
 func TestViewAlwaysCarriesAge(t *testing.T) {
 	c := NewClock()
 	c.now = func() time.Time { return t0 }
@@ -143,10 +121,6 @@ func TestViewAlwaysCarriesAge(t *testing.T) {
 		{ID: "lxc/207", Name: "apps", Transport: TransportPVEAPI, Kind: NodeKindGuest,
 			Status: Observe("running", t0.Add(-time.Minute).Unix())},
 		{ID: "lxc/299", Name: "never-seen", Transport: TransportSSH, Kind: NodeKindGuest},
-		// 🔴 This case is what gives the pin teeth: observed NOW, the age is
-		// 0 and stale is false — the two values the omission tag would erase
-		// from the JSON. Without it the test would pass even with the tag in
-		// place (measured).
 		{ID: "lxc/204", Name: "lab", Transport: TransportPVEAPI, Kind: NodeKindGuest,
 			Status: Observe("running", t0.Unix())},
 	}}
@@ -177,13 +151,6 @@ func TestViewAlwaysCarriesAge(t *testing.T) {
 	}
 }
 
-// TestFreshnessDoesNotReadClock — the pin for the injectable clock.
-//
-// A direct call to time.Now() on the calculation path hands the test back to
-// the wall clock: expiry would again demand waiting (which is forbidden) and
-// age would stop being reproducible. The clock comes in through a parameter or
-// through the Clock's field (moulded on internal/telemetry/sink.go:37), and
-// the only place that knows time.Now is the constructor.
 func TestFreshnessDoesNotReadClock(t *testing.T) {
 	b, err := os.ReadFile("freshness.go")
 	if err != nil {

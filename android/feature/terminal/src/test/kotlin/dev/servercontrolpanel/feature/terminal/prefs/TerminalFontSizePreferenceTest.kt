@@ -13,15 +13,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
 
-/**
- * Each test builds its OWN [androidx.datastore.core.DataStore] over a fresh
- * file in [tempFolder] rather than the app-wide `by preferencesDataStore(...)`
- * singleton [TerminalFontSizePreference] defaults to in production: that
- * singleton is cached per [android.content.Context] instance for the process
- * lifetime, and Robolectric can hand back the same application context
- * across `@Test` methods, so a shared store would leak a value one test
- * wrote into whichever test happens to run next.
- */
 @RunWith(RobolectricTestRunner::class)
 class TerminalFontSizePreferenceTest {
 

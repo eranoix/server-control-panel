@@ -11,10 +11,6 @@ import (
 	"time"
 )
 
-// cmdWhatsApp dispatches the `panelctl whatsapp <sub>` subcommands. Operates
-// directly on the on-disk state file at data/whatsapp/state.json and on
-// systemctl — does NOT call the server-control-panel HTTP API. Designed to work when
-// the panel itself is broken.
 func cmdWhatsApp(args []string) error {
 	if len(args) < 1 {
 		whatsappUsage()
@@ -128,7 +124,6 @@ func whatsappStatus() error {
 	if st.LastQRTS > 0 {
 		fmt.Printf("Last QR:          %s\n", time.Unix(st.LastQRTS, 0).Format(time.RFC3339))
 	}
-	// systemd reality check
 	out, _ := exec.Command("systemctl", "is-active", waUnit).Output()
 	fmt.Printf("Systemd:          %s\n", strings.TrimSpace(string(out)))
 	return nil
@@ -143,7 +138,6 @@ func whatsappQR() error {
 		fmt.Println("no QR available right now (status=" + st.Status + ")")
 		return nil
 	}
-	// data:image/png;base64,XXX
 	const prefix = "data:image/png;base64,"
 	if !strings.HasPrefix(st.QRDataURL, prefix) {
 		return fmt.Errorf("QR is not a PNG data URL")
@@ -172,10 +166,6 @@ func whatsappSystemctl(action string) error {
 }
 
 func whatsappLogout() error {
-	// Direct docker exec rather than HTTP so this works offline. We invoke
-	// the WAHA API from inside the container using its own key (which lives
-	// in /opt/panel-whatsapp/.env). Falls back to systemctl restart if exec
-	// somehow fails — at worst, WAHA boots fresh and pairing remains.
 	out, err := exec.Command("docker", "exec", "panel-whatsapp",
 		"sh", "-c",
 		`wget -q -O- --header="X-Api-Key: ${WHATSAPP_API_KEY}" `+

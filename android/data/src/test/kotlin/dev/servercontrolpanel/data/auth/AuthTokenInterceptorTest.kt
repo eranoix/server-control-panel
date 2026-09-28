@@ -14,11 +14,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/**
- * Against a real HTTP server: the token reaches the request and a 401 leads to a renewal and
- * replay. The generated `ApiClient` adds the Bearer header but never renews, so this is the
- * interceptor's job.
- */
 class AuthTokenInterceptorTest {
 
     private lateinit var server: MockWebServer
@@ -50,7 +45,6 @@ class AuthTokenInterceptorTest {
         ),
         refresher = refresher,
         now = { clock },
-        // Leaves the global ApiClient token alone; the mirror is covered in SessionManagerTest.
         publishAccessToken = {},
     )
 

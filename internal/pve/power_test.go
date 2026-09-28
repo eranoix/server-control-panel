@@ -12,10 +12,6 @@ import (
 
 const fakeUPID = "UPID:pve:00001F2A:03C4D5E6:68A3B1C0:vzstart:207:panel@pve!admin:"
 
-// TestPowerOps proves the exact path per type (lxc vs qemu) and the verb, and
-// that the function returns the RAW UPID. The UPID is not decoration: it is the
-// task's identifier in the hypervisor's own log and the only key for finding
-// out whether it finished well.
 func TestPowerOps(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -67,7 +63,6 @@ func TestPowerOps(t *testing.T) {
 	}
 }
 
-// TestPowerOpsInvalidType: fails closed before spending a call.
 func TestPowerOpsInvalidType(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("called the hypervisor with an invalid type")
@@ -77,8 +72,6 @@ func TestPowerOpsInvalidType(t *testing.T) {
 	}
 }
 
-// TestSnapshotList proves the listing arrives with a name and a time — it is
-// what the screen shows before offering "delete".
 func TestSnapshotList(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api2/json/nodes/pve/lxc/207/snapshot" {
@@ -104,11 +97,6 @@ func TestSnapshotList(t *testing.T) {
 	}
 }
 
-// 🔴 TestWaitTask is the antidote to the trap. The POST returns 200 with a UPID
-// and the task CAN FAIL AFTERWARDS. Only two conditions together prove success:
-// status=="stopped" AND exitstatus=="OK". Accepting the POST's 200, or
-// accepting "stopped" on its own, is pure false-green — the screen would say
-// "it powered on" for a VM that did not power on.
 func TestWaitTask(t *testing.T) {
 	t.Run("running until stopped OK", func(t *testing.T) {
 		var n int32
@@ -150,9 +138,6 @@ func TestWaitTask(t *testing.T) {
 	})
 
 	t.Run("stopped with no exitstatus fails", func(t *testing.T) {
-		// "stopped" on its own is NOT success: an aborted task can stop with no
-		// exitstatus at all. Accepting that would be the same false-green in different
-		// clothes.
 		c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(`{"data":{"status":"stopped"}}`))
 		})
@@ -163,16 +148,6 @@ func TestWaitTask(t *testing.T) {
 	})
 }
 
-// TestWaitTaskTimeout: a task that never stops has to respect the ctx. Without
-// that, a poll loop would hang forever on a sick guest.
-//
-// 🔴 The interval between queries is LONG on purpose (2 s) and the deadline is
-// short (40 ms). Only that way does the assertion tell the two implementations
-// apart: with the `case <-ctx.Done()` guard in the loop, WaitTask comes back in
-// ~40 ms; WITHOUT it, it stays stuck in the timer until the next tick and only
-// notices the expiry 2 s later. The first version of this test used a taskPoll
-// of 1 ms and passed either way — the request's own ctx masked the missing
-// guard. Measuring the TIME it takes to return is what gives this pin teeth.
 func TestWaitTaskTimeout(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"data":{"status":"running"}}`))
@@ -205,9 +180,6 @@ func TestWaitTaskTimeout(t *testing.T) {
 	}
 }
 
-// TestWaitTaskPropagatesKind: a 401 during the wait is "no credential" (a token
-// revoked IN THE MIDDLE of the operation — exactly the revocation drill), not
-// "the task failed".
 func TestWaitTaskPropagatesKind(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -221,11 +193,6 @@ func TestWaitTaskPropagatesKind(t *testing.T) {
 	}
 }
 
-// 🔴 TestSnapshotInvalidName: the snapshot name comes from the SCREEN and goes
-// into a path on the hypervisor. Without validation, "../../status/stop" would
-// turn into another route — and the wrong operation on a write path is the
-// worst class of defect there is here. Fails closed: the hypervisor is not even
-// called.
 func TestSnapshotInvalidName(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("called the hypervisor with an invalid name: %s %s", r.Method, r.URL.Path)
@@ -249,9 +216,6 @@ func TestSnapshotInvalidName(t *testing.T) {
 			}
 		})
 	}
-	// And the contrapositive: the legitimate name used by the drill HAS to pass —
-	// otherwise the validation would be "reject everything", which is also a false
-	// green.
 	var called bool
 	c2, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -265,16 +229,6 @@ func TestSnapshotInvalidName(t *testing.T) {
 	}
 }
 
-// Snapshot rollback
-//
-// VM.Snapshot also authorises ROLLBACK (`Qemu.pm:6301`, `LXC/Snapshot.pm:275`),
-// not only create and delete, so the operator role already had this power.
-// Exposing it with an audit trail is safer than leaving it hidden — what is
-// hidden stays reachable by whoever holds the token, and with no record at all.
-
-// TestSnapshotRollbackPathAndVerb pins the exact path on both guest types. A
-// wrong path here does not return 404: it returns the rollback of the WRONG
-// resource.
 func TestSnapshotRollbackPathAndVerb(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -312,10 +266,6 @@ func TestSnapshotRollbackPathAndVerb(t *testing.T) {
 	}
 }
 
-// 🔴 TestSnapshotRollbackRejectsInvalidName: the name comes from the SCREEN and
-// goes into the path of a DESTRUCTIVE operation. It is the same rule as
-// create/delete, and here it counts for more: a name that escapes its resource
-// chooses which state the guest is going to take on.
 func TestSnapshotRollbackRejectsInvalidName(t *testing.T) {
 	for _, name := range []string{"", "../../nodes/pve/qemu/100/status/stop", "with space", "accentuation-ñ", "9starts-with-number", strings.Repeat("a", 65)} {
 		var dialed bool
@@ -332,8 +282,6 @@ func TestSnapshotRollbackRejectsInvalidName(t *testing.T) {
 	}
 }
 
-// TestSnapshotRollbackWithoutPrivilegeIsTyped: a 403 becomes KindForbidden, so the
-// screen says "no permission" instead of "it failed".
 func TestSnapshotRollbackWithoutPrivilegeIsTyped(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)

@@ -1,9 +1,3 @@
-// confluence.go — Confluence Cloud v2 endpoints (spaces + pages).
-//
-// Confluence lives at <site>/wiki/api/v2/* — the same basic auth as Jira (the
-// client and the site are shared). Split out of extra.go to shrink the god file
-// and to make plain that Confluence is a SEPARATE service consumed through the
-// same Client.
 package jira
 
 import (
@@ -13,10 +7,6 @@ import (
 	"net/http"
 	"net/url"
 )
-
-// --- Confluence v2: spaces + pages ---
-//
-// Confluence Cloud lives at <site>/wiki/api/v2/* — same basic auth as Jira.
 
 type ConfluenceSpace struct {
 	ID     string `json:"id"`
@@ -45,8 +35,6 @@ type ConfluencePage struct {
 	CreatedAt string `json:"createdAt,omitempty"`
 }
 
-// ConfluencePages returns top-level pages of a space, paginated. limit
-// caps per-call; the caller can ask for more via cursor.
 func (c *Client) ConfluencePages(ctx context.Context, spaceID string, limit int, cursor string) ([]ConfluencePage, string, error) {
 	if limit <= 0 || limit > 250 {
 		limit = 50
@@ -66,7 +54,6 @@ func (c *Client) ConfluencePages(ctx context.Context, spaceID string, limit int,
 	if err := c.do(ctx, http.MethodGet, path, nil, &resp); err != nil {
 		return nil, "", err
 	}
-	// next link includes &cursor=… — extract just the cursor value
 	next := ""
 	if resp.Links.Next != "" {
 		if u, err := url.Parse(resp.Links.Next); err == nil {
@@ -82,16 +69,13 @@ type ConfluencePageDetail struct {
 	SpaceID   string `json:"spaceId,omitempty"`
 	ParentID  string `json:"parentId,omitempty"`
 	Status    string `json:"status,omitempty"`
-	Body      string `json:"body,omitempty"`     // flattened plain text
-	BodyADF   any    `json:"body_adf,omitempty"` // raw ADF if format=atlas_doc_format
+	Body      string `json:"body,omitempty"`
+	BodyADF   any    `json:"body_adf,omitempty"`
 	WebURL    string `json:"web_url,omitempty"`
 	CreatedAt string `json:"createdAt,omitempty"`
 	Version   int    `json:"version,omitempty"`
 }
 
-// ConfluencePage returns a single page. Format "storage" returns Confluence
-// XML/HTML storage format; "atlas_doc_format" returns ADF. We default to ADF
-// and flatten to text for the simple read view.
 func (c *Client) ConfluencePage(ctx context.Context, pageID string) (*ConfluencePageDetail, error) {
 	path := "/wiki/api/v2/pages/" + url.PathEscape(pageID) + "?body-format=atlas_doc_format"
 	var resp struct {
@@ -126,5 +110,3 @@ func (c *Client) ConfluencePage(ctx context.Context, pageID string) (*Confluence
 	}
 	return d, nil
 }
-
-// basicAuth wraps the stdlib base64 encoder. Earlier versions of this

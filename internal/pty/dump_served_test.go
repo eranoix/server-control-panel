@@ -5,13 +5,6 @@ import (
 	"testing"
 )
 
-// Dumps to disk EXACTLY the bytes the server delivers to the app in the primer,
-// to feed the harness in `scripts/terminal-check/` without going through
-// authentication or through a Python approximation. This is not a test: it is an
-// instrument.
-//
-//	go test ./internal/pty/ -run TestDumpsServedCrop -v \
-//	  (no args: use the env PANEL_DUMP_SESSION for the session and PANEL_DUMP_OUTPUT for the output)
 func TestDumpsServedCrop(t *testing.T) {
 	session := os.Getenv("PANEL_DUMP_SESSION")
 	output := os.Getenv("PANEL_DUMP_OUTPUT")

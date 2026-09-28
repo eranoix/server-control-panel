@@ -9,16 +9,9 @@ import (
 	"server-control-panel/internal/httpx"
 )
 
-// actions2.go — advanced operations: reflog/undo, interactive rebase (driven
-// without an editor), conflict resolution and cherry-pick onto
-// (drag-and-drop). All write-gated (POST + primary + writable repo) and under
-// withRepoWriteLock — they never leave the index/rebase hanging for another session.
-
-// ---- GET /reflog ----
-
 type reflogEntry struct {
-	Sel     string `json:"sel"`   // HEAD@{N}
-	Short   string `json:"short"` // short hash
+	Sel     string `json:"sel"`
+	Short   string `json:"short"`
 	Action  string `json:"action"`
 	Subject string `json:"subject"`
 }
@@ -57,16 +50,14 @@ func (s *svc) handleReflog(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"reflog": out})
 }
 
-// ---- POST /reflog/reset (undo: reset to a reflog entry) ----
-
 func (s *svc) handleReflogReset(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
 	if !ok {
 		return
 	}
 	var body struct {
-		Index int    `json:"index"` // HEAD@{Index}
-		Mode  string `json:"mode"`  // soft|mixed|hard
+		Index int    `json:"index"`
+		Mode  string `json:"mode"`
 	}
 	if err := decodeBody(r, &body); err != nil {
 		httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
@@ -110,8 +101,6 @@ func (s *svc) handleReflogReset(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"ok": true, "ref": ref, "mode": mode})
 }
 
-// ---- GET /rebase/todo?base= (commits base..HEAD in application order) ----
-
 func (s *svc) handleRebaseTodo(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
 		return
@@ -150,21 +139,13 @@ func (s *svc) handleRebaseTodo(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"base": base, "commits": out})
 }
 
-// ---- POST /rebase/interactive ----
-
-// rebaseStep is one line of the interactive rebase todo. Reorder = array order.
 type rebaseStep struct {
-	Action string `json:"action"` // pick|squash|fixup|drop
+	Action string `json:"action"`
 	Hash   string `json:"hash"`
 }
 
 var rebaseActions = map[string]bool{"pick": true, "squash": true, "fixup": true, "drop": true}
 
-// handleRebaseInteractive drives `git rebase -i <base>` WITHOUT opening an
-// editor: GIT_SEQUENCE_EDITOR copies our todo over the generated one, and
-// GIT_EDITOR=true accepts squash messages as they are (combined). It supports
-// reordering + pick/squash/fixup/drop. (reword is left out: use Amend.) On a
-// conflict it leaves the rebase in progress for resolution through /conflicts (or /rebase/abort).
 func (s *svc) handleRebaseInteractive(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
 	if !ok {
@@ -227,8 +208,8 @@ func (s *svc) handleRebaseInteractive(w http.ResponseWriter, r *http.Request) {
 	tmp.Close()
 
 	env := []string{
-		"GIT_SEQUENCE_EDITOR=cp " + tmpPath, // git runs: cp <tmp> <todofile>
-		"GIT_EDITOR=true",                   // does not open a message editor
+		"GIT_SEQUENCE_EDITOR=cp " + tmpPath,
+		"GIT_EDITOR=true",
 	}
 	var conflict bool
 	err := withRepoWriteLock(repo.Path, func() error {
@@ -252,8 +233,6 @@ func (s *svc) handleRebaseInteractive(w http.ResponseWriter, r *http.Request) {
 	httpx.AuditEvent(s.audit, r, caller, "git.rebase_interactive", repo.ID+" onto "+body.Base)
 	httpx.WriteJSON(w, map[string]any{"ok": true})
 }
-
-// ---- POST /rebase/abort e /rebase/continue ----
 
 func (s *svc) handleRebaseAbort(w http.ResponseWriter, r *http.Request) {
 	s.rebaseControl(w, r, "--abort", "git.rebase_abort")
@@ -291,8 +270,6 @@ func (s *svc) rebaseControl(w http.ResponseWriter, r *http.Request, flag, action
 	httpx.WriteJSON(w, map[string]any{"ok": true})
 }
 
-// ---- GET /conflicts e /conflict/sides ----
-
 func (s *svc) handleConflicts(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
 		return
@@ -304,7 +281,6 @@ func (s *svc) handleConflicts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// diff --name-only --diff-filter=U lists the files in conflict.
 	res, _ := run(r.Context(), repo.Path, "diff", "--name-only", "--diff-filter=U", "-z")
 	files := []string{}
 	for _, p := range strings.Split(res.Stdout, "\x00") {
@@ -312,7 +288,6 @@ func (s *svc) handleConflicts(w http.ResponseWriter, r *http.Request) {
 			files = append(files, p)
 		}
 	}
-	// Detects a rebase/merge in progress (so the UI can show continue/abort).
 	gitDir, _ := resolveGitDir(repo.Path)
 	rebasing := false
 	merging := false
@@ -360,8 +335,6 @@ func (s *svc) handleConflictSides(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ---- POST /conflict/resolve ----
-
 func (s *svc) handleConflictResolve(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
 	if !ok {
@@ -369,8 +342,8 @@ func (s *svc) handleConflictResolve(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Path     string `json:"path"`
-		Strategy string `json:"strategy"` // ours|theirs|mark
-		Content  string `json:"content"`  // used when strategy=content
+		Strategy string `json:"strategy"`
+		Content  string `json:"content"`
 	}
 	if err := decodeBody(r, &body); err != nil {
 		httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
@@ -399,7 +372,6 @@ func (s *svc) handleConflictResolve(w http.ResponseWriter, r *http.Request) {
 				return e
 			}
 		case "mark":
-			// nothing beyond the add below (the user edited and removed the markers)
 		default:
 			return &gitError{"invalid strategy"}
 		}
@@ -423,11 +395,6 @@ func (s *svc) handleConflictResolve(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"ok": true})
 }
 
-// ---- POST /cherry-pick-onto (drag commit → branch) ----
-
-// handleCherryPickOnto checks out the target branch and cherry-picks the
-// commit — the semantics of "dragging a commit onto a branch" (GitKraken). On
-// a conflict it leaves it for resolution through /conflicts. It does not use -f on the checkout (it fails cleanly when dirty).
 func (s *svc) handleCherryPickOnto(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
 	if !ok {

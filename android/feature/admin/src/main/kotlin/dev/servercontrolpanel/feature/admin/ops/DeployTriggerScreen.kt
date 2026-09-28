@@ -31,11 +31,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.servercontrolpanel.data.events.MobileEventsClient
 
-/**
- * Entry point for the deploy trigger screen. [mobileEventsClient] is the app-scoped singleton
- * constructed in `PanelApplication` — threaded in explicitly, never resolved from a
- * `Context` cast inside this module.
- */
 @Composable
 fun DeployTriggerRoute(
     mobileEventsClient: MobileEventsClient,
@@ -48,9 +43,6 @@ fun DeployTriggerRoute(
             initializer {
                 DeployTriggerViewModel(
                     eventsClient = mobileEventsClient,
-                    // The progress notification is what keeps the deploy
-                    // visible after the person puts the phone away — which is
-                    // the most common next gesture.
                     trackOffScreen = { jobId ->
                         DeployWatchWorker.track(context, jobId, app = "")
                     },
@@ -71,11 +63,6 @@ fun DeployTriggerRoute(
     )
 }
 
-/**
- * Stateless — every dependency is a parameter. [isAdmin] is `null` while the session check is
- * in flight, `false` once resolved for a non-admin (button never renders — server enforces the
- * real gate, this is UX-only), `true` once cleared to show the trigger button.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeployTriggerScreen(
@@ -144,12 +131,6 @@ private fun DeployTriggerContent(
     }
 }
 
-/**
- * `phase` starts at `"queued"` the instant the trigger call returns. A deploy command that
- * waits on a lock held by a prior deploy gives no intermediate signal, so this screen can sit
- * here with zero new events for minutes. Rendering the wait explicitly
- * (rather than a bare spinner) is what keeps that from reading as a frozen screen.
- */
 @Composable
 private fun DeployInProgressContent(state: DeployTriggerUiState.InProgress) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -166,28 +147,12 @@ private fun DeployInProgressContent(state: DeployTriggerUiState.InProgress) {
         Text(text = "Log", modifier = Modifier.padding(top = 8.dp))
 
         val scroll = rememberLazyListState()
-        // THE LOG FOLLOWS ALONG BY ITSELF.
-        //
-        // A deploy log that does not follow is a log that drags along behind:
-        // the person keeps dragging the list with a thumb while the server
-        // writes, and the one moment they NEED to read — the error line, which
-        // is always the last one — is the hardest to reach.
-        //
-        // `animateScrollToItem` and not `scrollToItem`: jumping instantly on
-        // every new line makes the text flicker and makes what went past
-        // impossible to read.
         LaunchedEffect(state.logLines.size) {
             if (state.logLines.isNotEmpty()) {
                 scroll.animateScrollToItem(state.logLines.lastIndex)
             }
         }
         LazyColumn(state = scroll, modifier = Modifier.fillMaxWidth()) {
-            // THE KEY IS THE INDEX, not the line.
-            //
-            // A log repeats lines ("done.", a blank line) and a duplicate key
-            // makes Compose throw at runtime. The index is stable here because
-            // this log only ever GROWS at the end — it is never reordered and
-            // no line is ever removed from the middle.
             itemsIndexed(state.logLines, key = { index, _ -> index }) { _, line ->
                 Text(text = line)
             }
@@ -206,10 +171,6 @@ private fun DeployOutcomeContent(state: DeployTriggerUiState.Outcome, onRequestC
     }
 }
 
-/**
- * States what the server's deploy command does: build, gate on health, roll back automatically
- * on failure — so the confirmation is informed, not a bare "are you sure?".
- */
 @Composable
 private fun DeployConfirmationDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(

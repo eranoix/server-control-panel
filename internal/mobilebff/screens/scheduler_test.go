@@ -11,10 +11,6 @@ import (
 	"server-control-panel/internal/scheduler"
 )
 
-// testSchedulerCfg mirrors golden_test.go's testGoldenViewers construction —
-// a real *config.Config through the real ViewerFrom/httpx.IsAdmin path,
-// never a Viewer{} literal, so these tests exercise the same admin
-// resolution production does.
 func testSchedulerCfg() *config.Config {
 	return &config.Config{
 		SchemaVersion: config.CurrentSchemaVersion,
@@ -31,11 +27,6 @@ func testSchedulerViewers() (admin, nonAdmin sdui.Viewer) {
 	return sdui.ViewerFrom(cfg, "sched-admin"), sdui.ViewerFrom(cfg, "sched-user")
 }
 
-// testSchedulerDeps returns a SchedulerDeps sufficient to build the screen:
-// only AuthorizedKinds matters for buildSchedulerJobsScreen — the rows
-// endpoint (which uses ListJobs/etc.) is covered separately in
-// scheduler_rows_test.go, since TableComponent never embeds row data in the
-// screen envelope (see component.go): the envelope itself carries no job.
 func testSchedulerDeps() SchedulerDeps {
 	adminOnlyKind := KindOption{Value: "system_reboot", Label: "Reboot system"}
 	sharedKind := KindOption{Value: "docker_prune", Label: "Prune Docker"}
@@ -68,10 +59,6 @@ func componentIDs(env *sdui.Envelope) []string {
 	return ids
 }
 
-// Test 1 (structure): exactly one table (jobs-table), one form (job-form),
-// one standalone action (refresh-jobs) and one confirm_destructive
-// (job-delete-confirm, action_id scheduler.job.delete); the table's
-// row_actions reference scheduler.job.run_now and scheduler.job.delete.
 func TestSchedulerScreen_Structure(t *testing.T) {
 	admin, _ := testSchedulerViewers()
 	env, err := buildSchedulerJobsScreen(testSchedulerDeps(), admin)
@@ -126,9 +113,6 @@ func TestSchedulerScreen_Structure(t *testing.T) {
 	}
 }
 
-// Test 2 (RBAC by omission) + Test 3 (non-vacuity): the admin envelope
-// contains run_as_root and the admin-only kind; the non-admin envelope
-// contains neither.
 func TestSchedulerScreen_RBACOmissionOnBytes(t *testing.T) {
 	admin, nonAdmin := testSchedulerViewers()
 	deps := testSchedulerDeps()
@@ -151,7 +135,6 @@ func TestSchedulerScreen_RBACOmissionOnBytes(t *testing.T) {
 		t.Fatalf("marshal non-admin: %v", err)
 	}
 
-	// Non-vacuity: the admin does receive both.
 	if !strings.Contains(string(adminBytes), "run_as_root") {
 		t.Errorf("admin envelope does not contain \"run_as_root\": %s", adminBytes)
 	}
@@ -159,7 +142,6 @@ func TestSchedulerScreen_RBACOmissionOnBytes(t *testing.T) {
 		t.Errorf("admin envelope does not contain the admin-only kind \"system_reboot\": %s", adminBytes)
 	}
 
-	// Omission: the non-admin receives neither.
 	if strings.Contains(string(nonAdminBytes), "run_as_root") {
 		t.Errorf("non-admin envelope contains \"run_as_root\": %s", nonAdminBytes)
 	}
@@ -168,8 +150,6 @@ func TestSchedulerScreen_RBACOmissionOnBytes(t *testing.T) {
 	}
 }
 
-// Test 4: the options of the form's "kind" field come exactly from the
-// AuthorizedKinds closure — never a list the Builder builds on its own.
 func TestSchedulerScreen_KindOptionsComeFromAuthorizedKinds(t *testing.T) {
 	admin, nonAdmin := testSchedulerViewers()
 	deps := testSchedulerDeps()
@@ -209,9 +189,6 @@ func TestSchedulerScreen_KindOptionsComeFromAuthorizedKinds(t *testing.T) {
 	}
 }
 
-// Test 5: no client-side decision logic leaks into the payload — no
-// condition/visible_when/expression/permission key outside
-// permission_hint.
 func TestSchedulerScreen_NoClientSideLogicKeys(t *testing.T) {
 	admin, _ := testSchedulerViewers()
 	env, err := buildSchedulerJobsScreen(testSchedulerDeps(), admin)
@@ -232,7 +209,6 @@ func TestSchedulerScreen_NoClientSideLogicKeys(t *testing.T) {
 			t.Errorf("payload contains forbidden client-side logic key %s: %s", key, body)
 		}
 	}
-	// "permission" may only appear as part of "permission_hint".
 	idx := 0
 	for {
 		i := strings.Index(string(body)[idx:], "\"permission")
@@ -254,11 +230,6 @@ func min(a, b int) int {
 	return b
 }
 
-// Test 6: the table's timestamp columns are declared as display-ready text
-// (kind "text"), never as a type that would suggest the client format a raw
-// epoch. The actually pre-formatted value is tested in
-// scheduler_rows_test.go, against the rows endpoint — the screen carries no
-// rows at all (see TableComponent.RowsSource in component.go).
 func TestSchedulerScreen_TimestampColumnsAreDisplayReadyText(t *testing.T) {
 	admin, _ := testSchedulerViewers()
 	env, err := buildSchedulerJobsScreen(testSchedulerDeps(), admin)
@@ -278,9 +249,6 @@ func TestSchedulerScreen_TimestampColumnsAreDisplayReadyText(t *testing.T) {
 	}
 }
 
-// sanity: makes sure the timestamp formatting helper used by the rows
-// endpoint (scheduler_rows_test.go) is reachable from this test file too,
-// and that epoch 0 becomes an empty string.
 func TestFormatSchedulerTimestamp_ZeroIsEmpty(t *testing.T) {
 	if got := formatSchedulerTimestamp(0); got != "" {
 		t.Errorf("formatSchedulerTimestamp(0) = %q, want \"\"", got)
@@ -292,4 +260,4 @@ func TestFormatSchedulerTimestamp_ZeroIsEmpty(t *testing.T) {
 	}
 }
 
-var _ = scheduler.Job{} // keeps the import even if a test above is removed while iterating
+var _ = scheduler.Job{}

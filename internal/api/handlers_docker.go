@@ -1,13 +1,5 @@
 package api
 
-// handlers_docker.go — the Docker + Compose engine
-//
-// Covers: dockerReady, info/disk/containers/images/volumes/networks,
-// container actions, compose (file CRUD + actions), prune/pull,
-// log/stats streams over WebSocket and wsWriter (the stream helper).
-//
-// Extracted from api.go. It stays on *Router because it uses r.docker/audit/mustPrimary.
-
 import (
 	"context"
 	"encoding/json"
@@ -27,8 +19,6 @@ import (
 
 	"server-control-panel/internal/auth"
 )
-
-// ---------- Docker ----------
 
 func (r *Router) dockerReady(w http.ResponseWriter) bool {
 	if r.docker == nil {
@@ -178,9 +168,6 @@ func (r *Router) handleVolumes(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	// volume.ListResponse exposes Volumes []*Volume + Warnings []string. The
-	// frontend iterates with :key="v.Name" — we sanitise the inner slice without
-	// losing Warnings.
 	if vr, ok := v.(volume.ListResponse); ok {
 		vr.Volumes = sanitizeList(vr.Volumes, "Name").([]*volume.Volume)
 		writeJSON(w, vr)
@@ -213,19 +200,6 @@ func (r *Router) handleCompose(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, sanitizeList(p, "Name"))
 }
 
-// handleComposeFile reads/writes a project's compose.yml file.
-// GET ?project=<name>&path=<config_file>  → text/plain
-// POST {project, path, content}             → 204 (atomic write via tmp+rename)
-//
-// Validation: path MUST belong to the WorkingDir of the project returned by the
-// docker-compose project label. It blocks path traversal and writing outside
-// the project.
-//
-// SECURITY: primary-only, for the same reason as handleComposeAction. POST
-// allows writing YAML on the host as root — any "command: rm -rf /" line runs
-// on the next compose up. GET returns the raw file, which usually contains
-// `environment:` with secrets, references to `.env`, registry tokens, and so on.
-// Without that gate, any secondary admin has RCE + a secret leak through the API.
 func (r *Router) handleComposeFile(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -251,7 +225,6 @@ func (r *Router) handleComposeFile(w http.ResponseWriter, req *http.Request) {
 			writeErr(w, 500, err.Error())
 			return
 		}
-		// Capped at 1MB so as not to take mobile down with enormous YAMLs (very rare).
 		if len(data) > 1024*1024 {
 			data = data[:1024*1024]
 		}
@@ -273,7 +246,6 @@ func (r *Router) handleComposeFile(w http.ResponseWriter, req *http.Request) {
 			writeErr(w, 400, "project required")
 			return
 		}
-		// Limit (1MB)
 		if len(body.Content) > 1024*1024 {
 			writeErr(w, 413, "content too large (>1MB)")
 			return
@@ -283,7 +255,6 @@ func (r *Router) handleComposeFile(w http.ResponseWriter, req *http.Request) {
 			writeErr(w, 400, err.Error())
 			return
 		}
-		// Atomic write: tmp + rename. Preserves the existing file's permissions.
 		mode := os.FileMode(0o644)
 		if fi, err := os.Stat(file); err == nil {
 			mode = fi.Mode().Perm()
@@ -306,10 +277,6 @@ func (r *Router) handleComposeFile(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// resolveComposeFile resolves the safe absolute path of a project's compose
-// file. It guarantees the path is inside the known WorkingDir (the compose
-// label). Returns an error when path traversal is detected or the project is
-// unknown.
 func (r *Router) resolveComposeFile(req *http.Request, projectName, pathParam string) (string, error) {
 	projects, err := r.docker.ListComposeProjects(req.Context())
 	if err != nil {
@@ -326,24 +293,19 @@ func (r *Router) resolveComposeFile(req *http.Request, projectName, pathParam st
 	if workingDir == "" {
 		return "", errors.New("project not found or has no working_dir label")
 	}
-	// Resolve symlinks + clean, as defence in depth against ../ hopping.
 	wd, err := filepath.Abs(workingDir)
 	if err != nil {
 		return "", err
 	}
 	var candidate string
 	if pathParam != "" {
-		// If the path is absolute, require it to be inside the WorkingDir.
-		// If it is relative, join it with the WorkingDir.
 		if filepath.IsAbs(pathParam) {
 			candidate = pathParam
 		} else {
 			candidate = filepath.Join(wd, pathParam)
 		}
 	} else {
-		// Default: the first config_files label, or docker-compose.yml inside the WorkingDir.
 		if configFiles != "" {
-			// configFiles may hold several separated by ","; take the first.
 			parts := strings.SplitN(configFiles, ",", 2)
 			candidate = strings.TrimSpace(parts[0])
 		}
@@ -358,12 +320,10 @@ func (r *Router) resolveComposeFile(req *http.Request, projectName, pathParam st
 	if err != nil {
 		return "", err
 	}
-	// Boundary check: abs MUST sit under wd (after Clean). Blocks traversal.
 	rel, err := filepath.Rel(wd, abs)
 	if err != nil || strings.HasPrefix(rel, "..") {
 		return "", errors.New("path outside project working_dir")
 	}
-	// Only valid extensions are accepted
 	ext := strings.ToLower(filepath.Ext(abs))
 	if ext != ".yml" && ext != ".yaml" {
 		return "", errors.New("only .yml/.yaml files supported")
@@ -372,11 +332,6 @@ func (r *Router) resolveComposeFile(req *http.Request, projectName, pathParam st
 }
 
 func (r *Router) handleComposeAction(w http.ResponseWriter, req *http.Request) {
-	// SECURITY: primary-only — working_dir is literally any absolute path on the
-	// host. A non-primary user could point at /etc/cron.daily (or any dir with a
-	// docker-compose.yml) and run compose up/down and the rest as root
-	// (server-control-panel). Without the gate, any authenticated login effectively has
-	// RCE through the path.
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
 	}
@@ -477,18 +432,12 @@ func (r *Router) handlePull(w http.ResponseWriter, req *http.Request) {
 	r.auditEvent(req, auth.UserFrom(req), "image.pull", ref)
 }
 
-// A keepalive identical to pty.go's: it survives proxies/firewalls with 30s idle
-// and detects dead clients at the TCP level. Without it, half-open WS
-// connections leak goroutines until the kernel's keepalive fires (hours).
 const (
 	dockerWsPingPeriod = 25 * time.Second
 	dockerWsPongWait   = 45 * time.Second
 	dockerWsWriteWait  = 10 * time.Second
 )
 
-// runDockerStream is the pattern shared by handleLogStream/handleStatsStream:
-// the WS upgrade, a ctx tied to the request, a ping/pong heartbeat, and errors
-// propagated to the log + the client. stream() wraps the r.docker.StreamX call.
 func (r *Router) runDockerStream(w http.ResponseWriter, req *http.Request, label, id string, stream func(context.Context, *wsWriter) error) {
 	conn, err := wsUpgrader.Upgrade(w, req, nil)
 	if err != nil {
@@ -506,7 +455,6 @@ func (r *Router) runDockerStream(w http.ResponseWriter, req *http.Request, label
 
 	pw := &wsWriter{conn: conn}
 
-	// Read pump: detects the client closing; the end of the pump cancels the ctx.
 	go func() {
 		defer cancel()
 		for {
@@ -516,8 +464,6 @@ func (r *Router) runDockerStream(w http.ResponseWriter, req *http.Request, label
 		}
 	}()
 
-	// Ping pump: keeps the connection alive behind idle proxies and detects a
-	// dead client at the TCP level (a write error becomes a cancel).
 	go func() {
 		t := time.NewTicker(dockerWsPingPeriod)
 		defer t.Stop()

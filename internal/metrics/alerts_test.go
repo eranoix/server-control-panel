@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// snap builds a fresh (non-stale) snapshot with one metric value.
 func snap(key string, val float64) Snapshot {
 	return Snapshot{T: time.Now().Unix(), Values: map[string]float64{key: val}}
 }
@@ -20,7 +19,6 @@ func statusByName(ss []RuleStatus) map[string]RuleStatus {
 	return m
 }
 
-// A rule below its threshold reports normal with the live current value.
 func TestStatusNormal(t *testing.T) {
 	e := NewEngine()
 	_ = e.AddRule(Rule{Name: "cpu-high", Metric: "sys.cpu", Op: ">", Threshold: 90, Duration: 60})
@@ -37,7 +35,6 @@ func TestStatusNormal(t *testing.T) {
 	}
 }
 
-// Threshold crossed but Duration not yet elapsed → pending, with pending_since.
 func TestStatusPending(t *testing.T) {
 	e := NewEngine()
 	_ = e.AddRule(Rule{Name: "cost", Metric: "claude.cost.today", Op: ">", Threshold: 5, Duration: 60})
@@ -54,7 +51,6 @@ func TestStatusPending(t *testing.T) {
 	}
 }
 
-// Threshold crossed with Duration 0, sustained across two snapshots → firing.
 func TestStatusFiring(t *testing.T) {
 	e := NewEngine()
 	_ = e.AddRule(Rule{Name: "jobs", Metric: "jobs.failed.total", Op: ">", Threshold: 0, Duration: 0})
@@ -66,7 +62,6 @@ func TestStatusFiring(t *testing.T) {
 	}
 }
 
-// Before any snapshot is evaluated, state is nodata.
 func TestStatusNodataWhenNeverSampled(t *testing.T) {
 	e := NewEngine()
 	_ = e.AddRule(Rule{Name: "r", Metric: "sys.cpu", Op: ">", Threshold: 90, Duration: 60})
@@ -75,18 +70,15 @@ func TestStatusNodataWhenNeverSampled(t *testing.T) {
 	}
 }
 
-// A rule whose metric key is absent from the snapshot reports nodata, even if
-// other metrics are present and fresh.
 func TestStatusNodataWhenMetricAbsent(t *testing.T) {
 	e := NewEngine()
 	_ = e.AddRule(Rule{Name: "docker", Metric: "docker.running", Op: ">", Threshold: 0, Duration: 0})
-	e.Evaluate(snap("sys.cpu", 50)) // fresh snapshot, but no docker.running key
+	e.Evaluate(snap("sys.cpu", 50))
 	if statusByName(e.Status())["docker"].State != "nodata" {
 		t.Fatal("want nodata when metric key absent from snapshot")
 	}
 }
 
-// A stale snapshot (old T) yields nodata even if the value crossed the threshold.
 func TestStatusNodataWhenStale(t *testing.T) {
 	e := NewEngine()
 	_ = e.AddRule(Rule{Name: "r", Metric: "sys.cpu", Op: ">", Threshold: 90, Duration: 0})
@@ -96,7 +88,6 @@ func TestStatusNodataWhenStale(t *testing.T) {
 	}
 }
 
-// Legacy rules (Field instead of Metric) still resolve to the sys.* key.
 func TestLegacyFieldResolves(t *testing.T) {
 	e := NewEngine()
 	if err := e.AddRule(Rule{Name: "legacy", Field: "disk_pct", Op: ">", Threshold: 80, Duration: 0}); err != nil {
@@ -140,7 +131,6 @@ func TestAddRuleSeverityValidation(t *testing.T) {
 	}
 }
 
-// A rule with neither Metric nor a valid legacy Field is rejected.
 func TestAddRuleRequiresMetricOrField(t *testing.T) {
 	e := NewEngine()
 	if err := e.AddRule(Rule{Name: "x", Op: ">", Threshold: 1}); err == nil {
@@ -148,7 +138,6 @@ func TestAddRuleRequiresMetricOrField(t *testing.T) {
 	}
 }
 
-// Save then Load preserves rules including Metric, LastFired and Severity.
 func TestSaveLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "alert_rules.json")
 	e := NewEngine()
@@ -190,7 +179,6 @@ func TestLoadSkipsInvalidRules(t *testing.T) {
 	}
 }
 
-// countFires splits a fire slice into crossings and resolutions for assertions.
 func countFires(fires []Fire) (crossings, resolved int) {
 	for _, f := range fires {
 		if f.Resolved {
@@ -202,9 +190,6 @@ func countFires(fires []Fire) (crossings, resolved int) {
 	return
 }
 
-// Edge-trigger core: a metric that crosses and STAYS above the threshold fires
-// exactly once, no matter how many times Evaluate runs while it's held. This is
-// the regression this test pins down (was: one fire every ~5 min).
 func TestFiresOnceWhileConditionHeld(t *testing.T) {
 	e := NewEngine()
 	_ = e.AddRule(Rule{Name: "cpu", Metric: "sys.cpu", Op: ">", Threshold: 80, Duration: 0})
@@ -222,8 +207,6 @@ func TestFiresOnceWhileConditionHeld(t *testing.T) {
 	}
 }
 
-// After the metric normalizes (one resolved fire), crossing again must fire a
-// NEW episode — re-arm only happens through normalization.
 func TestRefiresAfterRecovery(t *testing.T) {
 	e := NewEngine()
 	_ = e.AddRule(Rule{Name: "cpu", Metric: "sys.cpu", Op: ">", Threshold: 80, Duration: 0})
@@ -242,25 +225,16 @@ func TestRefiresAfterRecovery(t *testing.T) {
 		t.Fatalf("resolved fire should carry the opening episode %d, got %d", ep1, down[0].Episode)
 	}
 
-	// Re-arm only happened through normalization, so crossing again fires anew.
 	up2 := e.Evaluate(snap("sys.cpu", 90))
 	if c, r := countFires(up2); c != 1 || r != 0 {
 		t.Fatalf("re-fire: want 1 crossing 0 resolved, got %d/%d", c, r)
 	}
-	// The re-fire opens a fresh episode (ActiveSince was cleared then re-set).
-	// Its numeric Episode id is the fire's unix-second; it may coincide with ep1
-	// only when both crossings land in the same wall-clock second (impossible in
-	// the live loop — the collector ticks every 5s — but possible in this
-	// synchronous test). Per-episode DEDUP across the throttle window is locked
-	// independently in TestMetricEpisodesNotThrottled (notify package). Here we
-	// assert the behavioral fact: a new crossing fire was emitted post-recovery.
 	if up2[0].Episode == 0 {
 		t.Fatal("re-fire must carry an episode id")
 	}
 	_ = ep1
 }
 
-// A fire marks the rule active (ActiveSince set) and the state survives List().
 func TestEvaluateMarksActiveSince(t *testing.T) {
 	e := NewEngine()
 	_ = e.AddRule(Rule{Name: "cpu", Metric: "sys.cpu", Op: ">", Threshold: 80, Duration: 0})
@@ -269,21 +243,18 @@ func TestEvaluateMarksActiveSince(t *testing.T) {
 	if r.ActiveSince == 0 {
 		t.Fatal("ActiveSince should be set after a crossing fire")
 	}
-	// Normalize: ActiveSince clears.
 	e.Evaluate(snap("sys.cpu", 10))
 	if e.List()[0].ActiveSince != 0 {
 		t.Fatal("ActiveSince should clear after recovery")
 	}
 }
 
-// A nodata gap mid-episode must NOT resolve (no false "recovered"), and a metric
-// returning still-high must NOT re-notify.
 func TestNoResolveOrRefireOnNodataGap(t *testing.T) {
 	e := NewEngine()
 	_ = e.AddRule(Rule{Name: "cpu", Metric: "sys.cpu", Op: ">", Threshold: 80, Duration: 0})
-	e.Evaluate(snap("sys.cpu", 95)) // fire, episode open
+	e.Evaluate(snap("sys.cpu", 95))
 
-	gap := e.Evaluate(snap("other.metric", 1)) // sys.cpu absent → nodata
+	gap := e.Evaluate(snap("other.metric", 1))
 	if len(gap) != 0 {
 		t.Fatalf("nodata gap must emit no fire, got %+v", gap)
 	}
@@ -291,19 +262,17 @@ func TestNoResolveOrRefireOnNodataGap(t *testing.T) {
 		t.Fatal("episode must stay open across a nodata gap")
 	}
 
-	back := e.Evaluate(snap("sys.cpu", 96)) // returns still-high
+	back := e.Evaluate(snap("sys.cpu", 96))
 	if len(back) != 0 {
 		t.Fatalf("still-high after gap must not re-notify, got %+v", back)
 	}
 }
 
-// An episode in progress (ActiveSince set) persisted and reloaded must NOT
-// re-fire while still above, and must report "firing" (not "pending").
 func TestNoRefireAcrossReload(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "alert_rules.json")
 	e := NewEngine()
 	_ = e.AddRule(Rule{Name: "cpu", Metric: "sys.cpu", Op: ">", Threshold: 80, Duration: 0})
-	e.Evaluate(snap("sys.cpu", 95)) // opens episode
+	e.Evaluate(snap("sys.cpu", 95))
 	if err := e.Save(path); err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +284,7 @@ func TestNoRefireAcrossReload(t *testing.T) {
 	if e2.List()[0].ActiveSince == 0 {
 		t.Fatal("ActiveSince must survive Save/Load")
 	}
-	fires := e2.Evaluate(snap("sys.cpu", 96)) // still above after "restart"
+	fires := e2.Evaluate(snap("sys.cpu", 96))
 	if len(fires) != 0 {
 		t.Fatalf("must not re-notify after reload while still firing, got %+v", fires)
 	}
@@ -324,9 +293,6 @@ func TestNoRefireAcrossReload(t *testing.T) {
 	}
 }
 
-// Hysteresis (deadband) for a ">" rule: after firing, dipping just below the
-// threshold but within RearmMargin does NOT resolve; only clearing the margin
-// resolves and re-arms. Prevents flapping around the threshold.
 func TestRearmMarginHysteresisGreater(t *testing.T) {
 	e := NewEngine()
 	_ = e.AddRule(Rule{Name: "cpu", Metric: "sys.cpu", Op: ">", Threshold: 80, RearmMargin: 5, Duration: 0})
@@ -334,13 +300,13 @@ func TestRearmMarginHysteresisGreater(t *testing.T) {
 	if c, r := countFires(e.Evaluate(snap("sys.cpu", 85))); c != 1 || r != 0 {
 		t.Fatalf("cross: want 1/0, got %d/%d", c, r)
 	}
-	if fires := e.Evaluate(snap("sys.cpu", 78)); len(fires) != 0 { // in deadband (75,80]
+	if fires := e.Evaluate(snap("sys.cpu", 78)); len(fires) != 0 {
 		t.Fatalf("dip into deadband must not resolve, got %+v", fires)
 	}
 	if statusByName(e.Status())["cpu"].State != "firing" {
 		t.Fatal("rule in deadband should still report firing")
 	}
-	if c, r := countFires(e.Evaluate(snap("sys.cpu", 74))); c != 0 || r != 1 { // clears 75
+	if c, r := countFires(e.Evaluate(snap("sys.cpu", 74))); c != 0 || r != 1 {
 		t.Fatalf("clearing deadband: want 0/1, got %d/%d", c, r)
 	}
 	if c, r := countFires(e.Evaluate(snap("sys.cpu", 81))); c != 1 || r != 0 {
@@ -348,8 +314,6 @@ func TestRearmMarginHysteresisGreater(t *testing.T) {
 	}
 }
 
-// Mirror hysteresis for a "<" rule: the metric must rise back ABOVE
-// Threshold+RearmMargin to re-arm. Guards the operator-direction sign.
 func TestRearmMarginHysteresisLess(t *testing.T) {
 	e := NewEngine()
 	_ = e.AddRule(Rule{Name: "low", Metric: "sys.cpu", Op: "<", Threshold: 20, RearmMargin: 5, Duration: 0})
@@ -357,10 +321,10 @@ func TestRearmMarginHysteresisLess(t *testing.T) {
 	if c, r := countFires(e.Evaluate(snap("sys.cpu", 15))); c != 1 || r != 0 {
 		t.Fatalf("cross below: want 1/0, got %d/%d", c, r)
 	}
-	if fires := e.Evaluate(snap("sys.cpu", 22)); len(fires) != 0 { // in deadband [20,25)
+	if fires := e.Evaluate(snap("sys.cpu", 22)); len(fires) != 0 {
 		t.Fatalf("rise into deadband must not resolve, got %+v", fires)
 	}
-	if c, r := countFires(e.Evaluate(snap("sys.cpu", 26))); c != 0 || r != 1 { // clears 25
+	if c, r := countFires(e.Evaluate(snap("sys.cpu", 26))); c != 0 || r != 1 {
 		t.Fatalf("clearing deadband: want 0/1, got %d/%d", c, r)
 	}
 	if c, r := countFires(e.Evaluate(snap("sys.cpu", 19))); c != 1 || r != 0 {
@@ -368,14 +332,9 @@ func TestRearmMarginHysteresisLess(t *testing.T) {
 	}
 }
 
-// RenotifySec opt-in: while a rule stays firing, a reminder is emitted once
-// RenotifySec has elapsed since the last notification. The reminder reuses the
-// open episode but a newer Time (so the notify layer keys it uniquely). With
-// RenotifySec 0 (default) no reminder is ever emitted.
 func TestRenotifySecReminderWhileHeld(t *testing.T) {
 	e := NewEngine()
 	past := time.Now().Unix() - 100
-	// Episode already open and last-notified 100s ago.
 	_ = e.AddRule(Rule{Name: "cpu", Metric: "sys.cpu", Op: ">", Threshold: 80, Duration: 0,
 		RenotifySec: 30, ActiveSince: past, LastFired: past})
 
@@ -401,7 +360,6 @@ func TestRenotifySecZeroNeverReminds(t *testing.T) {
 	}
 }
 
-// RearmMargin and RenotifySec must reject negative values.
 func TestRearmRenotifyValidation(t *testing.T) {
 	e := NewEngine()
 	if err := e.AddRule(Rule{Name: "a", Metric: "sys.cpu", Op: ">", Threshold: 1, RearmMargin: -1}); err == nil {

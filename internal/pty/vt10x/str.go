@@ -8,9 +8,6 @@ import (
 	"strings"
 )
 
-// STR sequences are similar to CSI sequences, but have string arguments (and
-// as far as I can tell, don't really have a name; STR is the name I took from
-// suckless which I imagine comes from rxvt or xterm).
 type strEscape struct {
 	typ  rune
 	buf  []rune
@@ -24,14 +21,9 @@ func (s *strEscape) reset() {
 }
 
 func (s *strEscape) put(c rune) {
-	// TODO: improve allocs with an array backed slice; bench first
 	if len(s.buf) < 256 {
 		s.buf = append(s.buf, c)
 	}
-	// Going by st, it is better to remain silent when the STR sequence is not
-	// ended so that it is apparent to users something is wrong. The length sanity
-	// check ensures we don't absorb the entire stream into memory.
-	// TODO: see what rxvt or xterm does
 }
 
 func (s *strEscape) parse() {
@@ -61,7 +53,7 @@ func (t *State) handleSTR() {
 	s.parse()
 
 	switch s.typ {
-	case ']': // OSC - operating system command
+	case ']':
 		var p *string
 		switch d := s.arg(0, 0); d {
 		case 0, 1, 2:
@@ -81,7 +73,6 @@ func (t *State) handleSTR() {
 			} else if err := t.setColorName(int(DefaultFG), p); err != nil {
 				t.logf("invalid foreground color: %s\n", maybe(p))
 			} else {
-				// TODO: redraw
 			}
 		case 11:
 			if len(s.args) < 2 {
@@ -95,23 +86,9 @@ func (t *State) handleSTR() {
 			} else if err := t.setColorName(int(DefaultBG), p); err != nil {
 				t.logf("invalid cursor color: %s\n", maybe(p))
 			} else {
-				// TODO: redraw
 			}
-		// case 12:
-		// if len(s.args) < 2 {
-		// 	break
-		// }
 
-		// c := s.argString(1, "")
-		// p := &c
-		// if p != nil && *p == "?" {
-		// 	t.oscColorResponse(int(DefaultCursor), 12)
-		// } else if err := t.setColorName(int(DefaultCursor), p); err != nil {
-		// 	t.logf("invalid background color: %s\n", p)
-		// } else {
-		// 	// TODO: redraw
-		// }
-		case 4: // color set
+		case 4:
 			if len(s.args) < 3 {
 				break
 			}
@@ -119,37 +96,30 @@ func (t *State) handleSTR() {
 			c := s.argString(2, "")
 			p = &c
 			fallthrough
-		case 104: // color reset
+		case 104:
 			j := -1
 			if len(s.args) > 1 {
 				j = s.arg(1, 0)
 			}
-			if p != nil && *p == "?" { // report
+			if p != nil && *p == "?" {
 				t.osc4ColorResponse(j)
 			} else if err := t.setColorName(j, p); err != nil {
 				if !(d == 104 && len(s.args) <= 1) {
 					t.logf("invalid color j=%d, p=%s\n", j, maybe(p))
 				}
 			} else {
-				// TODO: redraw
 			}
 		default:
 			t.logf("unknown OSC command %d\n", d)
-			// TODO: s.dump()
 		}
-	case 'k': // old title set compatibility
+	case 'k':
 		title := s.argString(0, "")
 		if title != "" {
 			t.setTitle(title)
 		}
 	default:
-		// TODO: Ignore these codes instead of complain?
-		// 'P': // DSC - device control string
-		// '_': // APC - application program command
-		// '^': // PM - privacy message
 
 		t.logf("unhandled STR sequence '%c'\n", s.typ)
-		// t.str.dump()
 	}
 }
 
@@ -159,10 +129,8 @@ func (t *State) setColorName(j int, p *string) error {
 	}
 
 	if p == nil {
-		// restore color
 		delete(t.colorOverride, Color(j))
 	} else {
-		// set color
 		r, g, b, err := parseColor(*p)
 		if err != nil {
 			return err

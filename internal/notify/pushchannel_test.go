@@ -9,9 +9,6 @@ import (
 	"server-control-panel/internal/webpush"
 )
 
-// newTestWebpushStore opens a real *webpush.Store rooted in a t.TempDir(), so
-// TestWebpushSender_TranslatesSendOptions exercises the actual adapter
-// boundary (webpush-go types, VAPID keygen) instead of a fake.
 func newTestWebpushStore(t *testing.T) *webpush.Store {
 	t.Helper()
 	store, err := webpush.Open(filepath.Join(t.TempDir(), "webpush"))
@@ -22,9 +19,6 @@ func newTestWebpushStore(t *testing.T) *webpush.Store {
 	return store
 }
 
-// fakePushSender is a pushSender test double that records the last call. It
-// never imports internal/webpush — proving the interface it satisfies is
-// notify-owned, not Web-Push vocabulary.
 type fakePushSender struct {
 	lastPayload []byte
 	lastOpts    SendOptions

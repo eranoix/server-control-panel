@@ -13,35 +13,15 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// console_test.go — the pins of the remote console.
-//
-// The fake server here is NOT an invented Proxmox: it repeats, step by step,
-// what was MEASURED against the home hypervisor, on both kinds of guest
-// (lxc/204, lxc/205, lxc/207 and qemu/208, all 200 on termproxy):
-//
-//	POST /nodes/pve/{type}/{vmid}/termproxy   → {port, user, ticket, upid}
-//	GET  .../vncwebsocket?port=&vncticket=    → 101, subprotocol "binary"
-//	1st frame from the client: "user:ticket\n" → the server answers "OK"
-//
-// The "OK" is the detail only the measurement hands over, and it is what these
-// tests protect: it is a HANDSHAKE answer, not terminal output. Passing it on
-// to the browser would write a phantom "OK" on the first line of every console.
-
 const (
 	fakeConsoleTicket = "PVEVNC:AAAAAA==::ticket-measured-at-361-bytes"
 	fakeConsoleUser   = "panel@pve!node-lab"
 	fakeConsoleUPID   = "UPID:pve:003D8997:0492E623:6A868978:vncproxy:204:panel@pve!node-lab:"
 )
 
-// consoleServer builds the complete fake hypervisor (termproxy +
-// vncwebsocket). repliesOK says whether the server confirms the auth frame the
-// way the real hypervisor confirms it.
 type consoleServer struct {
 	srv *httptest.Server
 
-	// mu guards the fields the server's goroutine writes and the test's reads.
-	// Without it -race fails — and rightly so: the console bridge is precisely
-	// two-goroutine code, so the test of it cannot be the example of the opposite.
 	mu sync.Mutex
 
 	consoleOptions
@@ -58,20 +38,15 @@ func (s *consoleServer) seen() (auth, header string, frames []string, upgrade bo
 	return s.authReceived, s.authHeaderWS, append([]string(nil), s.framesReceived...), s.upgradeAttempted
 }
 
-// consoleOptions is the fake server's configuration, SEPARATE from the state
-// it accumulates. Merging the two into a single struct would pass a sync.Mutex
-// by value — which go vet flags, and rightly so.
 type consoleOptions struct {
-	statusTermproxy int    // 0 = 200
-	repliesOK       bool   // sends "OK" after the auth frame
-	initialOutput   string // what the "terminal" spits out after the handshake
+	statusTermproxy int
+	repliesOK       bool
+	initialOutput   string
 }
 
 func newConsoleServer(t *testing.T, cfg consoleOptions) (*Client, *consoleServer) {
 	t.Helper()
 	s := &consoleServer{consoleOptions: cfg}
-	// The "binary" subprotocol is what the hypervisor announces on the 101 —
-	// measured.
 	up := websocket.Upgrader{Subprotocols: []string{"binary"}}
 
 	s.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -138,12 +113,6 @@ func newConsoleServer(t *testing.T, cfg consoleOptions) (*Client, *consoleServer
 	return cli, s
 }
 
-// 🔴 TestConsoleAttachDoesThreeSteps is the pin of the happy path, and it
-// asserts what the MEASUREMENT saw, not what would be convenient: the auth
-// frame is exactly "user:ticket\n", the token header travels ON THE UPGRADE
-// (the hypervisor authenticates the handshake with it — measured: a complete
-// handshake with PVEAPIToken stopped at the ACL, 403, not at authentication),
-// and the UPID comes back to become audit trail.
 func TestConsoleAttachDoesThreeSteps(t *testing.T) {
 	cli, s := newConsoleServer(t, consoleOptions{repliesOK: true, initialOutput: "lab login: "})
 
@@ -164,7 +133,6 @@ func TestConsoleAttachDoesThreeSteps(t *testing.T) {
 		t.Errorf("upid = %q, want %q — without it the trail does not name the task", upid, fakeConsoleUPID)
 	}
 
-	// 🔴 The FIRST message the caller reads is the TERMINAL, never the "OK".
 	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	_, data, err := conn.ReadMessage()
 	if err != nil {
@@ -178,10 +146,6 @@ func TestConsoleAttachDoesThreeSteps(t *testing.T) {
 	}
 }
 
-// 🔴 TestConsoleAttachWithoutPrivilegeSkipsUpgrade: a 403 on termproxy has to
-// stop right there, typed. Trying the upgrade after a 403 would spend a
-// connection to receive another 403 — and the Kind that reaches the screen
-// would be the upgrade's, not that of the operation the operator asked for.
 func TestConsoleAttachWithoutPrivilegeSkipsUpgrade(t *testing.T) {
 	cli, s := newConsoleServer(t, consoleOptions{statusTermproxy: http.StatusForbidden})
 
@@ -198,10 +162,6 @@ func TestConsoleAttachWithoutPrivilegeSkipsUpgrade(t *testing.T) {
 	}
 }
 
-// 🔴 TestConsoleAttachRequiresHandshakeOK: without the "OK", what exists is an
-// open socket that will never deliver any terminal at all. Handing it back
-// would make the screen spin forever instead of saying what happened — the
-// symptom the operator reported on CT 204's vncproxy.
 func TestConsoleAttachRequiresHandshakeOK(t *testing.T) {
 	cli, _ := newConsoleServer(t, consoleOptions{repliesOK: false, initialOutput: "ERROR"})
 
@@ -215,9 +175,6 @@ func TestConsoleAttachRequiresHandshakeOK(t *testing.T) {
 	}
 }
 
-// TestConsoleAttachRejectsInvalidType: the type comes from the inventory ID
-// ("lxc/204"); a value outside lxc/qemu would build a path that does not exist
-// and spend a call to take a 501.
 func TestConsoleAttachRejectsInvalidType(t *testing.T) {
 	cli, s := newConsoleServer(t, consoleOptions{repliesOK: true})
 	if _, _, err := cli.ConsoleAttach(context.Background(), "pve", 204, "container"); err == nil {
@@ -228,9 +185,6 @@ func TestConsoleAttachRejectsInvalidType(t *testing.T) {
 	}
 }
 
-// 🔴 TestConsoleErrorLeaksNoTicketOrSecret. The ticket is a console credential:
-// whoever holds it opens a shell. It cannot show up in an error, which turns
-// into screen text and a log line.
 func TestConsoleErrorLeaksNoTicketOrSecret(t *testing.T) {
 	cli, _ := newConsoleServer(t, consoleOptions{repliesOK: false, initialOutput: "something that is not OK"})
 	_, _, err := cli.ConsoleAttach(context.Background(), "pve", 204, "lxc")
@@ -246,14 +200,6 @@ func TestConsoleErrorLeaksNoTicketOrSecret(t *testing.T) {
 	}
 }
 
-// 🔴 TestInputFrameCountsBYTES is the trap measured live: termproxy reads N
-// BYTES after "0:N:". Measured against CT 204:
-//
-//	"0:2:ñ" (2 bytes) → the terminal received 0xC3 0xB1  ✅
-//	"0:1:ñ" (1 char)  → the terminal received 0xC3       ❌ half a character
-//
-// That is why the translation lives on the SERVER: `data.length` in JavaScript
-// counts UTF-16 units, so an "ñ" typed in the browser would arrive cut in half.
 func TestInputFrameCountsBYTES(t *testing.T) {
 	cases := []struct {
 		name string
@@ -274,9 +220,6 @@ func TestInputFrameCountsBYTES(t *testing.T) {
 	}
 }
 
-// TestResizeAndKeepaliveFrames pins the protocol's other two verbs, taken from
-// /usr/share/pve-xtermjs/main.js and confirmed in the measurement (the CT
-// accepted both without closing the connection).
 func TestResizeAndKeepaliveFrames(t *testing.T) {
 	if got := string(ResizeFrame(80, 24)); got != "1:80:24:" {
 		t.Errorf("ResizeFrame(80,24) = %q, want \"1:80:24:\"", got)
@@ -286,9 +229,6 @@ func TestResizeAndKeepaliveFrames(t *testing.T) {
 	}
 }
 
-// 🔴 TestResizeFrameRejectsAbsurdSize: cols/rows come from the browser. A
-// negative or gigantic value would build a frame termproxy cannot read, and the
-// symptom would be the connection dying with no explanation.
 func TestResizeFrameRejectsAbsurdSize(t *testing.T) {
 	for _, tc := range []struct{ cols, rows int }{{0, 24}, {80, 0}, {-1, 24}, {80, -1}, {100000, 24}, {80, 100000}} {
 		if f := ResizeFrame(tc.cols, tc.rows); f != nil {
@@ -297,8 +237,6 @@ func TestResizeFrameRejectsAbsurdSize(t *testing.T) {
 	}
 }
 
-// TestConsoleTranslatesFramesToHypervisor closes the loop: the frames built
-// here reach the server exactly as they left.
 func TestConsoleTranslatesFramesToHypervisor(t *testing.T) {
 	cli, s := newConsoleServer(t, consoleOptions{repliesOK: true})
 	conn, _, err := cli.ConsoleAttach(context.Background(), "pve", 204, "lxc")
@@ -312,8 +250,6 @@ func TestConsoleTranslatesFramesToHypervisor(t *testing.T) {
 	}
 	conn.Close()
 
-	// ACTIVE wait for an event (the 3 frames arriving), with a deadline — it is
-	// not a clock wait: what is awaited is the server, and the test dies in 3 s.
 	var frames []string
 	deadline := time.Now().Add(3 * time.Second)
 	for {

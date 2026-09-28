@@ -7,34 +7,6 @@ import (
 	"syscall"
 )
 
-// The package's single file-writing path.
-//
-// Why owner and mode are part of the contract and not a detail: the panel runs
-// as root and the game container runs as the game's user (4711 on Enshrouded,
-// 1000 on Palworld). The container's start.sh checks whether it can write to
-// the file and ABORTS the boot if it cannot. A config rewritten as root:root
-// breaks nothing right away — it breaks on the next restart, far from the
-// action that caused it. The previous idiom (WriteFile + Chmod + Rename)
-// preserved the mode and silently lost the owner.
-
-// writeAtomic replaces the content of `path` preserving OWNER and MODE.
-//
-// The sequence, and why each step exists:
-//
-//  1. a uniquely named temporary in the SAME directory (os.CreateTemp). Same
-//     directory because Rename is only atomic within one filesystem; unique name
-//     because `path + ".tmp"` collides between two concurrent writers and can be
-//     pre-created by a third party.
-//  2. Chmod and Chown through the DESCRIPTOR (*os.File), not the path functions:
-//     that closes the TOCTOU window between creating the temporary and adjusting it.
-//  3. owner and mode come from the `stat` of the file ALREADY on disk. When the
-//     file does not exist yet, they come from `ref` (the file or the server root).
-//     Never from a constant — a constant is how the defect returns under another name.
-//  4. f.Sync() before the Rename and Sync() of the directory after. rename(2) is
-//     atomic for concurrent observers, but is NOT durable until the ZFS
-//     transaction group closes (measured on the host: zfs_txg_timeout = 5), and
-//     this house has a UPS with no data cable. A cut inside that window would
-//     leave the UI saying "saved" and the server reading the old file on next boot.
 func writeAtomic(path string, content []byte, ref string) error {
 	uid, gid, mode, err := destOwnerAndMode(path, ref)
 	if err != nil {
@@ -48,8 +20,6 @@ func writeAtomic(path string, content []byte, ref string) error {
 	}
 	tmp := f.Name()
 	closed := false
-	// Any exit through an error takes the temporary with it: predictable litter
-	// beside a config is noise the next session reads as a valid file.
 	defer func() {
 		if !closed {
 			_ = f.Close()
@@ -78,17 +48,11 @@ func writeAtomic(path string, content []byte, ref string) error {
 	if err := os.Rename(tmp, path); err != nil {
 		return fmt.Errorf("renaming to %s: %w", path, err)
 	}
-	tmp = "" // renamed: there is nothing left to remove
+	tmp = ""
 
 	return syncDir(dir)
 }
 
-// chownFD sets the owner through the open descriptor.
-//
-// The failure is only tolerated when the temporary was ALREADY born with the
-// wanted owner (the case of running the panel as the game's own user). Swallowing
-// the failure in any other case would reintroduce the defect: the file would end
-// up with the wrong owner and nobody would know until the container failed to come up.
 func chownFD(f *os.File, uid, gid int) error {
 	if err := f.Chown(uid, gid); err != nil {
 		if fi, serr := f.Stat(); serr == nil {
@@ -101,8 +65,6 @@ func chownFD(f *os.File, uid, gid int) error {
 	return nil
 }
 
-// syncDir makes sure the directory entry created by the Rename is on
-// disk, not only in cache. Without it the content is durable but the name is not.
 func syncDir(dir string) error {
 	d, err := os.Open(dir)
 	if err != nil {
@@ -115,11 +77,6 @@ func syncDir(dir string) error {
 	return nil
 }
 
-// destOwnerAndMode decides which owner and mode the file must end up with.
-//
-// Order: the file itself, if it exists (preserving is always the right answer);
-// otherwise `ref`. If `ref` is a directory, the mode loses the execute bits — a
-// config is not executable just because its folder is.
 func destOwnerAndMode(path, ref string) (uid, gid int, mode os.FileMode, err error) {
 	if fi, e := os.Stat(path); e == nil && fi.Mode().IsRegular() {
 		u, g, e2 := ownerOf(path)
@@ -146,7 +103,6 @@ func destOwnerAndMode(path, ref string) (uid, gid int, mode os.FileMode, err err
 	return u, g, m, nil
 }
 
-// ownerOf reads uid/gid from a path. It is the package's ONLY source of uid.
 func ownerOf(p string) (int, int, error) {
 	fi, err := os.Stat(p)
 	if err != nil {
@@ -159,11 +115,6 @@ func ownerOf(p string) (int, int, error) {
 	return int(st.Uid), int(st.Gid), nil
 }
 
-// chownLikeRef applies to `target` the owner observed on `ref`.
-//
-// It replaces the literal pair 4711, 4711: the right value is the one on disk. If
-// `ref` cannot be inspected, the error names the path — it never falls back to a
-// default, because a default is a new constant under another name.
 func chownLikeRef(target, ref string, recursive bool) error {
 	uid, gid, err := ownerOf(ref)
 	if err != nil {

@@ -25,31 +25,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import org.webrtc.EglBase
 
-/**
- * The call's green room: what you see before anyone else sees you.
- *
- * ## Why a whole screen just to "join"
- *
- * Joining a call is the one action in this app that is **public and
- * irreversible**. A mistaken `docker restart` can be undone; showing up muted,
- * or with the camera pointed at the ceiling, has already been seen by everyone
- * the instant it happened. Adjusting beforehand costs seconds; adjusting
- * afterwards costs the impression you left.
- *
- * ## The "loading" that is content
- *
- * This is the only screen in the app whose loading state is not waiting: the
- * camera takes real time to wake up, and while it wakes the person is already
- * deciding about the microphone. A `CircularProgressIndicator` here would
- * trade useful work for a spinning clock.
- *
- * ## Errors degrade, they never block
- *
- * The camera being held by another app is the common case, not the exception.
- * The green room says so and offers **joining with audio only** — an audio
- * call is still the call. Blocking entry because the camera would not open
- * trades a feature for an obstacle.
- */
 @Composable
 internal fun LobbyScreen(
     state: CallUiState.Lobby,
@@ -77,10 +52,6 @@ internal fun LobbyScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                // 16:9 and not a fixed height: the preview has to have the
-                // aspect ratio of what everyone else will receive, or it lies
-                // about the framing — which is precisely what you came to
-                // check.
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color.Black),
@@ -102,10 +73,6 @@ internal fun LobbyScreen(
             }
         }
 
-        // Chips rather than icons: in the green room, the state matters more
-        // than the gesture. "Microphone on" reads; a struck-through microphone
-        // icon makes you remember whether the stroke means "you are muted" or
-        // "tap to mute" — an ambiguity that has cost every calling app dearly.
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
                 selected = state.micEnabled,

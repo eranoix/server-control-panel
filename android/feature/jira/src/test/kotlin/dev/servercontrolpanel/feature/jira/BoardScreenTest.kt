@@ -1,6 +1,3 @@
-// ViewModelConstructorInComposable guards a production hazard (recreation on
-// recomposition). These tests render once with an injected fake, so the rule is
-// suppressed for this test file only.
 @file:Suppress("ViewModelConstructorInComposable")
 
 package dev.servercontrolpanel.feature.jira
@@ -28,7 +25,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** Renders the real board under Robolectric. */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -43,7 +39,6 @@ class BoardScreenTest {
     @After
     fun resetMain() = Dispatchers.resetMain()
 
-    /** Requirement: all THREE columns on screen at once; fails if the board becomes a pager. */
     @Test
     fun `the three columns appear AT THE SAME TIME, each with its cards`() {
         val source = FakeSource(
@@ -62,7 +57,6 @@ class BoardScreenTest {
         compose.onNodeWithText("In Progress").assertIsDisplayed()
         compose.onNodeWithText("Done").assertIsDisplayed()
 
-        // Cards from three different columns drawn at once, which a pager cannot do.
         compose.onNodeWithText("KAN-1").assertIsDisplayed()
         compose.onNodeWithText("KAN-3").assertIsDisplayed()
         compose.onNodeWithText("KAN-4").assertIsDisplayed()
@@ -96,7 +90,6 @@ class BoardScreenTest {
         val source = FakeSource(JiraResult.Ok(testBoard()))
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
 
-        // A 125 dp column only has room for one word, not a sentence.
         compose.onAllNodesWithText("empty").assertCountEquals(3)
     }
 
@@ -111,7 +104,6 @@ class BoardScreenTest {
 
     @Test
     fun `a Jira refusal shows WITHOUT hiding the controls`() {
-        // The project selector and filters are what let you undo the query that caused the refusal.
         val source = FakeSource(
             JiraResult.Ok(testBoard(rejection = "invalid JQL near 'ORDER'")),
         )
@@ -124,7 +116,6 @@ class BoardScreenTest {
 
     @Test
     fun `the filters drawn are the ones the SERVER sent`() {
-        // A hard-coded client list would go stale when the panel gains a filter.
         val source = FakeSource(JiraResult.Ok(testBoard()))
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
 

@@ -14,7 +14,6 @@ import (
 	"server-control-panel/internal/config"
 )
 
-// gitCmd runs git in the test's dir; it fails the test on error.
 func gitCmd(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
@@ -24,8 +23,6 @@ func gitCmd(t *testing.T, dir string, args ...string) {
 	}
 }
 
-// setupMergeRepo creates a repo with a merge (2 parents) and a branch, using
-// the local identity tester@local.
 func setupMergeRepo(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -56,8 +53,6 @@ func setupMergeRepo(t *testing.T) string {
 	return dir
 }
 
-// cfgWith assembles a config with Primary=tester and the given allowlist (it
-// replaces the built-in seed with the test repos through a new Path — effectiveRepos merges).
 func cfgWith(repos ...config.GitRepo) *config.Config {
 	return &config.Config{Primary: "tester", GitRepos: repos}
 }
@@ -78,16 +73,13 @@ func TestHandlerReposAndGraph(t *testing.T) {
 		ExpName: "Tester", ExpEmail: "tester@local"})
 	h := Handler(cfg, nil, nil)
 
-	// non-primary → 403
 	if w := do(h, "GET", "/repos", "", "intruder"); w.Code != http.StatusForbidden {
 		t.Errorf("non-primary /repos: got %d want 403", w.Code)
 	}
-	// no auth → 401
 	if w := do(h, "GET", "/repos", "", ""); w.Code != http.StatusUnauthorized {
 		t.Errorf("anon /repos: got %d want 401", w.Code)
 	}
 
-	// primary /repos → 200, repo present with identity ok
 	w := do(h, "GET", "/repos", "", "tester")
 	if w.Code != 200 {
 		t.Fatalf("/repos: got %d", w.Code)
@@ -109,7 +101,6 @@ func TestHandlerReposAndGraph(t *testing.T) {
 		t.Errorf("wrong repo flags: %+v", found)
 	}
 
-	// /graph → a merge produces ≥2 lanes
 	w = do(h, "GET", "/graph?repo=t&limit=50", "", "tester")
 	if w.Code != 200 {
 		t.Fatalf("/graph: got %d %s", w.Code, w.Body.String())
@@ -123,7 +114,6 @@ func TestHandlerReposAndGraph(t *testing.T) {
 		t.Errorf("a merge should generate ≥2 lanes live, max_lane=%d", g.MaxLane)
 	}
 
-	// repo outside the allowlist → 404
 	if w := do(h, "GET", "/graph?repo=nope", "", "tester"); w.Code != 404 {
 		t.Errorf("nonexistent repo: got %d want 404", w.Code)
 	}
@@ -135,12 +125,10 @@ func TestHandlerCommitIdentity(t *testing.T) {
 		ExpName: "Tester", ExpEmail: "tester@local"})
 	h := Handler(cfg, nil, nil)
 
-	// make a change and stage it
 	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("A2\n"), 0o644)
 	if w := do(h, "POST", "/stage?repo=t", `{"paths":["a.txt"]}`, "tester"); w.Code != 200 {
 		t.Fatalf("/stage: got %d %s", w.Code, w.Body.String())
 	}
-	// commit with the expected identity → 200, correct author
 	w := do(h, "POST", "/commit?repo=t", `{"message":"edit a"}`, "tester")
 	if w.Code != 200 {
 		t.Fatalf("/commit: got %d %s", w.Code, w.Body.String())
@@ -152,13 +140,8 @@ func TestHandlerCommitIdentity(t *testing.T) {
 	}
 }
 
-// The user may CHOOSE the author identity. The choice is authoritative (the
-// commit signs with it through -c); divergence from what the repo expects
-// becomes identity_warn=true, NOT a block. (The old behavior of aborting with
-// 409 was relaxed at the user's explicit request.)
 func TestHandlerCommitIdentityWarn(t *testing.T) {
 	dir := setupMergeRepo(t)
-	// The repo expects tester@local; we will commit choosing "work" (it diverges).
 	cfg := cfgWith(config.GitRepo{ID: "t", Path: dir, Name: "Test", Policy: policyWrite,
 		ExpName: "Tester", ExpEmail: "tester@local"})
 	h := Handler(cfg, nil, nil)
@@ -181,11 +164,9 @@ func TestHandlerReadOnlyBlocksWrite(t *testing.T) {
 	dir := setupMergeRepo(t)
 	cfg := cfgWith(config.GitRepo{ID: "ro", Path: dir, Name: "RO", Policy: policyReadOnly})
 	h := Handler(cfg, nil, nil)
-	// reading allowed
 	if w := do(h, "GET", "/graph?repo=ro&limit=10", "", "tester"); w.Code != 200 {
 		t.Errorf("a read-only graph should 200, got %d", w.Code)
 	}
-	// writing blocked
 	if w := do(h, "POST", "/commit?repo=ro", `{"message":"x"}`, "tester"); w.Code != http.StatusForbidden {
 		t.Errorf("a commit on read-only should 403, got %d", w.Code)
 	}

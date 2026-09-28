@@ -15,28 +15,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
-/**
- * The row of filter chips above the conversation list.
- *
- * ## The rule that decides the design: the number is mandatory
- *
- * A chip with no count turns two different states into the same screen. With
- * the number, "Unread 0" and "Unread 12" say, before any tap at all, whether
- * filtering is worth it — and an empty list after the tap stops being a
- * mystery.
- *
- * ## And the dash when it is not known
- *
- * A null [counts] means **I do not know** — the list failed, or is still
- * loading. There the chip shows `—`, never `0`. The difference is not
- * cosmetic: `0` is a CLAIM ("there are no unread conversations") that the app
- * is in no position to make when the answer has not arrived. It is the same
- * rule as the offline banner, applied somewhere smaller: data you do not have
- * does not become a number, it becomes a dash.
- *
- * With no counts the chips are also **disabled**: filtering a list that never
- * loaded produces another empty list, and one more empty state to explain.
- */
 @Composable
 internal fun FilterChips(
     selected: ChatFilter,
@@ -61,9 +39,6 @@ internal fun FilterChips(
                 label = { Text(text = "${filter.label} $number") },
                 colors = FilterChipDefaults.filterChipColors(),
                 modifier = Modifier.semantics {
-                    // The screen reader gets the whole phrase: "Unread, 12
-                    // conversations". Without this it would read "Unread 12",
-                    // which sounds like the name of a filter called "12".
                     contentDescription = when (n) {
                         null -> "${filter.label}, count unavailable"
                         1 -> "${filter.label}, 1 chat"

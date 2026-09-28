@@ -9,21 +9,10 @@ import org.json.JSONObject
 
 private const val TAG_BOOT = "VpsFirebaseBoot"
 
-/** Asset file name the Firebase console config is placed under. */
 internal const val GOOGLE_SERVICES_FILE = "google-services.json"
 
-/**
- * Initialises Firebase at runtime from `app/src/main/assets/google-services.json`, and does
- * nothing when the file is absent.
- *
- * Runtime parsing is used instead of the google-services Gradle plugin because the plugin
- * fails the build when the file is missing; this way push is an optional feature.
- * None of the four fields is secret: the client `api_key` is public by design, and sending
- * is authorised by the server's service account.
- */
 object FirebaseBootstrap {
 
-    /** Returns `true` if Firebase started. Safe to call more than once. */
     fun install(context: Context): Boolean {
         val raw = readAsset(context) ?: run {
             Log.i(
@@ -35,7 +24,6 @@ object FirebaseBootstrap {
             return false
         }
         val options = optionsFrom(raw, context.packageName) ?: run {
-            // A present but unusable file means someone thinks push is configured, so log an error.
             Log.e(TAG_BOOT, "$GOOGLE_SERVICES_FILE present but has no fields for package ${context.packageName}")
             return false
         }
@@ -43,7 +31,6 @@ object FirebaseBootstrap {
             if (FirebaseApp.getApps(context).isEmpty()) {
                 FirebaseApp.initializeApp(context, options)
             }
-            // Fetch the token now so the device registers on first run, not only when FCM rotates it.
             FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
                 VpsFirebaseMessagingService.registerTokenDetached(context, token)
             }
@@ -58,10 +45,6 @@ object FirebaseBootstrap {
         context.assets.open(GOOGLE_SERVICES_FILE).bufferedReader().use { it.readText() }
     }.getOrNull()
 
-    /**
-     * Extracts options from the console JSON for the client whose `package_name` matches.
-     * The file may list several apps; picking the wrong one means pushes never arrive.
-     */
     internal fun optionsFrom(json: String, packageName: String): FirebaseOptions? = runCatching {
         val root = JSONObject(json)
         val project = root.getJSONObject("project_info")

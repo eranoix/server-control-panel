@@ -20,8 +20,6 @@ func TestStore_VAPIDPersistsAcrossReload(t *testing.T) {
 	if pub1 == "" {
 		t.Fatal("empty public key")
 	}
-	// Reopen — should reuse the same keys (rotating would invalidate
-	// existing subscriptions).
 	p2, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +52,6 @@ func TestStore_RemoveEndpointGone(t *testing.T) {
 	if len(p.ForUser("alice")) != 0 {
 		t.Fatal("remove failed")
 	}
-	// Removing an unknown endpoint is a no-op (not an error).
 	p.Remove("https://push.example/unknown")
 }
 
@@ -77,10 +74,6 @@ func TestStore_SendWithoutSubs_NoCrash(t *testing.T) {
 	}
 }
 
-// genSubscriberKeys generates a valid EC P-256 keypair + random auth secret
-// in the base64url-without-padding form the browser's PushManager.subscribe()
-// produces — needed so webpush-go's real encryption path (ECDH + HKDF) does
-// not reject the subscription before ever reaching the network.
 func genSubscriberKeys(t *testing.T) PushSubscriptionKeys {
 	t.Helper()
 	priv, x, y, err := elliptic.GenerateKey(elliptic.P256(), rand.Reader)
@@ -99,10 +92,6 @@ func genSubscriberKeys(t *testing.T) PushSubscriptionKeys {
 	}
 }
 
-// TestStore_SendToAll_SkipsFilteredDevice proves allowDevice actually gates
-// delivery attempts: a fake push endpoint (httptest.Server) always answers
-// 201, so the returned delivered-count directly reflects how many
-// subscriptions were attempted — one blocked device must not be counted.
 func TestStore_SendToAll_SkipsFilteredDevice(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)

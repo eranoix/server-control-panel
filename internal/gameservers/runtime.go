@@ -9,20 +9,12 @@ import (
 	"strings"
 )
 
-// The server's INFRA options, which live in docker-compose.yml and not in the
-// game config: scheduled restart, auto-update time and how many backups to
-// keep.
-//
-// Editing the compose requires recreating the container for it to take effect
-// (env vars are read at creation time), which is why Apply runs `up -d`.
-
-// RuntimeOpt describes one editable env var of the compose.
 type RuntimeOpt struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 	Label string `json:"label"`
 	Help  string `json:"help"`
-	Kind  string `json:"kind"` // cron | int
+	Kind  string `json:"kind"`
 }
 
 var runtimeOpts = []RuntimeOpt{
@@ -38,7 +30,6 @@ var runtimeOpts = []RuntimeOpt{
 
 func composePath(s Server) string { return filepath.Join(s.Root, "docker-compose.yml") }
 
-// Runtime reads the current values of the compose env vars.
 func (m *Manager) Runtime(s Server) ([]RuntimeOpt, error) {
 	b, err := os.ReadFile(composePath(s))
 	if err != nil {
@@ -61,8 +52,6 @@ func readComposeEnv(txt, key string) string {
 	return ""
 }
 
-// cronOK validates 5 fields. It does not try to cover the whole dialect — only
-// to block what would clearly break the container's scheduler.
 var cronField = regexp.MustCompile(`^[\d*/,\-]+$`)
 
 func cronOK(v string) error {
@@ -78,7 +67,6 @@ func cronOK(v string) error {
 	return nil
 }
 
-// SetRuntime writes the env vars into the compose and recreates the container to apply them.
 func (m *Manager) SetRuntime(s Server, patch map[string]string) error {
 	known := map[string]RuntimeOpt{}
 	for _, o := range runtimeOpts {
@@ -115,16 +103,11 @@ func (m *Manager) SetRuntime(s Server, patch map[string]string) error {
 	for k, v := range patch {
 		txt = setComposeEnv(txt, k, v)
 	}
-	// Back up the compose before writing: if something goes wrong there is a way
-	// back. The .bak inherits owner and mode from the ORIGINAL (`ref` = path),
-	// otherwise it is born root:root beside a 4711 compose — the same class of
-	// defect, quieter, because nobody looks at a backup's owner until they need it.
 	_ = writeAtomic(path+".bak", b, path)
 	if err := writeAtomic(path, []byte(txt), path); err != nil {
 		return err
 	}
 
-	// The env vars only take effect when the container is recreated.
 	if m.dc == nil {
 		return fmt.Errorf("saved, but docker is unavailable to recreate the container")
 	}
@@ -134,13 +117,10 @@ func (m *Manager) SetRuntime(s Server, patch map[string]string) error {
 	return nil
 }
 
-// setComposeEnv replaces the value of an existing env var, or inserts it right
-// below the `environment:` block when it does not exist yet.
 func setComposeEnv(txt, key, val string) string {
 	re := regexp.MustCompile(`(?m)^(\s*)` + regexp.QuoteMeta(key) + `:\s*"?[^"\n]*"?\s*$`)
 	if re.MatchString(txt) {
 		if val == "" {
-			// Empty = drop the line (the scheduler treats absence as off).
 			return regexp.MustCompile(`(?m)^\s*`+regexp.QuoteMeta(key)+`:\s*"?[^"\n]*"?\s*\n`).
 				ReplaceAllString(txt, "")
 		}

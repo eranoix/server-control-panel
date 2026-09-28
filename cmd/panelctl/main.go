@@ -1,17 +1,3 @@
-// panelctl — local admin/recovery CLI for server-control-panel.
-//
-// Operates on /opt/panel/data directly. Does NOT talk to the HTTP API.
-// Designed to work even when the web UI is broken — SSH into the box, run
-// panelctl, recover.
-//
-// Subcommands:
-//
-//	panelctl status                 — service state + last login summary
-//	panelctl rollback               (runs $PANEL_ROLLBACK_COMMAND)
-//	panelctl health                 — run the same checks the server does at -check
-//	panelctl reset-password <user>  — set a new password (prompted)
-//	panelctl disable-2fa <user>     — clear TOTP secret for a user
-//	panelctl logs [-n N]            — tail audit log
 package main
 
 import (
@@ -197,8 +183,6 @@ func mustRun(err error) {
 	}
 }
 
-// ---------- status ----------
-
 func cmdStatus(args []string) error {
 	props := []string{"MainPID", "ActiveState", "SubState", "ExecMainStartTimestamp", "NRestarts"}
 	out, err := exec.Command("systemctl", "show", "server-control-panel",
@@ -228,11 +212,6 @@ func cmdStatus(args []string) error {
 	return nil
 }
 
-// ---------- admin (grant/revoke system-admin privileges) ----------
-
-// cmdAdmin manages the system-admin set in config.json. `add`/`remove` mutate
-// the per-user Admin flag and persist; the running daemon picks up the change
-// on its next restart (config is read at boot), so a restart note is printed.
 func cmdAdmin(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: panelctl admin <list|add|remove> [user]")
@@ -275,10 +254,6 @@ func cmdAdmin(args []string) error {
 	}
 }
 
-// ---------- rollback ----------
-
-// Rollback belongs to whatever installed the binaries, so panelctl only runs
-// the command the operator configured for it.
 func cmdRollback(args []string) error {
 	command := strings.TrimSpace(os.Getenv("PANEL_ROLLBACK_COMMAND"))
 	if command == "" {
@@ -289,8 +264,6 @@ func cmdRollback(args []string) error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
-
-// ---------- health ----------
 
 func cmdHealth(args []string) error {
 	cfg, err := config.Load()
@@ -326,20 +299,6 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-// ---------- auth-emergency-reset (Supabase) ----------
-
-// cmdAuthEmergencyReset resets a user's password directly in Supabase's
-// auth.users, through psql inside the supabase-db container. The sovereign
-// recovery channel when:
-//   - Supabase is alive but the user forgot the password (no SMTP recovery)
-//   - GoTrue is reachable but some specific /auth/v1/* route is stuck
-//   - servercontrolpanel-v2 is stopped but the admin needs to be sure they can log
-//     in once it comes up
-//
-// Reads the email from data/migration-uuid-map.json to map v2-username → email.
-// Runs psql through docker exec — no psql binary is needed on the host.
-//
-// Audits into data/audit.log with action="auth.emergency_reset" + source="panelctl".
 func cmdAuthEmergencyReset(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: panelctl auth-emergency-reset <user>")
@@ -379,12 +338,6 @@ func cmdAuthEmergencyReset(args []string) error {
 		return fmt.Errorf("password too short (min 8 chars)")
 	}
 
-	// SQL: bcrypt hash through pgcrypto's crypt() (the extension is already
-	// available in the auth schema — GoTrue depends on it). The password goes in
-	// dollar-quoted with the tag $panelrst$ — which escapes any content (Postgres
-	// treats it as an opaque literal until it meets the identical closing tag).
-	// The tag is swapped if the text contains $panelrst$ — a collision is
-	// 1-in-2^128 but the defence is trivial.
 	tag := "panelrst"
 	if strings.Contains(pwd, "$"+tag+"$") {
 		tag = "panelrst2"
@@ -404,8 +357,6 @@ func cmdAuthEmergencyReset(args []string) error {
 	}
 	fmt.Println(strings.TrimSpace(string(out)))
 
-	// Audit log entry — best-effort. A failure here does not undo the reset
-	// (it already completed in the DB).
 	if al, alErr := auth.NewAuditLog(filepath.Join(cfg.DataDir, "audit.log")); alErr == nil {
 		al.Append(auth.Event{
 			Time:   time.Now().Unix(),
@@ -419,8 +370,6 @@ func cmdAuthEmergencyReset(args []string) error {
 	return nil
 }
 
-// ---------- reset-password ----------
-
 func cmdResetPassword(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: panelctl reset-password <user>")
@@ -430,7 +379,6 @@ func cmdResetPassword(args []string) error {
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
-	// Confirm user exists.
 	found := false
 	for _, u := range cfg.AllUsers() {
 		if u.Username == user {
@@ -463,8 +411,6 @@ func cmdResetPassword(args []string) error {
 	return nil
 }
 
-// ---------- disable-2fa ----------
-
 func cmdDisable2FA(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: panelctl disable-2fa <user>")
@@ -484,8 +430,6 @@ func cmdDisable2FA(args []string) error {
 	return nil
 }
 
-// ---------- reset-recovery-totp ----------
-
 func cmdResetRecoveryTOTP(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: panelctl reset-recovery-totp <user>")
@@ -504,13 +448,6 @@ func cmdResetRecoveryTOTP(args []string) error {
 	fmt.Printf("recovery TOTP cleared for %s — next /recovery access requires re-enrollment via panelctl enroll-recovery-totp\n", user)
 	return nil
 }
-
-// ---------- enroll-recovery-totp ----------
-//
-// Generates a fresh recovery TOTP secret, prints the otpauth URL (the user can
-// paste into Aegis / 1Password / Google Authenticator manually) plus an
-// ASCII QR. Prompts the user to scan + type the current code; persists only
-// after validation. Safe to re-run — overwrites whatever was there.
 
 func cmdEnrollRecoveryTOTP(args []string) error {
 	if len(args) < 1 {
@@ -563,8 +500,6 @@ func userExists(cfg *config.Config, user string) bool {
 	return false
 }
 
-// ---------- logs ----------
-
 func cmdLogs(args []string) error {
 	fs := flag.NewFlagSet("logs", flag.ExitOnError)
 	n := fs.Int("n", 50, "number of entries to show")
@@ -582,8 +517,6 @@ func cmdLogs(args []string) error {
 	}
 	return nil
 }
-
-// ---------- helpers ----------
 
 func configPath() string {
 	if p := os.Getenv("PANEL_CONFIG"); p != "" {
@@ -616,8 +549,6 @@ func readPasswordTwice(label string) (string, error) {
 	}
 	return p1, nil
 }
-
-// ---------- account ----------
 
 func cmdAccount(args []string) error {
 	if len(args) == 0 {
@@ -672,8 +603,6 @@ func cmdAccount(args []string) error {
 		}
 
 		dir := store.ConfigDirForSession(*session, claudeacct.ConsumerTerminal)
-		// Output "dir=<value>" — consumed by the shell's cswap function to export
-		// CLAUDE_CONFIG_DIR in the parent process itself (a subprocess cannot do that).
 		fmt.Printf("dir=%s\n", dir)
 		return nil
 
@@ -682,8 +611,6 @@ func cmdAccount(args []string) error {
 	}
 }
 
-// readPasswordOrLine hides input when stdin is a TTY; otherwise reads a line
-// (useful for piping in scripts/tests).
 func readPasswordOrLine() (string, error) {
 	fd := int(syscall.Stdin)
 	if term.IsTerminal(fd) {

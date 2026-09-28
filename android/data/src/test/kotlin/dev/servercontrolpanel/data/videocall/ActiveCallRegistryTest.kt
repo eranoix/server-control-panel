@@ -18,8 +18,6 @@ class ActiveCallRegistryTest {
 
     @After
     fun tearDown() {
-        // ActiveCallRegistry is a process-wide singleton — leaking a registration across tests
-        // would make a later test's "unknown callId" assertion depend on execution order.
         ActiveCallRegistry.unregister("call-1")
         ActiveCallRegistry.unregister("call-2")
     }

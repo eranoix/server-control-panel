@@ -5,13 +5,6 @@ import (
 	"time"
 )
 
-// The recovery session can be RENEWED while work is happening
-// — being disconnected in the middle of a repair is the worst possible
-// moment to repeat password + TOTP. What keeps this from becoming an eternal
-// privileged session is the instant of LOGIN surviving the renewals: that is where
-// the absolute ceiling comes from. If `ini` were reset on every renewal, the ceiling
-// would cease to exist with nothing visibly breaking — which is why the guarantee is
-// asserted here.
 func service(t *testing.T) *Service {
 	t.Helper()
 	return New("test-secret-with-enough-length-1234", nil)
@@ -25,7 +18,6 @@ func TestRenewPreservesLoginInstant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
-	// Renew twice, as would happen over a long working session.
 	for i := 0; i < 2; i++ {
 		start, err := s.RecoveryTokenStart(tok)
 		if err != nil {
@@ -49,8 +41,6 @@ func TestRenewPreservesLoginInstant(t *testing.T) {
 	}
 }
 
-// A renewed token is still a recovery token and still belongs to the same user —
-// no escalating the kind or changing owner along the way.
 func TestRenewedTokenStaysRecovery(t *testing.T) {
 	s := service(t)
 	tok, err := s.IssueRecoveryTokenFrom("sam", 30*time.Minute, time.Now())
@@ -61,17 +51,11 @@ func TestRenewedTokenStaysRecovery(t *testing.T) {
 	if err != nil || user != "sam" {
 		t.Fatalf("verify: user=%q err=%v", user, err)
 	}
-	// And it must not pass as a normal session token: Parse() is what the
-	// panel's middleware uses, and it rejects kind != "" and != "session".
 	if _, err := s.Parse(tok); err == nil {
 		t.Error("recovery token was accepted as a normal session — privilege escalation")
 	}
 }
 
-// Tokens issued BEFORE the `ini` claim existed do not carry it. They have to
-// stay renewable, using `iat` (which, for them, is the same instant) —
-// otherwise a deploy would disconnect everyone who was in the middle of a
-// repair, which is exactly what this work is meant to avoid.
 func TestOldTokenWithoutStartStillWorks(t *testing.T) {
 	s := service(t)
 	tok, err := s.IssueRecoveryToken("sam", 30*time.Minute)
@@ -87,8 +71,6 @@ func TestOldTokenWithoutStartStillWorks(t *testing.T) {
 	}
 }
 
-// An expired token does not renew: renewal extends what is ALIVE, it does not
-// resurrect what already died.
 func TestExpiredTokenCannotRenew(t *testing.T) {
 	s := service(t)
 	tok, err := s.IssueRecoveryTokenFrom("sam", -time.Minute, time.Now().Add(-time.Hour))

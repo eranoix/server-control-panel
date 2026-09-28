@@ -9,10 +9,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Tests `rowActionInvocation`, which shapes a table row action the way the
- * server expects before it reaches `ActionRunner`.
- */
 class TableRowActionTest {
 
     private fun confirmDestructive(actionId: String) = SduiComponent.ConfirmDestructive(

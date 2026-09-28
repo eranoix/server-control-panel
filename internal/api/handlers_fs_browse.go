@@ -1,18 +1,3 @@
-// handlers_fs_browse.go — folder pickers for the scheduler UI.
-//
-// Two browsers, both primary-only:
-//
-//	GET /api/fs/browse?path=/abs        → subdirectories on the VPS host
-//	GET /api/backup/remotes             → configured rclone remotes (cloud)
-//	GET /api/backup/remote-browse?remote=&path= → folders inside a remote
-//
-// These power the "browse" buttons so the operator picks a backup
-// destination by browsing instead of typing a path. rclone is the cloud
-// abstraction (Google Drive, OneDrive, S3, Dropbox, … all via one mechanism);
-// if it isn't installed the cloud picker degrades gracefully (installed:false).
-//
-// Primary-only is the right gate: primary already has full shell/exec on the
-// host, so directory listing grants no new privilege.
 package api
 
 import (
@@ -40,7 +25,6 @@ type fsDir struct {
 	Path string `json:"path"`
 }
 
-// handleFSBrowse lists subdirectories of an absolute host path.
 func (r *Router) handleFSBrowse(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -62,12 +46,11 @@ func (r *Router) handleFSBrowse(w http.ResponseWriter, req *http.Request) {
 	dirs := make([]fsDir, 0, len(entries))
 	for i, e := range entries {
 		if i >= 2000 {
-			break // cap — do not dump giant directories
+			break
 		}
 		name := e.Name()
 		full := filepath.Join(path, name)
 		isDir := e.IsDir()
-		// Resolve symlinks that point at a directory.
 		if !isDir && e.Type()&fs.ModeSymlink != 0 {
 			if st, sErr := os.Stat(full); sErr == nil && st.IsDir() {
 				isDir = true
@@ -82,7 +65,6 @@ func (r *Router) handleFSBrowse(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]any{"path": path, "parent": parent, "dirs": dirs})
 }
 
-// validRemoteName accepts an rclone remote name (alnum + _-).
 func validRemoteName(s string) bool {
 	if s == "" || len(s) > 64 {
 		return false
@@ -95,7 +77,6 @@ func validRemoteName(s string) bool {
 	return true
 }
 
-// handleBackupRemotes lists configured rclone remotes (cloud destinations).
 func (r *Router) handleBackupRemotes(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -120,21 +101,12 @@ func (r *Router) handleBackupRemotes(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]any{"installed": true, "remotes": remotes})
 }
 
-// rcloneConnectTypes is the allowlist of remote backends the in-app connect
-// flow supports. Token-based ones use the headless OAuth recipe (the user runs
-// `rclone authorize "<type>"` on a machine with a browser and pastes the token);
-// s3 uses access key/secret.
 var rcloneConnectTypes = map[string]bool{
 	"drive": true, "onedrive": true, "dropbox": true, "box": true,
 	"pcloud": true, "yandex": true, "b2": true, "s3": true,
 	"sftp": true, "webdav": true, "ftp": true,
 }
 
-// handleBackupRemoteConnect creates an rclone remote from the UI (primary-only),
-// so the operator never has to drop to a terminal. Inputs are passed to rclone
-// as an argv slice (no shell), and --non-interactive keeps rclone from blocking
-// on a prompt. For OAuth backends the token is obtained by the user out-of-band
-// (rclone authorize on their own browser machine) and pasted here.
 func (r *Router) handleBackupRemoteConnect(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -164,7 +136,6 @@ func (r *Router) handleBackupRemoteConnect(w http.ResponseWriter, req *http.Requ
 		writeErr(w, 400, "bad json")
 		return
 	}
-	// Automatic in-app OAuth: take the token captured by the authorize session.
 	if body.SessionID != "" {
 		rcAuthMu.Lock()
 		s, ok := rcAuthSessions[body.SessionID]
@@ -195,19 +166,12 @@ func (r *Router) handleBackupRemoteConnect(w http.ResponseWriter, req *http.Requ
 		writeErr(w, 400, "rclone is not installed on the host")
 		return
 	}
-	// Reject any user value that could be smuggled as an rclone/cobra flag.
-	// Defense-in-depth alongside the `--` end-of-options marker below: even
-	// though this is primary-only (the caller already has shell), a value like
-	// "--config=/x" must never be interpreted as a flag.
 	for _, v := range []string{body.Provider, body.AccessKey, body.Secret, body.Region, body.Endpoint, body.Host, body.User, body.Pass, body.Port, body.URL, body.KeyFile, strings.TrimSpace(body.Token)} {
 		if strings.HasPrefix(v, "-") {
 			writeErr(w, 400, "invalid value (cannot start with '-')")
 			return
 		}
 	}
-	// Flags BEFORE `--`; all user-controlled positionals AFTER it, so cobra
-	// stops flag parsing and treats name/type/key/values as literal. --obscure
-	// makes rclone obfuscate password fields (sftp/webdav/ftp).
 	preArgs := []string{"config", "create", "--non-interactive"}
 	var args []string
 	switch body.Type {
@@ -269,7 +233,7 @@ func (r *Router) handleBackupRemoteConnect(w http.ResponseWriter, req *http.Requ
 		if body.Pass != "" {
 			args = append(args, "pass", body.Pass)
 		}
-	default: // OAuth (drive/onedrive/dropbox/box/pcloud/yandex/b2): pasted token
+	default:
 		if strings.TrimSpace(body.Token) == "" {
 			writeErr(w, 400, "paste the token produced by: rclone authorize \""+body.Type+"\"")
 			return
@@ -287,7 +251,6 @@ func (r *Router) handleBackupRemoteConnect(w http.ResponseWriter, req *http.Requ
 	writeJSON(w, map[string]any{"ok": true, "name": body.Name})
 }
 
-// handleBackupRemoteBrowse lists folders inside an rclone remote path.
 func (r *Router) handleBackupRemoteBrowse(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -329,14 +292,6 @@ func (r *Router) handleBackupRemoteBrowse(w http.ResponseWriter, req *http.Reque
 	writeJSON(w, map[string]any{"remote": remote, "path": rpath, "dirs": dirs})
 }
 
-// ── automatic in-app OAuth ──
-// Orchestrates `rclone authorize "<type>"`: the process prints a
-// http://127.0.0.1:53682/auth?... URL and waits for the OAuth callback. The
-// user opens that URL in server-control-panel's OWN BROWSER (the persistent Chrome runs
-// ON the VPS, so it reaches 127.0.0.1) and signs in; rclone captures the token
-// and prints it. We capture the token and create the remote — all without a
-// second browser.
-
 type rcAuthSession struct {
 	Typ     string
 	URL     string
@@ -359,7 +314,6 @@ func newRCAuthID() string {
 	return hex.EncodeToString(b)
 }
 
-// rcAuthCleanupLocked removes sessions older than 15 min (the caller holds rcAuthMu).
 func rcAuthCleanupLocked() {
 	for id, s := range rcAuthSessions {
 		if time.Since(s.created) > 15*time.Minute {
@@ -371,7 +325,6 @@ func rcAuthCleanupLocked() {
 	}
 }
 
-// handleBackupRemoteAuthorize starts the automatic OAuth flow for a token-based type.
 func (r *Router) handleBackupRemoteAuthorize(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -387,7 +340,6 @@ func (r *Router) handleBackupRemoteAuthorize(w http.ResponseWriter, req *http.Re
 		writeErr(w, 400, "bad json")
 		return
 	}
-	// Only makes sense for OAuth (token) backends; s3/sftp/ftp/webdav do not use this.
 	switch body.Type {
 	case "s3", "sftp", "ftp", "webdav", "":
 		writeErr(w, 400, "this type does not use OAuth login")
@@ -416,9 +368,6 @@ func (r *Router) handleBackupRemoteAuthorize(w http.ResponseWriter, req *http.Re
 	rcAuthSessions[id] = sess
 	rcAuthMu.Unlock()
 
-	// Wait for the process and CLOSE pw: without that the reader below never gets
-	// EOF (pw is not an *os.File, so os/exec does not close it) and the goroutine
-	// plus the process stayed stuck forever on every authorize.
 	waitErr := make(chan error, 1)
 	go func() {
 		err := cmd.Wait()
@@ -426,7 +375,6 @@ func (r *Router) handleBackupRemoteAuthorize(w http.ResponseWriter, req *http.Re
 		waitErr <- err
 	}()
 
-	// Read the output: capture the URL and the token (between the ---> / <---End paste markers).
 	go func() {
 		sc := bufio.NewScanner(pr)
 		sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
@@ -441,7 +389,6 @@ func (r *Router) handleBackupRemoteAuthorize(w http.ResponseWriter, req *http.Re
 			}
 			if strings.Contains(line, "--->") {
 				capturing = true
-				// take whatever follows the marker on the same line
 				if i := strings.Index(line, "--->"); i >= 0 {
 					rest := strings.TrimSpace(line[i+4:])
 					if rest != "" && !strings.Contains(rest, "<---") {
@@ -458,7 +405,7 @@ func (r *Router) handleBackupRemoteAuthorize(w http.ResponseWriter, req *http.Re
 				tok.WriteString(strings.TrimSpace(line))
 			}
 		}
-		<-waitErr // process already exited (Wait done above)
+		<-waitErr
 		rcAuthMu.Lock()
 		t := strings.TrimSpace(tok.String())
 		if t != "" {
@@ -470,7 +417,6 @@ func (r *Router) handleBackupRemoteAuthorize(w http.ResponseWriter, req *http.Re
 		rcAuthMu.Unlock()
 	}()
 
-	// Safety timeout: kill the process if nobody completes the sign-in.
 	go func() {
 		time.Sleep(5 * time.Minute)
 		rcAuthMu.Lock()
@@ -486,7 +432,6 @@ func (r *Router) handleBackupRemoteAuthorize(w http.ResponseWriter, req *http.Re
 	writeJSON(w, map[string]any{"id": id})
 }
 
-// handleBackupRemoteAuthorizeStatus reports the URL to open and whether the token arrived.
 func (r *Router) handleBackupRemoteAuthorizeStatus(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return

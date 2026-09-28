@@ -1,29 +1,5 @@
 package main
 
-// session_transcript.go — export a Claude Code session transcript (JSONL) to
-// readable markdown, keyed to a ticket/session.
-//
-// Claude Code writes one JSONL per session under
-// <claude-home>/projects/<mangled-cwd>/<session-uuid>.jsonl, where the file
-// basename IS the session id (and the mangled dir is the cwd with every
-// non-alphanumeric char replaced by '-'). This subcommand locates the right
-// JSONL — by session id, by cwd (newest in that project), or by an explicit
-// project dir — and renders the user/assistant turns to markdown.
-//
-//   panelctl session-transcript --session <uuid> [--home DIR] [--out FILE]
-//   panelctl session-transcript --cwd /opt/panel [--out FILE]   # newest
-//   panelctl session-transcript --project -opt-panel [--out FILE]
-//
-// Flags:
-//   --session  session id (JSONL basename, with or without .jsonl)
-//   --cwd      working dir of the session; mapped to the project dir
-//   --project  explicit mangled project dir name (escape hatch)
-//   --home     Claude home holding projects/ (default /root/.claude)
-//   --user     label only (recorded in the header)
-//   --out      output file; default: stdout
-//   --thinking include assistant "thinking" blocks
-//   --tools    include tool_use / tool_result blocks
-
 import (
 	"bufio"
 	"encoding/json"
@@ -74,16 +50,12 @@ func cmdSessionTranscript(args []string) error {
 	return nil
 }
 
-// projectMangle mirrors Claude Code's cwd->project-dir mapping: every
-// non-alphanumeric character becomes '-'.
 var nonAlnumRe = regexp.MustCompile(`[^a-zA-Z0-9]`)
 
 func projectMangle(cwd string) string {
 	return nonAlnumRe.ReplaceAllString(cwd, "-")
 }
 
-// locateTranscript resolves the JSONL path from the given selectors, in
-// priority order: explicit session id -> cwd (newest) -> project dir (newest).
 func locateTranscript(home, session, cwd, project string) (string, error) {
 	projectsDir := filepath.Join(home, "projects")
 	if fi, err := os.Stat(projectsDir); err != nil || !fi.IsDir() {
@@ -92,7 +64,6 @@ func locateTranscript(home, session, cwd, project string) (string, error) {
 
 	if session != "" {
 		base := strings.TrimSuffix(session, ".jsonl") + ".jsonl"
-		// Search a specific project first if provided, else all projects.
 		var globs []string
 		if project != "" {
 			globs = []string{filepath.Join(projectsDir, project, base)}
@@ -110,7 +81,6 @@ func locateTranscript(home, session, cwd, project string) (string, error) {
 		return "", fmt.Errorf("no JSONL for session %q under %s", session, projectsDir)
 	}
 
-	// No session id: pick the newest JSONL in the resolved project dir.
 	var dir string
 	switch {
 	case cwd != "":
@@ -150,8 +120,6 @@ func newestJSONL(dir string) (string, error) {
 	return cands[0].path, nil
 }
 
-// --- JSONL rendering ---
-
 type transcriptLine struct {
 	Type      string          `json:"type"`
 	Timestamp string          `json:"timestamp"`
@@ -181,7 +149,7 @@ type contentBlock struct {
 	Thinking string          `json:"thinking,omitempty"`
 	Name     string          `json:"name,omitempty"`
 	Input    json.RawMessage `json:"input,omitempty"`
-	Content  json.RawMessage `json:"content,omitempty"` // tool_result payload
+	Content  json.RawMessage `json:"content,omitempty"`
 }
 
 func renderTranscript(path, user string, thinking, tools bool) (string, error) {
@@ -205,7 +173,7 @@ func renderTranscript(path, user string, thinking, tools bool) (string, error) {
 		}
 		var tl transcriptLine
 		if err := json.Unmarshal(line, &tl); err != nil {
-			continue // skip queue-operation / malformed lines
+			continue
 		}
 		if tl.CWD != "" && meta.CWD == "" {
 			meta = tl
@@ -244,7 +212,6 @@ func renderTranscript(path, user string, thinking, tools bool) (string, error) {
 		return "", err
 	}
 
-	// Header + token summary (usable for cost/token reporting).
 	fmt.Fprintf(&b, "# Transcript — %s\n\n", filepath.Base(path))
 	if user != "" {
 		fmt.Fprintf(&b, "- **user**: %s\n", user)
@@ -265,9 +232,7 @@ func renderTranscript(path, user string, thinking, tools bool) (string, error) {
 	return b.String(), nil
 }
 
-// renderBlocks turns a message's content (string or block array) into markdown.
 func renderBlocks(env msgEnvelope, thinking, tools bool) string {
-	// content may be a plain string (typical for simple user turns).
 	var asString string
 	if err := json.Unmarshal(env.Content, &asString); err == nil {
 		return asString
@@ -300,7 +265,6 @@ func renderBlocks(env msgEnvelope, thinking, tools bool) string {
 	return strings.Join(parts, "\n\n")
 }
 
-// toolResultText flattens a tool_result content (string or block array) to text.
 func toolResultText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""

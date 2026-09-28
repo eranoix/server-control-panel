@@ -1,23 +1,4 @@
 #!/usr/bin/env node
-// test-sidebar-hover.mjs — the two side rails: they expand on hover and
-// COLLAPSE when the mouse leaves, even after a click on them.
-//   • left (navigation)
-//   • right (terminal actions)
-//
-// THE BUG: the expansion is pure CSS, triggered by `:hover` OR `:focus-within`.
-// Clicking a nav item focuses the element (they are `div[role=button]
-// [tabindex="0"]` and `<button>`), and the focus does NOT leave when the pointer
-// does — so `:focus-within` stays true and the rail stays open until the user
-// clicks somewhere else. That was exactly the reported symptom.
-//
-// WHY THE TEST RUNS IN A REAL BROWSER: this is CSS behaviour (cascade,
-// specificity, the browser's own :focus-visible heuristic). No textual assertion
-// over the file would prove that the rail collapses — and a textual assertion is
-// precisely what let bugs through before. Here Chrome loads the REAL CSS
-// extracted from index.html, the mouse clicks and leaves, and the computed width
-// is measured.
-//
-// Usage: scripts/test-sidebar-hover.mjs [path-to-index.html]
 import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -37,12 +18,6 @@ const chrome = ['/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/snap/bi
   .find(p => { try { readFileSync(p); return true; } catch { return false; } });
 if (!chrome) { console.log('  ⚠ no Chrome — test skipped (not a failure)'); process.exit(0); }
 
-// The app's REAL CSS: every <style> in index.html. Copying the rules by hand
-// would make the test diverge from the product exactly when it mattered.
-// Production loads tailwind.css BEFORE the inline <style> blocks (line 16 of
-// index.html), and that is where the box-sizing reset comes from. Without it the
-// harness measures a cascade that exists nowhere — that is how the rail showed up
-// 14px outside the viewport in a test meant to reflect the real screen.
 let reset = '';
 for (const cand of [join(dirname(target), 'tailwind.css'),
                     join(root, 'internal/webassets/web/tailwind.css')]) {
@@ -53,15 +28,9 @@ reset
   : no('could not find tailwind.css next to index.html — the test cascade does not match production');
 let css = reset + '\n' + [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(m => m[1]).join('\n');
 
-// Headless Chrome reports `hover: none` and will NOT let you emulate the
-// opposite (Emulation.setEmulatedMedia does not cover that media feature).
-// Untreated, the `@media (hover: hover)` wrapping the rail rules would not even
-// match and the test would measure an inert page — a false green at the exact
-// point it exists to watch. We neutralise ONLY the environment predicate; the
-// rail rules stay byte for byte the ones in the product.
 const GATE = /\(hover: hover\) and |and \(hover: hover\)/g;
 const swaps = (css.match(GATE) || []).length;
-const rawCss = css;                 // with the gate intact = an environment without hover
+const rawCss = css;
 css = css.replace(GATE, '');
 if (swaps === 2) {
   ok(`@media (hover) gate neutralised in the harness (${swaps} occurrences: left rail + right rail)`);
@@ -69,7 +38,6 @@ if (swaps === 2) {
   no(`expected 2 '(hover: hover)' gates in index.html (left rail and right rail), found ${swaps} — the CSS was restructured and this test may be measuring an inert page`);
 }
 
-// Minimal DOM with the SAME structure as the product: focusable items inside the rail.
 const page = `<!doctype html><html><head><meta charset="utf-8"><style>
   html,body{margin:0;padding:0;height:100%}
   ${css}
@@ -141,13 +109,11 @@ try {
   const COLLAPSED = 50.6, EXPANDED = 240;
   const px = (v) => parseFloat(String(v));
 
-  // Initial state: collapsed.
   let w = px(await width(cdp));
   Math.abs(w - COLLAPSED) < 2
     ? ok(`starts collapsed (${w}px)`)
     : no(`did not start collapsed: ${w}px`);
 
-  // Hover expands — the very function the rail exists to have.
   const targetNav = await center(cdp, 'nav1');
   await cdp.mouse('mouseMoved', targetNav.x, targetNav.y);
   await sleep(400);
@@ -156,7 +122,6 @@ try {
     ? ok(`hover expands (${w}px)`)
     : no(`hover did not expand: ${w}px`);
 
-  // Mouse leaves with NO click: it has to collapse (the path that already worked).
   await cdp.mouse('mouseMoved', 900, 600);
   await sleep(400);
   w = px(await width(cdp));
@@ -164,7 +129,6 @@ try {
     ? ok(`mouse leaves with no click → collapses (${w}px)`)
     : no(`stayed open after leaving without a click: ${w}px`);
 
-  // ── THE BUG: click an item and take the mouse away ────────────────────
   await cdp.mouse('mouseMoved', targetNav.x, targetNav.y);
   await sleep(150);
   await cdp.mouse('mousePressed', targetNav.x, targetNav.y, 'left', 1);
@@ -178,7 +142,6 @@ try {
     ? ok(`CLICKS the item and takes the mouse away → collapses (${w}px)`)
     : no(`CRITICAL: stayed open after click+leave (${w}px) — focus on '${focused}' is holding the rail`);
 
-  // Same thing through the search button (it is a <button>, it focuses even more easily).
   const targetSearch = await center(cdp, 'search');
   await cdp.mouse('mouseMoved', targetSearch.x, targetSearch.y);
   await sleep(150);
@@ -191,9 +154,6 @@ try {
     ? ok(`clicks the search button and takes the mouse away → collapses (${w}px)`)
     : no(`stayed open after clicking the search button (${w}px)`);
 
-  // ── Accessibility: the keyboard must NOT lose the expansion ───────────
-  // Tabbing through has to open the rail, otherwise keyboard users see icons
-  // only. That is why the fix cannot be "remove :focus-within".
   await cdp.eval("document.getElementById('sb').focus?.()");
   await cdp.eval("document.body.focus()");
   await sleep(100);
@@ -210,13 +170,6 @@ try {
     no('Tab did not move focus into the rail — the keyboard could not be verified');
   }
 
-  // ══ RIGHT RAIL (terminal actions) ═════════════════════════════════════
-  // The rail is a flex sibling of the terminal. If the expansion changed the
-  // IN-FLOW width, every hover would reflow the terminal — and a reflow there
-  // fires an xterm refit and a SIGWINCH on the PTY, i.e. the screen REPAINTS.
-  // Moving the mouse would cause the same damage a deploy used to cause. So the
-  // central assertion here is not "it expanded": it is "the terminal did NOT
-  // change width while expanding".
   const termPage = `<!doctype html><html><head><meta charset="utf-8"><style>
     html,body{margin:0;padding:0;height:100%}
     ${css}
@@ -244,7 +197,6 @@ try {
     ? ok(`the right rail starts thin (${wr}px) — only the grip hinting something is there`)
     : no(`the right rail did not start thin: ${wr}px`);
 
-  // Content invisible while collapsed (otherwise clipped icons leak into the rail).
   const buttonOpacity = await cdp.eval("getComputedStyle(document.getElementById('tsb1')).opacity");
   parseFloat(buttonOpacity) === 0
     ? ok('buttons invisible with the rail collapsed')
@@ -276,8 +228,6 @@ try {
     ? ok(`mouse leaves → the right rail retracts (${wr}px)`)
     : no(`the right rail stayed open after the mouse left: ${wr}px`);
 
-  // The left rail lesson applied here: clicking a <button> in the rail must not
-  // pin it open.
   await cdp.mouse('mouseMoved', targetRail.x, targetRail.y);
   await sleep(250);
   const targetBtn = await center(cdp, 'tsb1');
@@ -290,7 +240,6 @@ try {
     ? ok(`clicks a rail button and takes the mouse away → retracts (${wr}px)`)
     : no(`CRITICAL: the right rail was pinned open after a click (${wr}px) — :focus-within is back`);
 
-  // Keyboard: whoever navigates by Tab needs to see the rail open.
   await cdp.eval("document.body.focus()");
   await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
@@ -305,10 +254,6 @@ try {
     no(`Tab did not focus a rail button (it went to '${railFocus}')`);
   }
 
-  // ── Touch fallback: with no hover, the rail has to stay VISIBLE ────────
-  // Expand-on-hover is unreachable on a tablet. Headless is, by nature, a device
-  // without hover — so loading the CSS with the gate INTACT (`rawCss`) is
-  // enough to exercise exactly what a tablet ≥768px would see.
   {
     const touchPage = `<!doctype html><html><head><meta charset="utf-8"><style>
       html,body{margin:0;padding:0;height:100%}
@@ -332,11 +277,6 @@ try {
       : no(`with no hover the rail came out ${wt}px / opacity ${opac} — on a tablet the actions would be unreachable`);
   }
 
-  // ── The CSS trap the fix has to keep avoiding ─────────────────────────
-  // A selector list is all-or-nothing: ONE invalid selector invalidates the WHOLE
-  // RULE. A bare `:has()` next to `:hover` means that, in a browser without
-  // `:has()` support, the rail loses EVEN the hover and never expands. Inside
-  // `:is()`/`:where()` the list is forgiving and the degradation stays contained.
   {
     const rules = [...css.matchAll(/([^{}]+)\{[^{}]*\}/g)].map(m => m[1]);
     const dangerous = rules.filter(sel =>

@@ -12,10 +12,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.random.Random
 
-/**
- * Hands out a queued sequence of tickets, so a reused ticket is detectable. The [yield] mimics a
- * network suspension; without it the MINTING_TICKET state is conflated away before a collector sees it.
- */
 private class FakeTicketSource(private val tickets: MutableList<String>) : MobileEventsTicketSource {
     var callCount = 0
         private set
@@ -28,7 +24,6 @@ private class FakeTicketSource(private val tickets: MutableList<String>) : Mobil
     }
 }
 
-/** Records every frame it was asked to send. */
 private class RecordingWebSocket : MobileEventsWebSocket {
     val textFrames = mutableListOf<String>()
     var closed: Pair<Int, String>? = null
@@ -44,7 +39,6 @@ private class RecordingWebSocket : MobileEventsWebSocket {
     }
 }
 
-/** Records the URL of every open() call and returns a [RecordingWebSocket]. */
 private class FakeWebSocketFactory : MobileEventsWebSocketFactory {
     val openedUrls = mutableListOf<String>()
     val sockets = mutableListOf<RecordingWebSocket>()
@@ -72,7 +66,6 @@ class MobileEventsSocketTest {
         val differentSeed = eventsBackoffDelayMs(1, Random(7))
         assertNotEquals("a different seed must move the jitter away from the first delay", same1, differentSeed)
 
-        // Both stay within the +/-20% jitter band.
         assertTrue(same1 in 800L..1200L)
         assertTrue(differentSeed in 800L..1200L)
     }
@@ -82,7 +75,6 @@ class MobileEventsSocketTest {
         val random = Random(1)
         val delays = (1..8).map { eventsBackoffDelayMs(it, random) }
         assertTrue("delay must never exceed the 60s cap", delays.all { it <= 60_000L })
-        // Attempts 7 and 8 exceed 60s before capping.
         assertTrue(delays[6] in 48_000L..60_000L)
         assertTrue(delays[7] in 48_000L..60_000L)
     }
@@ -128,7 +120,6 @@ class MobileEventsSocketTest {
         val factory = FakeWebSocketFactory()
         val ticketSource = FakeTicketSource(mutableListOf("t1", "t2", "t3"))
         val delays = mutableListOf<Long>()
-        // A real delay freezes the loop in BACKOFF under virtual time; a no-op would race past it.
         val client = MobileEventsSocket(
             ticketSource = ticketSource,
             scope = backgroundScope,
@@ -145,9 +136,8 @@ class MobileEventsSocketTest {
 
         assertEquals(ConnectionState.BACKOFF, client.state.value)
         assertEquals(1, delays.size)
-        assertEquals(1, ticketSource.callCount) // backoff has not elapsed yet
+        assertEquals(1, ticketSource.callCount)
 
-        // Only after the backoff is a fresh ticket minted and a second socket opened.
         advanceTimeBy(delays[0] + 1)
         runCurrent()
 
@@ -157,7 +147,6 @@ class MobileEventsSocketTest {
         assertTrue(factory.openedUrls[1].contains("ticket=t2"))
         assertFalse("reconnect must never reuse the previous ticket", factory.openedUrls[1].contains("ticket=t1"))
 
-        // A second consecutive failure must back off for at least as long as the first.
         factory.listeners[1].onFailure("handshake failed again")
         runCurrent()
         assertEquals(ConnectionState.BACKOFF, client.state.value)
@@ -195,7 +184,6 @@ class MobileEventsSocketTest {
         assertEquals(ConnectionState.DISCONNECTED, client.state.value)
         assertEquals(1000 to "background", factory.sockets[0].closed)
 
-        // Nothing further may happen after stop: no new ticket, no new socket.
         val ticketCallsAtStop = ticketSource.callCount
         val socketsOpenedAtStop = factory.openedUrls.size
         runCurrent()
@@ -276,12 +264,10 @@ class MobileEventsSocketTest {
             delayer = recordingDelayer(mutableListOf()),
         )
 
-        // DISCONNECTED: dropped, not queued.
         assertFalse(client.send(ClientOp("subscribe", "notify.inbox")))
 
         client.start()
         runCurrent()
-        // Still CONNECTING (no onOpen yet), also dropped.
         assertFalse(client.send(ClientOp("subscribe", "notify.inbox")))
 
         factory.listeners[0].onOpen()

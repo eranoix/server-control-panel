@@ -10,21 +10,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * An attachment must not vanish when the session is down: `TerminalSocketClient.send`
- * silently drops bytes when there is no socket, so the row may only leave the bar
- * after a successful insert. Exercises [AttachmentBar] with the connection up and down.
- */
 @RunWith(RobolectricTestRunner::class)
 class AttachmentOfflineInsertionTest {
 
     @get:Rule
     val composeRule = createComposeRule()
 
-    /**
-     * Mirrors the screen's insertion rule without the ViewModel (which needs
-     * WorkManager): insert only when the terminal is up, and only then discard.
-     */
     private fun build(
         terminalReady: Boolean,
         attachments: List<ScreenAttachment>,
@@ -75,7 +66,6 @@ class AttachmentOfflineInsertionTest {
 
         composeRule.onNodeWithText(INSERT_LABEL).performClick()
 
-        // The attachment must stay in the bar: the send never reached the PTY.
         assertNull(inserted)
         assertNull(discarded)
         composeRule.onNodeWithText("/srv/inbox/photo.jpg").assertExists()

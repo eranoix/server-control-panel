@@ -10,16 +10,9 @@ import (
 	"path/filepath"
 )
 
-// This file holds persistence (load/save under <DataDir>/notify/) and the
-// public CRUD surface the API layer (handlers_notify.go, Commit 6) drives.
-// Config mutations are copy-on-write under cfgMu: build a fresh slice/map, swap
-// the pointer, persist. The worker never sees a half-mutated config.
-
 func (r *Router) rulesPath() string    { return filepath.Join(r.dir, "rules.json") }
 func (r *Router) channelsPath() string { return filepath.Join(r.dir, "channels.json") }
 
-// load reads persisted rules + channels. Missing files are not an error (first
-// boot starts empty); corrupt files are.
 func (r *Router) load() error {
 	var rules []Rule
 	if err := readJSON(r.rulesPath(), &rules); err != nil {
@@ -41,7 +34,6 @@ func (r *Router) load() error {
 	return nil
 }
 
-// readJSON unmarshals path into v; a non-existent file is a no-op (v unchanged).
 func readJSON(path string, v any) error {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -59,9 +51,6 @@ func readJSON(path string, v any) error {
 	return nil
 }
 
-// writeJSONAtomic persists v to path via tmp+fsync+rename (mirrors
-// scheduler.saveLocked): without the Sync the rename can update the inode
-// before the bytes hit disk, so a power-loss could resurrect an empty file.
 func writeJSONAtomic(path string, v any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -92,8 +81,6 @@ func writeJSONAtomic(path string, v any) error {
 	return os.Rename(tmp, path)
 }
 
-// saveRulesLocked / saveChannelsLocked persist the current config. Call under
-// cfgMu.Lock (they read r.rules / r.channelsC).
 func (r *Router) saveRulesLocked() error {
 	return writeJSONAtomic(r.rulesPath(), r.rules)
 }
@@ -111,9 +98,6 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
-// ── Rules CRUD ───────────────────────────────────────────────────────────────
-
-// Rules returns a copy of the configured rules.
 func (r *Router) Rules() []Rule {
 	r.cfgMu.RLock()
 	defer r.cfgMu.RUnlock()
@@ -122,8 +106,6 @@ func (r *Router) Rules() []Rule {
 	return out
 }
 
-// UpsertRule inserts (empty ID) or replaces a rule by ID, persists, and returns
-// the stored rule. Copy-on-write: a brand-new slice is published.
 func (r *Router) UpsertRule(rl Rule) (Rule, error) {
 	r.cfgMu.Lock()
 	defer r.cfgMu.Unlock()
@@ -150,7 +132,6 @@ func (r *Router) UpsertRule(rl Rule) (Rule, error) {
 	return rl, nil
 }
 
-// DeleteRule removes a rule by ID (no-op if absent) and persists.
 func (r *Router) DeleteRule(id string) error {
 	r.cfgMu.Lock()
 	defer r.cfgMu.Unlock()
@@ -164,9 +145,6 @@ func (r *Router) DeleteRule(id string) error {
 	return r.saveRulesLocked()
 }
 
-// ── Channels CRUD ────────────────────────────────────────────────────────────
-
-// ChannelDefs returns a copy of the configured destinations.
 func (r *Router) ChannelDefs() []ChannelDef {
 	r.cfgMu.RLock()
 	defer r.cfgMu.RUnlock()
@@ -177,9 +155,6 @@ func (r *Router) ChannelDefs() []ChannelDef {
 	return out
 }
 
-// ChannelDefsRedacted is ChannelDefs with secret fields blanked — what the GET
-// endpoint returns so credentials never round-trip through the browser. A blank
-// secret on a subsequent edit means "keep" (see UpsertChannel).
 func (r *Router) ChannelDefsRedacted() []ChannelDef {
 	defs := r.ChannelDefs()
 	for i := range defs {
@@ -189,16 +164,12 @@ func (r *Router) ChannelDefsRedacted() []ChannelDef {
 	return defs
 }
 
-// UpsertChannel inserts (empty ID) or replaces a channel by ID and persists.
 func (r *Router) UpsertChannel(c ChannelDef) (ChannelDef, error) {
 	r.cfgMu.Lock()
 	defer r.cfgMu.Unlock()
 	if c.ID == "" {
 		c.ID = newID()
 	}
-	// Secret preservation: the GET listing redacts BotToken/SMTPPass, so an edit
-	// round-trips them blank. Treat blank-on-update as "keep existing" so the
-	// operator doesn't have to re-type secrets to change other fields.
 	if old, ok := r.channelsC[c.ID]; ok {
 		if c.Config.BotToken == "" {
 			c.Config.BotToken = old.Config.BotToken
@@ -219,7 +190,6 @@ func (r *Router) UpsertChannel(c ChannelDef) (ChannelDef, error) {
 	return c, nil
 }
 
-// DeleteChannel removes a channel by ID and persists.
 func (r *Router) DeleteChannel(id string) error {
 	r.cfgMu.Lock()
 	defer r.cfgMu.Unlock()
@@ -233,13 +203,6 @@ func (r *Router) DeleteChannel(id string) error {
 	return r.saveChannelsLocked()
 }
 
-// TestChannel sends a synthetic event straight through a configured channel,
-// bypassing rules/throttle/breaker — the "test" button in the UI. Returns the
-// channel impl's error (or a not-found / no-impl error). Synchronous so the
-// caller learns the real delivery outcome.
-// SendToChannels delivers ev directly to the given channel IDs, best-effort and
-// async (one goroutine per channel) so callers under a lock never block. Used by
-// the scheduler's per-job "notify on finish".
 func (r *Router) SendToChannels(ids []string, ev Event) {
 	for _, id := range ids {
 		id := id
@@ -263,17 +226,12 @@ func (r *Router) TestChannel(id string, ev Event) error {
 	return impl.Send(ctx, ev, def.Config)
 }
 
-// ── History / dry-run ────────────────────────────────────────────────────────
-
-// HistoryFilter narrows the history feed. Zero value = everything (newest
-// first, up to Limit).
 type HistoryFilter struct {
-	Source string // exact source match if non-empty
-	Type   string // exact type match if non-empty
-	Limit  int    // 0 -> 200
+	Source string
+	Type   string
+	Limit  int
 }
 
-// History returns recent events newest-first, filtered.
 func (r *Router) History(f HistoryFilter) []Event {
 	r.histMu.Lock()
 	all := r.history.snapshot()
@@ -299,12 +257,7 @@ func (r *Router) History(f HistoryFilter) []Event {
 	return out
 }
 
-// DryRun returns the recent history events that the given rule WOULD match,
-// without sending anything — the "test rule" preview. Builds confidence before
-// saving a rule.
 func (r *Router) DryRun(rl Rule) []Event {
-	// Force-enable for preview: an operator dry-runs a draft they haven't
-	// enabled yet, and wants to see what it would catch.
 	rl.Enabled = true
 	r.histMu.Lock()
 	all := r.history.snapshot()

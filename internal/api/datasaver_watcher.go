@@ -1,17 +1,5 @@
 package api
 
-// datasaver_watcher.go — auto-reverts data saving if the proxy dies AFTER it is on.
-//
-// The toggle's health gate prevents TURNING ON against a broken proxy. This
-// watchdog covers the other end: if the proxy dies while data saving is already
-// on, the device's web traffic stops. Inviolable rule: connectivity > compression.
-// On detecting the proxy down (N cycles), it returns that exit's devices to
-// DIRECT mode and warns — the worst case becomes "no compression", never
-// "no internet".
-//
-// Hardened like leak_watcher: recover() in the loop + a nil guard on notify.
-// A watchdog may NEVER become the cause of the outage.
-
 import (
 	"context"
 	"fmt"
@@ -27,12 +15,12 @@ import (
 
 const (
 	dsWatchInterval = 3 * time.Minute
-	dsWatchFailK    = 2 // consecutive cycles with the proxy down before auto-reverting
+	dsWatchFailK    = 2
 )
 
 type dsWatch struct {
 	mu    sync.Mutex
-	fails map[string]int // exit (vps or home) → consecutive proxy failures
+	fails map[string]int
 }
 
 func (r *Router) startDatasaverWatcher(ctx context.Context) {
@@ -92,7 +80,6 @@ func (st *dsWatch) tick(r *Router) {
 		if n < dsWatchFailK {
 			continue
 		}
-		// AUTO-REVERT: proxy down — return the devices to direct.
 		var reverted []string
 		for _, d := range list {
 			if e := mgr.SetDatasaver(context.Background(), d.UUID, false); e == nil {

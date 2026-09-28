@@ -14,20 +14,6 @@ import (
 	"server-control-panel/internal/pve"
 )
 
-// handlers_proxmox_test.go — the pins for the /api/proxmox/* routes.
-//
-// The central piece of scaffolding is spyVault: it RECORDS every key read.
-// Without it, the mutation this file exists to prevent would slip by unnoticed —
-// swapping `pve_token_audit` for `pve_token_node_*` on the tasks route
-// produces no error at all, it produces an EMPTY LIST. Measured:
-// GET /nodes/pve/tasks?limit=50 with panel@pve!node-apps returns 200 with len=0,
-// because Tasks.pm:40-45 requires Sys.Audit on /nodes and the PanelOperator role does not.
-// A test that only looked at the HTTP status would say "passed".
-
-// --------------------------------------------------------------- doubles ----
-
-// spyVault is fakeVault with a memory: it keeps the ORDER and the SET of the
-// keys read, which is what makes the token choice verifiable by NAME.
 type spyVault struct {
 	data        map[string]string
 	reads       []string
@@ -58,8 +44,6 @@ func (c *spyVault) readAnyWithPrefix(pref string) string {
 	return ""
 }
 
-// ---------------------------------------------------------- scaffolding ----
-
 func testHypervisor(now int64) inventory.Hypervisor {
 	return inventory.Hypervisor{
 		Node:      "pve",
@@ -74,7 +58,6 @@ func testHypervisor(now int64) inventory.Hypervisor {
 	}
 }
 
-// newProxmoxRouter assembles the router with inventory, hypervisor and spying vault.
 func newProxmoxRouter(t *testing.T, vault *spyVault, fake *fakePVE) (*Router, *inventory.Store) {
 	t.Helper()
 	r, st := newNodesRouter(t, []inventory.Node{
@@ -116,13 +99,6 @@ func callPVX(t *testing.T, r *Router, method, path, body string) (*httptest.Resp
 	return w, out
 }
 
-// ------------------------------------------------------------- the tests ----
-
-// 🔴 TestHealthComesFromStoreWithoutCallingHypervisor: health is a HEARTBEAT, and what
-// collects it is the poller. If the route called the hypervisor, every screen
-// load (and every 30 s refresh) would become a live request — and, worse, the age
-// on display would stop being the stamp's and always read "0 s", hiding
-// precisely the hypervisor that has gone mute.
 func TestHealthComesFromStoreWithoutCallingHypervisor(t *testing.T) {
 	r, _ := newProxmoxRouter(t, defaultVault(), nil)
 	r.pveDial = func(tokenValue string) (hypervisorOps, error) {
@@ -156,10 +132,6 @@ func TestHealthComesFromStoreWithoutCallingHypervisor(t *testing.T) {
 	}
 }
 
-// 🔴 TestTasksUseAuditToken is this file's central pin. It asserts by the KEY
-// THAT WAS READ, not by the result: with the node token the answer would be 200
-// with an empty list, and no assertion about the body would tell that apart from
-// "there are no tasks".
 func TestTasksUseAuditToken(t *testing.T) {
 	routes := []string{
 		"/api/proxmox/tasks?errors=1&limit=10",
@@ -192,10 +164,6 @@ func TestTasksUseAuditToken(t *testing.T) {
 	}
 }
 
-// 🔴 TestSnapshotUsesNodeToken is the other half: a guest mutation uses the
-// NODE's credential (the token rule, proved live with the UPID carrying
-// panel@pve!node-lab). Using audit here would give a 403 — noisy, but wrong all the
-// same: what acts is not what audits.
 func TestSnapshotUsesNodeToken(t *testing.T) {
 	cases := []struct{ method, path string }{
 		{http.MethodGet, "/api/proxmox/snapshots?node=lxc/207"},
@@ -222,10 +190,6 @@ func TestSnapshotUsesNodeToken(t *testing.T) {
 	}
 }
 
-// 🔴 TestSnapshotRespondsOnlyAfterWaitTask is that PVE pitfall on this route:
-// PVE's POST returns 200 with the UPID as soon as the TASK IS CREATED. Passing
-// that 200 along would be the screen saying "snapshot ready" for a snapshot that
-// may not even have started.
 func TestSnapshotRespondsOnlyAfterWaitTask(t *testing.T) {
 	t.Run("order", func(t *testing.T) {
 		var seen []string
@@ -263,9 +227,6 @@ func TestSnapshotRespondsOnlyAfterWaitTask(t *testing.T) {
 	})
 }
 
-// TestInvalidNameNeverReachesHypervisor: the name comes from the SCREEN, and it is
-// what builds the resource path on the hypervisor. The refusal happens before any
-// call — and the test proves that by the absence of a mark on the double, not by the status.
 func TestInvalidNameNeverReachesHypervisor(t *testing.T) {
 	for _, name := range []string{"1abc", "with space", "with/slash", ""} {
 		t.Run(fmt.Sprintf("%q", name), func(t *testing.T) {
@@ -285,9 +246,6 @@ func TestInvalidNameNeverReachesHypervisor(t *testing.T) {
 	}
 }
 
-// 🔴 TestUnreachableVaultIsNotEmptyList: a vault that is down and a credential
-// that does not exist call for OPPOSITE actions from the operator. Collapsing the
-// two into one empty answer is the collapse of handlers_ai.go:186, which already produced a defect.
 func TestUnreachableVaultIsNotEmptyList(t *testing.T) {
 	t.Run("unreachable = 503", func(t *testing.T) {
 		vault := defaultVault()
@@ -311,9 +269,6 @@ func TestUnreachableVaultIsNotEmptyList(t *testing.T) {
 	})
 }
 
-// TestTaskLimitIsServerSide: the client's `limit` is a suggestion. What
-// reaches the hypervisor goes through internal/pve's clamp; here it is proved that
-// the handler does not invent a parallel path.
 func TestTaskLimitIsServerSide(t *testing.T) {
 	var seen []string
 	fake := &fakePVE{seen: &seen}
@@ -333,8 +288,6 @@ func TestTaskLimitIsServerSide(t *testing.T) {
 	}
 }
 
-// TestWrongMethodGives405, and an unknown route gives 404: together the two stop
-// a new verb appearing by accident on a route that touches the hypervisor.
 func TestWrongMethodGives405(t *testing.T) {
 	r, _ := newProxmoxRouter(t, defaultVault(), &fakePVE{})
 	cases := []struct {
@@ -357,9 +310,6 @@ func TestWrongMethodGives405(t *testing.T) {
 	}
 }
 
-// TestPermissionsExplainWave2: the permissions field exists so the screen can
-// say, by MEASUREMENT, why storage capacity / backup evidence / zpool are
-// missing. Without it the block would be decoration.
 func TestPermissionsExplainWave2(t *testing.T) {
 	fake := &fakePVE{perms: map[string]map[string]int{
 		"/vms/204": {"VM.Audit": 1, "VM.Snapshot": 1},
@@ -378,8 +328,6 @@ func TestPermissionsExplainWave2(t *testing.T) {
 	}
 }
 
-// TestHealthNeverObservedSaysSo: dashboard just up, poller with no tick yet.
-// The screen has to say "never observed" (-1), never "0 s ago".
 func TestHealthNeverObservedSaysSo(t *testing.T) {
 	r, _ := newNodesRouter(t, nil)
 	r.nodeVaultFn = func() (nodeVault, error) { return defaultVault(), nil }
@@ -398,34 +346,6 @@ func TestHealthNeverObservedSaysSo(t *testing.T) {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Snapshot rollback
-//
-// 🔴 The privilege WAS ALREADY GRANTED and the dashboard did not show it.
-// Measured without changing any ACL at all:
-//
-//	node-lab → POST /nodes/pve/lxc/204/snapshot/<nonexistent>/rollback  → 200 + UPID
-//	audit    → the SAME POST  → 403 "Permission check failed (/vms/204, VM.Snapshot|VM.Snapshot.Rollback)"
-//	node-lab → the same POST on /lxc/207 → 403 (isolation by vmid)
-//
-// Destructive power that exists, nobody sees, and no screen leaves a trace of who
-// used it. Exposing it with a trail is safer than leaving it hidden: what is
-// hidden stays reachable by whoever holds the token, and with no record at all.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// 🔴 TestRollbackRespondsOnlyAfterWaitTask is that PVE pitfall MEASURED on the
-// most destructive route of the dashboard. Against the home hypervisor, a
-// rollback to a snapshot that DOES NOT EXIST returned:
-//
-//	HTTP 200 {"data":"UPID:pve:…:vzrollback:204:panel@pve!node-lab:"}
-//
-// and only the task status told the truth:
-//
-//	status=stopped exitstatus="snapshot '<name>' does not exist"
-//
-// Passing that 200 along would be the screen saying "restored" for a rollback that
-// never happened — and, worse, on a guest the operator would then believe to be
-// in an earlier state.
 func TestRollbackRespondsOnlyAfterWaitTask(t *testing.T) {
 	t.Run("order", func(t *testing.T) {
 		var seen []string
@@ -462,8 +382,6 @@ func TestRollbackRespondsOnlyAfterWaitTask(t *testing.T) {
 	})
 }
 
-// TestRollbackUsesNodeToken — the token rule again: what acts on a guest is THAT
-// node's credential. The audit token got a 403 in the measurement.
 func TestRollbackUsesNodeToken(t *testing.T) {
 	vault := defaultVault()
 	r, _ := newProxmoxRouter(t, vault, &fakePVE{upid: "UPID:roll"})
@@ -481,8 +399,6 @@ func TestRollbackUsesNodeToken(t *testing.T) {
 	}
 }
 
-// 🔴 TestRollbackOnlyAcceptsPOST: a rollback triggerable by GET would be triggerable
-// by browser prefetch, by a crawler and by a link pasted into a chat.
 func TestRollbackOnlyAcceptsPOST(t *testing.T) {
 	for _, m := range []string{http.MethodGet, http.MethodDelete, http.MethodPut} {
 		var seen []string
@@ -498,9 +414,6 @@ func TestRollbackOnlyAcceptsPOST(t *testing.T) {
 	}
 }
 
-// TestRollbackInvalidNameNeverReachesHypervisor: the name comes from the screen and
-// chooses WHICH state the guest will take on. Refused before dialling, proved by
-// the absence of a mark on the double.
 func TestRollbackInvalidNameNeverReachesHypervisor(t *testing.T) {
 	for _, name := range []string{"", "1abc", "with space", "with/slash", "../lxc/207"} {
 		var seen []string

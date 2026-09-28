@@ -7,19 +7,6 @@ import (
 	"testing"
 )
 
-// An invariant whose literal ALSO appears in a COMMENT is defeated by the
-// comment: you delete the code, the commented line stays there, the gate's grep
-// finds the text and the deploy goes through. It was measured: removing the body
-// of resolvedProjectsDir made the gate announce "✓ invariants OK", because the
-// file's header said "Resolved here with EvalSymlinks".
-//
-// This repository has already paid for that once — commit 21dc2e4 pulled the
-// literal of a forbidden route out of a comment for the same reason. The lesson
-// had not become a test, so it did not generalize. Now it has.
-//
-// The test covers only the per-account metric invariants, which are the ones
-// this package delivers; the rest belong to other tickets and touching them
-// here would mean changing someone else's guard without the context.
 func TestMetricInvariantsDoNotMatchInComments(t *testing.T) {
 	inv := filepath.Join("..", "..", ".claude", "coord", "invariants.txt")
 	data, err := os.ReadFile(inv)
@@ -63,8 +50,6 @@ func TestMetricInvariantsDoNotMatchInComments(t *testing.T) {
 				"exists as code, or remove the literal from the comment.", file, fallback, inComment)
 		}
 	}
-	// Anti-vacuity: if the invariants get renamed and this loop stops matching
-	// anything, the test would go green without having verified a thing.
 	if checked < 4 {
 		t.Errorf("only %d metric invariants checked; expected at least 4 "+
 			"(EvalSymlinks, IdentityMismatch, RecordAttrib, Unattributed)", checked)

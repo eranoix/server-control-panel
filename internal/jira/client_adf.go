@@ -1,25 +1,9 @@
 package jira
 
-// client_adf.go — Atlassian Document Format helpers
-//
-// Jira Cloud uses ADF (structured JSON) for description and comment bodies.
-// textToADF wraps plain text in a paragraph doc; adfToText goes the other way
-// (collapse) by walking the tree. Markdown is not supported (future work).
-//
-// Split out of client.go.
-
 import (
 	"encoding/json"
 	"strings"
 )
-
-// --- ADF helpers ---
-//
-// Jira Cloud accepts/returns Atlassian Document Format (ADF) for
-// description and comment bodies — a structured JSON tree. We collapse
-// it to plain text on read (good enough for server-control-panel) and wrap
-// outgoing text in a single-paragraph ADF doc on write. Markdown support
-// is a future enhancement.
 
 func textToADF(text string) map[string]any {
 	if text == "" {
@@ -49,15 +33,12 @@ func textToADF(text string) map[string]any {
 	}
 }
 
-// adfToText walks an ADF tree, concatenating all text nodes with
-// paragraph breaks. Lossy by design — bold/italics/links are dropped.
 func adfToText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
 	}
 	var doc map[string]any
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		// not ADF (e.g. server returned a plain string for a legacy field)
 		var s string
 		if json.Unmarshal(raw, &s) == nil {
 			return s
@@ -74,8 +55,6 @@ func walkADF(node any, b *strings.Builder) {
 	case map[string]any:
 		switch n["type"] {
 		case "text":
-			// Preserve link marks as "(text) [url]" — the UI is plain-text
-			// today, so embed the URL inline rather than dropping it.
 			if s, ok := n["text"].(string); ok {
 				var href string
 				if marks, ok := n["marks"].([]any); ok {
@@ -108,8 +87,6 @@ func walkADF(node any, b *strings.Builder) {
 			}
 			b.WriteString("\n")
 		case "bulletList", "orderedList":
-			// Render list items as "- item" lines so the structure survives
-			// the round-trip to plain text (was completely dropped before).
 			if c, ok := n["content"].([]any); ok {
 				for _, child := range c {
 					b.WriteString("- ")
@@ -125,7 +102,6 @@ func walkADF(node any, b *strings.Builder) {
 			}
 			b.WriteString("```\n")
 		case "blockquote":
-			// Prefix every nested line with "> "
 			var inner strings.Builder
 			if c, ok := n["content"].([]any); ok {
 				for _, child := range c {
@@ -138,7 +114,6 @@ func walkADF(node any, b *strings.Builder) {
 				b.WriteString("\n")
 			}
 		case "mention":
-			// @user mentions: render the display text (attrs.text).
 			if attrs, ok := n["attrs"].(map[string]any); ok {
 				if t, ok := attrs["text"].(string); ok {
 					b.WriteString(t)

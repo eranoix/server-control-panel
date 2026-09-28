@@ -15,15 +15,6 @@ import (
 	"server-control-panel/internal/secrets"
 )
 
-// cmdSecrets dispatches `panelctl secrets <sub>`. Operates on the on-disk vault
-// directly (DataDir/secrets.vault) with the same passphrase the server uses
-// (cfg.JWTSecret), so it works for recovery and for bulk provisioning the
-// "used across the whole VPS" credential store.
-//
-// IMPORTANT: changes written here land on disk. A running server keeps its own
-// in-memory copy of the vault opened at boot and will NOT see new entries until
-// it is restarted. The caller (or the next deploy) must restart the service
-// for imports to show up in the live UI.
 func cmdSecrets(args []string) error {
 	if len(args) < 1 {
 		secretsUsage()
@@ -82,7 +73,6 @@ Default --user = the config's primary. Values are never logged (only names).
 `)
 }
 
-// vaultFor opens the vault and binds it to the requested (or primary) user.
 func vaultFor(userFlag string) (*scope.UserVault, string, error) {
 	cfg, err := config.Load()
 	if err != nil {
@@ -165,7 +155,7 @@ func cmdSecretsGet(args []string) error {
 	if !ok {
 		return fmt.Errorf("not found: %s", fs.Arg(0))
 	}
-	fmt.Print(v) // raw, no newline — composes with $(...) injection
+	fmt.Print(v)
 	return nil
 }
 
@@ -186,7 +176,6 @@ func cmdSecretsSet(args []string) error {
 	if fs.NArg() >= 2 {
 		value = fs.Arg(1)
 	} else {
-		// read value from stdin (avoids leaking it into shell history)
 		b, err := readAllStdin()
 		if err != nil {
 			return err
@@ -204,9 +193,6 @@ func cmdSecretsSet(args []string) error {
 	return nil
 }
 
-// cmdSecretsTag (re)groups/tags existing keys by updating ONLY their metadata
-// (group/type/notes) — the stored value is never read out nor rewritten. Used
-// to file the daemon's own ungrouped keys (waha_*/jira_*) into a group.
 func cmdSecretsTag(args []string) error {
 	fs := flag.NewFlagSet("secrets tag", flag.ContinueOnError)
 	user := fs.String("user", "", "vault owner (default: primary)")
@@ -299,9 +285,6 @@ func cmdSecretsExport(args []string) error {
 	return nil
 }
 
-// cmdSecretsImportEnv reads a .env-style file and imports each KEY=VALUE into
-// the vault under the given group. The values are read by THIS process from
-// the source file and written straight to the vault — they are never printed.
 func cmdSecretsImportEnv(args []string) error {
 	fs := flag.NewFlagSet("secrets import-env", flag.ContinueOnError)
 	user := fs.String("user", "", "vault owner (default: primary)")
@@ -366,7 +349,6 @@ func cmdSecretsImportEnv(args []string) error {
 	return nil
 }
 
-// manifestEntry is one credential in a JSON import manifest.
 type manifestEntry struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
@@ -410,13 +392,8 @@ func cmdSecretsImport(args []string) error {
 	return nil
 }
 
-// --- helpers ---
-
 type envPair struct{ key, value string }
 
-// parseEnvFile reads KEY=VALUE lines. Skips blanks, comments (#), and the
-// optional leading "export ". Strips matching single/double quotes around the
-// value. Anything without an "=" is ignored.
 func parseEnvFile(path string) ([]envPair, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -425,7 +402,7 @@ func parseEnvFile(path string) ([]envPair, error) {
 	defer f.Close()
 	var out []envPair
 	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // tolerate long values (PEM, etc.)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" || strings.HasPrefix(line, "#") {

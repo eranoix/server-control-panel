@@ -2,15 +2,14 @@ package jira
 
 import "testing"
 
-// TestAvatarHostAllowed pins the avatar proxy's allowlist (SSRF defence).
 func TestAvatarHostAllowed(t *testing.T) {
 	const site = "jordan.atlassian.net"
 	allow := []string{
 		"secure.gravatar.com", "gravatar.com",
 		"i0.wp.com", "i1.wp.com",
 		"avatar-management--avatars.us-west-2.prod.public.atl-paas.net",
-		"jordan.atlassian.net", // the site itself
-		"foo.atlassian.net",    // any atlassian.net
+		"jordan.atlassian.net",
+		"foo.atlassian.net",
 	}
 	deny := []string{
 		"evil.com", "169.254.169.254", "localhost", "127.0.0.1",
@@ -29,9 +28,6 @@ func TestAvatarHostAllowed(t *testing.T) {
 	}
 }
 
-// TestIsSafeImageType pins the content-type allowlist (defence against XSS by
-// content-type smuggling). svg+xml and html MUST be refused — the avatar is
-// served from our own origin and SVG/HTML execute script.
 func TestIsSafeImageType(t *testing.T) {
 	ok := []string{
 		"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/avif",

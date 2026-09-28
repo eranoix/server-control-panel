@@ -12,13 +12,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders [ServerSetupScreen] under Robolectric -- never composed before
- * this. Stateless except for its own local text-field state, so this drives
- * it end to end through a real [ServerConfigRepository] backed by an
- * in-memory [ServerConfigStore] fake (that interface is the established fake
- * seam -- see `EncryptedServerConfigStoreTest`), never a mocked repository.
- */
 @RunWith(RobolectricTestRunner::class)
 class ServerSetupScreenTest {
 

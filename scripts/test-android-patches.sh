@@ -1,17 +1,4 @@
 #!/usr/bin/env bash
-# test-android-patches.sh: end-to-end coverage of scripts/android-patches.sh
-# with real hdiffz/hpatchz and no Gradle build.
-#
-# Test 1: a patch applied with hpatchz rebuilds bytes IDENTICAL to the target.
-# Test 2: the "full" artifact (empty base) also rebuilds the target.
-# Test 3: the manifest is consistent: hashes and sizes match the files.
-# Test 4: idempotence: running again neither regenerates nor corrupts anything.
-# Test 5: RETENTION: publishing the 6th version deletes what left the window.
-# Test 6: an index version whose APK is gone does not break generation.
-#
-# The "APKs" are synthetic binaries derived from each other (hdiffz only sees
-# bytes). The check with a real signed APK, including the signature surviving
-# the rebuild, is in docs/android-incremental-updates.md §5.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,11 +22,7 @@ REPO="$TMP/repo"
 UPDATES="$TMP/updates"
 mkdir -p "$REPO" "$UPDATES"
 
-# Fixtures: each "APK" is 2 MiB of a shared pattern (so the patch has something
-# to reuse) plus a version-specific middle (so the bytes really differ).
 make_apk() {
-  # Two lines on purpose: in a single `local a=.. b=..$a..` bash expands every
-  # word before assigning, so $a would not exist yet (fatal under `set -u`).
   local code="$1"
   local dest="$REPO/servercontrolpanel-$code.apk"
   python3 - "$dest" "$code" <<'PY'
@@ -54,8 +37,6 @@ with open(dest, "wb") as fh:
 PY
 }
 
-# write_index <versionCode>...: builds an index-v2.json with exactly those
-# versions, in the format fdroidserver produces.
 write_index() {
   python3 - "$REPO/index-v2.json" "$PACKAGE" "$@" <<'PY'
 import json, sys
@@ -75,7 +56,6 @@ run() { FDROID_REPO_DIR="$REPO" ANDROID_UPDATES_DIR="$UPDATES" "$SCRIPT" "$@"; }
 
 field() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));exec("v=d"+sys.argv[2]);print(v)' "$UPDATES/manifest.json" "$1"; }
 
-# Initial publication: versions 1 and 2.
 make_apk 1; make_apk 2
 write_index 1 2
 if ! run > "$TMP/run1.log" 2>&1; then
@@ -87,7 +67,6 @@ FULL_FILE="$(field '["full"]["file"]')"
 PATCH_FILE="$(field '["patches"][0]["file"]')"
 BASE_SHA="$(field '["patches"][0]["from_sha256"]')"
 
-# Test 1: the patch rebuilds identical bytes.
 if hpatchz "$UPDATES/apks/$BASE_SHA.apk" "$UPDATES/$PATCH_FILE" "$TMP/recon-patch.bin" >/dev/null 2>&1 \
    && [ "$(sha256sum "$TMP/recon-patch.bin" | cut -d' ' -f1)" = "$TARGET_SHA" ]; then
   ok "patch applied with hpatchz rebuilds a SHA-256 identical to the target"
@@ -95,7 +74,6 @@ else
   no "patch does NOT rebuild the target"
 fi
 
-# Test 2: the full artifact (empty base) rebuilds the same target.
 if hpatchz "" "$UPDATES/$FULL_FILE" "$TMP/recon-full.bin" >/dev/null 2>&1 \
    && [ "$(sha256sum "$TMP/recon-full.bin" | cut -d' ' -f1)" = "$TARGET_SHA" ]; then
   ok "full artifact (empty base) rebuilds a SHA-256 identical to the target"
@@ -103,7 +81,6 @@ else
   no "full artifact does NOT rebuild the target"
 fi
 
-# Test 3: the manifest matches the files on disk.
 if python3 - "$UPDATES" <<'PY'
 import hashlib, json, os, sys
 d = sys.argv[1]
@@ -124,7 +101,6 @@ then ok "consistent manifest: sha256/size_bytes match the files"
 else no "manifest inconsistent with the files on disk"
 fi
 
-# Test 4: idempotence.
 before="$(sha256sum "$UPDATES/$PATCH_FILE" | cut -d' ' -f1)"
 if run > "$TMP/run2.log" 2>&1 \
    && [ "$(sha256sum "$UPDATES/$PATCH_FILE" | cut -d' ' -f1)" = "$before" ] \
@@ -134,12 +110,10 @@ else
   no "second run was not idempotent"; cat "$TMP/run2.log"
 fi
 
-# Test 5: retention when publishing the 6th version.
 for c in 3 4 5; do make_apk "$c"; done
 write_index 1 2 3 4 5
 run > "$TMP/run5.log" 2>&1 || { echo "  FAILED: run with 5 versions"; cat "$TMP/run5.log"; }
 
-# 5 versions and a window of 5: target = 5, bases = 4,3,2,1 -> 4 patches, nothing removed.
 n_patches="$(python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))["patches"]))' "$UPDATES/manifest.json")"
 v1_patch="$(python3 -c '
 import json,sys
@@ -151,7 +125,6 @@ else
   no "unexpected window of 5 (patches=$n_patches, v1 patch=$v1_patch)"
 fi
 
-# Now the 6th: v1 leaves the window and everything from it must go.
 v1_sha="$(sha256sum "$REPO/servercontrolpanel-1.apk" | cut -d' ' -f1)"
 old_full="$FULL_FILE"
 make_apk 6
@@ -176,15 +149,12 @@ else
   no "retention failed:$errors"
 fi
 
-# No interrupted hdiffz .tmp may be left behind.
 if [ -z "$(find "$UPDATES" -name '*.tmp' -o -name '.manifest-*' 2>/dev/null)" ]; then
   ok "no temporary file left in the updates directory"
 else
   no "temporary files left: $(find "$UPDATES" -name '*.tmp' -o -name '.manifest-*')"
 fi
 
-# Test 6: an index version without its APK. The operator pruned an old APK;
-# generation must survive and only that base loses its patch.
 rm -f "$REPO/servercontrolpanel-2.apk" "$UPDATES/apks"/*.apk.versioncode
 if run > "$TMP/run7.log" 2>&1; then
   ok "missing APK in the repository does not break generation (only that base degrades)"

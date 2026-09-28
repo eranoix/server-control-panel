@@ -16,10 +16,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * The attachment bar rendered under Robolectric. It sits between the grid and the
- * key bar, so with no attachments it must take zero height.
- */
 @RunWith(RobolectricTestRunner::class)
 class AttachmentBarScreenTest {
 

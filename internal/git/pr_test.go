@@ -12,7 +12,7 @@ func TestParseGitHubToken(t *testing.T) {
 		"justasingletokenvalue":                           "justasingletokenvalue",
 		"":                                                "",
 		"   ":                                             "",
-		"https://northwind-dev:tok@gitlab.com\n":          "", // not github: does not match credLineRe
+		"https://northwind-dev:tok@gitlab.com\n":          "",
 	}
 	for in, want := range cases {
 		if got := parseGitHubToken(in); got != want {

@@ -1,10 +1,3 @@
-// extra.go — second-wave Jira surface: update, watchers, links, attachments,
-// worklog, changelog history, issue picker, plus the Confluence v2 endpoints
-// that back the "Spaces" tab. Split out of client.go so the core stays
-// readable.
-//
-// Auth + base URL come from *Client (same basic-auth as client.go). All
-// methods are context-aware and respect the 30s default timeout.
 package jira
 
 import (
@@ -15,26 +8,19 @@ import (
 	"net/url"
 )
 
-// --- UpdateIssue: partial PUT /issue/{key} ---
-//
-// Jira's PUT accepts any subset of `fields`. We expose typed setters via
-// UpdateIssueRequest (zero values = "don't touch"). For labels we use a
-// pointer to distinguish "no change" from "wipe all" — caller passes
-// &[]string{} to clear.
 type UpdateIssueRequest struct {
-	Summary     *string   `json:"summary,omitempty"`
-	Description *string   `json:"description,omitempty"`
-	Priority    *string   `json:"priority,omitempty"`    // name; "" wipes (Jira normalises to default)
-	AssigneeID  *string   `json:"assignee_id,omitempty"` // accountId; "" unassigns
-	Labels      *[]string `json:"labels,omitempty"`      // nil=skip, &[]=wipe
-	DueDate     *string   `json:"due_date,omitempty"`    // YYYY-MM-DD; "" clears
-	// Advanced fields
-	StoryPoints      *float64  `json:"story_points,omitempty"`       // customfield_10016 (most installs)
-	StoryPointsField string    `json:"story_points_field,omitempty"` // override (e.g. "customfield_10020")
-	ComponentNames   *[]string `json:"components,omitempty"`         // by name
-	FixVersionNames  *[]string `json:"fix_versions,omitempty"`       // by name
-	EpicLinkKey      *string   `json:"epic_link,omitempty"`          // parent epic key (next-gen uses parent)
-	IssueType        *string   `json:"issue_type,omitempty"`         // type name; nil/"" = leave unchanged (a type can't be "cleared")
+	Summary          *string   `json:"summary,omitempty"`
+	Description      *string   `json:"description,omitempty"`
+	Priority         *string   `json:"priority,omitempty"`
+	AssigneeID       *string   `json:"assignee_id,omitempty"`
+	Labels           *[]string `json:"labels,omitempty"`
+	DueDate          *string   `json:"due_date,omitempty"`
+	StoryPoints      *float64  `json:"story_points,omitempty"`
+	StoryPointsField string    `json:"story_points_field,omitempty"`
+	ComponentNames   *[]string `json:"components,omitempty"`
+	FixVersionNames  *[]string `json:"fix_versions,omitempty"`
+	EpicLinkKey      *string   `json:"epic_link,omitempty"`
+	IssueType        *string   `json:"issue_type,omitempty"`
 }
 
 func (c *Client) UpdateIssue(ctx context.Context, key string, in UpdateIssueRequest) error {
@@ -91,8 +77,6 @@ func (c *Client) UpdateIssue(ctx context.Context, key string, in UpdateIssueRequ
 		fields["fixVersions"] = arr
 	}
 	if in.EpicLinkKey != nil {
-		// next-gen projects: use parent.key. Classic: customfield_10014.
-		// We set both — Jira ignores unknown fields silently.
 		if *in.EpicLinkKey == "" {
 			fields["parent"] = nil
 			fields["customfield_10014"] = nil
@@ -109,8 +93,6 @@ func (c *Client) UpdateIssue(ctx context.Context, key string, in UpdateIssueRequ
 	}
 	return c.do(ctx, http.MethodPut, "/rest/api/3/issue/"+url.PathEscape(key), map[string]any{"fields": fields}, nil)
 }
-
-// --- Watchers ---
 
 type WatcherList struct {
 	Watching   bool   `json:"watching"`
@@ -130,11 +112,10 @@ func (c *Client) Watchers(ctx context.Context, key string) (*WatcherList, error)
 	return &WatcherList{Watching: resp.IsWatching, WatchCount: resp.WatchCount, Watchers: resp.Watchers}, nil
 }
 
-// AddWatcher takes an accountId. Empty string adds the caller (Jira default).
 func (c *Client) AddWatcher(ctx context.Context, key, accountID string) error {
 	var body any
 	if accountID != "" {
-		body = accountID // raw JSON string is what Jira wants here
+		body = accountID
 	}
 	return c.do(ctx, http.MethodPost, "/rest/api/3/issue/"+url.PathEscape(key)+"/watchers", body, nil)
 }
@@ -146,8 +127,6 @@ func (c *Client) RemoveWatcher(ctx context.Context, key, accountID string) error
 	}
 	return c.do(ctx, http.MethodDelete, "/rest/api/3/issue/"+url.PathEscape(key)+"/watchers"+q, nil, nil)
 }
-
-// --- Issue Links ---
 
 type IssueLinkType struct {
 	ID      string `json:"id"`
@@ -179,8 +158,6 @@ type LinkedIssue struct {
 	Status  Status `json:"status"`
 }
 
-// CreateIssueLink wires two issues. `linkType` is the type name (e.g. "Blocks").
-// inwardKey/outwardKey: which side is which. Caller decides based on UI label.
 func (c *Client) CreateIssueLink(ctx context.Context, linkType, inwardKey, outwardKey string) error {
 	body := map[string]any{
 		"type":         map[string]string{"name": linkType},
@@ -194,14 +171,12 @@ func (c *Client) DeleteIssueLink(ctx context.Context, linkID string) error {
 	return c.do(ctx, http.MethodDelete, "/rest/api/3/issueLink/"+url.PathEscape(linkID), nil, nil)
 }
 
-// --- Worklogs ---
-
 type Worklog struct {
 	ID               string `json:"id"`
 	Author           User   `json:"author"`
 	Comment          string `json:"comment,omitempty"`
 	Started          string `json:"started,omitempty"`
-	TimeSpent        string `json:"time_spent,omitempty"` // "1h 30m"
+	TimeSpent        string `json:"time_spent,omitempty"`
 	TimeSpentSeconds int64  `json:"time_spent_seconds,omitempty"`
 }
 
@@ -231,9 +206,9 @@ func (c *Client) Worklogs(ctx context.Context, key string) ([]Worklog, error) {
 }
 
 type AddWorklogRequest struct {
-	TimeSpent string `json:"time_spent"` // "1h", "30m", "2h 15m"
+	TimeSpent string `json:"time_spent"`
 	Comment   string `json:"comment,omitempty"`
-	Started   string `json:"started,omitempty"` // ISO8601 with TZ
+	Started   string `json:"started,omitempty"`
 }
 
 func (c *Client) AddWorklog(ctx context.Context, key string, in AddWorklogRequest) error {
@@ -246,8 +221,6 @@ func (c *Client) AddWorklog(ctx context.Context, key string, in AddWorklogReques
 	}
 	return c.do(ctx, http.MethodPost, "/rest/api/3/issue/"+url.PathEscape(key)+"/worklog", body, nil)
 }
-
-// --- Changelog (activity history) ---
 
 type ChangeEntry struct {
 	ID      string       `json:"id"`
@@ -289,8 +262,6 @@ func (c *Client) Changelog(ctx context.Context, key string) ([]ChangeEntry, erro
 	return out, nil
 }
 
-// --- Issue picker (server-side search by partial query) ---
-
 func (c *Client) PickIssues(ctx context.Context, query, currentJQL string) ([]Issue, error) {
 	q := url.Values{}
 	q.Set("query", query)
@@ -319,8 +290,6 @@ func (c *Client) PickIssues(ctx context.Context, query, currentJQL string) ([]Is
 	return out, nil
 }
 
-// --- Priorities lookup ---
-
 func (c *Client) Priorities(ctx context.Context) ([]NamedRef, error) {
 	var out []NamedRef
 	if err := c.do(ctx, http.MethodGet, "/rest/api/3/priority", nil, &out); err != nil {
@@ -329,10 +298,6 @@ func (c *Client) Priorities(ctx context.Context) ([]NamedRef, error) {
 	return out, nil
 }
 
-// --- Issue delete + clone ---
-
-// DeleteIssue removes the issue. deleteSubtasks=true cascades to subtasks
-// (default Jira behaviour is to refuse if subtasks exist).
 func (c *Client) DeleteIssue(ctx context.Context, key string, deleteSubtasks bool) error {
 	path := "/rest/api/3/issue/" + url.PathEscape(key)
 	if deleteSubtasks {
@@ -341,8 +306,6 @@ func (c *Client) DeleteIssue(ctx context.Context, key string, deleteSubtasks boo
 	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
-// CloneIssue creates a new issue under the same project with most fields
-// copied. Summary gets "(copy)" appended. Returns the new key.
 func (c *Client) CloneIssue(ctx context.Context, key string) (*CreatedIssue, error) {
 	src, err := c.GetIssue(ctx, key)
 	if err != nil {
@@ -369,8 +332,6 @@ func (c *Client) CloneIssue(ctx context.Context, key string) (*CreatedIssue, err
 	return c.CreateIssue(ctx, in)
 }
 
-// --- Comment edit/delete ---
-
 func (c *Client) UpdateComment(ctx context.Context, key, commentID, body string) (*Comment, error) {
 	payload := map[string]any{"body": textToADF(body)}
 	var resp struct {
@@ -388,8 +349,6 @@ func (c *Client) UpdateComment(ctx context.Context, key, commentID, body string)
 func (c *Client) DeleteComment(ctx context.Context, key, commentID string) error {
 	return c.do(ctx, http.MethodDelete, "/rest/api/3/issue/"+url.PathEscape(key)+"/comment/"+url.PathEscape(commentID), nil, nil)
 }
-
-// --- Vote ---
 
 type VoteInfo struct {
 	Votes    int  `json:"votes"`
@@ -414,8 +373,6 @@ func (c *Client) AddVote(ctx context.Context, key string) error {
 func (c *Client) RemoveVote(ctx context.Context, key string) error {
 	return c.do(ctx, http.MethodDelete, "/rest/api/3/issue/"+url.PathEscape(key)+"/votes", nil, nil)
 }
-
-// --- Versions + Components ---
 
 type Version struct {
 	ID          string `json:"id"`
@@ -446,18 +403,12 @@ func (c *Client) Components(ctx context.Context, projectKey string) ([]Component
 	return out, nil
 }
 
-// Epics — JQL "project = X AND issuetype = Epic ORDER BY summary" via Search.
-// Convenience wrapper kept here so the UI doesn't have to know the JQL trick.
 func (c *Client) Epics(ctx context.Context, projectKey string) ([]Issue, error) {
 	jql := "project = " + projectKey + " AND issuetype = Epic AND statusCategory != Done ORDER BY summary"
 	out, _, err := c.Search(ctx, jql, 0, 50)
 	return out, err
 }
 
-// file shipped a hand-rolled base64 routine (mis-named base64URL — it
-// actually used the standard alphabet, not URL-safe). encoding/base64
-// is already pulled in by client.go, so the duplicate was dead weight
-// AND a maintenance hazard.
 func basicAuth(cred string) string {
 	return base64.StdEncoding.EncodeToString([]byte(cred))
 }

@@ -12,22 +12,13 @@ import (
 	"time"
 )
 
-// Client is a thin HTTP wrapper over WAHA's REST API. WAHA binds to
-// 127.0.0.1:3000 by default; all calls authenticate via the X-Api-Key header.
-//
-// We intentionally do NOT use a request-level circuit breaker — the engine is
-// local, latency is dominated by the WhatsApp upstream (which WAHA already
-// retries internally), and the state poller already detects extended outages
-// and surfaces them via the UI.
 type Client struct {
 	BaseURL   string
 	APIKey    string
-	SessionID string // "default" for WAHA Core (single session)
+	SessionID string
 	httpc     *http.Client
 }
 
-// NewClient builds a Client with the standard short timeout. Use NewUploadClient
-// for media uploads where the upload itself may dominate latency.
 func NewClient(baseURL, apiKey string) *Client {
 	if baseURL == "" {
 		baseURL = "http://127.0.0.1:3000"
@@ -40,15 +31,12 @@ func NewClient(baseURL, apiKey string) *Client {
 	}
 }
 
-// withTimeout returns a clone with a custom timeout (used for large uploads).
 func (c *Client) withTimeout(d time.Duration) *Client {
 	clone := *c
 	clone.httpc = &http.Client{Timeout: d}
 	return &clone
 }
 
-// do executes a request, handling JSON marshal/unmarshal + WAHA's error envelope.
-// dest may be nil if the caller does not care about the response body.
 func (c *Client) do(method, path string, body, dest any) error {
 	var reqBody io.Reader
 	if body != nil {
@@ -75,7 +63,6 @@ func (c *Client) do(method, path string, body, dest any) error {
 	defer resp.Body.Close()
 	respBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	if resp.StatusCode >= 400 {
-		// WAHA returns {"error": "...", "message": "..."} on errors.
 		var werr struct {
 			Error   string `json:"error"`
 			Message string `json:"message"`
@@ -102,8 +89,6 @@ func (c *Client) do(method, path string, body, dest any) error {
 	return nil
 }
 
-// --- Session lifecycle ---
-
 type wahaSession struct {
 	Name   string         `json:"name"`
 	Status Status         `json:"status"`
@@ -117,8 +102,6 @@ type wahaSession struct {
 	} `json:"engine"`
 }
 
-// GetSession returns the current WAHA session info. ErrSessionNotFound is
-// returned (wrapped) when the session has never been created.
 func (c *Client) GetSession() (*wahaSession, error) {
 	var s wahaSession
 	err := c.do("GET", "/api/sessions/"+c.SessionID, nil, &s)
@@ -133,18 +116,6 @@ func (c *Client) GetSession() (*wahaSession, error) {
 
 var ErrSessionNotFound = errors.New("waha session not found")
 
-// StartSession ensures the default session is created and running. Handles
-// the four cases WAHA exposes:
-//
-//  1. Session doesn't exist:           POST /api/sessions/ (creates + auto-starts)
-//  2. Session exists, stopped:         POST /api/sessions/{name}/start
-//  3. Session exists, FAILED:          POST /api/sessions/{name}/restart  (the
-//     /start endpoint returns 422 "already started" — FAILED ≠ stopped from
-//     WAHA's POV, it's "started but unhealthy")
-//  4. Session running (WORKING/SCAN_QR_CODE/STARTING): no-op
-//
-// Idempotent — safe to call repeatedly. 422 "already started" responses are
-// swallowed because the goal state (running) is already met.
 func (c *Client) StartSession() error {
 	sess, err := c.GetSession()
 	if err != nil && err != ErrSessionNotFound {
@@ -155,24 +126,21 @@ func (c *Client) StartSession() error {
 			"name":  c.SessionID,
 			"start": true,
 			"config": map[string]any{
-				"webhooks": []map[string]any{}, // global env-var hook handles all sessions
+				"webhooks": []map[string]any{},
 			},
 		}
 		return c.do("POST", "/api/sessions/", body, nil)
 	}
 	switch sess.Status {
 	case StatusWorking, StatusScanQR, StatusStarting:
-		return nil // already in motion
+		return nil
 	case StatusFailed:
-		return c.RestartSession() // force reset
+		return c.RestartSession()
 	default:
-		// STOPPED or anything else: plain start.
 		err := c.do("POST", "/api/sessions/"+c.SessionID+"/start", nil, nil)
 		if err == nil {
 			return nil
 		}
-		// Idempotency: WAHA returns 422 when the session is already started,
-		// which means the goal is met — squelch.
 		if strings.Contains(err.Error(), "already started") {
 			return nil
 		}
@@ -180,21 +148,6 @@ func (c *Client) StartSession() error {
 	}
 }
 
-// EnsureExtraWebhook makes sure the session has an additional webhook
-// registered with URL=extraURL. Idempotent: if the URL is already in the
-// config.webhooks list it returns without doing anything. Otherwise it POSTs
-// to /api/sessions/ (update mode) with webhooks holding the new entry PLUS
-// the existing ones.
-//
-// It does not remove the global env var (WHATSAPP_HOOK_URL in the container)
-// — that keeps firing independently. The result: WAHA fires at BOTH
-// destinations (env + per-session) without deduplicating — exactly what a
-// v1 + v2 sharing the same container needs.
-//
-// An empty events list subscribes to the same events as the env var
-// (session.status, message, message.any, message.ack, message.revoked).
-// An empty hmacKey means no HMAC on the extra webhook (not recommended in
-// production).
 func (c *Client) EnsureExtraWebhook(extraURL, hmacKey string, events []string) error {
 	if extraURL == "" {
 		return nil
@@ -202,19 +155,15 @@ func (c *Client) EnsureExtraWebhook(extraURL, hmacKey string, events []string) e
 	if len(events) == 0 {
 		events = []string{"session.status", "message", "message.any", "message.ack", "message.revoked"}
 	}
-	// Read the current config to preserve existing webhooks and check idempotency.
 	var current sessionWithConfig
 	if err := c.do("GET", "/api/sessions/"+c.SessionID, nil, &current); err != nil {
 		return fmt.Errorf("get session config: %w", err)
 	}
-	// Idempotency: URL already there? Skip.
 	for _, w := range current.Config.Webhooks {
 		if w.URL == extraURL {
 			return nil
 		}
 	}
-	// Append the new webhook entry. The existing ones are kept so we do not
-	// regress configuration made by hand through the API.
 	newWebhook := webhookEntry{
 		URL:    extraURL,
 		Events: events,
@@ -224,9 +173,6 @@ func (c *Client) EnsureExtraWebhook(extraURL, hmacKey string, events []string) e
 	}
 	newWebhooks := append([]webhookEntry{}, current.Config.Webhooks...)
 	newWebhooks = append(newWebhooks, newWebhook)
-	// PUT /api/sessions/{name} = update an existing session. WAHA rejects a
-	// POST (422 "already exists, use PUT to update"). It preserves the session
-	// state (WORKING and so on) and does not drop the connection.
 	body := map[string]any{
 		"config": map[string]any{
 			"webhooks": newWebhooks,
@@ -235,7 +181,6 @@ func (c *Client) EnsureExtraWebhook(extraURL, hmacKey string, events []string) e
 	return c.do("PUT", "/api/sessions/"+c.SessionID, body, nil)
 }
 
-// Helper structs for reading and serialising WAHA's config.webhooks.
 type sessionWithConfig struct {
 	Name   string        `json:"name"`
 	Status string        `json:"status"`
@@ -253,29 +198,19 @@ type webhookHMAC struct {
 	Key string `json:"key"`
 }
 
-// RestartSession forces a hard restart of the session (useful when stuck in
-// FAILED or to recover from protocol-side desync). Preserves the linked
-// device — does not re-pair.
 func (c *Client) RestartSession() error {
 	return c.do("POST", "/api/sessions/"+c.SessionID+"/restart", nil, nil)
 }
 
-// StopSession halts the session but keeps the linked-device pairing (so
-// restart resumes without QR). Use LogoutSession to fully unpair.
 func (c *Client) StopSession() error {
 	return c.do("POST", "/api/sessions/"+c.SessionID+"/stop", nil, nil)
 }
 
-// LogoutSession unlinks the device on WhatsApp's side. After this, a new
-// QR is required to re-pair.
 func (c *Client) LogoutSession() error {
 	return c.do("POST", "/api/sessions/"+c.SessionID+"/logout", nil, nil)
 }
 
-// GetQR fetches the current QR as a base64 data: URL. Returns ("", nil) when
-// the session isn't in SCAN_QR_CODE state.
 func (c *Client) GetQR() (string, error) {
-	// WAHA exposes the QR as raw image bytes at /api/<session>/auth/qr.
 	req, err := http.NewRequest("GET", c.BaseURL+"/api/"+c.SessionID+"/auth/qr?format=image", nil)
 	if err != nil {
 		return "", err
@@ -289,7 +224,7 @@ func (c *Client) GetQR() (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 404 || resp.StatusCode == 422 {
-		return "", nil // no QR available right now
+		return "", nil
 	}
 	if resp.StatusCode >= 400 {
 		return "", fmt.Errorf("qr: %d", resp.StatusCode)
@@ -305,16 +240,10 @@ func (c *Client) GetQR() (string, error) {
 	return "data:" + mimeType + ";base64," + base64Encode(imgBytes), nil
 }
 
-// --- Chats ---
-
-// wahaChatOverview matches WAHA's /api/{session}/chats/overview response:
-// the public chat list with names already resolved from the WhatsApp address
-// book (when the user has saved the contact). Falls back to push-name for
-// unknown contacts. This is what we want for displaying the chat list.
 type wahaChatOverview struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
-	Picture     string `json:"picture,omitempty"` // WhatsApp CDN URL; may be empty
+	Picture     string `json:"picture,omitempty"`
 	IsGroup     bool   `json:"isGroup"`
 	UnreadCount int    `json:"unreadCount"`
 	Archived    bool   `json:"archived"`
@@ -322,18 +251,12 @@ type wahaChatOverview struct {
 	Muted       bool   `json:"muted"`
 }
 
-// ListChatsOverview returns the chat list with display names suitable for UI.
-// Endpoint: GET /api/{session}/chats/overview (faster, lighter than /chats).
-// Falls back to the heavier /chats endpoint if /overview is missing on
-// older WAHA versions.
 func (c *Client) ListChatsOverview() ([]wahaChatOverview, error) {
 	var out []wahaChatOverview
 	err := c.do("GET", "/api/"+c.SessionID+"/chats/overview?limit=500", nil, &out)
 	if err == nil && len(out) > 0 {
 		return out, nil
 	}
-	// Fallback: heavier /chats endpoint (returns full chat objects). We map
-	// down to the subset we need.
 	type heavyChat struct {
 		ID      string `json:"id"`
 		Name    string `json:"name"`
@@ -350,9 +273,6 @@ func (c *Client) ListChatsOverview() ([]wahaChatOverview, error) {
 	return out, err
 }
 
-// wahaContact is WAHA's contact representation. `name` comes from the user's
-// WhatsApp address book; `pushname` is what the contact set as their own
-// display name in WhatsApp. Either is a better label than the raw phone JID.
 type wahaContact struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
@@ -361,8 +281,6 @@ type wahaContact struct {
 	IsMe     bool   `json:"isMe"`
 }
 
-// GetContact fetches a single contact by JID. Used as a fallback when a
-// message arrives for a chat with no resolved name yet.
 func (c *Client) GetContact(jid string) (*wahaContact, error) {
 	q := url.Values{}
 	q.Set("contactId", jid)
@@ -374,15 +292,6 @@ func (c *Client) GetContact(jid string) (*wahaContact, error) {
 	return &out, nil
 }
 
-// ListAllContacts returns every contact in the address book plus the @lid
-// identities WAHA has already seen. Critical for resolving chats in @lid form
-// (WhatsApp's new opaque identifier, with no visible number) — the address
-// book's `name` rarely comes through here, but `pushname` (the display name
-// the user set in WhatsApp) is populated for most of them.
-//
-// A global endpoint (`/api/contacts/all`) with `session` in the query —
-// distinct from `/api/{session}/contacts/all`, which returns an empty or
-// broken list on GOWS.
 func (c *Client) ListAllContacts() ([]wahaContact, error) {
 	q := url.Values{}
 	q.Set("session", c.SessionID)
@@ -394,8 +303,6 @@ func (c *Client) ListAllContacts() ([]wahaContact, error) {
 	return out, nil
 }
 
-// Best display label for a contact: address-book Name first, then PushName,
-// then number, then JID. Empty if all fields blank.
 func (k *wahaContact) Label() string {
 	if k.Name != "" {
 		return k.Name
@@ -409,8 +316,6 @@ func (k *wahaContact) Label() string {
 	return k.ID
 }
 
-// MarkChatRead sends a read receipt for the given chat (clears unread badge
-// on the phone too).
 func (c *Client) MarkChatRead(chatJID string) error {
 	body := map[string]any{
 		"chatId":  chatJID,

@@ -10,10 +10,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/**
- * The outbox accepts actions that have not happened yet, so its guarantees (ordering,
- * persistence, tolerance of a corrupted file) must be verified.
- */
 class OutboxTest {
 
     private lateinit var dir: File
@@ -76,7 +72,6 @@ class OutboxTest {
         assertEquals("id-2", Outbox.first()?.id)
     }
 
-    /** Discarding returns the item so the screen can say what was lost. */
     @Test
     fun `discarding returns the item so the caller can report what was lost`() {
         write(2)
@@ -87,7 +82,6 @@ class OutboxTest {
         assertEquals("message 1", discarded?.description)
     }
 
-    /** The process can die mid-write; a corrupted file must yield an empty queue, not a crash. */
     @Test
     fun `a corrupted file does not crash the app and the queue starts empty`() {
         file.writeText("this is not json")
@@ -98,7 +92,6 @@ class OutboxTest {
     }
 }
 
-/** The decision to accept or refuse an action, and what the user is told afterwards. */
 class OutboxAcceptanceTest {
 
     private lateinit var dir: File
@@ -119,8 +112,6 @@ class OutboxAcceptanceTest {
 
     @Test
     fun `without an installed queue the action is refused, never swallowed`() {
-        // Without `install()` the Context-free overload has nowhere to write; returning
-        // `false` lets the caller show the usual connection error instead of a false promise.
         Outbox.resetForTest(null)
         val accepted = Outbox.enqueue(
             method = "POST",
@@ -134,7 +125,6 @@ class OutboxAcceptanceTest {
 
     @Test
     fun `a server rejection is recorded instead of vanishing silently`() {
-        // A 4xx removes the action for good, so it must be reported to the user.
         val list = listOf(
             PendingSend(
                 id = "id-1",
@@ -160,8 +150,6 @@ class OutboxAcceptanceTest {
 
     @Test
     fun `the idempotency key is the item id and it does not change`() {
-        // The id is persisted with the action, so retries reuse the same key and the
-        // server never executes it twice.
         val list = listOf(
             PendingSend(
                 id = "fixed-key",

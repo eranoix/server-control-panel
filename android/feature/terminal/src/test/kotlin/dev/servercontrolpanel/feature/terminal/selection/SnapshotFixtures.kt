@@ -2,15 +2,6 @@ package dev.servercontrolpanel.feature.terminal.selection
 
 import dev.servercontrolpanel.terminalengine.CellSnapshot
 
-/**
- * Builds a real [CellSnapshot] via reflection, the same workaround
- * `TerminalViewModelTest.trivialSnapshot()` uses — [CellSnapshot.fromBuffer]
- * is `internal` to `:terminal-engine`, invisible across the module boundary.
- * Unlike that 1x1 fixture, this one accepts a full row/col grid of narrow
- * codepoints (0 = "never written", matching the real engine's padding
- * convention) plus per-row wrap flags, so exact-copy behavior can be
- * exercised against wrapped, blank-padded, and wide-glyph rows.
- */
 internal fun buildSnapshot(
     cols: Int,
     rows: Int,
@@ -54,5 +45,4 @@ internal fun narrowCell(codepoint: Int): CellSnapshot.Cell = CellSnapshot.Cell(
 )
 
 internal fun wideCell(codepoint: Int): CellSnapshot.Cell = narrowCell(codepoint).copy(wide = CellSnapshot.Wide.WIDE)
-/** The tail of a wide character: it carries no codepoint of its own. */
 internal fun spacerTailCell(): CellSnapshot.Cell = narrowCell(0).copy(wide = CellSnapshot.Wide.SPACER_TAIL)

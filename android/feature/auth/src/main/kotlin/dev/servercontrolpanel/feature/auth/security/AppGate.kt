@@ -25,29 +25,6 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import dev.servercontrolpanel.data.security.SecurityPreferences
 
-/**
- * The door that stands BEFORE the app when the lock is on.
- *
- * ## Why it wraps the content instead of covering it
- *
- * An opaque layer on top would hide the screen, but the content beneath would
- * have been composed — and composing Home means fetching data from the
- * server. A door that loads the whole house before asking who is there is not
- * a door. Here [content] is only called once the way is clear.
- *
- * ## When it locks again
- *
- * On every `ON_STOP`. Leaving the app for any reason — another task, the
- * screen going dark, an incoming call — locks it again. A lock that only acts
- * on the first launch protects a freshly booted device and nothing else,
- * which is the least likely scenario.
- *
- * ## When it does NOT lock
- *
- * If the device has neither biometrics nor a PIN, [AppLock.available]
- * is false and the door stays open. Locking with no way to unlock would turn
- * the defence into the incident.
- */
 @Composable
 fun AppGate(
     activity: FragmentActivity,
@@ -61,7 +38,6 @@ fun AppGate(
     var freed by remember { mutableStateOf(false) }
     var requesting by remember { mutableStateOf(false) }
 
-    // Locks again on leaving the foreground.
     val lifecycleOwner = LocalLifecycleOwner.current
     LifecycleDisposableEffect(lifecycleOwner) { freed = false }
 
@@ -70,8 +46,6 @@ fun AppGate(
         return
     }
 
-    // Asks for the proof as soon as the door appears, with no tap demanded
-    // first: the person opened the app, and that IS the intent to come in.
     LaunchedEffect(Unit) {
         if (!requesting) {
             requesting = true
@@ -95,16 +69,11 @@ fun AppGate(
                 textAlign = TextAlign.Center,
             )
             Text(
-                // Says what is behind the door. Without this, "locked" looks
-                // like an app error rather than a choice by whoever uses it.
                 text = "The terminal and server access stay behind this screen.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
-            // The button is there for when the person cancels the system
-            // prompt by mistake. Without it, the only way out would be to
-            // close and reopen the app.
             Button(
                 onClick = {
                     if (!requesting) {
@@ -123,7 +92,6 @@ fun AppGate(
     }
 }
 
-/** Observes the lifecycle and runs [onStopped] on `ON_STOP`. */
 @Composable
 private fun LifecycleDisposableEffect(owner: LifecycleOwner, onStopped: () -> Unit) {
     androidx.compose.runtime.DisposableEffect(owner) {

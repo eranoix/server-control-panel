@@ -12,12 +12,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Instrumented: requires the real `libterminal_engine_jni.so` loaded on a
- * device or emulator (Robolectric cannot load a bionic-ABI `.so` on a host
- * JVM). Feeds bytes through [TerminalEngine] and asserts on [CellSnapshot];
- * no rendering, no UI.
- */
 class TerminalEngineTest {
 
     private fun cell(text: String, from: Int = 0): Char =
@@ -87,7 +81,6 @@ class TerminalEngineTest {
     fun write_doubleWidthGlyph_leadingCellHoldsCodepointTrailingIsSpacer() {
         val engine = TerminalEngine.create(cols = 80, rows = 24)
         try {
-            // 你 = U+4F60, a CJK wide glyph.
             engine.write("你".toByteArray(Charsets.UTF_8))
             val snap = engine.snapshot()
             val leading = snap.cellAt(0, 0)
@@ -145,7 +138,6 @@ class TerminalEngineTest {
         }
     }
 
-    /** Builds a byte stream that exercises plain text, an escape sequence, and multi-byte UTF-8. */
     private fun mixedFixture(): ByteArray {
         val sb = StringBuilder()
         sb.append("plain-text-")
@@ -217,7 +209,6 @@ class TerminalEngineTest {
                     engine.resize(cols, rows)
                 }
             }
-            // Reaching here without an exception/crash/native abort is the assertion.
             engine.snapshot()
         } finally {
             engine.close()
@@ -232,11 +223,10 @@ class TerminalEngineTest {
             val first = engine.snapshot()
             assertEquals('A'.code, first.cellAt(0, 0).codepoint)
 
-            engine.write("[HZ".toByteArray(Charsets.US_ASCII)) // cursor home, overwrite cell (0,0)
+            engine.write("[HZ".toByteArray(Charsets.US_ASCII))
             val second = engine.snapshot()
             assertEquals('Z'.code, second.cellAt(0, 0).codepoint)
 
-            // The object returned earlier must not have changed underneath us.
             assertEquals(
                 "previously returned snapshot must not mutate after a later write",
                 'A'.code,
@@ -257,14 +247,6 @@ class TerminalEngineTest {
         runContentionScenario(injectSleepInCopyWindow = true)
     }
 
-    /**
-     * Reproduces the hazard the lock-then-copy design exists for: one thread
-     * mutating the grid while another thread is mid-snapshot. Each writer
-     * iteration tags a whole row with a single generation number encoded as
-     * decimal text; the reader asserts every cell in that row decodes to the
-     * *same* generation, i.e. a snapshot never observes half of one write and
-     * half of the next.
-     */
     private fun runContentionScenario(injectSleepInCopyWindow: Boolean) {
         val cols = 80
         val rows = 24
@@ -279,20 +261,14 @@ class TerminalEngineTest {
                 val random = Random(7)
                 while (running.get()) {
                     val gen = generation.incrementAndGet()
-                    // The tag MUST fit in 6 digits because the reader checks
-                    // 6-char chunks; a fast emulator passes 1e6 within 60 s.
                     val tag = (gen % 1_000_000).toString().padStart(6, '0')
                     val fill = tag.repeat((cols / tag.length) + 1).take(cols)
                     val colorCode = 30 + (gen % 8)
                     val sb = StringBuilder()
-                    sb.append("[H") // cursor home
+                    sb.append("[H")
                     sb.append("[").append(colorCode).append('m')
                     sb.append(fill)
                     if (injectSleepInCopyWindow && gen % 37 == 0) {
-                        // Widens the race window. Split only after the control
-                        // prefix (cursor home + SGR), never mid-text: a mid-text
-                        // split legitimately leaves a mixed grid, so the
-                        // assertion would test the writer instead of the snapshot.
                         val controlPrefix = sb.length - fill.length
                         engine.write(sb.substring(0, controlPrefix).toByteArray(Charsets.US_ASCII))
                         Thread.sleep(1)

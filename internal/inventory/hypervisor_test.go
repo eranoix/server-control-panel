@@ -9,15 +9,6 @@ import (
 	"server-control-panel/internal/pve"
 )
 
-// hypervisor_test.go — the pins for the hypervisor's SEPARATE document.
-//
-// What these tests defend is a decision, not a function: the hypervisor's
-// health is NOT a field of the Node. nodeObservedAt (freshness.go:64-70) looks
-// only at Status and Uptime; hanging RAM off the Node would make the age of
-// the `pve` node FREEZE while the card showed a fresh number — two ages
-// disagreeing on the same screen. Separate document, separate timestamp,
-// separate view.
-
 func testStatus() pve.NodeStatus {
 	return pve.NodeStatus{
 		Uptime:     123456,
@@ -30,10 +21,6 @@ func testStatus() pve.NodeStatus {
 	}
 }
 
-// 🔴 TestHypervisorAgeIndependentOfNodes is the pin for the
-// age-hitching trap, in BOTH directions: advancing only the nodes makes the
-// hypervisor's age grow, and a freshly stamped hypervisor rejuvenates no node
-// at all.
 func TestHypervisorAgeIndependentOfNodes(t *testing.T) {
 	f := &fakePVE{resources: testResources(), status: testStatus()}
 	p, st, rel := newTestPoller(t, f, Sources{}, PollerConfig{})
@@ -47,8 +34,6 @@ func TestHypervisorAgeIndependentOfNodes(t *testing.T) {
 		t.Fatalf("right after the tick the hypervisor age is %d, want 0", v.AgeSeconds)
 	}
 
-	// Direction 1: /status stops answering, discovery carries on. The nodes move
-	// forward; the hypervisor must NOT move forward with them.
 	rel.advance(300 * time.Second)
 	f.mu.Lock()
 	f.statusErr = context.DeadlineExceeded
@@ -70,8 +55,6 @@ func TestHypervisorAgeIndependentOfNodes(t *testing.T) {
 		}
 	}
 
-	// Direction 2 (the inverse), measured straight on the documents: a brand-new
-	// hypervisor and old nodes coexist, each with its OWN age.
 	now := time.Unix(1800000000, 0)
 	mixed := Inventory{
 		Hypervisor: Hypervisor{Node: "pve", Uptime: Observe(int64(1), now.Unix())},
@@ -88,10 +71,6 @@ func TestHypervisorAgeIndependentOfNodes(t *testing.T) {
 	}
 }
 
-// TestStatusFailureKeepsHypervisor is invariant 2 of the poller applied to
-// the new document: a failure does NOT erase. Silent amnesia is worse than old
-// data — the screen has to say "data from 5 min ago", not "I know nothing
-// about the hypervisor".
 func TestStatusFailureKeepsHypervisor(t *testing.T) {
 	f := &fakePVE{resources: testResources(), status: testStatus()}
 	p, st, rel := newTestPoller(t, f, Sources{}, PollerConfig{})
@@ -126,10 +105,6 @@ func TestStatusFailureKeepsHypervisor(t *testing.T) {
 	}
 }
 
-// 🔴 TestHypervisorNameComesFromDiscovery is invariant 3 of the poller: no
-// hand-written hostname. The name comes out of what /cluster/resources
-// returned, which is what makes a renamed hypervisor (or a second one) show up
-// on its own instead of waiting for somebody to edit code.
 func TestHypervisorNameComesFromDiscovery(t *testing.T) {
 	resources := []pve.Resource{
 		{ID: "lxc/207", VMID: 207, Name: "apps", Node: "renamed-hypervisor", Type: "lxc", Status: "running"},
@@ -152,10 +127,6 @@ func TestHypervisorNameComesFromDiscovery(t *testing.T) {
 	}
 }
 
-// TestHypervisorNameIsDeterministic: with more than one host in the
-// response, the tick ALWAYS picks the same one (the smallest in string order).
-// Without that, two consecutive ticks would write different documents and the
-// file's diff would turn into noise.
 func TestHypervisorNameIsDeterministic(t *testing.T) {
 	resources := []pve.Resource{
 		{ID: "lxc/207", VMID: 207, Name: "apps", Node: "zeta", Type: "lxc", Status: "running"},
@@ -168,16 +139,11 @@ func TestHypervisorNameIsDeterministic(t *testing.T) {
 	}
 }
 
-// 🔴 TestEveryHypervisorFieldIsStamped: the timestamp being mandatory is
-// structural, not a matter of discipline. A raw field added in the future (a
-// `MemFree int64` "just for the screen") fails here — it is the only way for
-// "an old number displayed as live" to stay impossible when nobody is looking.
 func TestEveryHypervisorFieldIsStamped(t *testing.T) {
 	tp := reflect.TypeOf(Hypervisor{})
 	for i := 0; i < tp.NumField(); i++ {
 		f := tp.Field(i)
 		if f.Name == "Node" {
-			// Identity, not measurement: the hypervisor's name does not age.
 			if f.Type.Kind() != reflect.String {
 				t.Errorf("Node stopped being a string (%s)", f.Type)
 			}
@@ -194,8 +160,6 @@ func TestEveryHypervisorFieldIsStamped(t *testing.T) {
 	}
 }
 
-// TestHypervisorNeverObservedSaysSo: an age of -1 is the marker for "never
-// observed", and it must NOT become 0. "0 s ago" reads as just-seen.
 func TestHypervisorNeverObservedSaysSo(t *testing.T) {
 	v := ViewHypervisor(Hypervisor{}, 90*time.Second, time.Unix(1800000000, 0))
 	if v.AgeSeconds != -1 {
@@ -206,9 +170,6 @@ func TestHypervisorNeverObservedSaysSo(t *testing.T) {
 	}
 }
 
-// TestLoadParsedAsNumber: the hypervisor sends ["1.14","1.55","1.70"]
-// (strings). Storing the string forces the screen to convert — and the screen
-// is precisely where no data logic is allowed.
 func TestLoadParsedAsNumber(t *testing.T) {
 	var inv Inventory
 	applyHypervisor(&inv, "pve", testStatus(), 1800000000)
@@ -216,7 +177,6 @@ func TestLoadParsedAsNumber(t *testing.T) {
 	if inv.Hypervisor.Load.Value != want {
 		t.Errorf("Load = %v, want %v", inv.Hypervisor.Load.Value, want)
 	}
-	// A short or unreadable loadavg must not bring down the rest of the health.
 	st := testStatus()
 	st.LoadAvg = []string{"not-a-number"}
 	var inv2 Inventory

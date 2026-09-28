@@ -10,9 +10,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders the stateless [OpsDashboardScreen] under Robolectric in every [OpsDashboardUiState].
- */
 @RunWith(RobolectricTestRunner::class)
 class OpsDashboardScreenTest {
 
@@ -60,8 +57,6 @@ class OpsDashboardScreenTest {
         composeRule.onNodeWithText("Health checks (all ok)").assertExists()
         composeRule.onNodeWithText("docker").assertExists()
 
-        // With no alerts the section starts collapsed, so the empty message
-        // appears only after expanding it.
         composeRule.onNodeWithText("Active alerts (0)").assertExists()
         composeRule.onNodeWithText("No alerts firing right now.").assertDoesNotExist()
         composeRule.onNodeWithText("Active alerts (0)").performClick()

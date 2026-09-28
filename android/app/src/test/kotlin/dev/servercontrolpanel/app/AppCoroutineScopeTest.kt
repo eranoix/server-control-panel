@@ -17,15 +17,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * [appCoroutineScope] gives background coroutines the same isolation as [Bootstrap.step]:
- * [Bootstrap.step] only wraps the synchronous `launch()`, so without a
- * [kotlinx.coroutines.CoroutineExceptionHandler] a throw in the coroutine body would crash the app.
- *
- * Uses the plain [android.app.Application]: [PanelApplication.onCreate] starts a
- * background coroutine touching WorkManager, which fails under Robolectric and would race
- * these tests on [Bootstrap.initFailures].
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class)
 class AppCoroutineScopeTest {
@@ -92,18 +83,12 @@ class AppCoroutineScopeTest {
     @Test
     fun `a coroutine that does not throw never touches Bootstrap initFailures`() {
         val scope = appCoroutineScope()
-        val job = scope.launch(Dispatchers.IO) { /* no-op */ }
+        val job = scope.launch(Dispatchers.IO) {  }
         runBlocking { job.join() }
 
         assertTrue(Bootstrap.initFailures.isEmpty())
     }
 
-    /**
-     * A plain `SupervisorJob` scope has no `CoroutineExceptionHandler`, so exceptions escape to
-     * the thread's default handler. This checks the context instead of throwing for real,
-     * because `kotlinx-coroutines-test` captures uncaught exceptions globally and would fail
-     * an unrelated later test.
-     */
     @Test
     fun `a raw supervisor scope has no exception handler, so exceptions escape`() {
         val rawScope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)

@@ -15,10 +15,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Pure JVM tests for `bindErrors` (form error binding) and `confirmationFor`
- * (lookup of a `confirm_destructive` by `action_id`).
- */
 class ValidationBindingTest {
 
     private fun jobForm() = SduiComponent.Form(

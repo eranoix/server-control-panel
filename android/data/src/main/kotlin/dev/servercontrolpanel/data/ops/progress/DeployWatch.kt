@@ -17,16 +17,6 @@ import dev.servercontrolpanel.data.ops.DeployStatusResult
 import dev.servercontrolpanel.data.ops.OpsRepository
 import kotlinx.coroutines.delay
 
-/**
- * Follows a deploy to the end and shows its progress in a notification, since
- * leaving the app kills the socket and Android 15 cuts background network after
- * a few seconds.
- *
- * A deploy lasts minutes and has a visible beginning, progress and end, which is
- * the foreground work Android still accepts; `WorkManager` handles the promotion
- * to the foreground. Success, failure and lost contact each produce a distinct
- * final notification, since a bar that just disappears looks like a dead app.
- */
 class DeployWatchWorker(
     context: Context,
     params: WorkerParameters,
@@ -63,8 +53,6 @@ class DeployWatchWorker(
                     )
                 }
                 is DeployStatusResult.Error -> {
-                    // A read failure is not a deploy failure: the device network
-                    // may have blinked while the server keeps working.
                     attemptsWithoutResponse++
                     if (attemptsWithoutResponse >= FAILED_READS_BEFORE_GIVING_UP) {
                         notifyLostContact(applicationContext, app)
@@ -84,21 +72,14 @@ class DeployWatchWorker(
         const val KEY_JOB = "job_id"
         const val KEY_APP = "app"
 
-        /** 3 s, the same as the server's `/ops/status` cache; polling faster gains nothing. */
         private const val INTERVAL_MS = 3_000L
 
-        /** About 15 min of following. A longer deploy is news in itself. */
         private const val MAX_READS = 300
 
-        /** Three failures in a row (~9 s) is no longer a network blink. */
         private const val FAILED_READS_BEFORE_GIVING_UP = 3
 
         private const val WORK_NAME = "deploy-watch"
 
-        /**
-         * Starts following [jobId]. `REPLACE`, not `APPEND`: two deploys followed at
-         * once would compete for the same notification, and the latest is the one that matters.
-         */
         fun track(context: Context, jobId: String, app: String) {
             val request = OneTimeWorkRequestBuilder<DeployWatchWorker>()
                 .setInputData(workData(jobId, app))
@@ -111,10 +92,6 @@ class DeployWatchWorker(
         fun workData(jobId: String, app: String): Data =
             workDataOf(KEY_JOB to jobId, KEY_APP to app)
 
-        /**
-         * Whether this state is final. An allow list of terminal states, so an
-         * unknown new server state reads as "still running" rather than finished.
-         */
         fun finished(state: String): Boolean =
             state.lowercase() in setOf("ok", "success", "succeeded", "done", "failed", "error", "rolled_back", "cancelled", "canceled")
 
@@ -129,7 +106,6 @@ private const val END_ID = 0x0DEB
 private fun ensureChannel(context: Context) {
     val manager = context.getSystemService(NotificationManager::class.java) ?: return
     manager.createNotificationChannel(
-        // IMPORTANCE_LOW: progress neither rings nor vibrates.
         NotificationChannel(CHANNEL, "Task progress", NotificationManager.IMPORTANCE_LOW),
     )
 }
@@ -149,7 +125,6 @@ private fun progressInfo(
         .setOnlyAlertOnce(true)
     if (percent != null && percent in 0..100) {
         b.setProgress(100, percent, false)
-        // The step says more than the number, so the percentage goes alongside it.
         b.setContentText(step?.takeIf { it.isNotBlank() }?.let { "$it · $percent%" } ?: "$percent%")
     } else {
         b.setProgress(0, 0, true)
@@ -175,16 +150,11 @@ private fun notifyFinish(context: Context, app: String, state: String, error: St
             )
             .setSmallIcon(android.R.drawable.stat_sys_upload_done)
             .setAutoCancel(true)
-            // The end alerts, unlike the progress: it is the only news that changes what the user does next.
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build(),
     )
 }
 
-/**
- * The app lost contact and does not know how the deploy ended. It must say so:
- * a bar that silently vanishes reads as success.
- */
 private fun notifyLostContact(context: Context, app: String) {
     ensureChannel(context)
     val manager = context.getSystemService(NotificationManager::class.java) ?: return

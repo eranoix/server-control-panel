@@ -1,13 +1,5 @@
 package api
 
-// handlers_system.go — host observability and operations
-//
-// Covers system state (stats/history/listening/connections),
-// systemd unit management (units/status/journal/restart/action),
-// apt + reboot, a viewer for local logs (/var/log) and UFW.
-//
-// Extracted from api.go. It stays on *Router because it uses mustPrimary/audit/cfg.
-
 import (
 	"context"
 	"encoding/json"
@@ -27,11 +19,6 @@ import (
 	"server-control-panel/internal/wsorigin"
 )
 
-// ---------- System ----------
-
-// statsTTL: the window in which one /api/stats collection is reused. Shorter
-// than the frontend's poll (5s) so that a lone tab keeps seeing fresh data, but
-// long enough for N concurrent tabs to share ONE collection.
 const statsTTL = 3 * time.Second
 
 var (
@@ -40,11 +27,6 @@ var (
 	statsCachedAt time.Time
 )
 
-// collectStatsCached serialises and memoises system.Collect for statsTTL.
-// system.Collect blocks for about 200ms sampling the CPU and walks ALL of /proc;
-// without this, every open tab paid that cost every 5s (N tabs = N times the
-// load on the host). The mutex also acts as singleflight: concurrent requests
-// on a cache miss wait for the collection in progress instead of firing several.
 func collectStatsCached(ctx context.Context) (*system.Stats, error) {
 	statsCacheMu.Lock()
 	defer statsCacheMu.Unlock()
@@ -55,8 +37,6 @@ func collectStatsCached(ctx context.Context) (*system.Stats, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The frontend iterates disks/net/top_procs in x-for; deduplicating and
-	// dropping entries with an empty key avoids the "reading 'after'" crash in Alpine.
 	s.Disks = sanitizeList(s.Disks, "Mount").([]system.DiskInfo)
 	s.Net = sanitizeList(s.Net, "Name").([]system.NetInfo)
 	s.TopProcs = sanitizeList(s.TopProcs, "PID").([]system.ProcInfo)
@@ -65,8 +45,6 @@ func collectStatsCached(ctx context.Context) (*system.Stats, error) {
 }
 
 func (r *Router) handleStats(w http.ResponseWriter, req *http.Request) {
-	// Cached: the snapshot is read-only once it has been stored, so handing the
-	// same pointer to concurrent requests is safe.
 	s, err := collectStatsCached(req.Context())
 	if err != nil {
 		writeErr(w, 500, err.Error())
@@ -85,8 +63,6 @@ func (r *Router) handleListening(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	// The frontend uses :key="p.Local". ss(8) rarely returns lines with no Local,
-	// but it can duplicate when there are several sockets per port (TCP+TCP6).
 	writeJSON(w, sanitizeList(p, "Local"))
 }
 
@@ -105,8 +81,6 @@ func (r *Router) handleUnits(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	// systemd units with an empty Name (the legend lines of `list-units`) have to
-	// be dropped before they become :key="u.Name" in the frontend.
 	writeJSON(w, sanitizeList(u, "Name"))
 }
 
@@ -168,9 +142,6 @@ func (r *Router) handleUnitRestart(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]string{"status": "ok", "output": out})
 }
 
-// handleUnitAction performs start/stop/enable/disable/restart on a systemd unit.
-// All non-restart ops shell out to systemctl directly so we don't need new
-// helpers in sysextra. The unit name is sanitized to [A-Za-z0-9_.@-].
 func (r *Router) handleUnitAction(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -210,9 +181,6 @@ func validUnitName(s string) bool {
 	if s == "" || len(s) > 100 {
 		return false
 	}
-	// It cannot start with '-' or '@' (ambiguous with a CLI flag or an empty
-	// instance). systemd accepts the template `foo@inst.service` — `@` only in
-	// the middle, counted exactly once. No spaces, no ';', no `|`, no `$`.
 	if s[0] == '-' || s[0] == '@' || s[0] == '.' {
 		return false
 	}
@@ -235,10 +203,6 @@ func validUnitName(s string) bool {
 	return true
 }
 
-// handleApt runs apt-get with the given action. Output is captured (potentially
-// long-running). Body: {"action":"update|upgrade|autoremove","assume_yes":true}.
-// Only `update`, `upgrade`, and `autoremove` are accepted; others (purge, install,
-// remove a package by name) require typing the package which we don't surface.
 func (r *Router) handleApt(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -269,15 +233,12 @@ func (r *Router) handleApt(w http.ResponseWriter, req *http.Request) {
 	out, err := execCmdLong("apt-get", args...)
 	r.auditEvent(req, auth.UserFrom(req), "apt."+body.Action, "")
 	if err != nil {
-		// Still return the output — useful for the user even on failure.
 		writeJSON(w, map[string]any{"status": "error", "error": err.Error(), "output": out})
 		return
 	}
 	writeJSON(w, map[string]any{"status": "ok", "output": out})
 }
 
-// handleReboot triggers a system reboot. Confirmation is the caller's
-// responsibility (the UI shows a HEAVY confirm modal).
 func (r *Router) handleReboot(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -288,7 +249,6 @@ func (r *Router) handleReboot(w http.ResponseWriter, req *http.Request) {
 	}
 	user := auth.UserFrom(req)
 	r.auditEvent(req, user, "system.reboot", "")
-	// Schedule a brief delay so we can return the 200 first.
 	go func() {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -301,10 +261,6 @@ func (r *Router) handleReboot(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]string{"status": "scheduled"})
 }
 
-// ---------- system logs, ufw, cron, compose wizard ----------
-
-// allowedLogPaths whitelists which /var/log files we'll serve. Avoids
-// turning the endpoint into "read any file as root".
 var allowedLogPaths = map[string]bool{
 	"/var/log/syslog":            true,
 	"/var/log/auth.log":          true,
@@ -318,7 +274,6 @@ var allowedLogPaths = map[string]bool{
 	"/opt/panel/data/deploy.log": true,
 }
 
-// handleSystemLogs lists the available log files (existing ones in the whitelist).
 func (r *Router) handleSystemLogs(w http.ResponseWriter, req *http.Request) {
 	type logInfo struct {
 		Path     string `json:"path"`
@@ -334,8 +289,6 @@ func (r *Router) handleSystemLogs(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, sanitizeList(out, "Path"))
 }
 
-// handleSystemLogTail streams `tail -F <path>` via WebSocket. The path must
-// be in allowedLogPaths.
 func (r *Router) handleSystemLogTail(w http.ResponseWriter, req *http.Request) {
 	path := req.URL.Query().Get("path")
 	if !allowedLogPaths[path] {
@@ -348,14 +301,12 @@ func (r *Router) handleSystemLogTail(w http.ResponseWriter, req *http.Request) {
 	}
 	defer conn.Close()
 
-	// Mobile WS: NAT timeouts on 4G drop the connection silently; with no
-	// ping/pong and no ReadDeadline, the tail keeps running until the TCP keepalive (2h).
 	const (
 		pongWait   = 60 * time.Second
 		pingPeriod = 25 * time.Second
 		writeWait  = 10 * time.Second
 	)
-	conn.SetReadLimit(8 * 1024) // the client only sends close/ping; 8KB is plenty
+	conn.SetReadLimit(8 * 1024)
 	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error {
 		_ = conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -364,9 +315,6 @@ func (r *Router) handleSystemLogTail(w http.ResponseWriter, req *http.Request) {
 
 	ctx, cancel := context.WithCancel(req.Context())
 	defer cancel()
-	// Single-writer mutex: gorilla/websocket forbids concurrent WriteMessage.
-	// Before this fix, the ping goroutine and the main copy loop could race
-	// — one truncating the other and corrupting the framed stream.
 	var writeMu sync.Mutex
 	safeWrite := func(mt int, p []byte) error {
 		writeMu.Lock()
@@ -385,7 +333,6 @@ func (r *Router) handleSystemLogTail(w http.ResponseWriter, req *http.Request) {
 		_ = safeWrite(websocket.TextMessage, []byte("start: "+err.Error()))
 		return
 	}
-	// Reader: any incoming message (including close) terminates tail.
 	go func() {
 		for {
 			if _, _, err := conn.ReadMessage(); err != nil {
@@ -394,7 +341,6 @@ func (r *Router) handleSystemLogTail(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 	}()
-	// Ping ticker: keeps the connection alive behind NAT/proxies.
 	pingTicker := time.NewTicker(pingPeriod)
 	defer pingTicker.Stop()
 	go func() {
@@ -425,12 +371,9 @@ func (r *Router) handleSystemLogTail(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// handleUFW returns the current UFW status + rules. Output is the literal
-// `ufw status numbered`, which is what most admins recognise.
 func (r *Router) handleUFW(w http.ResponseWriter, req *http.Request) {
 	out, err := execCmd("ufw", "status", "numbered")
 	if err != nil {
-		// ufw not installed is a common state — return graceful info.
 		writeJSON(w, map[string]any{"installed": false, "error": err.Error(), "output": out})
 		return
 	}
@@ -438,13 +381,6 @@ func (r *Router) handleUFW(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]any{"installed": true, "enabled": enabled, "output": out})
 }
 
-// handleUFWRule adds or removes a firewall rule. Body:
-//
-//	{ action: "allow"|"deny"|"reject"|"delete", spec: "22/tcp" or "from 10.0.0.0/8" }
-//
-// The spec is forwarded verbatim to ufw, so the caller is expected to follow
-// ufw syntax. Audit is captured. Toggling enable/disable uses action="enable"
-// or "disable".
 func (r *Router) handleUFWRule(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -477,7 +413,6 @@ func (r *Router) handleUFWRule(w http.ResponseWriter, req *http.Request) {
 			writeErr(w, 400, "spec required")
 			return
 		}
-		// Split on spaces — ufw accepts multi-token specs like "from 1.2.3.4 to any port 22".
 		args = append([]string{body.Action}, strings.Fields(body.Spec)...)
 	case "delete":
 		if body.Spec == "" {

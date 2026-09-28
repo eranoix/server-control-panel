@@ -7,7 +7,6 @@ import (
 	"testing"
 )
 
-// readHistory returns the history file as lines of text, with no escapes.
 func readHistory(t *testing.T, dir, user, name string) []string {
 	t.Helper()
 	d, err := os.ReadFile(sessionHistPath(dir, user, name))
@@ -24,7 +23,6 @@ func readHistory(t *testing.T, dir, user, name string) []string {
 	return lines
 }
 
-// The basics: what leaves through the top of the screen enters the history, in order, once.
 func TestHistoryKeepsWhatScrollsOffScreen(t *testing.T) {
 	dir := t.TempDir()
 	screen := newSessionScreen(dir, "u", "s")
@@ -36,7 +34,6 @@ func TestHistoryKeepsWhatScrollsOffScreen(t *testing.T) {
 	screen.closeOnce()
 
 	lines := readHistory(t, dir, "u", "s")
-	// 30 lines on a 10-line screen: the first ~20 scrolled off.
 	if len(lines) < 18 || len(lines) > 21 {
 		t.Fatalf("history with %d lines; expected ~20 (30 written, 10-line screen)", len(lines))
 	}
@@ -47,33 +44,19 @@ func TestHistoryKeepsWhatScrollsOffScreen(t *testing.T) {
 	}
 }
 
-// WHAT THIS TEST PROTECTS, AND WHAT NO OTHER TEST DOES.
-//
-// A program that redraws (Claude Code, via Ink) walks the cursor up with
-// `ESC[nA` and repaints over itself. Replaying those bytes onto a new grid
-// DUPLICATES: the CUU saturates at the first line of the screen, never reaches
-// the scrollback, and the previous copy stays — that was the "the text is
-// duplicated" of the report.
-//
-// The server's history is not a replay: the emulator is alive, on the same grid
-// the program is looking at, so the repaint lands where the program meant it to.
-// What reaches the file is each line's FINAL result, once.
 func TestHistoryDoesNotDuplicateRepaintedOutput(t *testing.T) {
 	dir := t.TempDir()
 	screen := newSessionScreen(dir, "u", "s")
 	screen.resize(40, 10)
 
-	// A 6-line "frame", repainted three times in the same place — which is what
-	// Ink does on every keystroke.
 	for decoded := 1; decoded <= 3; decoded++ {
 		for i := 1; i <= 6; i++ {
 			screen.feed([]byte(fmt.Sprintf("frame %d line %d\r\n", decoded, i)))
 		}
 		if decoded < 3 {
-			screen.feed([]byte("\x1b[6A")) // up 6 lines to repaint
+			screen.feed([]byte("\x1b[6A"))
 		}
 	}
-	// Push everything off the screen so the history receives the result.
 	for i := 0; i < 20; i++ {
 		screen.feed([]byte("\r\n"))
 	}
@@ -84,8 +67,6 @@ func TestHistoryDoesNotDuplicateRepaintedOutput(t *testing.T) {
 	for _, l := range lines {
 		counts[l]++
 	}
-	// Only the last frame survived the repainting — the earlier ones were
-	// overwritten on the screen itself, which is what actually happened.
 	for i := 1; i <= 6; i++ {
 		target := fmt.Sprintf("frame 3 line %d", i)
 		if n := counts[target]; n != 1 {
@@ -99,17 +80,12 @@ func TestHistoryDoesNotDuplicateRepaintedOutput(t *testing.T) {
 	}
 }
 
-// A multibyte character split on a chunk boundary: the recorder delivers whatever
-// `read()` returned, and this happens all the time. Without carrying the
-// remainder into the next chunk, every boundary would become a wrong character in
-// the history.
 func TestHistoryHandlesRuneSplitAcrossBlocks(t *testing.T) {
 	dir := t.TempDir()
 	screen := newSessionScreen(dir, "u", "s")
 	screen.resize(40, 4)
 
 	text := []byte("naïve über Straße año\r\n")
-	// Delivered byte by byte: every possible rune boundary is exercised.
 	for _, b := range text {
 		screen.feed([]byte{b})
 	}
@@ -130,19 +106,17 @@ func TestHistoryHandlesRuneSplitAcrossBlocks(t *testing.T) {
 	}
 }
 
-// The alternate screen (vim, htop) is not history: what scrolls in there is the
-// scratch of a full-screen program and would fill the file with junk.
 func TestHistoryIgnoresAlternateScreen(t *testing.T) {
 	dir := t.TempDir()
 	screen := newSessionScreen(dir, "u", "s")
 	screen.resize(40, 6)
 
 	screen.feed([]byte("before vim\r\n"))
-	screen.feed([]byte("\x1b[?1049h")) // enters the alternate screen
+	screen.feed([]byte("\x1b[?1049h"))
 	for i := 0; i < 30; i++ {
 		screen.feed([]byte(fmt.Sprintf("scratch %d\r\n", i)))
 	}
-	screen.feed([]byte("\x1b[?1049l")) // leave the alternate screen
+	screen.feed([]byte("\x1b[?1049l"))
 	for i := 0; i < 10; i++ {
 		screen.feed([]byte("\r\n"))
 	}
@@ -156,8 +130,6 @@ func TestHistoryIgnoresAlternateScreen(t *testing.T) {
 	}
 }
 
-// Reading the history cuts at the start of a LINE, never in the middle: half a
-// line at the top is dirt the terminal draws as though it were content.
 func TestHistoryCutsAtWholeLine(t *testing.T) {
 	if i := nextLineIndex([]byte("mid of a line\r\nwhole\r\n")); i != 15 {
 		t.Errorf("next-line index = %d; wanted 15", i)

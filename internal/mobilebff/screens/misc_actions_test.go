@@ -14,11 +14,6 @@ import (
 	"server-control-panel/internal/queue"
 )
 
-// fakeMiscBackend is an in-memory stand-in for MiscDeps' mutating closures,
-// plus spy counters — mirrors fakeDockerActionsBackend/fakeAlertsBackend so
-// tests can assert a mutation NEVER happened (e.g. DestroyDeployApp/
-// CancelQueueJob must not be reached when the confirmation gate, RBAC gate
-// or field validation rejects the request first).
 type fakeMiscBackend struct {
 	mu sync.Mutex
 
@@ -177,12 +172,6 @@ func (b *fakeMiscBackend) setTransitions(ts []jira.Transition) {
 	b.jiraTransitions = ts
 }
 
-// registerMiscActionsForTest registers the real misc.* actions in this test
-// binary's global sdui action registry EXACTLY once — RegisterAction panics
-// on a duplicate ActionID, and only the tests below need the real registry
-// (to exercise RunAction's confirmation/authorize steps end to end); every
-// other test in this file calls the handler-producing functions directly,
-// bypassing the registry. Mirrors registerDockerActionsForTest exactly.
 var (
 	registerMiscActionsTestOnce sync.Once
 	registerMiscActionsTestDeps *fakeMiscBackend
@@ -196,13 +185,6 @@ func registerMiscActionsForTest() *fakeMiscBackend {
 	return registerMiscActionsTestDeps
 }
 
-// --- Test 1: destructive gate — zero calls without confirmation -----------
-
-// TestMiscAction_DestructiveActionsRequireConfirmation proves
-// deploy.app.delete and queue.job.cancel are unreachable without
-// confirmation: an unconfirmed RunAction call returns a ConfirmationFieldKey
-// FieldErrors WITHOUT ever calling deps.DestroyDeployApp/deps.CancelQueueJob
-// mirrors TestDockerAction_DestructiveActionsRequireConfirmation.
 func TestMiscAction_DestructiveActionsRequireConfirmation(t *testing.T) {
 	backend := registerMiscActionsForTest()
 	admin, _ := testMiscViewers()
@@ -236,7 +218,6 @@ func TestMiscAction_DestructiveActionsRequireConfirmation(t *testing.T) {
 		t.Errorf("CancelQueueJob was called without confirmation: before=%d after=%d", baseCancel, cancelAfter)
 	}
 
-	// Now confirm properly and prove the handlers actually run.
 	if _, err := sdui.RunAction(context.Background(), miscActionDeployAppDelete, admin, map[string]string{"id": "app1"}, nil, sdui.Confirmation{Confirmed: true}); err != nil {
 		t.Fatalf("deploy.app.delete confirmed: err = %v", err)
 	}
@@ -252,11 +233,6 @@ func TestMiscAction_DestructiveActionsRequireConfirmation(t *testing.T) {
 	}
 }
 
-// --- Test 2: validation FieldErrors -----------------------------------------
-
-// TestMiscAction_ValidationReturnsFieldErrors proves ai.settings.save,
-// jira.connect and deploy.app.create each return field-keyed FieldErrors on
-// bad input, never a generic error, and never reach their domain closure.
 func TestMiscAction_ValidationReturnsFieldErrors(t *testing.T) {
 	backend := newFakeMiscBackend()
 	deps := backend.deps()
@@ -310,15 +286,6 @@ func TestMiscAction_ValidationReturnsFieldErrors(t *testing.T) {
 	})
 }
 
-// --- Test 3: RBAC parity — unauthorized admin-only mutation -----------------
-
-// TestMiscAction_NonAdminMutatingActionsNotFound proves a non-admin invoking
-// any admin-only mutating action directly — even fully confirmed — gets
-// sdui.ErrActionNotFound at RunAction's authorize step, never reaching the
-// handler. Covers ai.settings.save and all three deploy.app.*
-// actions (miscAdminViewer-gated); queue.job.* is deliberately excluded here
-// since it is NOT admin-gated (ownership-gated instead, see Test 4-adjacent
-// TestMiscAction_QueueJob_OwnershipGate below).
 func TestMiscAction_NonAdminMutatingActionsNotFound(t *testing.T) {
 	backend := registerMiscActionsForTest()
 	_, nonAdmin := testMiscViewers()
@@ -356,12 +323,6 @@ func TestMiscAction_NonAdminMutatingActionsNotFound(t *testing.T) {
 	}
 }
 
-// TestMiscAction_QueueJob_OwnershipGate proves queue.job.retry/cancel are
-// reachable by a non-admin for THEIR OWN job, but return ErrActionNotFound
-// (never calling RerunQueueJob/CancelQueueJob) for a job owned by someone
-// else — the resource-level ownership check that lives inside the handler
-// itself, since RunAction's binary authorize gate cannot express per-resource
-// ownership (see registerMiscActions' doc comment on these two actions).
 func TestMiscAction_QueueJob_OwnershipGate(t *testing.T) {
 	backend := newFakeMiscBackend()
 	deps := backend.deps()
@@ -401,13 +362,6 @@ func TestMiscAction_QueueJob_OwnershipGate(t *testing.T) {
 	}
 }
 
-// --- Test 4: Jira transition validity — never a raw passthrough ------------
-
-// TestMiscAction_JiraTransition_InvalidTransitionIsFieldError proves an
-// out-of-list transition_id never reaches deps.JiraTransition — it comes
-// back as a form-level FieldErrors instead, never a raw Jira API error
-// passthrough. Conversely, a transition_id that IS in the fresh list from
-// deps.JiraTransitions succeeds and calls deps.JiraTransition exactly once.
 func TestMiscAction_JiraTransition_InvalidTransitionIsFieldError(t *testing.T) {
 	backend := newFakeMiscBackend()
 	deps := backend.deps()
@@ -440,12 +394,6 @@ func TestMiscAction_JiraTransition_InvalidTransitionIsFieldError(t *testing.T) {
 	}
 }
 
-// TestMiscAction_JiraTransition_NoSelectedIssueIsFieldError proves the
-// transition/comment actions refuse to run (as a FieldErrors, not a panic or
-// a call with an empty key) when the caller never selected an issue via
-// jira.issue.select first — this uses a UNIQUE username never touched by any
-// other test in this package, since jiraSelectedIssueByUser (misc.go) is
-// shared package-level state.
 func TestMiscAction_JiraTransition_NoSelectedIssueIsFieldError(t *testing.T) {
 	backend := newFakeMiscBackend()
 	deps := backend.deps()

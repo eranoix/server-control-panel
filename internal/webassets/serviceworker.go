@@ -5,11 +5,6 @@ import (
 	"net/http"
 )
 
-// HandleServiceWorker serves an SW with strategic caching of the app shell
-// (HTML + vendor JS + CSS) plus network-only for /api/ and /ws/. Offline it
-// serves the cached shell plus a fallback. It is what makes "Add to Home
-// Screen" and real offline operation possible. The cache version changes with
-// every build (ProcessStartTime), forcing the SW to update.
 func HandleServiceWorker(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")

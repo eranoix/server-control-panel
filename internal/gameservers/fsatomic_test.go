@@ -13,22 +13,11 @@ import (
 	"testing"
 )
 
-// Behavioral pin for the defect: the panel runs as root, the game container runs
-// as the game's user, and the container's start.sh ABORTS the boot if it cannot
-// write to the file. A config that turns root:root brings the server down on the
-// next restart, far from the action that caused it.
-//
-// That is why the proof here is `stat` before and after — never a read of the
-// content. A test that only checked bytes would pass with the defective code.
-
 const (
-	gameUID = 4711 // Enshrouded's uid on CT 201; exists only in the test
+	gameUID = 4711
 	gameGID = 4711
 )
 
-// requireRoot fails instead of skipping. `os.Chown` to another uid is a root
-// privilege: without root this test measures nothing. A t.Skip here would be a
-// false green, which is the family of defect this work exists to close.
 func requireRoot(t *testing.T) {
 	t.Helper()
 	if os.Geteuid() != 0 {
@@ -66,9 +55,6 @@ func requireMark(t *testing.T, p string, want mark) {
 	}
 }
 
-// reporter is what makes it possible to run the SAME pin against a defective
-// writer and assert that it fails. Without it the pin would prove that it labels,
-// not that it detects.
 type reporter interface {
 	Errorf(format string, args ...interface{})
 }
@@ -85,9 +71,6 @@ func (c *collector) has(sub string) bool {
 	return false
 }
 
-// checkPreservation creates a file with a known owner and mode, calls the
-// writer and compares `stat` before/after. It returns both marks so the caller
-// can record them (that is the evidence that goes into the write-up).
 func checkPreservation(r reporter, dir, name string, writer func(path string, content []byte) error) (before, after mark) {
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(`{"v":1}`), 0o600); err != nil {
@@ -129,8 +112,6 @@ func checkPreservation(r reporter, dir, name string, writer func(path string, co
 	return
 }
 
-// writerWithoutChown reproduces the DEFECTIVE idiom that existed in the seven
-// sites: tmp + WriteFile + Chmod + Rename, with no Chown. It is the pin's bite.
 func writerWithoutChown(path string, content []byte) error {
 	tmp := path + ".old-tmp"
 	if err := os.WriteFile(tmp, content, 0o644); err != nil {
@@ -154,8 +135,6 @@ func TestWriteAtomicPreservesOwnerAndMode(t *testing.T) {
 		t.Logf("stat AFTER:  %s", after)
 	})
 
-	// The mandatory negative case: the same pin, against the writer with no Chown.
-	// If it does NOT fail, the pin is decorative and the whole test is a false green.
 	t.Run("bites_when_chown_is_missing", func(t *testing.T) {
 		c := &collector{}
 		checkPreservation(c, t.TempDir(), "target.json", writerWithoutChown)
@@ -215,7 +194,6 @@ func TestWriteAtomicNewFileUsesRef(t *testing.T) {
 	})
 }
 
-// tmpLeftovers counts leftover temporaries in the directory.
 func tmpLeftovers(t *testing.T, dir, base string) []string {
 	t.Helper()
 	ents, err := os.ReadDir(dir)
@@ -252,8 +230,6 @@ func TestWriteAtomicLeavesNoGarbage(t *testing.T) {
 
 	t.Run("failure_midway", func(t *testing.T) {
 		dir := t.TempDir()
-		// The target is a NON-EMPTY DIRECTORY: the Rename fails (ENOTEMPTY) after
-		// the temporary already exists. It is the path that proves the cleanup.
 		p := filepath.Join(dir, "target")
 		if err := os.Mkdir(p, 0o755); err != nil {
 			t.Fatal(err)
@@ -282,8 +258,6 @@ func TestWriteAtomicTmpNameIsUnpredictable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A third party pre-creates the predictable name. If the writer used
-	// path+".tmp", it would write over this file — and this content would vanish.
 	decoy := p + ".tmp"
 	if err := os.WriteFile(decoy, []byte("BAIT"), 0o600); err != nil {
 		t.Fatal(err)
@@ -338,8 +312,6 @@ func TestChownAsRefDerivesFromDisk(t *testing.T) {
 	if err := os.WriteFile(inner, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// Only the ROOT belongs to the game; what is inside was born root:root (it is
-	// the snapshot of the defect).
 	if err := os.Chown(root, gameUID, gameGID); err != nil {
 		t.Fatal(err)
 	}
@@ -361,13 +333,6 @@ func TestChownAsRefDerivesFromDisk(t *testing.T) {
 	}
 }
 
-// TestNoHardcodedUID is the pin for it: the game's uid is NEVER a constant in
-// production code — it always comes from observing the disk. 4711 is
-// Enshrouded's; Palworld uses 1000. A new constant is how the defect comes back
-// under another name.
-//
-// The sweep is by AST, not by grep: a comment and a string do not count, and an
-// integer literal counts even when written in another base.
 func TestNoHardcodedUID(t *testing.T) {
 	needsRoot(t)
 	fset := token.NewFileSet()
@@ -397,23 +362,11 @@ func TestNoHardcodedUID(t *testing.T) {
 	}
 }
 
-// One pin PER converted site.
-//
-// Each one creates the target with a known owner and a known mode, calls the
-// PUBLIC METHOD that writes, and asserts an identical `stat`. Calling the public
-// method (and not writeAtomic directly) is what makes the pin able to catch a
-// regression of the kind "somebody reintroduced WriteFile in this path".
-
-// otherUID is deliberately DIFFERENT from 4711. A test written with 4711 would
-// pass even with the old code, because the old code nailed 4711 down — it would
-// be a test built to match the wrong implementation.
 const (
 	otherUID = 5000
 	otherGID = 5000
 )
 
-// enshroudedTree assembles a plausible server root, entirely owned by
-// otherUID:otherGID, and returns the corresponding Server.
 func enshroudedTree(t *testing.T) Server {
 	t.Helper()
 	requireRoot(t)
@@ -440,8 +393,6 @@ func enshroudedTree(t *testing.T) Server {
 	if err := os.WriteFile(filepath.Join(root, ".active"), []byte("world1\n"), 0o640); err != nil {
 		t.Fatalf("setup .active: %v", err)
 	}
-	// The WHOLE tree ends up with the game's owner — including the root, which is
-	// the reference the production code consults.
 	if err := chownTree(root, otherUID, otherGID); err != nil {
 		t.Fatalf("chown setup of the tree: %v", err)
 	}
@@ -496,21 +447,6 @@ func TestSitesPreserveOwnerAndMode(t *testing.T) {
 	})
 }
 
-// TestActiveDoesNotBecomeRoot reproduces the SNAPSHOT of the defect in production:
-// /opt/enshrouded/.active as root:root inside a tree owned by the game.
-//
-// THE HALF THAT BITES is the CREATION, and finding that out cost a mutation: the
-// original wording asked for "a 4711 tree, switch the active world, .active stays
-// 4711", but that scenario does NOT tell the two implementations apart.
-// `os.WriteFile` on a file that already exists truncates and writes — it touches
-// neither owner nor mode. The old idiom and the new one give the same result
-// there, and the pin would go green over the defective code.
-//
-// The owner only turns root when the file is CREATED. That is why the positive
-// half below calls exactly the expression production calls, with .active ABSENT
-// — and the negative control shows the old idiom failing in the same scenario.
-// The second half (rewriting with the file present) stays as a non-regression
-// check, and is labelled as the weak half.
 func TestActiveDoesNotBecomeRoot(t *testing.T) {
 	needsRoot(t)
 	t.Run("creation_is_the_half_that_bites", func(t *testing.T) {
@@ -519,14 +455,11 @@ func TestActiveDoesNotBecomeRoot(t *testing.T) {
 		if err := os.Remove(active); err != nil {
 			t.Fatalf("setup: %v", err)
 		}
-		// The expression identical to the one in adapter_server_settings.go.
 		if err := writeAtomic(active, []byte("world2\n"), s.Root); err != nil {
 			t.Fatalf("writeAtomic: %v", err)
 		}
 		requireGameOwner(t, active, "creation of .active")
 
-		// Negative control: the OLD idiom, in the same scenario, produces root.
-		// Without this half there would be no proof that the one above measures anything.
 		old := filepath.Join(s.Root, ".active-old-idiom")
 		if err := os.WriteFile(old, []byte("world2\n"), 0o644); err != nil {
 			t.Fatal(err)
@@ -559,9 +492,6 @@ func TestActiveDoesNotBecomeRoot(t *testing.T) {
 	})
 }
 
-// TestBakInheritsOriginalOwner — the .bak is born with the ORIGINAL's owner, not
-// root:root. A defect quieter than the config's: nobody looks at a backup's
-// owner until they need it.
 func TestBakInheritsOriginalOwner(t *testing.T) {
 	needsRoot(t)
 	requireRoot(t)
@@ -580,10 +510,6 @@ func TestBakInheritsOriginalOwner(t *testing.T) {
 	requireMark(t, orig+".bak", before)
 }
 
-// TestInventorySurvivesHelper covers the PANEL's site (SaveInventory). Here
-// the owner matters less; what the helper adds is DURABILITY (fsync before the
-// rename). Without it, a power cut inside the ZFS txg window costs the whole
-// inventory.
 func TestInventorySurvivesHelper(t *testing.T) {
 	needsRoot(t)
 	requireRoot(t)
@@ -605,11 +531,6 @@ func TestInventorySurvivesHelper(t *testing.T) {
 	}
 }
 
-// The owner comes from the disk, never from a constant.
-
-// TestChownTreeUsesServerOwner is the pin that proves the change is REAL and
-// not cosmetic: the tree is 5000:5000, and with the old code (chownTree nailed to
-// 4711) the new files would come out 4711:4711 and this test would fail.
 func TestChownTreeUsesServerOwner(t *testing.T) {
 	needsRoot(t)
 	s := enshroudedTree(t)
@@ -617,7 +538,6 @@ func TestChownTreeUsesServerOwner(t *testing.T) {
 	if err := os.MkdirAll(fresh, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Born root:root, as a directory created by the panel would be.
 	inside := filepath.Join(fresh, ".saveid")
 	if err := os.WriteFile(inside, []byte("abc\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -632,9 +552,6 @@ func TestChownTreeUsesServerOwner(t *testing.T) {
 	requireGameOwner(t, inside, ".saveid inside the imported one")
 }
 
-// TestChownAsRefFailsClearlyWithoutRef — a nonexistent root produces an ERROR naming
-// the path. Never silence, never a fallback to an invented uid: a default value
-// is a new constant under another name.
 func TestChownAsRefFailsClearlyWithoutRef(t *testing.T) {
 	needsRoot(t)
 	requireRoot(t)
@@ -649,11 +566,6 @@ func TestChownAsRefFailsClearlyWithoutRef(t *testing.T) {
 	}
 }
 
-// needsRoot skips the test when the process cannot change a file's owner.
-//
-// These tests verify preservation of owner and mode, which requires chown, which
-// requires root. On a common CI runner the process is an unprivileged user, and
-// without this guard the test would fail for a reason that is not a code defect.
 func needsRoot(t *testing.T) {
 	t.Helper()
 	if os.Geteuid() != 0 {

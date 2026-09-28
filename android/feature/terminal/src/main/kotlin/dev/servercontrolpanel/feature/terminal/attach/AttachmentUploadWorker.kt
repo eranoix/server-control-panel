@@ -14,7 +14,6 @@ import dev.servercontrolpanel.data.files.UploadByteSource
 import dev.servercontrolpanel.data.files.UploadResumeStore
 import dev.servercontrolpanel.data.files.UploadSessionResult
 
-/** Keys of the `Data` exchanged between [TerminalAttachmentViewModel] and this worker. */
 internal const val KEY_WORK_NAME = "attachment_work_name"
 internal const val KEY_SOURCE_URI = "attachment_source_uri"
 internal const val KEY_DESTINATION_NAME = "attachment_destination_name"
@@ -23,7 +22,6 @@ internal const val KEY_PERCENT = "attachment_percent"
 internal const val KEY_RESULT_PATH = "attachment_result_path"
 internal const val KEY_ERROR_REASON = "attachment_error_reason"
 
-/** `-1` = unknown percentage (the provider did not report the size). */
 internal const val UNKNOWN_PERCENT = -1
 
 internal fun percentOf(sent: Long, total: Long): Int {
@@ -31,20 +29,6 @@ internal fun percentOf(sent: Long, total: Long): Int {
     return ((sent * 100) / total).toInt().coerceIn(0, 100)
 }
 
-/**
- * Sends ONE attachment picked on the terminal screen to the server's inbox folder
- * and returns the final absolute path.
- *
- * A `Worker` so the upload survives leaving the screen, network loss and process
- * death, resuming from the byte the server acknowledged ([ChunkedUploadPump]).
- * The destination is the BFF's `GET /files/inbox` directory, resolved on every
- * attempt so nothing depends on in-memory state. No foreground notification: the
- * attachment bar already shows progress for an upload that lasts seconds.
- *
- * `@JvmOverloads` is required: WorkManager's default factory looks up the
- * `(Context, WorkerParameters)` constructor by reflection, and Kotlin default
- * parameters do not generate it, so the work would fail before [doWork] runs.
- */
 class AttachmentUploadWorker @JvmOverloads constructor(
     context: Context,
     params: WorkerParameters,
@@ -62,8 +46,6 @@ class AttachmentUploadWorker @JvmOverloads constructor(
         val totalBytes = inputData.getLong(KEY_TOTAL_BYTES, 0L)
 
         if (totalBytes <= 0L) {
-            // The server rejects total_size <= 0 with a misleading 413, so say
-            // it plainly before spending a request.
             return failure("The file is empty — there is nothing to upload.")
         }
 
@@ -76,8 +58,6 @@ class AttachmentUploadWorker @JvmOverloads constructor(
                         resumeStore.saveSession(workName, started.sessionId)
                         resumeStore.state(workName)
                     }
-                    // `retryable` separates a dropped network (retry) from a
-                    // permanent refusal (fail now, with the reason on screen).
                     is UploadSessionResult.Error ->
                         return if (started.retryable) Result.retry() else failure(started.reason)
                 }
@@ -105,8 +85,6 @@ class AttachmentUploadWorker @JvmOverloads constructor(
                 Result.retry()
             }
             is ChunkedUploadOutcome.Refused -> {
-                // The server's 24h reaper removes the staging session; clearing
-                // local state stops a future resume of a doomed session.
                 resumeStore.clear(workName)
                 failure(outcome.reason)
             }

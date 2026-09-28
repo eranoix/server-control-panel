@@ -9,17 +9,9 @@ import (
 	"server-control-panel/internal/webassets"
 )
 
-// handleDocsReport serves the HTML technical report INSIDE the panel,
-// restricted to the primary user via mustPrimary. The HTML is embedded in an FS
-// separate from web/* (webassets.docsFS), so it is NOT reachable through the
-// public FileServer — the only path is this gated route.
-//
-// IMPORTANT (comment armor against /heal): this handler is registered in
-// registerRoutes ("/_docs"). Removing it breaks TestSmokeDocsGated. Do not delete
-// it without updating the test and the route.
 func (r *Router) handleDocsReport(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
-		return // mustPrimary already wrote 401/403
+		return
 	}
 	html, err := webassets.DocsReport()
 	if err != nil {
@@ -32,16 +24,11 @@ func (r *Router) handleDocsReport(w http.ResponseWriter, req *http.Request) {
 	_, _ = w.Write(html)
 }
 
-// graphViews points at the two renderings of the same graph produced by Graphify:
-// force (force-directed graph, vis-network) and callflow (architecture/call flow, Mermaid).
 type graphViews struct {
 	force    string
 	callflow string
 }
 
-// knowledgeGraphs maps a project name -> its views. A FIXED whitelist — no
-// user-supplied path: only these known destinations are servable via
-// /_graph, which eliminates path traversal.
 var knowledgeGraphs = map[string]graphViews{
 	"server-control-panel": {
 		"/opt/panel/graphify-out/graph.html",
@@ -53,9 +40,6 @@ var knowledgeGraphs = map[string]graphViews{
 	},
 }
 
-// cdnRewrites rewrites the external-CDN <script src> tags (which the CSP script-src
-// 'self' blocks) to the locally vendored copies (same-origin, /vendor/),
-// served by the embedded FileServer. Without this the views do not render in the panel.
 var cdnRewrites = []struct {
 	re   *regexp.Regexp
 	repl string
@@ -64,18 +48,9 @@ var cdnRewrites = []struct {
 	{regexp.MustCompile(`https://cdn\.jsdelivr\.net/npm/mermaid@[^"'\s]*`), "/vendor/mermaid/mermaid.min.js"},
 }
 
-// handleKnowledgeGraph serves, gated to the primary user (mustPrimary), one of the
-// views (force|callflow) of a project's graph. It reads from disk — always
-// fresh, no re-embed — rewrites the CDNs to the local vendor copies (CSP), and on the
-// force view injects the organization panel (noise filters + collapse communities
-// + freeze layout). Mirrors handleDocsReport.
-//
-// IMPORTANT (comment armor against /heal): registered in registerRoutes
-// ("/_graph") under auth.Middleware, gated by mustPrimary. Removing it breaks
-// TestSmokeGraphGated. Do not delete it without updating the test and the route.
 func (r *Router) handleKnowledgeGraph(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
-		return // mustPrimary already wrote 401/403
+		return
 	}
 	gv, ok := knowledgeGraphs[req.URL.Query().Get("project")]
 	if !ok {
@@ -107,11 +82,6 @@ func (r *Router) handleKnowledgeGraph(w http.ResponseWriter, req *http.Request) 
 	_, _ = w.Write(data)
 }
 
-// graphControlsHTML is injected before </body> on the force view. In the free
-// space of graph.html's sidebar it adds controls to ORGANIZE the nodes:
-// hide tests / leaves / anything below degree N, collapse by community (vis-network
-// cluster) and freeze the layout. It uses the nodesDS/edgesDS/network globals
-// (classic scripts => shared global lexical scope), with a guard.
 const graphControlsHTML = `
 <style>
 #panel-graph-ctl{padding:12px 14px;border-top:1px solid rgba(255,255,255,.06);font:12px system-ui,-apple-system,sans-serif;color:#9aa4b2}

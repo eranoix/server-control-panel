@@ -49,7 +49,6 @@ import dev.servercontrolpanel.data.dashboard.Severity
 import dev.servercontrolpanel.designsystem.StatusColorPair
 import dev.servercontrolpanel.designsystem.panelStatusColors
 
-/** The theme colors for one severity. */
 @Composable
 internal fun colorsFor(severity: Severity): StatusColorPair {
     val colors = panelStatusColors
@@ -60,19 +59,12 @@ internal fun colorsFor(severity: Severity): StatusColorPair {
     }
 }
 
-/**
- * The severity as text alongside the color, since color alone is not accessible.
- */
 internal fun labelFor(severity: Severity): String = when (severity) {
     Severity.OK -> "ok"
     Severity.WARNING -> "WARNING"
     Severity.CRITICAL -> "CRITICAL"
 }
 
-/**
- * The container for every dashboard card. Uses tonal elevation, not shadows;
- * only the attention card gets its own colored container.
- */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun DashboardCard(
@@ -110,9 +102,6 @@ internal fun DashboardCard(
     }
 }
 
-/**
- * A navigable dashboard row; the trailing chevron marks it as a link.
- */
 @Composable
 internal fun NavigableRow(
     onClick: () -> Unit,
@@ -137,10 +126,6 @@ internal fun NavigableRow(
     }
 }
 
-/**
- * What is broken, worst first: server alerts and crossed resource thresholds in
- * one list. The only card that disappears when empty.
- */
 @Composable
 internal fun AttentionCard(
     signals: List<ResourceSignal>,
@@ -211,7 +196,6 @@ internal fun AttentionCard(
     }
 }
 
-/** "1 thing needs attention" / "3 things need attention". */
 internal fun attentionTitle(count: Int): String =
     if (count == 1) "1 thing needs attention" else "$count things need attention"
 
@@ -230,10 +214,6 @@ private fun SeverityTag(severity: Severity) {
     )
 }
 
-/**
- * Subsystem health as one summary line, with unhealthy ones always visible and
- * healthy ones behind a toggle, so a red row is never lost among green ones.
- */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun HealthCard(
@@ -313,12 +293,6 @@ internal fun HealthCard(
     }
 }
 
-/**
- * CPU, memory, swap, disks and network.
- *
- * Placed below the problems on purpose: saturation explains why after something
- * fired. A crossed threshold also appears on the attention card.
- */
 @Composable
 internal fun ResourcesCard(
     signals: List<ResourceSignal>,
@@ -353,7 +327,6 @@ private fun ResourceRow(signal: ResourceSignal, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        // Decorative severity bar; the same information is in the text, so screen readers skip it.
         Box(
             modifier = Modifier
                 .width(3.dp)
@@ -383,7 +356,6 @@ private fun ResourceRow(signal: ResourceSignal, onClick: () -> Unit) {
                 color = if (highlight) colors.content else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        // Signals without a single value (network) let the detail use the full width.
         if (signal.headline.isNotBlank()) {
             Text(
                 text = signal.headline,
@@ -396,7 +368,6 @@ private fun ResourceRow(signal: ResourceSignal, onClick: () -> Unit) {
     }
 }
 
-/** The four destinations the operator opens after looking at the dashboard. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun QuickActionsCard(
@@ -416,10 +387,6 @@ internal fun QuickActionsCard(
     }
 }
 
-/**
- * Session footer: who is signed in and to which machine, plus the server clock,
- * whose drift from the phone explains confusing timestamps.
- */
 @Composable
 internal fun SessionCard(
     snapshot: DashboardSnapshot,
@@ -465,13 +432,10 @@ internal fun SessionCard(
                 color = panelStatusColors.warning.accent,
             )
         }
-        // Device security belongs with this device's identity; the label says
-        // "device" to distinguish it from server security.
         Row {
             TextButton(onClick = onOpenSecurity) {
                 Text("Lock and screenshots")
             }
-            // Diagnostics get their own entry point, reachable even when an update is blocked.
             TextButton(onClick = onOpenDiagnostics) {
                 Text("Diagnostics")
             }

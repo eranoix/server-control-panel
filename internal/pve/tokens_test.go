@@ -9,14 +9,6 @@ import (
 	"testing"
 )
 
-// TestListTokens proves the parse of the two fields the panel must NOT lose:
-// privsep (the hypervisor sends a numeric 0/1, not a JSON boolean) and expire.
-//
-// 🔴 expire is the trap: verify_token does `die "access expired"` when
-// expire < time(), and that turns into a 401 — INDISTINGUISHABLE from
-// revocation. The tokens of this house do have an expiry date. Without storing
-// it, N months from now the panel will say "no credential" and nobody will know
-// why.
 func TestListTokens(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if want := "/api2/json/access/users/panel@pve/token"; r.URL.Path != want {
@@ -51,10 +43,6 @@ func TestListTokens(t *testing.T) {
 	}
 }
 
-// TestTokenInfo: the GET of a single token returns the object WITHOUT the
-// tokenid inside it (the id is in the path). Whoever calls already knows which
-// one they asked for — returning the field empty would force the handler above
-// to patch around it.
 func TestTokenInfo(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if want := "/api2/json/access/users/panel@pve/token/node-apps"; r.URL.Path != want {
@@ -74,8 +62,6 @@ func TestTokenInfo(t *testing.T) {
 	}
 }
 
-// TestExpiresIn proves the calculation the screen shows ("expires in N days")
-// with an INJECTED clock — a criterion that is met by waiting is forbidden.
 func TestExpiresIn(t *testing.T) {
 	const now = 1800000000
 	cases := []struct {
@@ -87,10 +73,6 @@ func TestExpiresIn(t *testing.T) {
 		{"never expires", 0, 0, false},
 		{"expires in 30 days", now + 30*86400, 30, true},
 		{"already expired (exactly 1 day)", now - 86400, -1, true},
-		// 🔴 Expired ONE HOUR ago. Integer division in Go truncates towards zero:
-		// -3600/86400 == 0, and the screen would say "expires today" for a credential
-		// that is ALREADY returning 401. Only a remainder that is not a multiple of
-		// 86400 separates truncating from rounding down.
 		{"expired one hour ago", now - 3600, -1, true},
 		{"expires in 12 hours", now + 43200, 0, true},
 	}
@@ -105,11 +87,6 @@ func TestExpiresIn(t *testing.T) {
 	}
 }
 
-// TestDeleteToken is the hypervisor half of revocation. The handler above
-// ORDERS it: first DELETE on the hypervisor, then confirm the 401, and only
-// then erase it from the vault — if the order were inverted, a clean vault with
-// a live token on the hypervisor would be an orphan credential nobody can
-// revoke any more.
 func TestDeleteToken(t *testing.T) {
 	var seen string
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -124,10 +101,6 @@ func TestDeleteToken(t *testing.T) {
 	}
 }
 
-// TestDeleteTokenSeparateKinds: 401 and 403 must NOT collapse into the same
-// error. "the token I use to revoke has itself been revoked" (401) and "that
-// token has no permission to revoke" (403) ask opposite actions of the
-// operator.
 func TestDeleteTokenSeparateKinds(t *testing.T) {
 	cases := []struct {
 		status int
@@ -152,9 +125,6 @@ func TestDeleteTokenSeparateKinds(t *testing.T) {
 	}
 }
 
-// TestTokenIDInvalid: an empty user, or a token containing "/", would build a
-// different path on the hypervisor. A DELETE against the wrong path is the
-// worst class of bug there is here.
 func TestTokenIDInvalid(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("called the hypervisor: %s %s", r.Method, r.URL.Path)
@@ -164,7 +134,7 @@ func TestTokenIDInvalid(t *testing.T) {
 		{"panel@pve", ""},
 		{"panel@pve", "a/b"},
 		{"panel@pve", "../../access/users"},
-		{"lab", "audit"}, // no realm
+		{"lab", "audit"},
 	} {
 		if err := c.DeleteToken(context.Background(), tc.user, tc.tok); err == nil {
 			t.Errorf("DeleteToken(%q,%q) was accepted", tc.user, tc.tok)
@@ -172,17 +142,6 @@ func TestTokenIDInvalid(t *testing.T) {
 	}
 }
 
-// 🔴 TestPveDoesNotImportVault pins the layer separation: internal/pve talks to
-// the hypervisor and NEVER to the vault. What joins the two halves is the
-// handler above, which is also what ORDERS the revocation (hypervisor first,
-// vault afterwards). If this package started reading the vault on its own, the
-// order would stop being verifiable in one single place.
-//
-// The reading is of the REAL import block (go/parser), not of a substring: the
-// first version of this pin used strings.Contains and failed itself, because
-// the forbidden path appears in this very comment. A substring does not tell an
-// import from a mention — and a pin that bites its own text teaches people to
-// switch it off.
 func TestPveDoesNotImportVault(t *testing.T) {
 	forbiddenBins := map[string]bool{
 		"server-control-panel/internal/secrets": true,

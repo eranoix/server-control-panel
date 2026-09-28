@@ -20,41 +20,16 @@ import kotlinx.serialization.json.jsonObject
 sealed interface DashboardResult {
     data class Success(val snapshot: DashboardSnapshot) : DashboardResult
 
-    /** Only happens when `/ops/status` — the one indispensable call — fails. */
     data class Error(val reason: String) : DashboardResult
 }
 
-/**
- * The seam the Home ViewModel depends on instead of touching the generated
- * client — same convention as [OpsSource]/[SessionSource].
- */
 interface DashboardSource {
     suspend fun load(): DashboardResult
 }
 
-/** Row endpoints the Home screen reads. Both inside the mobile BFF namespace. */
 private const val DEPLOY_APPS_ENDPOINT = "/api/mobile/v1/deploy/apps"
 private const val SCHEDULER_JOBS_ENDPOINT = "/api/mobile/v1/scheduler/jobs"
 
-/**
- * Assembles the Home dashboard.
- *
- * ## Why four calls and not one
- * The ideal would be one fat `/ops/status` bringing everything — this is an opening
- * screen, and every round trip on a mobile network is one more chance of half a screen.
- * Today `/ops/status` already brings health, queue, alerts and resources in a single
- * call; what is missing (last deploy, scheduled jobs) only exists in the row endpoints,
- * and extending the server is out of scope for this screen. So: the four go out IN
- * PARALLEL ([coroutineScope] + [async]), and the wall-clock cost is that of the
- * slowest, not the sum.
- *
- * ## Degrading part by part
- * `/ops/status` is the only mandatory one: without it there is no dashboard, and the
- * result is [DashboardResult.Error] with what to do about it. The other three are
- * best effort — failing on `/deploy/apps` leaves that piece NULL (the card says "I
- * could not find out") and does not bring down the whole screen. Half a screen that
- * is true beats a full screen that is invented.
- */
 class DashboardRepository(
     private val ops: OpsSource = OpsRepository(),
     private val session: SessionSource = SessionRepository(),
@@ -90,25 +65,10 @@ class DashboardRepository(
     }
 }
 
-/**
- * Fetches the rows of a `{"rows":[…]}` endpoint of the BFF. It exists as an
- * interface so the repository test needs no server — the real client is
- * [SduiRowsSource].
- *
- * Returns `null` on any failure: the caller treats "I do not know" and "there
- * are none" as different things.
- */
 interface RowsSource {
     suspend fun fetch(endpoint: String): List<JsonObject>?
 }
 
-/**
- * Reuses [SduiDataClient] — the app's only client able to call a BFF path chosen
- * at run time. The generated methods for these two endpoints do exist, but they
- * declare `schema: {}` in the contract and therefore return `kotlin.Any`: a type
- * serialization cannot decode. The raw JSON route is what is already in
- * production for the whole SDUI surface.
- */
 class SduiRowsSource(
     private val client: SduiDataClient = SduiDataClient(),
 ) : RowsSource {
@@ -118,8 +78,6 @@ class SduiRowsSource(
             row as? JsonObject
         }
     } catch (e: Exception) {
-        // Best effort by contract: no failure from here may bring down the
-        // dashboard, and "I do not know" is the honest result for any of them.
         null
     }
 }
@@ -144,5 +102,4 @@ private fun toScheduledSummary(row: JsonObject) = ScheduledSummary(
     enabled = row.flag("enabled"),
 )
 
-/** Test convenience: a raw row built from any [JsonElement]. */
 internal fun JsonElement.asRow(): JsonObject = jsonObject

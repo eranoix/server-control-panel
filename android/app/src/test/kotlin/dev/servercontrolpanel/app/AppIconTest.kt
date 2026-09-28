@@ -20,29 +20,15 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/**
- * The adaptive app icon. The launcher decides the crop shape, and the platform only guarantees
- * that the central 66dp circle survives every mask; the hexagon mark's points are what a
- * circular mask cuts first. Checking that no mark pixel leaves that circle covers all masks.
- *
- * Runs with `@GraphicsMode(NATIVE)` so real Skia rasterises the compiled VectorDrawable and the
- * platform's AdaptiveIconDrawable positions the layers. It also writes one PNG per mask into
- * `build/reports/icon-masks/` for visual review without a device.
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class AppIconTest {
 
-    /**
-     * Side in pixels of the visible area (the 72dp left of 108dp after AdaptiveIconDrawable's
-     * inset). Ten pixels per dp gives a tenth of a dp resolution.
-     */
     private val visiblePx = 720
 
     private val pxPerDp = visiblePx / 72f
 
-    /** Radius of the 66dp circle every mask preserves, at this scale. */
     private val safeRadiusPx = 66f * pxPerDp / 2f
 
     private fun adaptiveIcon(): AdaptiveIconDrawable {
@@ -58,13 +44,6 @@ class AppIconTest {
         return drawable as AdaptiveIconDrawable
     }
 
-    /**
-     * The raw 108dp artwork with no mask. `AdaptiveIconDrawable.draw()` already applies the
-     * device mask, so the layers are drawn one by one at the positions it assigned.
-     *
-     * @param withBackground `false` isolates the foreground layer over transparency,
-     *   which is how the monochrome layer needs to be measured.
-     */
     private fun rawArtwork(withBackground: Boolean = true): Bitmap {
         val icon = adaptiveIcon()
         icon.setBounds(0, 0, visiblePx, visiblePx)
@@ -77,13 +56,8 @@ class AppIconTest {
         return bitmap
     }
 
-    /** The center of the 108dp, in pixels of the raw artwork. */
     private fun center(bitmap: Bitmap) = bitmap.width / 2f
 
-    /**
-     * Pixels of the cyan mark. Mark and background sit at opposite ends of the green channel
-     * (211 vs 6), so a midpoint threshold separates them regardless of antialiasing.
-     */
     private fun markPixels(bitmap: Bitmap): Set<Pair<Int, Int>> =
         pixelsWhere(bitmap) { Color.green(it) > 128 && Color.alpha(it) > 128 }
 
@@ -121,8 +95,6 @@ class AppIconTest {
 
     @Test
     fun `the mark fills the frame instead of floating in the middle`() {
-        // A mark that is too small gets lost among other launcher icons; 80% of the safe
-        // circle keeps the optical size of Material icons.
         val artwork = rawArtwork()
         val farthest = maxDistanceFromCenter(artwork, markPixels(artwork))
         assertTrue(
@@ -135,7 +107,6 @@ class AppIconTest {
 
     @Test
     fun `the monochrome layer respects the same safe zone`() {
-        // Without `monochrome` the icon is excluded from Android 13+ themed icons.
         val monochrome: Drawable? = adaptiveIcon().monochrome
         assertNotNull(
             "The <adaptive-icon> must declare <monochrome>; the mark is drawn in " +
@@ -143,7 +114,6 @@ class AppIconTest {
             monochrome,
         )
 
-        // It is cropped by the same mask, so it must also stay inside the safe zone.
         val icon = adaptiveIcon()
         icon.setBounds(0, 0, visiblePx, visiblePx)
         val extent = icon.foreground.bounds
@@ -163,8 +133,6 @@ class AppIconTest {
 
     @Test
     fun `there is no transparent hole inside any mask`() {
-        // A transparent pixel inside the mask shows the wallpaper through the icon.
-        // Outside the masks transparency is fine, since that part is never drawn.
         val artwork = rawArtwork()
         for ((name, mask) in launcherMasks(artwork)) {
             val inner = Bitmap.createBitmap(artwork.width, artwork.height, Bitmap.Config.ARGB_8888)
@@ -212,10 +180,6 @@ class AppIconTest {
         }
     }
 
-    /**
-     * The four shapes real launchers use, in the 100x100 space of `config_icon_mask`,
-     * placed over the central 72dp of the 108dp artwork where the mask applies.
-     */
     private fun launcherMasks(artwork: Bitmap): List<Pair<String, Path>> {
         val scale = visiblePx / 100f
         val margin = (artwork.width - visiblePx) / 2f
@@ -231,9 +195,7 @@ class AppIconTest {
             return name to positioned
         }
         return listOf(
-            // Circle: Pixel Launcher default, and the harshest mask for a hexagon.
             build("01-circle") { addCircle(50f, 50f, 50f, Path.Direction.CW) },
-            // Squircle: Samsung One UI and many other launchers.
             build("02-squircle") {
                 moveTo(50f, 0f)
                 cubicTo(10f, 0f, 0f, 10f, 0f, 50f)
@@ -242,12 +204,9 @@ class AppIconTest {
                 cubicTo(100f, 10f, 90f, 0f, 50f, 0f)
                 close()
             },
-            // Rounded rectangle: default on several skins (MIUI, ColorOS).
             build("03-rounded-rectangle") {
                 addRoundRect(RectF(0f, 0f, 100f, 100f), 20f, 20f, Path.Direction.CW)
             },
-            // Teardrop (AOSP icon-shape overlay). Asymmetric on purpose, to catch centring
-            // errors a symmetric mask would hide.
             build("04-drop") {
                 moveTo(50f, 0f)
                 cubicTo(77.6f, 0f, 100f, 22.4f, 100f, 50f)

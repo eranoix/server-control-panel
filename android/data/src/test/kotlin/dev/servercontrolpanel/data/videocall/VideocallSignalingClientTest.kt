@@ -8,19 +8,17 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Hands back a fixed ticket outcome and counts how many times it was asked. */
 private class FakeTicketSource(private val result: VideocallWsTicketResult) : VideocallTicketSource {
     var callCount = 0
         private set
 
     override suspend fun wsTicket(): VideocallWsTicketResult {
-        yield() // real suspension point, matching a real network call
+        yield()
         callCount++
         return result
     }
 }
 
-/** Records every frame it was asked to send. */
 private class RecordingWebSocket : VideocallWebSocket {
     val textFrames = mutableListOf<String>()
     var closed: Pair<Int, String>? = null
@@ -36,7 +34,6 @@ private class RecordingWebSocket : VideocallWebSocket {
     }
 }
 
-/** Records the URL of every open() call and returns a [RecordingWebSocket]. */
 private class FakeWebSocketFactory : VideocallWebSocketFactory {
     val openedUrls = mutableListOf<String>()
     val sockets = mutableListOf<RecordingWebSocket>()
@@ -81,7 +78,6 @@ class VideocallSignalingClientTest {
         val job = launch { client.connect("room1", "c1", resume = true).collect {} }
         advanceUntilIdle()
 
-        // The server (internal/videocall/ws.go) checks resume == "1", not "true".
         assertTrue(factory.openedUrls.single().contains("resume=1"))
         job.cancel()
     }

@@ -13,19 +13,6 @@ import dev.servercontrolpanel.feature.videocall.R
 private const val CHANNEL_ID = "panel_videocall_ongoing"
 private const val NOTIFICATION_ID = 4201
 
-/**
- * Keeps one call's camera/microphone/audio-routing alive across backgrounding.
- * Started by [PanelConnection.onAnswer] and by an outgoing-call join
- * ([dev.servercontrolpanel.feature.videocall.CallViewModel]'s own call site, once it dials out);
- * stopped by whichever of those two paths ends the call first — [stop] is safe to call twice.
- *
- * The layered `phoneCall|camera|microphone` type (bitwise-OR here, matching the manifest's
- * pipe-separated declaration) requires `CAMERA`/`RECORD_AUDIO` to already be GRANTED at
- * [startForeground] time or the call throws `SecurityException` — this service does not request
- * them itself (that happens proactively on the lobby's first open);
- * it assumes the caller already confirmed grant, exactly as [PanelConnection.onAnswer] does
- * before starting this service.
- */
 class CallForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -64,12 +51,6 @@ class CallForegroundService : Service() {
     }
 
     companion object {
-        /**
-         * True while this process's [CallForegroundService] instance is between
-         * [onStartCommand] and [onDestroy] — a lighter-weight, OEM-independent alternative to
-         * querying `ActivityManager.getRunningServices` for this plan's own instrumented tests
-         * (11-05) and any future caller that needs to know without touching system services.
-         */
         @Volatile
         var isRunning: Boolean = false
             private set
@@ -84,23 +65,11 @@ class CallForegroundService : Service() {
     }
 }
 
-/**
- * Seam over [CallForegroundService]'s static [CallForegroundService.start]/[CallForegroundService.stop]
- * so [dev.servercontrolpanel.feature.videocall.CallViewModel] never needs an Android [Context] wired
- * through it just to reach a `Context.startForegroundService` call — mirrors
- * [dev.servercontrolpanel.data.videocall.LocalMediaTrackControl]'s narrow-seam pattern. The real join path
- * ([dev.servercontrolpanel.feature.videocall.CallViewModel.handleJoined]) previously never started this
- * service at all (only [PanelConnection.onAnswer], the answered-incoming-call path, did) — a call
- * joined from [dev.servercontrolpanel.feature.videocall.RoomLobbyScreen] had zero foreground-service
- * protection. [start]/[stop] must both tolerate being called more than once (the answered-call
- * path and the ordinary join path can each independently call them for the same physical call).
- */
 interface CallForegroundServiceController {
     fun start()
     fun stop()
 }
 
-/** The only production [CallForegroundServiceController]: wires the real [CallForegroundService]. */
 class AndroidCallForegroundServiceController(context: Context) : CallForegroundServiceController {
     private val appContext = context.applicationContext
 

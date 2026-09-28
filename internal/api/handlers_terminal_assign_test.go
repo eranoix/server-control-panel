@@ -12,8 +12,6 @@ import (
 	ptysvc "server-control-panel/internal/pty"
 )
 
-// newAssignRouter builds a minimal Router with cfg (sam=primary, jordan=admin,
-// rando=plain) and an Ownership in a tempdir, enough for the gate + Assign.
 func newAssignRouter(t *testing.T) *Router {
 	t.Helper()
 	own, err := ptysvc.LoadOwnership(filepath.Join(t.TempDir(), "own.json"))
@@ -35,8 +33,6 @@ func assignReq(user, jsonBody string) *http.Request {
 	return req.WithContext(auth.WithUser(req.Context(), user))
 }
 
-// TestAssignSession_AdminToAll: an admin reassigns to "Everyone" → 200 and
-// ownership becomes "*".
 func TestAssignSession_AdminToAll(t *testing.T) {
 	r := newAssignRouter(t)
 	w := httptest.NewRecorder()
@@ -49,7 +45,6 @@ func TestAssignSession_AdminToAll(t *testing.T) {
 	}
 }
 
-// TestAssignSession_AdminToUser: an admin reassigns to another valid user → 200.
 func TestAssignSession_AdminToUser(t *testing.T) {
 	r := newAssignRouter(t)
 	w := httptest.NewRecorder()
@@ -62,7 +57,6 @@ func TestAssignSession_AdminToUser(t *testing.T) {
 	}
 }
 
-// TestAssignSession_NonAdminForbidden: non-admin → 403 and nothing changes.
 func TestAssignSession_NonAdminForbidden(t *testing.T) {
 	r := newAssignRouter(t)
 	w := httptest.NewRecorder()
@@ -75,7 +69,6 @@ func TestAssignSession_NonAdminForbidden(t *testing.T) {
 	}
 }
 
-// TestAssignSession_InvalidTarget: a target that is neither a user nor "*" → 400.
 func TestAssignSession_InvalidTarget(t *testing.T) {
 	r := newAssignRouter(t)
 	w := httptest.NewRecorder()
@@ -88,7 +81,6 @@ func TestAssignSession_InvalidTarget(t *testing.T) {
 	}
 }
 
-// TestAssignSession_Unauthenticated: no user in the context → 401.
 func TestAssignSession_Unauthenticated(t *testing.T) {
 	r := newAssignRouter(t)
 	w := httptest.NewRecorder()

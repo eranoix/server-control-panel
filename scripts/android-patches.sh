@@ -1,35 +1,4 @@
 #!/usr/bin/env bash
-# android-patches.sh: builds the Android app's incremental update catalogue from
-# what was JUST published in data/fdroid/repo/.
-#
-# Final step of scripts/android-publish.sh, run AFTER the apksigner fingerprint
-# gate. Patches must be built from the bytes of the ALREADY SIGNED APK; signing
-# is offline by design (docs/android-signing-keystore.md §1), so this host only
-# has the final bytes after publication.
-#
-# OUTPUT (data/android-updates/)
-#   apks/<sha256>.apk                    archived signed APK, by hash
-#   patches/<baseSha>-<targetSha>.hdiff  direct patch base -> new version
-#   full/<targetSha>.hdiff               full rebuild (empty base)
-#   manifest.json                        index read by internal/androidupdate
-#
-# Keyed by SHA-256, not versionCode: a patch depends on the exact base bytes,
-# and two builds with the same versionCode differ. Applying the wrong patch
-# yields a corrupt file, not a version error. The app sends the hash of its
-# installed APK; with no patch for that exact hash it falls back to the full one.
-#
-# Direct patches, not chained: every hop is one more failure point and one more
-# patch application on the device.
-#
-# The "full" artifact is also .hdiff (hdiffz with an empty base, about a third of
-# the raw APK size) so the device has ONE code path (hpatchz) for both cases.
-#
-# APKs are archived under apks/ because the NEXT version's patches need the
-# previous bytes, and data/fdroid/repo/ is replaced wholesale (rsync
-# --delete-after) by the operator's upload. Hardlinks make archiving free.
-#
-# Environment overrides (for tests; production uses the defaults):
-#   FDROID_REPO_DIR, ANDROID_UPDATES_DIR, PACKAGE_ID, PATCH_WINDOW, HDIFFZ
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,29 +6,13 @@ FDROID_REPO_DIR="${FDROID_REPO_DIR:-$ROOT_DIR/data/fdroid/repo}"
 UPDATES_DIR="${ANDROID_UPDATES_DIR:-$ROOT_DIR/data/android-updates}"
 HDIFFZ="${HDIFFZ:-hdiffz}"
 
-# The default PACKAGE_ID comes from android/gradle.properties, the single source
-# of truth also used by internal/api/handlers_android_install.go (pinned by
-# TestAndroidPackageID). Never repeat the literal here.
 default_package_id() {
   sed -n 's/^servercontrolpanel\.applicationId=//p' "$ROOT_DIR/android/gradle.properties" | head -1 | tr -d '[:space:]'
 }
 PACKAGE_ID="${PACKAGE_ID:-$(default_package_id)}"
 
-# PATCH_WINDOW is how many of the NEWEST versions stay in the catalogue,
-# including the target. With 5: the target plus 4 bases; everything whose base
-# left the window is deleted.
 PATCH_WINDOW="${PATCH_WINDOW:-5}"
 
-# Compression options, measured on this project (0.1.5 -> 0.1.6):
-#   -c-zstd-21-24     1 583 566 B      -c-lzma2-9-64m     1 415 213 B
-#   -SD -c-zstd-21-24 1 551 505 B      -SD -c-lzma2-9-64m 1 400 329 B  <-- chosen
-# Full artifact (empty base): -SD -c-lzma2-9-64m = 10 029 237 B vs 31 135 416 B raw.
-#
-# -SD (single compressed diff) is also what hpatchz applies with a single
-# decompression buffer and step by step during download. The prebuilt
-# libhpatchz.so of the official Android SDK (v5.1.3, arm64-v8a) supports lzma2
-# and -SD; if that changes, this line and the manifest's patch_tool field are
-# the single point of adjustment.
 HDIFF_OPTS=(-SD -c-lzma2-9-64m)
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
@@ -75,14 +28,9 @@ INDEX_JSON="$FDROID_REPO_DIR/index-v2.json"
 
 mkdir -p "$UPDATES_DIR/apks" "$UPDATES_DIR/patches" "$UPDATES_DIR/full"
 
-# hdiffz with no arguments prints its usage banner and exits non-zero, which
-# would silently abort under `set -e -o pipefail`; hence the `|| true`.
 HDIFF_VERSION="$({ "$HDIFFZ" 2>&1 || true; } | head -1 | tr -d '\r')"
 PATCH_TOOL="$HDIFF_VERSION ${HDIFF_OPTS[*]}"
 
-# 1. Version window, newest first.
-# One line per version: "versionCode<TAB>versionName<TAB>apkFile". Sorted in
-# Python (numerically by versionCode) so it does not depend on the locale.
 VERSIONS="$(python3 - "$INDEX_JSON" "$PACKAGE_ID" "$PATCH_WINDOW" <<'PY'
 import json, sys
 idx_path, pkg_id, window = sys.argv[1], sys.argv[2], int(sys.argv[3])
@@ -112,8 +60,6 @@ PY
 
 [ -n "$VERSIONS" ] || fail "no version of $PACKAGE_ID in $INDEX_JSON"
 
-# 2. Archive every APK in the window as apks/<sha256>.apk.
-# Work TSV: sha256, versionCode, versionName, size.
 WORK="$(mktemp "${TMPDIR:-/tmp}/panel-android-patches.XXXXXX")"
 trap 'rm -f "$WORK" "$WORK.manifest"' EXIT
 
@@ -121,10 +67,6 @@ while IFS=$'\t' read -r code name apk_file; do
   [ -n "$code" ] || continue
   src="$FDROID_REPO_DIR/$apk_file"
   if [ ! -f "$src" ]; then
-    # The version is in the index but the operator's upload lacks the APK. Use
-    # the archived copy if there is one, found through the .versioncode file
-    # next to it (the hash cannot be recomputed without the original);
-    # otherwise that base gets no patch and the app falls back to the full one.
     found=""
     for cand in "$UPDATES_DIR/apks"/*.apk; do
       [ -f "$cand" ] || continue
@@ -141,8 +83,6 @@ while IFS=$'\t' read -r code name apk_file; do
   size="$(stat -c%s "$src")"
   dest="$UPDATES_DIR/apks/$sha.apk"
   if [ ! -f "$dest" ]; then
-    # Hardlink first (same filesystem, no extra disk): a later rsync
-    # --delete-after removes the fdroid/repo name, the inode survives here.
     ln "$src" "$dest" 2>/dev/null || cp -f "$src" "$dest"
   fi
   printf '%s\n' "$code" > "$dest.versioncode"
@@ -151,27 +91,22 @@ done <<< "$VERSIONS"
 
 [ -s "$WORK" ] || fail "no APK in the window could be located; nothing to generate"
 
-# 3. Target = first line (highest versionCode).
 IFS=$'\t' read -r TARGET_SHA TARGET_CODE TARGET_NAME TARGET_SIZE < "$WORK"
 TARGET_APK="$UPDATES_DIR/apks/$TARGET_SHA.apk"
 
 echo "==> target: $TARGET_NAME (versionCode $TARGET_CODE) sha256=$TARGET_SHA"
 
-# 4. Full rebuild (empty base).
 FULL_REL="full/$TARGET_SHA.hdiff"
 FULL_ABS="$UPDATES_DIR/$FULL_REL"
 if [ -s "$FULL_ABS" ]; then
   echo "    full artifact already exists: $FULL_REL"
 else
   echo "    generating full artifact (empty base)..."
-  # Write to .tmp and rename, so an interrupted run never leaves a truncated
-  # .hdiff under its final name for the next manifest to publish.
   "$HDIFFZ" "${HDIFF_OPTS[@]}" "" "$TARGET_APK" "$FULL_ABS.tmp" >/dev/null \
     || fail "hdiffz failed generating the full artifact"
   mv -f "$FULL_ABS.tmp" "$FULL_ABS"
 fi
 
-# 5. One direct patch from every base in the window.
 : > "$WORK.manifest"
 printf 'full\t%s\t\t\t\n' "$FULL_REL" >> "$WORK.manifest"
 
@@ -192,7 +127,6 @@ while IFS=$'\t' read -r sha code name size; do
   printf 'patch\t%s\t%s\t%s\t%s\n' "$rel" "$sha" "$name" "$code" >> "$WORK.manifest"
 done < "$WORK"
 
-# 6. manifest.json, written atomically.
 python3 - "$UPDATES_DIR" "$PACKAGE_ID" "$PATCH_TOOL" "$TARGET_SHA" "$TARGET_CODE" "$TARGET_NAME" "$TARGET_SIZE" "$WORK.manifest" <<'PY'
 import hashlib, json, os, sys, tempfile, time
 
@@ -267,8 +201,6 @@ except BaseException:
 print("    manifest.json: %d patch(es) + full" % len(patches))
 PY
 
-# 7. Retention: delete everything the new manifest does not reference,
-# including patches whose BASE left the window and older targets' full artifacts.
 python3 - "$UPDATES_DIR" <<'PY'
 import json, os, sys
 

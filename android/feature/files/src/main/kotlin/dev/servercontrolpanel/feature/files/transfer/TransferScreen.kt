@@ -17,13 +17,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
-/**
- * In-flight transfer list, rendered inline inside
- * [dev.servercontrolpanel.feature.files.browse.FileBrowserScreen] -- one card per
- * active or finished download/upload, each with its own cancel action.
- * Transfers are a secondary affordance of the file browser, not a
- * destination of their own, so nothing here touches `AppNavHost`.
- */
 @Composable
 fun TransferScreen(modifier: Modifier = Modifier, viewModel: TransferViewModel = viewModel()) {
     val transfers by viewModel.transfers.collectAsStateWithLifecycle()

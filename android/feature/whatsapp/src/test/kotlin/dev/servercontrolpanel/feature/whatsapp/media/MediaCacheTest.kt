@@ -9,13 +9,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 
-/**
- * Proves the cache-eviction requirement mechanically: the [coil.ImageLoader]
- * [MediaCache.imageLoader] builds has a disk cache with a real, finite
- * [coil.disk.DiskCache.getMaxSize] -- not `Long.MAX_VALUE` (Coil's
- * behavior when no cap is configured at all) -- so a chatty WhatsApp
- * history cannot grow the on-disk cache without bound.
- */
 @RunWith(RobolectricTestRunner::class)
 class MediaCacheTest {
 

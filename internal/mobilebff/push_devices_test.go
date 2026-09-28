@@ -102,8 +102,6 @@ func TestDeviceTokenStorePath_IsPerUser(t *testing.T) {
 	}
 }
 
-// ── DevicePrefsStore ─────────────────────────────────────────────────────────
-
 func TestDevicePrefs_PutThenGetRoundTrips(t *testing.T) {
 	dir := t.TempDir()
 	s := NewDevicePrefsStore(dir)
@@ -134,9 +132,6 @@ func TestDevicePrefs_GetUnknownDeviceReportsNotOK(t *testing.T) {
 	}
 }
 
-// TestDevicePrefs_AllowedIsPerRuleAndPerDevice is Task 3's literal <done>
-// criterion: a device with the rule excluded is skipped while a device with
-// it enabled still passes — proving the filter is per-device AND per-Rule.
 func TestDevicePrefs_AllowedIsPerRuleAndPerDevice(t *testing.T) {
 	dir := t.TempDir()
 	s := NewDevicePrefsStore(dir)
@@ -155,10 +150,6 @@ func TestDevicePrefs_AllowedIsPerRuleAndPerDevice(t *testing.T) {
 	}
 }
 
-// TestDevicePrefs_UnknownDeviceAllowedAcrossAllUsers proves Allowed scans
-// every user's file and fails OPEN for a device_id it never finds anywhere
-// — the fail-open-for-unknown-device guarantee (protects pre-existing
-// webpush subscriptions from a silent default-critical-only regression).
 func TestDevicePrefs_UnknownDeviceAllowedAcrossAllUsers(t *testing.T) {
 	dir := t.TempDir()
 	s := NewDevicePrefsStore(dir)

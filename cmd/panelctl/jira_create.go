@@ -1,9 +1,3 @@
-// jira_create.go — panelctl jira-create: creates a Jira issue using the user's
-// vault credentials (the same path as jira-comment). server-control-panel itself does
-// the creating; no session JWT.
-//
-//	panelctl jira-create --user=sam --type=Task --summary="..." --desc-file=/tmp/d.txt
-//	  [--project=PROJ] [--labels=a,b] [--parent=PROJ-10]
 package main
 
 import (
@@ -102,7 +96,7 @@ func cmdJiraCreate(args []string) error {
 	if err != nil {
 		return fmt.Errorf("create issue: %w", err)
 	}
-	fmt.Println(got.Key) // stdout = the key, for a script to capture
+	fmt.Println(got.Key)
 	fmt.Fprintf(os.Stderr, "created %s (%s): %s\n", got.Key, *itype, *summary)
 	return nil
 }

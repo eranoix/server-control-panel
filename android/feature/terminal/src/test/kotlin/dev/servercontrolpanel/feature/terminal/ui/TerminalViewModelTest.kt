@@ -34,7 +34,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/** Mirrors `TerminalSocketClientTest`'s fake ticket source. */
 private class FakeTicketSource(private val tickets: MutableList<String>) : TerminalTicketSource {
     override suspend fun wsTicket(name: String): WsTicketResult {
         if (tickets.isEmpty()) return WsTicketResult.Error("no more fake tickets")
@@ -42,7 +41,6 @@ private class FakeTicketSource(private val tickets: MutableList<String>) : Termi
     }
 }
 
-/** Mirrors `TerminalSocketClientTest`'s recording socket + factory. */
 private class RecordingWebSocket : TerminalWebSocket {
     val binaryFrames = mutableListOf<ByteArray>()
     val textFrames = mutableListOf<String>()
@@ -57,11 +55,9 @@ private class RecordingWebSocket : TerminalWebSocket {
     override fun close(code: Int, reason: String): Boolean = true
 }
 
-/** Records each requested byte ceiling and returns results in order; empty means "no log yet", not an error. */
 private class FakeRawLogSource(private val results: MutableList<RawLogResult>) : TerminalRawLogSource {
     val requestedBytes = mutableListOf<Int>()
 
-    /** Results for the rendered history; empty means the session has no history file yet. */
     val fromHistory = mutableListOf<RawLogResult>()
     val historyRequests = mutableListOf<Int>()
 
@@ -89,13 +85,11 @@ private class FakeWebSocketFactory : TerminalWebSocketFactory {
     }
 }
 
-/** Records every call [TerminalViewModel] makes on its [GridEngine] seam. */
 private class FakeGridEngine(private val snapshotToReturn: CellSnapshot) : GridEngine {
     val writes = mutableListOf<ByteArray>()
     val resizeCalls = mutableListOf<Pair<Int, Int>>()
     var closed = false
 
-    /** How many times the history was cleared (setup for the attach repaint). */
     var historyClears = 0
         private set
 
@@ -103,19 +97,15 @@ private class FakeGridEngine(private val snapshotToReturn: CellSnapshot) : GridE
         historyClears++
     }
 
-    /** Modes the fake remote program has enabled; changed live, like `htop` opening and closing. */
     var modes = TerminalModes.NONE
 
-    /** Bytes the native encoder would return; `null` means the event produces no report. */
     var mouseBytes: ByteArray? = null
     val mouseCalls = mutableListOf<MouseAction>()
     val encodedPastes = mutableListOf<String>()
 
-    /** Every scroll request in lines; negative scrolls up into the past. */
     val scrolls = mutableListOf<Int>()
     var backToEndCount = 0
 
-    /** A fake viewport, just enough for the test to observe position. */
     var scrollState = TerminalScrollState(total = 100, offset = 90, visible = 10, atEnd = true)
 
     override fun write(bytes: ByteArray) { writes += bytes }
@@ -152,7 +142,6 @@ private class FakeGridEngine(private val snapshotToReturn: CellSnapshot) : GridE
 
     override fun encodePaste(text: String): ByteArray {
         encodedPastes += text
-        // Mirrors the real contract: wrapped with 2004 on, otherwise newlines become CRs.
         return if (modes.bracketedPaste) {
             "\u001b[200~$text\u001b[201~".toByteArray(Charsets.UTF_8)
         } else {
@@ -161,11 +150,6 @@ private class FakeGridEngine(private val snapshotToReturn: CellSnapshot) : GridE
     }
 }
 
-/**
- * A valid 1x1 grid; only identity matters here. [CellSnapshot.fromBuffer] is `internal`
- * to `:terminal-engine`, so the private constructor is used via reflection instead of
- * depending on the native engine.
- */
 private fun trivialSnapshot(): CellSnapshot {
     val cell = CellSnapshot.Cell(
         codepoint = 'x'.code,
@@ -201,9 +185,6 @@ class TerminalViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
 
-    // Tracks every ViewModel so its stall-check loop is cancelled before `runTest`
-    // returns; otherwise the shared scheduler never goes idle and `runTest` hangs.
-    // `ViewModelStore.clear()` is the only public way to reach `ViewModel.clear()`.
     private val viewModelStore = ViewModelStore()
     private var viewModelKeyCounter = 0
 
@@ -214,13 +195,10 @@ class TerminalViewModelTest {
 
     @After
     fun tearDown() {
-        // Drain before resetting Main: a pending coroutine waking after resetMain()
-        // would fail a later, unrelated test with "uncaught exceptions".
         dispatcher.scheduler.advanceUntilIdle()
         Dispatchers.resetMain()
     }
 
-    /** Runs [body], then unconditionally cancels every ViewModel built during it (see [viewModelStore]'s doc comment). */
     private fun runViewModelTest(body: suspend TestScope.() -> Unit): TestResult = runTest(dispatcher) {
         try {
             body()
@@ -254,8 +232,6 @@ class TerminalViewModelTest {
         return viewModel to engine
     }
 
-    // The primer prefers the server's rendered history: replaying the raw log of a
-    // repainting program duplicates output, since cursor-up saturates at the screen top.
     @Test
     fun `the primer uses the rendered history when it exists`() = runViewModelTest {
         val source = FakeRawLogSource(mutableListOf())
@@ -275,7 +251,6 @@ class TerminalViewModelTest {
         )
     }
 
-    // Older sessions have no history file, so the primer falls back to the raw log.
     @Test
     fun `without rendered history the primer falls back to the raw log`() = runViewModelTest {
         val source = FakeRawLogSource(mutableListOf(RawLogResult.Success("RAW\r\n".toByteArray(), 5)))
@@ -299,7 +274,6 @@ class TerminalViewModelTest {
         val factory = FakeWebSocketFactory()
         val (viewModel, _) = buildViewModel(factory)
         viewModel.onGridSizeChanged(80, 24)
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
@@ -307,7 +281,6 @@ class TerminalViewModelTest {
         runCurrent()
         assertEquals(ConnectionState.Live, viewModel.bannerState.value)
 
-        // Android cuts the network when the app goes to the background.
         factory.listeners[0].onFailure("network cut in the background")
         runCurrent()
         assertEquals(
@@ -317,7 +290,6 @@ class TerminalViewModelTest {
         )
         assertEquals("but the banner is not", ConnectionState.Live, viewModel.bannerState.value)
 
-        // Back in about 600 ms, within the typical 0.5 to 1 s.
         advanceTimeBy(600)
         runCurrent()
         factory.listeners[1].onOpen()
@@ -337,7 +309,6 @@ class TerminalViewModelTest {
         val factory = FakeWebSocketFactory()
         val (viewModel, _) = buildViewModel(factory)
         viewModel.onGridSizeChanged(80, 24)
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
@@ -346,7 +317,6 @@ class TerminalViewModelTest {
 
         factory.listeners[0].onFailure("server down")
         runCurrent()
-        // The next socket never opens, so the reconnect takes a while.
         advanceTimeBy(TerminalViewModel.BANNER_GRACE_MS_DEFAULT + 200)
         runCurrent()
 
@@ -357,8 +327,6 @@ class TerminalViewModelTest {
         )
     }
 
-    // Paste: the VT emulator decides the bracketing, not the server.
-
     @Test
     fun `paste with bracketed paste on sends the markers in one binary frame`() = runViewModelTest {
         val factory = FakeWebSocketFactory()
@@ -367,11 +335,9 @@ class TerminalViewModelTest {
         }
         val (viewModel, _) = buildViewModel(factory, engine = engine)
         viewModel.onGridSizeChanged(80, 24)
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
-        // `send` only writes to an open socket.
         factory.listeners[0].onOpen()
         runCurrent()
 
@@ -391,16 +357,13 @@ class TerminalViewModelTest {
 
     @Test
     fun `paste with bracketed paste off sends no markers`() = runViewModelTest {
-        // With DECSET 2004 off, bracket markers would appear as literal text.
         val factory = FakeWebSocketFactory()
         val engine = FakeGridEngine(trivialSnapshot()).apply { modes = TerminalModes.NONE }
         val (viewModel, _) = buildViewModel(factory, engine = engine)
         viewModel.onGridSizeChanged(80, 24)
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
-        // `send` only writes to an open socket.
         factory.listeners[0].onOpen()
         runCurrent()
 
@@ -418,7 +381,6 @@ class TerminalViewModelTest {
         val engine = FakeGridEngine(trivialSnapshot())
         val (viewModel, _) = buildViewModel(factory, engine = engine)
         viewModel.onGridSizeChanged(80, 24)
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
@@ -439,8 +401,6 @@ class TerminalViewModelTest {
         assertTrue("without a terminal there is nowhere to paste and no mode to check", factory.sockets.isEmpty())
     }
 
-    // Modes come from the engine and are re-read on every query.
-
     @Test
     fun `without an engine the modes are the safe defaults`() = runViewModelTest {
         val (viewModel, _) = buildViewModel(FakeWebSocketFactory())
@@ -454,7 +414,6 @@ class TerminalViewModelTest {
         val engine = FakeGridEngine(trivialSnapshot())
         val (viewModel, _) = buildViewModel(factory, engine = engine)
         viewModel.onGridSizeChanged(80, 24)
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
@@ -497,7 +456,6 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
@@ -514,13 +472,11 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
         runCurrent()
         viewModel.onGridSizeChanged(80, 24)
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
@@ -531,8 +487,6 @@ class TerminalViewModelTest {
 
     @Test
     fun `resizing the window notifies the server and leaves the engine alone`() = runViewModelTest {
-        // The server decides the grid size (the smallest of all clients); the engine
-        // only resizes when the server announces it.
         val factory = FakeWebSocketFactory()
         val (viewModel, engine) = buildViewModel(factory)
 
@@ -559,8 +513,6 @@ class TerminalViewModelTest {
 
     @Test
     fun `the first size is also sent to the server`() = runViewModelTest {
-        // The size must be sent when the engine is created, not only on change;
-        // `reassertSize` does nothing if no size was ever sent.
         val factory = FakeWebSocketFactory()
         val (viewModel, _) = buildViewModel(factory)
 
@@ -579,7 +531,6 @@ class TerminalViewModelTest {
 
     @Test
     fun `the server announcement is what resizes the engine`() = runViewModelTest {
-        // Every client draws a grid the size of the session, not of its own window.
         val factory = FakeWebSocketFactory()
         val (viewModel, engine) = buildViewModel(factory)
 
@@ -589,7 +540,6 @@ class TerminalViewModelTest {
         runCurrent()
         factory.listeners[0].onOpen()
 
-        // Another client is attached, so the server announces a smaller session.
         factory.listeners[0].onTextMessage("""{"type":"size","cols":66,"rows":24}""")
         runCurrent()
 
@@ -598,7 +548,6 @@ class TerminalViewModelTest {
 
     @Test
     fun `an unknown text frame neither crashes nor resizes anything`() = runViewModelTest {
-        // Frames other than the size announcement are ignored without error.
         val factory = FakeWebSocketFactory()
         val (viewModel, engine) = buildViewModel(factory)
 
@@ -622,7 +571,6 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
@@ -642,12 +590,10 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
         runCurrent()
-        // `send` only writes to an open socket.
         factory.listeners[0].onOpen()
         runCurrent()
         viewModel.byteSink.send(byteArrayOf(9))
@@ -663,7 +609,6 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
@@ -685,7 +630,6 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
@@ -709,7 +653,6 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
@@ -728,7 +671,6 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
@@ -739,8 +681,6 @@ class TerminalViewModelTest {
 
         assertFalse(viewModel.isStalled.value)
     }
-
-    // Session history is fetched and replayed before the live stream.
 
     @Test
     fun `the fetched history enters the engine before the live stream, never after`() = runViewModelTest {
@@ -754,7 +694,6 @@ class TerminalViewModelTest {
         viewModel.onGridSizeChanged(80, 24)
         advanceTimeBy(TerminalViewModel.SIZE_SETTLE_MS + 1)
         runCurrent()
-        // A live byte arrives before the history is written, as in the real race.
         factory.listeners.last().onOpen()
         factory.listeners.last().onBinaryMessage("live".toByteArray())
         runCurrent()
@@ -813,15 +752,11 @@ class TerminalViewModelTest {
         advanceTimeBy(TerminalViewModel.SIZE_SETTLE_MS + 1)
         runCurrent()
 
-        // No socket yet: connecting only happens after the fetch (see `startPrimer`),
-        // or the server would log bytes the socket also delivers.
         assertTrue(
             "connecting during the fetch would cause the overlap that garbled the screen",
             factory.listeners.isEmpty(),
         )
 
-        // After all attempts and waits it connects. The `+ 1` leaves slack so tuning the
-        // retry count does not break the test.
         advanceTimeBy(
             TerminalViewModel.RETRY_DELAY_MS * (TerminalViewModel.PRIMER_ATTEMPTS + 1),
         )
@@ -837,9 +772,6 @@ class TerminalViewModelTest {
 
     @Test
     fun `the history is fetched before connecting so no byte is repeated`() = runViewModelTest {
-        // The server only logs while someone is attached, so fetching first makes the
-        // history end exactly where the live stream begins. Repeated bytes garble
-        // programs that use relative cursor movement.
         val factory = FakeWebSocketFactory()
         val log = FakeRawLogSource(mutableListOf(RawLogResult.Success("history".toByteArray(), 9)))
         val (viewModel, engine) = buildViewModel(factory, rawLogSource = log)
@@ -854,14 +786,12 @@ class TerminalViewModelTest {
         factory.listeners.last().onBinaryMessage("live".toByteArray())
         runCurrent()
 
-        // History first, then the live stream, every byte exactly once.
         assertEquals(listOf("history", "live"), engine.writes.map { String(it) })
     }
 
     @Test
     fun `too much live output during the fetch drops the history instead of filling memory`() = runViewModelTest {
         val factory = FakeWebSocketFactory()
-        // The fetch never answers in time while the session floods output.
         val (viewModel, engine) = buildViewModel(
             factory,
             rawLogSource = FakeRawLogSource(mutableListOf(RawLogResult.Error("timed out"))),
@@ -870,8 +800,6 @@ class TerminalViewModelTest {
         viewModel.onGridSizeChanged(80, 24)
         advanceTimeBy(TerminalViewModel.SIZE_SETTLE_MS + 1)
         runCurrent()
-        // After the timeout the socket opens; the replay yields between chunks, so a
-        // live flood can still arrive during it.
         advanceTimeBy(TerminalViewModel.PRIMER_TIMEOUT_MS + 1)
         runCurrent()
         factory.listeners.last().onOpen()

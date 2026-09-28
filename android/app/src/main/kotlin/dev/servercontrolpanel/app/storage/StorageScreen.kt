@@ -25,12 +25,6 @@ import dev.servercontrolpanel.data.storage.AppStorage
 const val TAG_STORAGE = "storage-screen"
 const val TAG_FREE_SPACE = "free-space-button"
 
-/**
- * What the app takes up, item by item, and a button that frees the rebuildable space. It gives
- * a safe alternative to Android's "clear storage", which also wipes preferences, the server
- * and the session. Items the cleanup does not touch are listed too, so the total matches what
- * Android shows.
- */
 @Composable
 internal fun StorageScreen(
     usages: List<AppStorage.Usage>,
@@ -89,7 +83,6 @@ internal fun StorageScreen(
             Text("Free up space now")
         }
 
-        // Report bytes, not "done": even "0 B" tells the user the space was not here.
         lastResult?.let {
             Text(
                 text = "Freed ${AppStorage.formatBytes(it.freedBytes)} " +

@@ -8,60 +8,34 @@ import (
 	"time"
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONCURRENCY ARMOR — read before touching anything in this file.
-//
-// The Router has exactly THREE ownership domains. Keeping them separate is the
-// whole point; mixing them is what `go test -race` exists to catch.
-//
-//  1. CONFIG (rules, channels): copy-on-write under cfgMu (RWMutex). Mutators
-//     (CRUD) build a NEW slice/map and swap the pointer under Lock. The worker
-//     grabs the current reference under a brief RLock and then iterates that
-//     immutable snapshot lock-free. NEVER mutate a published slice/map in place.
-//  2. WORKER-ONLY (throttle, breaker): touched solely inside handle(), which
-//     runs only in the single run() goroutine. No locks, no other readers.
-//  3. CROSS-GOROUTINE (history, dropped): history under histMu (Dispatch writes,
-//     History/DryRun read); dropped via sync/atomic. The worker never touches
-//     these — so Dispatch can record history without ever blocking on a send.
-//
-// Dispatch is non-blocking and takes NO caller lock: a job finishing under
-// queue.mu calls it directly and returns in microseconds.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Tunables (overridable via Options for deterministic tests).
 const (
 	defaultBufSize          = 1024
-	defaultThrottleWindow   = 300 // seconds: identical (DedupKey,rule) within this window sends once
-	defaultBreakerThreshold = 5   // consecutive channel failures before opening
-	defaultBreakerOpenSec   = 60  // seconds a tripped breaker stays open
+	defaultThrottleWindow   = 300
+	defaultBreakerThreshold = 5
+	defaultBreakerOpenSec   = 60
 	defaultSendTimeout      = 5 * time.Second
 	historyCapacity         = 500
 )
 
-// breakerState is per-channel circuit-breaker bookkeeping (worker-only).
 type breakerState struct {
 	failures  int
-	openUntil int64 // unix sec; while now < openUntil the channel is skipped
+	openUntil int64
 }
 
-// Options configures a Router. Only DataDir and Channels matter in production;
-// the rest exist so tests can shrink windows and inject a fake clock.
 type Options struct {
 	DataDir          string
-	Channels         map[string]Channel // channel TYPE id -> impl (e.g. "whatsapp")
+	Channels         map[string]Channel
 	BufSize          int
 	ThrottleWindow   int64
 	BreakerThreshold int
 	BreakerOpenSec   int64
 	SendTimeout      time.Duration
-	Now              func() int64 // unix seconds; nil -> time.Now().Unix
+	Now              func() int64
 }
 
-// Router is the notification spine. Construct with New; it starts its worker
-// immediately. Call Close on shutdown.
 type Router struct {
 	dir      string
-	channels map[string]Channel // type -> impl (immutable after New)
+	channels map[string]Channel
 	bufSize  int
 	window   int64
 	brkLimit int
@@ -69,33 +43,26 @@ type Router struct {
 	sendTO   time.Duration
 	now      func() int64
 
-	// CONFIG domain (cfgMu, copy-on-write).
 	cfgMu     sync.RWMutex
 	rules     []Rule
-	channelsC map[string]ChannelDef // configured destinations, id -> def
+	channelsC map[string]ChannelDef
 
-	// WORKER-ONLY domain (no locks).
-	throttle map[string]int64         // "DedupKey|ruleID" -> last-send unix
-	breaker  map[string]*breakerState // channelDef ID -> breaker
+	throttle map[string]int64
+	breaker  map[string]*breakerState
 
-	// CROSS-GOROUTINE domain.
 	histMu  sync.Mutex
 	history *ring
 	inboxMu sync.Mutex
-	inbox   *ring // in-app inbox (InAppChannel sink) read by GET /api/notify/inbox
-	dropped int64 // atomic
+	inbox   *ring
+	dropped int64
 
 	ch   chan Event
 	quit chan struct{}
 	done chan struct{}
 
-	// test-only seam: invoked at the end of handle() with the processed event.
-	// nil in production. Lets tests await async processing deterministically.
 	onHandled func(Event)
 }
 
-// New builds a Router, loads persisted rules/channels (tolerating absence),
-// and starts the worker goroutine.
 func New(opts Options) (*Router, error) {
 	r := &Router{
 		dir:       filepath.Join(opts.DataDir, "notify"),
@@ -145,18 +112,11 @@ func orInt64(v, def int64) int64 {
 	return def
 }
 
-// Close stops the worker. Safe to call once.
 func (r *Router) Close() {
 	close(r.quit)
 	<-r.done
 }
 
-// ── Producer side ────────────────────────────────────────────────────────────
-
-// Dispatch records ev in history and hands it to the worker. It is
-// NON-BLOCKING: on buffer overflow it drops the event and bumps the dropped
-// counter rather than ever blocking the caller. Takes no caller lock and never
-// touches cfgMu — safe to call from under queue.mu.
 func (r *Router) Dispatch(ev Event) {
 	if ev.TS == 0 {
 		ev.TS = r.now()
@@ -168,15 +128,11 @@ func (r *Router) Dispatch(ev Event) {
 	select {
 	case r.ch <- ev:
 	default:
-		atomic.AddInt64(&r.dropped, 1) // overflow: drop+count, never block
+		atomic.AddInt64(&r.dropped, 1)
 	}
 }
 
-// Dropped returns the number of events dropped due to buffer overflow. Silence
-// is never success — the UI/health surface this so an overwhelmed bus is seen.
 func (r *Router) Dropped() int64 { return atomic.LoadInt64(&r.dropped) }
-
-// ── Worker ───────────────────────────────────────────────────────────────────
 
 func (r *Router) run() {
 	defer close(r.done)
@@ -190,14 +146,11 @@ func (r *Router) run() {
 	}
 }
 
-// handle matches ev against the current rule snapshot and fans out to channels,
-// applying throttle/dedup and the per-channel breaker. WORKER-ONLY: the only
-// reader/writer of throttle and breaker.
 func (r *Router) handle(ev Event) {
 	r.cfgMu.RLock()
 	rules := r.rules
 	chans := r.channelsC
-	impls := r.channels // snapshot (copy-on-write via AddChannelImpl)
+	impls := r.channels
 	r.cfgMu.RUnlock()
 
 	now := r.now()
@@ -207,12 +160,10 @@ func (r *Router) handle(ev Event) {
 		if !rl.matches(ev) {
 			continue
 		}
-		// Throttle/dedup per (DedupKey, rule). Empty DedupKey can't be deduped,
-		// so it always sends (callers always set one; this is defensive).
 		if ev.DedupKey != "" {
 			key := ev.DedupKey + "|" + rl.ID
 			if last, ok := r.throttle[key]; ok && now-last < r.window {
-				continue // within window: already notified for this identity+rule
+				continue
 			}
 			r.throttle[key] = now
 		}
@@ -225,9 +176,6 @@ func (r *Router) handle(ev Event) {
 			if impl == nil {
 				continue
 			}
-			// Per-rule copy: ev is a value type, so this is cheap and
-			// cannot leak RuleID across the other Rules/Channels this
-			// same event may also fan out to in this loop.
 			evForRule := ev
 			evForRule.RuleID = rl.ID
 			r.sendVia(def, impl, evForRule, now)
@@ -239,8 +187,6 @@ func (r *Router) handle(ev Event) {
 	}
 }
 
-// sendVia delivers one event through one channel, honoring + updating the
-// breaker. WORKER-ONLY.
 func (r *Router) sendVia(def ChannelDef, impl Channel, ev Event, now int64) {
 	b := r.breaker[def.ID]
 	if b == nil {
@@ -248,7 +194,7 @@ func (r *Router) sendVia(def ChannelDef, impl Channel, ev Event, now int64) {
 		r.breaker[def.ID] = b
 	}
 	if now < b.openUntil {
-		return // breaker open: skip without calling Send
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), r.sendTO)
@@ -266,9 +212,6 @@ func (r *Router) sendVia(def ChannelDef, impl Channel, ev Event, now int64) {
 	b.openUntil = 0
 }
 
-// evictThrottle drops throttle entries older than the window so the map can't
-// grow unbounded across many distinct DedupKeys (one per job id, etc.).
-// WORKER-ONLY; runs once per consumed event.
 func (r *Router) evictThrottle(now int64) {
 	for k, ts := range r.throttle {
 		if now-ts > r.window {
@@ -277,6 +220,4 @@ func (r *Router) evictThrottle(now int64) {
 	}
 }
 
-// throttleLen is a test seam: reports the current throttle map size. Safe to
-// call only when the worker is quiescent (tests await onHandled first).
 func (r *Router) throttleLen() int { return len(r.throttle) }

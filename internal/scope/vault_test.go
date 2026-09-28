@@ -12,9 +12,6 @@ import (
 	"server-control-panel/internal/secrets"
 )
 
-// newTestVault opens a throwaway encrypted store and binds it to user
-// "sam", returning the vault, the raw store (for cross-binary assertions),
-// the user prefix, and the on-disk path.
 func newTestVault(t *testing.T) (*UserVault, *secrets.Store, string, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "secrets.vault")
@@ -36,13 +33,13 @@ func TestValidGroupName(t *testing.T) {
 		{"Project X", false, true},
 		{"ops", false, true},
 		{"northwind", true, true},
-		{"", false, false},    // empty rejected
-		{"a:b", false, false}, // colon (namespace separator)
-		{"a/b", false, false}, // slash (path component)
+		{"", false, false},
+		{"a:b", false, false},
+		{"a/b", false, false},
 		{"x\x00y", false, false},
-		{"system", false, false}, // reserved, non-primary
-		{"system", true, true},   // reserved, primary OK
-		{"SYSTEM", false, false}, // case-insensitive reserved
+		{"system", false, false},
+		{"system", true, true},
+		{"SYSTEM", false, false},
 		{"System", true, true},
 	}
 	for _, c := range cases {
@@ -55,7 +52,6 @@ func TestValidGroupName(t *testing.T) {
 func TestMetaKeyRejectedAndHidden(t *testing.T) {
 	uv, _, _, _ := newTestVault(t)
 
-	// __meta__ is not an acceptable logical key for callers.
 	if validLogicalKey(metaLogicalKey) {
 		t.Fatal("validLogicalKey(__meta__) = true, want false")
 	}
@@ -92,7 +88,6 @@ func TestSetWithMetaAndListEntries(t *testing.T) {
 	}
 	created := e.CreatedAt
 
-	// Re-set: CreatedAt preserved, UpdatedAt refreshed (>= created).
 	if err := uv.SetWithMeta("db_pass", "new-secret", EntryMeta{Group: "Project X", Type: "password"}); err != nil {
 		t.Fatalf("SetWithMeta 2: %v", err)
 	}
@@ -121,7 +116,6 @@ func TestDeleteRemovesValueAndMeta(t *testing.T) {
 	if _, ok := uv.Get("a"); ok {
 		t.Fatal("value 'a' still present after Delete")
 	}
-	// meta blob still exists (b remains) and no longer mentions 'a'.
 	meta := uv.loadMeta()
 	if _, ok := meta["a"]; ok {
 		t.Fatal("meta for 'a' survived Delete")
@@ -130,8 +124,6 @@ func TestDeleteRemovesValueAndMeta(t *testing.T) {
 		t.Fatal("meta for 'b' wrongly dropped")
 	}
 
-	// Teardown semantics: deleting the last secret must leave NO orphan
-	// __meta__ entry on disk (mirrors whatsapp manager teardown loop).
 	if err := uv.Delete("b"); err != nil {
 		t.Fatalf("Delete b: %v", err)
 	}
@@ -143,33 +135,22 @@ func TestDeleteRemovesValueAndMeta(t *testing.T) {
 	}
 }
 
-// TestCrossBinaryPlaintextStaysMap is the certainty-anchoring test: after the
-// new code writes metadata, the decrypted plaintext must STILL be a valid
-// map[string]string — exactly what a legacy binary does on Open. We prove it
-// by reopening the store (Open does json.Unmarshal into map[string]string and
-// errors otherwise) and confirming the reserved blob is reachable raw but
-// hidden from List().
 func TestCrossBinaryPlaintextStaysMap(t *testing.T) {
 	uv, store, prefix, path := newTestVault(t)
 
-	// A "legacy" plain write (no meta), as the daemon does for waha_* keys.
 	if err := uv.Set("waha_api_key", "legacy-value"); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	// New-code write with metadata.
 	if err := uv.SetWithMeta("api_token", "tok", EntryMeta{Group: "ops", Type: "token", Notes: "n"}); err != nil {
 		t.Fatalf("SetWithMeta: %v", err)
 	}
 	_ = store
 
-	// Reopen from disk: if the plaintext were no longer a map[string]string,
-	// secrets.Open would return an unmarshal error here.
 	st2, err := secrets.Open(path, "test-pass")
 	if err != nil {
 		t.Fatalf("reopen failed — plaintext is no longer map[string]string: %v", err)
 	}
 
-	// Original raw values intact (consumer invariant preserved).
 	if v, ok := st2.Get(prefix + "waha_api_key"); !ok || v != "legacy-value" {
 		t.Fatalf("raw Get waha_api_key = (%q,%v), want legacy-value", v, ok)
 	}
@@ -177,8 +158,6 @@ func TestCrossBinaryPlaintextStaysMap(t *testing.T) {
 		t.Fatalf("raw Get api_token = (%q,%v), want tok", v, ok)
 	}
 
-	// The reserved blob is reachable directly (a legacy binary would see this
-	// extra string key and ignore it)...
 	blob, ok := st2.Get(prefix + metaLogicalKey)
 	if !ok || blob == "" {
 		t.Fatal("reserved __meta__ blob missing after reopen")
@@ -191,7 +170,6 @@ func TestCrossBinaryPlaintextStaysMap(t *testing.T) {
 		t.Fatalf("meta blob lost data: %+v", parsed)
 	}
 
-	// ...but a UserVault over the reopened store hides it from List().
 	uv2 := NewUserVault(st2, MustNew("sam"))
 	for _, k := range uv2.List() {
 		if k == metaLogicalKey {
@@ -245,14 +223,11 @@ func TestHandlerAuditEmitted(t *testing.T) {
 		events = append(events, action+" "+target)
 	}})
 
-	// set
 	body, _ := json.Marshal(map[string]string{"key": "tok", "value": "v", "group": "ops"})
 	req := httptest.NewRequest(http.MethodPost, "/set", bytes.NewReader(body))
 	h.ServeHTTP(httptest.NewRecorder(), req)
-	// reveal
 	req = httptest.NewRequest(http.MethodGet, "/get?key=tok", nil)
 	h.ServeHTTP(httptest.NewRecorder(), req)
-	// delete
 	body, _ = json.Marshal(map[string]string{"key": "tok"})
 	req = httptest.NewRequest(http.MethodPost, "/delete", bytes.NewReader(body))
 	h.ServeHTTP(httptest.NewRecorder(), req)
@@ -267,7 +242,7 @@ func TestHandlerListGroups(t *testing.T) {
 	uv, _, _, _ := newTestVault(t)
 	_ = uv.SetWithMeta("k1", "v", EntryMeta{Group: "ops"})
 	_ = uv.SetWithMeta("k2", "v", EntryMeta{Group: "ops"})
-	_ = uv.SetWithMeta("k3", "v", EntryMeta{}) // ungrouped
+	_ = uv.SetWithMeta("k3", "v", EntryMeta{})
 
 	h := uv.Handler(HandlerOpts{})
 	req := httptest.NewRequest(http.MethodGet, "/list", nil)
@@ -284,7 +259,6 @@ func TestHandlerListGroups(t *testing.T) {
 	if len(resp.Keys) != 3 {
 		t.Fatalf("keys = %v, want 3", resp.Keys)
 	}
-	// "ops" (2 entries) sorts before the empty group (1 entry, pushed last).
 	if len(resp.Groups) != 2 {
 		t.Fatalf("groups = %d, want 2", len(resp.Groups))
 	}

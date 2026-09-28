@@ -22,17 +22,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/**
- * Upload progress of a media message being sent, keyed by `client_msg_id` in
- * [ConversationUiState.Content.uploads]. Removed once the upload succeeds and
- * [MessageSendStatus.SENT] takes over.
- */
 sealed interface MediaUploadState {
     data class InProgress(val percent: Int) : MediaUploadState
     data class Failed(val reason: String, val retryable: Boolean) : MediaUploadState
 }
 
-/** State of the conversation screen. */
 sealed interface ConversationUiState {
     data object Loading : ConversationUiState
     data class Error(val message: String) : ConversationUiState
@@ -43,14 +37,6 @@ sealed interface ConversationUiState {
     ) : ConversationUiState
 }
 
-/**
- * Loads a chat's history, applies live WebSocket events for [jid], and sends messages with an
- * idempotent client-generated `client_msg_id`.
- *
- * Messages are deduped by server [WhatsAppMessage.id], never by content or time. A pending send
- * is tracked by `client_msg_id` until the server confirms an id; a retry reuses the same entry.
- * Every reconnect refetches history over REST, since the socket does not replay missed events.
- */
 open class ConversationViewModel(
     private val jid: String,
     private val repository: WhatsAppRepository = WhatsAppRepository(),
@@ -76,13 +62,11 @@ open class ConversationViewModel(
 
     fun retry() = load()
 
-    /** Generates a fresh `client_msg_id`, shows an optimistic bubble, and sends. */
     fun sendMessage(text: String) {
         if (text.isBlank()) return
         sendWithId(clientMsgId = UUID.randomUUID().toString(), text = text)
     }
 
-    /** Re-sends a previously [MessageSendStatus.FAILED] bubble with its *same* `client_msg_id`. */
     fun retrySend(clientMsgId: String) {
         val current = _uiState.value as? ConversationUiState.Content ?: return
         val failed = current.messages.firstOrNull { it.clientMsgId == clientMsgId } ?: return
@@ -126,7 +110,6 @@ open class ConversationViewModel(
 
     private fun reconcileSent(clientMsgId: String, serverId: String) {
         val current = _uiState.value as? ConversationUiState.Content ?: return
-        // A WS event may already have replaced the pending entry; do not add it again.
         if (current.messages.any { it.id == serverId }) return
         _uiState.value = current.copy(
             messages = current.messages.map { msg ->
@@ -139,10 +122,6 @@ open class ConversationViewModel(
         )
     }
 
-    /**
-     * Marks a message stored for sending when the network returns. A SENDING state that never
-     * ends looks frozen and invites a duplicate resend.
-     */
     private fun markQueued(clientMsgId: String) {
         val current = _uiState.value as? ConversationUiState.Content ?: return
         _uiState.value = current.copy(
@@ -165,12 +144,10 @@ open class ConversationViewModel(
         )
     }
 
-    /** Generates a fresh `client_msg_id`, shows an optimistic media bubble (local file preview), and uploads. */
     fun sendMedia(attachment: PickedAttachment, caption: String? = null, quotedId: String? = null) {
         sendMediaWithId(clientMsgId = UUID.randomUUID().toString(), attachment = attachment, caption = caption, quotedId = quotedId)
     }
 
-    /** Re-uploads a failed media bubble with the same `client_msg_id`, from the same local file. */
     fun retryMediaSend(clientMsgId: String) {
         val current = _uiState.value as? ConversationUiState.Content ?: return
         val failed = current.messages.firstOrNull { it.clientMsgId == clientMsgId } ?: return
@@ -199,7 +176,6 @@ open class ConversationViewModel(
             ack = 0,
             quotedId = quotedId,
             media = WhatsAppMedia(
-                // Must be a `file://` URI so `MediaCache.resolveUrl` does not prefix the server origin.
                 url = attachment.file.toURI().toString(),
                 mimeType = attachment.mimeType,
                 filename = attachment.filename,
@@ -250,7 +226,6 @@ open class ConversationViewModel(
     }
 
     private fun reconcileMediaSent(clientMsgId: String, serverId: String) {
-        // Same reconciliation as text; only the `uploads` bookkeeping is media-specific.
         reconcileSent(clientMsgId, serverId)
         val current = _uiState.value as? ConversationUiState.Content ?: return
         _uiState.value = current.copy(uploads = current.uploads - clientMsgId)
@@ -284,7 +259,6 @@ open class ConversationViewModel(
             eventSource.state.collect { connectionState ->
                 if (connectionState is WhatsAppConnectionState.Live) {
                     if (hasConnectedOnce) {
-                        // Reconnect: refetch over REST instead of trusting buffered events.
                         load()
                     }
                     hasConnectedOnce = true
@@ -305,10 +279,7 @@ open class ConversationViewModel(
             is WhatsAppWsEvent.MessageReceived -> {
                 val incoming = event.message
                 if (incoming.chatJid != jid) return
-                // Dedupe by server id so a WS redelivery never appends twice.
                 if (current.messages.any { it.id == incoming.id }) return
-                // Replace a matching pending send in place. The WS frame has no client_msg_id,
-                // so text is the key; safe because only one send is in flight at a time.
                 val pendingIndex = if (incoming.fromMe) {
                     current.messages.indexOfFirst {
                         it.clientMsgId != null && it.sendStatus == MessageSendStatus.SENDING && it.text == incoming.text

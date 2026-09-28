@@ -5,15 +5,12 @@ import (
 	"testing"
 )
 
-// An OLDER snapshot (a lower seq) arriving AFTER a newer one must not overwrite
-// the disk — otherwise a session "loses" its owner after a restart.
 func TestOwnershipPersistOrdering(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "own.json")
 	o, err := LoadOwnership(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Persist the NEW state (seq=2) and then an OLD state (seq=1).
 	if err := o.persist(map[string]string{"a": "u1", "b": "u2"}, 2); err != nil {
 		t.Fatal(err)
 	}

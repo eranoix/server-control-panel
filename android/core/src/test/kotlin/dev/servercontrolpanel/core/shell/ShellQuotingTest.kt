@@ -6,10 +6,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 
-/**
- * The key tests run a real `/bin/sh` and count the arguments it received,
- * since only a POSIX shell can prove a path arrives whole as one argument.
- */
 class ShellQuotingTest {
 
     @Test
@@ -34,7 +30,6 @@ class ShellQuotingTest {
 
     @Test
     fun `dangerous metacharacters are neutralized`() {
-        // Unquoted, each of these would make the shell execute something.
         listOf("/tmp/a;rm -rf b", "/tmp/\$(id)", "/tmp/`id`", "/tmp/a|b", "/tmp/a&b", "/tmp/a\nb", "/tmp/a*b").forEach { raw ->
             val quoted = shellQuoted(raw)
             assertTrue("should be quoted: $raw -> $quoted", quoted.startsWith("'") && quoted.endsWith("'"))
@@ -49,7 +44,6 @@ class ShellQuotingTest {
 
     @Test
     fun `insertion never ends with a newline`() {
-        // A newline would execute the operator's command line.
         val text = shellInsertionText(listOf("/tmp/a.png", "/tmp/b.png"))
         assertTrue(!text.contains('\n'))
         assertTrue(text.endsWith(" "))
@@ -72,7 +66,6 @@ class ShellQuotingTest {
 
     @Test
     fun `a name with command substitution executes nothing`() {
-        // If escaping failed, the shell would run `id` and return its output instead.
         assertEquals(listOf("/tmp/\$(id).png"), argsSeenByShell("/tmp/\$(id).png"))
     }
 
@@ -82,10 +75,6 @@ class ShellQuotingTest {
         assertEquals(listOf("/tmp/one two.png", "/tmp/three;four.png"), seen)
     }
 
-    /**
-     * Runs `printf '%s\n'` through `sh -c` and returns the arguments the shell
-     * passed, one per line with nothing interpreted.
-     */
     private fun argsSeenByShell(vararg paths: String): List<String> {
         assumeTrue(File("/bin/sh").exists())
         val insertion = shellInsertionText(paths.toList())

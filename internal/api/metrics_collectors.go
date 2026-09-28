@@ -1,15 +1,5 @@
 package api
 
-// metrics_collectors.go — per-subsystem metric collectors.
-//
-// Each collector implements metrics.Collector and publishes a set of metrics
-// (a catalogue) plus their values on every collection. They are defined HERE
-// (package api) because this is the only point with access to ALL of the
-// Router's subsystems (queue, scheduler, notify, claudeAccts, docker,
-// whatsappMgr) plus auth's atomic counters. Cheap collectors have Interval 0
-// (they collect on every Gather/5s); the expensive ones (claude 60s,
-// docker/sessions 30s) declare their own cadence and are cached.
-
 import (
 	"context"
 	"strings"
@@ -24,7 +14,6 @@ import (
 	"server-control-panel/internal/system"
 )
 
-// Catalogue categories (the labels shown in the metric selector).
 const (
 	catSystem = "System"
 	catJobs   = "Jobs"
@@ -35,10 +24,6 @@ const (
 	catAuth   = "Authentication"
 )
 
-// buildMetricRegistry assembles the Registry with every available collector and
-// initialises the per-metric history. Called at the end of New(), when every
-// subsystem is (or is not) assembled — each collector is registered only if its
-// subsystem exists.
 func (r *Router) buildMetricRegistry() {
 	reg := metrics.NewRegistry()
 	reg.Register(newSystemCollector())
@@ -58,10 +43,8 @@ func (r *Router) buildMetricRegistry() {
 	}
 	reg.Register(sessionCollector())
 	r.metricReg = reg
-	r.metricHist = metrics.NewMetricHistory(720) // ~1h a 5s
+	r.metricHist = metrics.NewMetricHistory(720)
 }
-
-// ---------- System (stateful: dynamic disk descriptors + network rate) ----------
 
 type systemCollector struct {
 	mu          sync.Mutex
@@ -90,7 +73,6 @@ func (c *systemCollector) Describe() []metrics.MetricDescriptor {
 		{Key: "sys.uptime", Label: "Uptime", Unit: "s", Category: catSystem, Kind: "gauge"},
 		{Key: "sys.goroutines", Label: "Goroutines (Go)", Unit: "count", Category: catSystem, Kind: "gauge"},
 	}
-	// Dynamic descriptors: one per disk mount seen in the last collection.
 	c.mu.Lock()
 	last := c.lastStats
 	c.mu.Unlock()
@@ -108,7 +90,7 @@ func (c *systemCollector) Describe() []metrics.MetricDescriptor {
 func (c *systemCollector) Collect(ctx context.Context) map[string]float64 {
 	s, err := system.Collect(ctx)
 	if err != nil || s == nil {
-		return nil // keep the previous cache
+		return nil
 	}
 	m := map[string]float64{
 		"sys.cpu":        s.CPU.Overall,
@@ -152,16 +134,12 @@ func (c *systemCollector) Collect(ctx context.Context) map[string]float64 {
 	return m
 }
 
-// mountKey turns a mount path into a safe metric-key fragment: "/" → "root",
-// "/var" → "var", "/mnt/data" → "mnt_data".
 func mountKey(mount string) string {
 	if mount == "/" || mount == "" {
 		return "root"
 	}
 	return strings.Trim(strings.ReplaceAll(mount, "/", "_"), "_")
 }
-
-// ---------- Jobs / Queue / Scheduler ----------
 
 func (r *Router) jobsCollector() metrics.Collector {
 	desc := []metrics.MetricDescriptor{
@@ -234,8 +212,6 @@ func (r *Router) jobsCollector() metrics.Collector {
 	})
 }
 
-// ---------- Notifications ----------
-
 func (r *Router) notifyCollector() metrics.Collector {
 	desc := []metrics.MetricDescriptor{
 		{Key: "notify.dropped", Label: "Notifications dropped (overload)", Unit: "count", Category: catNotify, Kind: "counter"},
@@ -256,8 +232,6 @@ func (r *Router) notifyCollector() metrics.Collector {
 	})
 }
 
-// ---------- Authentication (the package's atomic counters) ----------
-
 func authCollector() metrics.Collector {
 	desc := []metrics.MetricDescriptor{
 		{Key: "auth.login_attempts", Label: "Login attempts", Unit: "count", Category: catAuth, Kind: "counter"},
@@ -270,8 +244,6 @@ func authCollector() metrics.Collector {
 		}
 	})
 }
-
-// ---------- WhatsApp ----------
 
 func (r *Router) whatsappCollector() metrics.Collector {
 	desc := []metrics.MetricDescriptor{
@@ -291,11 +263,6 @@ func (r *Router) whatsappCollector() metrics.Collector {
 	})
 }
 
-// ---------- Claude (expensive: reads JSONL + quota over HTTP; 60s cadence, cached) ----------
-
-// claudeQuotaWindows maps the window key of the oauth/usage endpoint → a short
-// metric-key suffix + a display label. It covers ALL the rate-limit windows
-// Anthropic exposes for the Max subscription.
 var claudeQuotaWindows = []struct{ key, short, label string }{
 	{"five_hour", "5h", "5h quota"},
 	{"seven_day", "7d", "Weekly quota"},
@@ -322,14 +289,9 @@ func (r *Router) claudeCollector() metrics.Collector {
 		{Key: "claude.tokens.7d", Label: "Tokens (7 days)", Unit: "tokens", Category: catClaude, Kind: "gauge"},
 		{Key: "claude.messages.today", Label: "Messages (today)", Unit: "count", Category: catClaude, Kind: "gauge"},
 	}
-	// Aggregate quota (the max across accounts) — one per window.
 	for _, w := range claudeQuotaWindows {
 		desc = append(desc, metrics.MetricDescriptor{Key: "claude.quota." + w.short, Label: w.label + " (max)", Unit: "%", Category: catClaude, Kind: "gauge"})
 	}
-	// Per account: each account becomes ITS OWN category ("Claude · sam",
-	// "Claude · jordan"), clearly separating each one's usage and quota. The
-	// accounts are fixed at startup. Labels kept lean (the group already names
-	// the account).
 	for _, acct := range r.claudeAccts.Accounts() {
 		id := acct.ID
 		cat := catClaude + " · " + id
@@ -347,7 +309,7 @@ func (r *Router) claudeCollector() metrics.Collector {
 		}
 		m := map[string]float64{}
 		var costToday, cost7d, costTotal, tokToday, tok7d, msgToday float64
-		aggQuota := map[string]float64{} // short suffix → max utilization across accounts
+		aggQuota := map[string]float64{}
 		for _, acct := range r.claudeAccts.Accounts() {
 			u := r.claudeAccts.Usage(acct)
 			costToday += u.Today.CostUSD
@@ -384,8 +346,6 @@ func (r *Router) claudeCollector() metrics.Collector {
 	})
 }
 
-// ---------- Docker (expensive: calls the daemon; 30s cadence) ----------
-
 func (r *Router) dockerCollector() metrics.Collector {
 	desc := []metrics.MetricDescriptor{
 		{Key: "docker.running", Label: "Containers running", Unit: "count", Category: catDocker, Kind: "gauge"},
@@ -414,15 +374,11 @@ func (r *Router) dockerCollector() metrics.Collector {
 	})
 }
 
-// ---------- sessions (expensive: exec; 30s cadence) ----------
-
 func sessionCollector() metrics.Collector {
 	desc := []metrics.MetricDescriptor{
 		{Key: "sessions.active", Label: "Sessions (dtach)", Unit: "count", Category: catSystem, Kind: "gauge"},
 	}
 	return metrics.NewFuncCollector(30*time.Second, desc, func(context.Context) map[string]float64 {
-		// Counts the dtach engine's sessions. The wire key is kept for the
-		// stability of dashboards and history.
 		sessions, err := pty.SessionListAll()
 		if err != nil {
 			return nil

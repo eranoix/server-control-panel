@@ -1,57 +1,11 @@
 package dev.servercontrolpanel.feature.terminal.transport
 
-/**
- * Decides what to do with the scrollback block the server re-emits on a fresh
- * attach (the "replay": the last 128 KiB of the PTY tee, see `attachReplay` in
- * `internal/pty/pty.go`).
- *
- * For an append-only shell the replay is right. For a differential renderer such
- * as Ink that does not use the alt screen, it is harmful:
- *
- * 1. Width: the text was already wrapped at whatever width the PTY had then
- *    (real logs mixed 24 to 113 columns), and those `\r\n` breaks cannot be
- *    reflowed without corrupting tables and diffs.
- * 2. Duplication: the tail holds dozens of frames drawn with relative `ESC[nA`
- *    moves, which saturate at the top of the screen on a fresh grid, so each
- *    frame lands below the previous one.
- *
- * The current conversation instead comes from `TerminalViewModel.startPrimer`,
- * which asks `/terminal/history` first (the server feeds lines leaving the
- * screen of a live emulator into an append-only history; 4096 KiB of raw log
- * become 360 KiB of history) and falls back to `/terminal/raw-log`. Older
- * history stays reachable through the "load older" panel.
- *
- * Criterion: shells never move the cursor up to rewrite; differential renderers
- * constantly do. The signature is the count of CUU (`ESC[<n>A`) with `n >= 2`
- * (`n == 1` is bash `readline` redrawing a two-line prompt). Measured over the
- * same 128 KiB window on 30 real logs:
- *
- * ```
- *   shells         : 0, 0, 0, 0, 0, 3, 11        (max 11)
- *   TUI sessions   : 33, 52, 125, 396, ... 2448  (min 33)
- * ```
- *
- * [REPAINT_THRESHOLD] = 20 sits in the gap; erring towards "shell" is the cheap side.
- */
 object AttachReplay {
 
-    /**
-     * How many CUUs of two or more lines make a stream "redrawn"; sits in the
-     * measured gap between the worst shell (11) and the best TUI (33).
-     */
     const val REPAINT_THRESHOLD: Int = 20
 
-    /**
-     * Whether a differential renderer (Ink, `less`, anything that repaints by
-     * moving the cursor up) produced this stream. One allocation-free pass, since
-     * it runs on the WebSocket thread over up to 128 KiB.
-     */
     fun isDiffRepaint(bytes: ByteArray): Boolean = countBlockCuu(bytes) >= REPAINT_THRESHOLD
 
-    /**
-     * How many times the stream moves the cursor up two or more lines
-     * (`ESC [ n A`, `n >= 2`). A missing or zero parameter means 1 (ECMA-48).
-     */
     internal fun countBlockCuu(bytes: ByteArray): Int {
         var total = 0
         var i = 0
@@ -62,7 +16,6 @@ object AttachReplay {
                 var value = 0
                 var digits = 0
                 while (j < end && bytes[j] >= ZERO && bytes[j] <= NINE) {
-                    // Saturate instead of overflowing on a corrupted, very long parameter.
                     if (value < 1000) value = value * 10 + (bytes[j] - ZERO)
                     digits += 1
                     j += 1

@@ -18,8 +18,6 @@ import (
 	"time"
 )
 
-// ─── COPY (recursive) ──────────────────────────────────────────
-
 type copyReq struct {
 	From string `json:"from"`
 	To   string `json:"to"`
@@ -92,8 +90,6 @@ func copyRecursive(src, dst string) error {
 	_, err = io.Copy(out, in)
 	return err
 }
-
-// ─── BULK DELETE / MOVE ────────────────────────────────────────
 
 type bulkPathsReq struct {
 	Paths []string `json:"paths"`
@@ -177,11 +173,9 @@ func handleBulkMove(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "results": results})
 }
 
-// ─── CHMOD / CHOWN ─────────────────────────────────────────────
-
 type chmodReq struct {
 	Path      string `json:"path"`
-	Mode      string `json:"mode"` // octal "0644" or "644"
+	Mode      string `json:"mode"`
 	Recursive bool   `json:"recursive"`
 }
 
@@ -268,8 +262,6 @@ func handleChown(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// ─── TRASH / RESTORE ───────────────────────────────────────────
-
 const trashDir = "/root/.panel-trash"
 
 func ensureTrash() error { return os.MkdirAll(trashDir, 0700) }
@@ -301,7 +293,6 @@ func handleTrash(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	ts := time.Now().UTC().Format("20060102-150405.000")
-	// Encodes the original path into the name (base64-url-like) so it can be restored later.
 	orig := strings.ReplaceAll(strings.TrimPrefix(src, "/"), "/", "_SLASH_")
 	dst := filepath.Join(trashDir, fmt.Sprintf("%s__%s", ts, orig))
 	if err := os.Rename(src, dst); err != nil {
@@ -350,7 +341,7 @@ func handleTrashList(w http.ResponseWriter, r *http.Request) {
 
 type restoreReq struct {
 	TrashPath string `json:"trash_path"`
-	Dest      string `json:"dest,omitempty"` // if empty, restores to the original location (extracted from the name)
+	Dest      string `json:"dest,omitempty"`
 }
 
 func handleTrashRestore(w http.ResponseWriter, r *http.Request) {
@@ -392,12 +383,10 @@ func handleTrashRestore(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "restored": dest})
 }
 
-// ─── FETCH (import from URL) ───────────────────────────────────
-
 type fetchReq struct {
 	URL      string `json:"url"`
-	Dest     string `json:"dest"`               // destination directory
-	Filename string `json:"filename,omitempty"` // optional name; default = last segment of the URL
+	Dest     string `json:"dest"`
+	Filename string `json:"filename,omitempty"`
 }
 
 func handleFetch(w http.ResponseWriter, r *http.Request) {
@@ -436,9 +425,7 @@ func handleFetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	full := filepath.Join(destDir, name)
-	// Cap as a defense against slowloris, or against a server streaming an
-	// open-ended GB. 2GB is generous for an ISO/backup and still protects the disk.
-	const maxDownloadBytes = 2 << 30 // 2 GiB
+	const maxDownloadBytes = 2 << 30
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Get(u.String())
 	if err != nil {
@@ -467,16 +454,12 @@ func handleFetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if n > maxDownloadBytes {
-		// It can have overshot when ContentLength was -1 (chunked) — delete the file
-		// and return an error instead of leaving partial garbage behind.
 		_ = os.Remove(full)
 		writeErr(w, http.StatusRequestEntityTooLarge, "download exceeded the cap mid-stream")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "saved": full, "size": n})
 }
-
-// ─── HASH ──────────────────────────────────────────────────────
 
 func handleHash(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -517,8 +500,6 @@ func handleHash(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"algo": algo, "hash": hex.EncodeToString(h.Sum(nil))})
 }
-
-// ─── TOUCH (create empty file) ─────────────────────────────────
 
 func handleTouch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

@@ -1,7 +1,3 @@
-// 20-deploy.js — the Deploy tab module (Heroku-style PaaS). An IIFE that
-// exposes window.PanelDeployModule(); the object is spread inside app() in
-// 00-shell.js, so `this` here is the Alpine component (this.api, this.showToast,
-// this.openJobLog, this.askConfirm and this._errText are all available).
 (function () {
   window.PanelDeployModule = function () {
     return {
@@ -14,17 +10,14 @@
         catalog: [], showCatalog: false, catSel: null,
         catForm: { name: '', port: '', domain: '', env: [] },
         ports: [], portPrefix: '/_port/', manualPort: '',
-        menuOpen: '', // name of the app whose "⋯" menu (secondary actions) is open
-        running: [],  // names of apps with a deploy in flight — see isDeploying()/deployRun()
+        menuOpen: '',
+        running: [],
       },
 
       deployInit() { this.loadDeployApps(); this.loadDevPorts(); },
 
-      // ---- editor port forwarding ----
       async loadDevPorts() {
         try {
-          // raw:true — a 403 is deliberate silence (user without the editor enabled),
-          // not an error to show.
           const r = await this.api('/api/dev/ports', { raw: true });
           if (r.status === 403) { this.deploy.ports = []; return; }
           if (!r.ok) throw await this._apiError(r);
@@ -43,8 +36,6 @@
       async loadDeployApps() {
         this.deploy.loading = true;
         try {
-          // raw:true — a 403 feeds the `forbidden` state (access-denied screen), it is
-          // not a load failure.
           const r = await this.api('/api/deploy/apps', { raw: true });
           if (r.status === 403) { this.deploy.forbidden = true; this.deploy.apps = []; return; }
           if (!r.ok) throw await this._apiError(r);
@@ -53,8 +44,6 @@
           this.deploy.repoRoot = d.repo_root || '/srv/panel-apps';
           this.deploy.host = location.hostname;
           this.deploy.forbidden = false;
-          // If some app has a deploy sitting in 'building' (e.g. a git push that never
-          // went through the UI), start the poll so the badge leaves "building" by itself.
           if ((this.deploy.apps || []).some(a => (a.deploys || []).some(dp => dp.status === 'building'))) this._ensureDeployPoll();
         } catch (e) { console.warn('[deploy] load', e); }
         finally { this.deploy.loading = false; }
@@ -62,8 +51,6 @@
 
       deployLastStatus(app) {
         const ds = app.deploys || [];
-        // the last PRODUCTION deploy (ignores previews/teardowns, which would
-        // otherwise make a running app look "rolled_back").
         for (let i = ds.length - 1; i >= 0; i--) {
           if (!ds[i].preview) return ds[i];
         }
@@ -107,19 +94,6 @@
         if (d.app) this.deploy.openApp = d.app.name;
       },
 
-      // Deploy reentrancy GUARD, PER APP. A double click on the button would fire
-      // two POST /api/deploy/app/deploy and the backend would queue two concurrent
-      // builds on the SAME work-tree (checkout and build treading on each other).
-      // The risk is per app — different apps are different work-trees and can build
-      // in parallel —, so the state is the list of names in progress and not a
-      // global boolean. It lives here in the JS because :disabled in the HTML covers
-      // neither a repeated Enter nor a click before the next render frame.
-      // A list (not a Set), so as not to depend on collection reactivity in Alpine.
-      // "is it deploying?" derives from the real JOB, not only from the POST that
-      // queues it. `deploy.running` stays as the IMMEDIATE reentrancy guard (between
-      // the click and the job showing up in this.jobs); from there on the truth comes
-      // from the queue (kind app_deploy + args.app + status running/queued), so the
-      // badge/button follow the whole build — deploys via git push included.
       isDeploying(app) {
         const n = app && app.name ? app.name : app;
         if ((this.deploy.running || []).indexOf(n) >= 0) return true;
@@ -131,8 +105,6 @@
       _activeDeployJobs() {
         return (this.jobs || []).filter(j => j.kind === 'app_deploy' && (j.status === 'running' || j.status === 'queued'));
       },
-      // Starts the 5s poll while there is an active build; stops it when none is left.
-      // Called by loadJobs() (source of truth for the queue) and by deployRun/loadDeployApps.
       _deployPollReconcile() {
         if (this._activeDeployJobs().length > 0) this._ensureDeployPoll();
         else this._stopDeployPoll();
@@ -140,9 +112,9 @@
       _ensureDeployPoll() {
         if (this.deployPollTimer) return;
         this.deployPollTimer = setInterval(async () => {
-          if (document.hidden) return; // visibility guard: do not hit the API while the tab is hidden
-          try { await this.loadJobs(); } catch (_) {}                                              // redo the job correlation
-          if (this.currentView === 'deploy') { try { await this.loadDeployApps(); } catch (_) {} } // badge leaves "building"
+          if (document.hidden) return;
+          try { await this.loadJobs(); } catch (_) {}
+          if (this.currentView === 'deploy') { try { await this.loadDeployApps(); } catch (_) {} }
           if (this._activeDeployJobs().length === 0) this._stopDeployPoll();
         }, 5000);
       },
@@ -158,17 +130,12 @@
           const d = await r.json().catch(() => ({}));
           this.showToast('deploy started', 'ok');
           if (d.job) this.openJobLog({ id: d.job, status: 'running', kind: 'app_deploy' });
-          // The POST answers on QUEUEING (~ms), not when the build finishes. It reloads
-          // the queue (the job arrives as queued/running → isDeploying starts deriving
-          // from it) and starts the 5s poll that follows the badge until the build ends.
           await this.loadJobs();
           this._deployPollReconcile();
           this.loadDeployApps();
         } catch (e) {
           this.showToast('could not start deploy: ' + this._errText(e), 'err');
         } finally {
-          // Releases the immediate reentrancy guard. This does not reopen a double-click
-          // window: by now the job is already in this.jobs, so isDeploying stays true.
           const i = this.deploy.running.indexOf(name);
           if (i >= 0) this.deploy.running.splice(i, 1);
         }
@@ -181,7 +148,6 @@
             const d = await r.json().catch(() => ({}));
             this.showToast('rollback started', 'ok');
             if (d.job) this.openJobLog({ id: d.job, status: 'running', kind: 'app_deploy' });
-            // A rollback is an app_deploy job too: reload the queue and start the poll.
             await this.loadJobs();
             this._deployPollReconcile();
             this.loadDeployApps();
@@ -236,7 +202,6 @@
         this.deploy.env.dirty = false;
       },
 
-      // ---- service catalogue ----
       async deployOpenCatalog() {
         this.deploy.showCatalog = true;
         this.deploy.catSel = null;
@@ -275,7 +240,6 @@
         setTimeout(() => this.loadDeployApps(), 6000);
       },
 
-      // ---- preview envs ----
       deployActivePreviews(app) {
         const running = {}, started = {}, commit = {};
         for (const d of (app.deploys || [])) {

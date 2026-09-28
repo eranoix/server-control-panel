@@ -2,12 +2,6 @@
 
 package api
 
-// live_sto_test.go — the LIVE proof of pool topology against the home
-// hypervisor. Gated by LAB_STO_LIVE=1.
-//
-// It exercises the ROUTE, not the client: that way it proves the whole plumbing
-// (permission, serialization, JSON shape) and not just decoding the tree.
-
 import (
 	"context"
 	"net/http"
@@ -43,8 +37,6 @@ func TestLivePoolTopology(t *testing.T) {
 		if nDisp == 0 {
 			t.Errorf("pool %s: no device read — the tree was not decoded", name)
 		}
-		// 🔴 Negative control: a single-disk pool must NOT come out redundant.
-		// It is the assertion that stops the screen promising protection that does not exist.
 		if nDisp == 1 && red {
 			t.Errorf("pool %s has 1 device and came out as redundant", name)
 		}
@@ -92,9 +84,6 @@ func TestLiveBackupFreshness(t *testing.T) {
 		}
 		if total > 0 {
 			withCopy++
-			// 🔴 If there is a backup, there MUST be a timestamp. `last_ctime`
-			// at zero with total>0 would be the screen saying "there is a backup,
-			// from 1970" — worse than saying it does not know.
 			if last == 0 {
 				t.Errorf("%s: %d backups and last_ctime=0 — timestamp lost", st, int(total))
 			}
@@ -109,8 +98,6 @@ func TestLiveBackupFreshness(t *testing.T) {
 	}
 }
 
-// TestLiveParityWithProxmox exercises the routes that give parity with the
-// Proxmox screen. None of them answered before full access was granted.
 func TestLiveParityWithProxmox(t *testing.T) {
 	if os.Getenv("LAB_STO_LIVE") != "1" {
 		t.Skip("live proof disabled — run with LAB_STO_LIVE=1")
@@ -195,11 +182,6 @@ func TestLiveParityWithProxmox(t *testing.T) {
 	})
 }
 
-// TestLiveHypervisorShell proves the COMPLETE handshake of the host shell —
-// termproxy, the upgrade to WebSocket and the auth frame with its "OK".
-//
-// 🔴 It only exists since full access was granted: POST /nodes/{n}/termproxy
-// requires Sys.Console, and the audit token used to get a 403.
 func TestLiveHypervisorShell(t *testing.T) {
 	if os.Getenv("LAB_STO_LIVE") != "1" {
 		t.Skip("live proof disabled — run with LAB_STO_LIVE=1")
@@ -226,17 +208,12 @@ func TestLiveHypervisorShell(t *testing.T) {
 	if upid == "" {
 		t.Error("no UPID — the console task was not registered on the hypervisor")
 	}
-	// The UPID says `vncshell` for the node and `vncproxy` for a guest: that is the
-	// tie-breaker proving the path taken was the HOST's, not a guest's by mistake.
 	if !strings.Contains(upid, "vncshell") {
 		t.Errorf("UPID = %q, expected to contain 'vncshell' (the node's path)", upid)
 	}
 	t.Logf("hypervisor shell opened · %s", upid)
 }
 
-// TestLiveDisarmedIsNotFailure proves the distinction that was missing: a datastore
-// with no fresh backup for two weeks because the SCHEDULE was turned off is not
-// the same as one that failed. Permanent red trains people to ignore.
 func TestLiveDisarmedIsNotFailure(t *testing.T) {
 	if os.Getenv("LAB_STO_LIVE") != "1" {
 		t.Skip("live proof disabled — run with LAB_STO_LIVE=1")

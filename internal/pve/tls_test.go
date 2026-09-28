@@ -10,10 +10,6 @@ import (
 	"testing"
 )
 
-// testCA returns the path of a valid CA PEM. It reuses the REAL hypervisor
-// CA when it is on this host's disk (data/pve/pve-root-ca.pem); otherwise it
-// generates an ephemeral one — the test is about the MECHANICS of the pin, not
-// about this particular CA.
 func testCA(t *testing.T) string {
 	t.Helper()
 	if b, err := os.ReadFile("/opt/panel/data/pve/pve-root-ca.pem"); err == nil && len(b) > 0 {
@@ -27,8 +23,6 @@ func testCA(t *testing.T) string {
 	return ""
 }
 
-// TestTLSPinning: the transport has to come out with its own RootCAs, a forced
-// ServerName and — the pin that matters — InsecureSkipVerify FALSE.
 func TestTLSPinning(t *testing.T) {
 	tr, err := newTransport(testCA(t), "hypervisor.local", "198.51.100.20")
 	if err != nil {
@@ -54,8 +48,6 @@ func TestTLSPinning(t *testing.T) {
 		t.Error("DialContext nil — Resolve would have no effect")
 	}
 
-	// False-green antidote: RootCAs != nil does not prove a pin if the pool is the
-	// system one. This pool has to be a NEW pool, with exactly 1 certificate.
 	pool := x509.NewCertPool()
 	pem, _ := os.ReadFile(testCA(t))
 	if !pool.AppendCertsFromPEM(pem) {
@@ -66,9 +58,6 @@ func TestTLSPinning(t *testing.T) {
 	}
 }
 
-// TestTLSBadCA: a missing CA or an invalid PEM fails with an explicit error. It
-// can never "carry on" with the system pool — that would be a pin that does not
-// pin.
 func TestTLSBadCA(t *testing.T) {
 	dir := t.TempDir()
 
@@ -93,9 +82,6 @@ func TestTLSBadCA(t *testing.T) {
 	}
 }
 
-// TestResolveDial: with Resolve filled in, the dial goes to the IP and the PORT
-// is preserved — the equivalent of curl's --resolve, already proven live. The
-// name hypervisor.local does not resolve in any DNS of this project.
 func TestResolveDial(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -116,8 +102,6 @@ func TestResolveDial(t *testing.T) {
 		})
 	}
 
-	// The real dialer has to use the rewritten address: dialling a dead port on
-	// loopback returns an error citing 127.0.0.1, not the name.
 	tr := plainTransport("127.0.0.1")
 	_, err := tr.DialContext(context.Background(), "tcp", "hypervisor.local:1")
 	if err == nil {

@@ -7,30 +7,16 @@ import org.gradle.api.tasks.TaskAction
 import org.gradle.kotlin.dsl.register
 import java.io.File
 
-/**
- * Lexical half of the "BFF-only network" gate: outside :data, modules must not
- * import okhttp3/retrofit2 or reference an api route other than mobile v1.
- * Routes built at runtime and fully qualified references are caught by the
- * type-resolving detekt rule in :build-logic:lint-rules.
- *
- * Kotlin block comments nest, so never write a slash-star sequence in this file's comments.
- */
 private val FORBIDDEN_IMPORT_PREFIXES = listOf(
     "import okhttp3.",
     "import retrofit2.",
 )
 
-// Websocket endpoints are a separately approved contract and must never trip the api route check.
 private val WS_EXEMPT_SUBSTRINGS = listOf("/ws/shell", "/ws/videocall")
 
 private val API_LITERAL_PATTERN = Regex("/api/[\\w./\\-]*")
 private const val ALLOWED_API_PREFIX = "/api/mobile/v1"
 
-/**
- * Result of scanning a Kotlin file so comments never produce false positives.
- *  - `codeOnlyLines`: source with all comments (including KDoc) blanked, line count preserved.
- *  - `stringLiterals`: every string literal's content with its starting line.
- */
 internal class KotlinSourceScan(
     val codeOnlyLines: List<String>,
     val stringLiterals: List<Pair<Int, String>>,
@@ -98,7 +84,6 @@ internal fun scanKotlinSource(text: String): KotlinSourceScan {
                 literals += startLine to sb.toString()
             }
             c == '\'' -> {
-                // Char literal: skip it so a quote inside is not taken as a string boundary.
                 i++
                 if (i < n && text[i] == '\\') {
                     i += 2
@@ -143,7 +128,6 @@ internal fun findBffOnlyNetworkViolations(file: File): List<String> {
 
 abstract class CheckBffOnlyNetworkTask : DefaultTask() {
 
-    // Always re-runs: a correctness gate is not worth incremental input tracking.
     @get:Internal
     var kotlinSourceFiles: List<File> = emptyList()
 
@@ -163,12 +147,6 @@ abstract class CheckBffOnlyNetworkTask : DefaultTask() {
     }
 }
 
-/**
- * Registers checkBffOnlyNetwork and hooks it into `check`. Applied from the root
- * `subprojects` block, so new modules are covered automatically.
- *
- * `check` does not exist yet at that point, so it is matched lazily instead of `tasks.named`.
- */
 class BffOnlyNetworkPlugin : Plugin<Project> {
     override fun apply(project: Project) {
         val sourceTree = project.fileTree(project.file("src/main/kotlin"))

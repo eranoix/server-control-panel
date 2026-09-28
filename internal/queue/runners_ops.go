@@ -1,8 +1,5 @@
 package queue
 
-// Additional operations/maintenance runners.
-// All primary-only; a missing external tool fails with a friendly message.
-
 import (
 	"compress/gzip"
 	"context"
@@ -19,7 +16,6 @@ import (
 
 func absNoTraversal(p string) bool { return strings.HasPrefix(p, "/") && !strings.Contains(p, "..") }
 
-// validDBName: a safe database name (alnum + _-.).
 func validDBName(s string) bool {
 	if s == "" || len(s) > 128 {
 		return false
@@ -32,11 +28,9 @@ func validDBName(s string) bool {
 	return true
 }
 
-// --- DBBackup: Postgres/MySQL database dump (.sql.gz) ---
-
 type DBBackupArgs struct {
-	Engine    string `json:"engine"`   // postgres | mysql
-	Database  string `json:"database"` // database name
+	Engine    string `json:"engine"`
+	Database  string `json:"database"`
 	Dest      string `json:"dest,omitempty"`
 	Retention int    `json:"retention,omitempty"`
 }
@@ -73,13 +67,11 @@ func (b DBBackupRunner) Run(ctx context.Context, args json.RawMessage, logW io.W
 		if err := requireTool("pg_dump"); err != nil {
 			return err
 		}
-		// runs as the postgres user (local peer auth, no password).
 		cmd = exec.CommandContext(ctx, "sudo", "-u", "postgres", "pg_dump", "--no-owner", "--no-privileges", a.Database)
 	case "mysql":
 		if err := requireTool("mysqldump"); err != nil {
 			return err
 		}
-		// root over the socket (the default auth on Debian/Ubuntu).
 		cmd = exec.CommandContext(ctx, "mysqldump", "--single-transaction", "--quick", a.Database)
 	default:
 		return errors.New("engine must be postgres or mysql")
@@ -90,15 +82,15 @@ func (b DBBackupRunner) Run(ctx context.Context, args json.RawMessage, logW io.W
 		return err
 	}
 	gz := gzip.NewWriter(f)
-	cmd.Stdout = gz   // compressed dump straight into the file (no shell)
-	cmd.Stderr = logW // dump errors show up in the log
+	cmd.Stdout = gz
+	cmd.Stderr = logW
 	step("dumping " + a.Engine + ":" + a.Database)
 	fmt.Fprintln(logW, "$ "+strings.Join(cmd.Args, " ")+" | gzip > "+archive)
 	runErr := cmd.Run()
 	_ = gz.Close()
 	_ = f.Close()
 	if runErr != nil {
-		_ = os.Remove(archive) // do not leave a partial/corrupted dump behind
+		_ = os.Remove(archive)
 		return fmt.Errorf("dump failed: %w", runErr)
 	}
 	progress(90)
@@ -112,7 +104,6 @@ func (b DBBackupRunner) Run(ctx context.Context, args json.RawMessage, logW io.W
 	return nil
 }
 
-// pruneByPrefix keeps the `keep` newest (the name carries a sortable stamp) and removes the rest.
 func pruneByPrefix(dir, prefix, suffix string, keep int) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -138,10 +129,8 @@ func pruneByPrefix(dir, prefix, suffix string, keep int) []string {
 	return removed
 }
 
-// --- CertRenew: renew Let's Encrypt certificates (certbot) ---
-
 type CertRenewArgs struct {
-	CertName string `json:"cert_name"` // empty = renew all
+	CertName string `json:"cert_name"`
 }
 
 type CertRenewRunner struct{}
@@ -157,7 +146,7 @@ func (CertRenewRunner) Run(ctx context.Context, args json.RawMessage, logW io.Wr
 	}
 	cmdArgs := []string{"renew", "--non-interactive"}
 	if c := strings.TrimSpace(a.CertName); c != "" {
-		if !validHost(c) { // a cert name is hostname-like
+		if !validHost(c) {
 			return errors.New("invalid certificate name")
 		}
 		cmdArgs = append(cmdArgs, "--cert-name", c)
@@ -168,12 +157,10 @@ func (CertRenewRunner) Run(ctx context.Context, args json.RawMessage, logW io.Wr
 	return streamCommand(ctx, cmd, logW, progress)
 }
 
-// --- RcloneSync: mirror a VPS folder to the cloud ---
-
 type RcloneSyncArgs struct {
-	Source     string `json:"source"`      // pasta local (abs)
-	Remote     string `json:"remote"`      // rclone remote name
-	RemotePath string `json:"remote_path"` // pasta no remote
+	Source     string `json:"source"`
+	Remote     string `json:"remote"`
+	RemotePath string `json:"remote_path"`
 }
 
 type RcloneSyncRunner struct{}
@@ -202,8 +189,6 @@ func (RcloneSyncRunner) Run(ctx context.Context, args json.RawMessage, logW io.W
 	return streamCommand(ctx, cmd, logW, progress)
 }
 
-// --- DockerComposeUp: bring a stack up (up -d) ---
-
 type ComposeUpArgs struct {
 	Dir string `json:"dir"`
 }
@@ -227,8 +212,6 @@ func (DockerComposeUpRunner) Run(ctx context.Context, args json.RawMessage, logW
 	cmd.Dir = a.Dir
 	return streamCommand(ctx, cmd, logW, progress)
 }
-
-// --- GitPull: update a local repository ---
 
 type GitPullArgs struct {
 	Dir string `json:"dir"`
@@ -256,8 +239,6 @@ func (GitPullRunner) Run(ctx context.Context, args json.RawMessage, logW io.Writ
 	return streamCommand(ctx, cmd, logW, progress)
 }
 
-// --- AptUpdateCheck: report of upgradable packages (does NOT install) ---
-
 type AptUpdateCheckRunner struct{}
 
 func (AptUpdateCheckRunner) Kind() string                                { return "apt_updatecheck" }
@@ -268,7 +249,7 @@ func (AptUpdateCheckRunner) Run(ctx context.Context, _ json.RawMessage, logW io.
 	fmt.Fprintln(logW, "$ apt-get update -qq")
 	upd := exec.CommandContext(ctx, "apt-get", "update", "-qq")
 	upd.Env = append(upd.Environ(), "DEBIAN_FRONTEND=noninteractive")
-	_ = streamCommand(ctx, upd, logW, nil) // best-effort; moves on to list even if update complains
+	_ = streamCommand(ctx, upd, logW, nil)
 	progress(60)
 	step("listing available updates")
 	fmt.Fprintln(logW, "\n$ apt list --upgradable")
@@ -282,8 +263,6 @@ func (AptUpdateCheckRunner) Run(ctx context.Context, _ json.RawMessage, logW io.
 	return nil
 }
 
-// --- Reboot: restart the server (with a 1 min warning) ---
-
 type RebootRunner struct{}
 
 func (RebootRunner) Kind() string                                { return "reboot" }
@@ -292,7 +271,6 @@ func (RebootRunner) AuthorizedFor(_ string, isPrimary bool) bool { return isPrim
 func (RebootRunner) Run(ctx context.Context, _ json.RawMessage, logW io.Writer, progress func(int), step func(string)) error {
 	step("scheduling a reboot in 1 min")
 	fmt.Fprintln(logW, "$ shutdown -r +1 \"Reboot scheduled by server-control-panel\"")
-	// +1: gives a one-minute warning (and time for the job to record the trigger) before rebooting.
 	cmd := exec.CommandContext(ctx, "shutdown", "-r", "+1", "Reboot scheduled by server-control-panel")
 	return streamCommand(ctx, cmd, logW, progress)
 }

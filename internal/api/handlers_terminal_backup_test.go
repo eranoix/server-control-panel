@@ -10,7 +10,6 @@ import (
 	ptysvc "server-control-panel/internal/pty"
 )
 
-// writeBK writes a backup with controlled id/origin/sessions (for the pruning tests).
 func writeBK(t *testing.T, r *Router, user string, id int64, source string, sessions ...string) {
 	t.Helper()
 	bk := ptysvc.Backup{ID: strconv.FormatInt(id, 10), Created: id, Source: source}
@@ -22,7 +21,6 @@ func writeBK(t *testing.T, r *Router, user string, id int64, source string, sess
 	}
 }
 
-// countScheduled counts scheduled backups (1 session) whose session == name.
 func countScheduled(t *testing.T, r *Router, user, name string) int {
 	t.Helper()
 	dir, _ := r.sessionBackupsDir(user)
@@ -43,7 +41,6 @@ func countScheduled(t *testing.T, r *Router, user, name string) int {
 	return n
 }
 
-// countSource counts backups by origin.
 func countSource(t *testing.T, r *Router, user, source string) int {
 	t.Helper()
 	dir, _ := r.sessionBackupsDir(user)
@@ -64,8 +61,6 @@ func countSource(t *testing.T, r *Router, user, source string) int {
 	return n
 }
 
-// pruneSessionBackupsForSession prunes only the target session (scheduled),
-// preserving the other sessions and the bundles (auto/manual).
 func TestPruneSessionBackupsForSessionIsolated(t *testing.T) {
 	r := &Router{cfg: &config.Config{DataDir: t.TempDir(), Primary: "sam"}}
 	const u = "sam"
@@ -75,7 +70,7 @@ func TestPruneSessionBackupsForSessionIsolated(t *testing.T) {
 	for _, id := range []int64{200, 201, 202} {
 		writeBK(t, r, u, id, "scheduled", "work")
 	}
-	writeBK(t, r, u, 300, "auto", "main", "work") // collector bundle
+	writeBK(t, r, u, 300, "auto", "main", "work")
 
 	r.pruneSessionBackupsForSession(u, "main", 2)
 
@@ -90,8 +85,6 @@ func TestPruneSessionBackupsForSessionIsolated(t *testing.T) {
 	}
 }
 
-// The global prune (the automatic collector) ignores scheduled backups — it does
-// not clobber the freshly created per-session history.
 func TestPruneSessionBackupsGlobalSkipsScheduled(t *testing.T) {
 	r := &Router{cfg: &config.Config{DataDir: t.TempDir(), Primary: "sam"}}
 	const u = "sam"
@@ -102,7 +95,7 @@ func TestPruneSessionBackupsGlobalSkipsScheduled(t *testing.T) {
 		writeBK(t, r, u, id, "auto", "main", "work")
 	}
 
-	r.pruneSessionBackups(u, 1) // keeps only 1 NON-scheduled
+	r.pruneSessionBackups(u, 1)
 
 	if got := countSource(t, r, u, "auto"); got != 1 {
 		t.Fatalf("auto after global prune(1) = %d, want 1", got)

@@ -7,11 +7,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Pure attachment logic: the file name on the server and the exact text inserted on
- * the command line. Mistakes here cause silent damage (overwriting an earlier
- * attachment, breaking the shell argument).
- */
 class AttachmentNameAndTextTest {
 
     private val instant = Instant.parse("2026-09-06T19:30:45Z")
@@ -26,22 +21,17 @@ class AttachmentNameAndTextTest {
     fun `two photos with the same name get different destinations`() {
         val first = destinationNameFor("IMG_0001.jpg", instant, utc)
         val second = destinationNameFor("IMG_0001.jpg", instant.plusSeconds(1), utc)
-        // The server's `rename` overwrites silently, so a path already handed out
-        // would start pointing at different content.
         assertTrue(first != second)
     }
 
     @Test
     fun `spaces in the name are preserved`() {
-        // Spaces are handled by shell quoting at insertion time; the file keeps the
-        // name the user saw in the picker.
         val name = destinationNameFor("Capture de screen.png", instant, utc)
         assertTrue(name.endsWith("-Capture de screen.png"))
     }
 
     @Test
     fun `path separators and dot-dot are stripped from the name`() {
-        // InitUpload rejects the whole upload if the name tries to pick a folder.
         assertEquals("20260906-193045-passwd", destinationNameFor("../../etc/passwd", instant, utc))
         assertEquals("20260906-193045-note.txt", destinationNameFor("C:\\Users\\a\\note.txt", instant, utc))
     }

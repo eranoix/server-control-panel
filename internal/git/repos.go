@@ -10,29 +10,14 @@ import (
 	"server-control-panel/internal/config"
 )
 
-// defaultRepos is the built-in seed of the allowlist, used when
-// config.GitRepos is empty. It reflects the policy the user confirmed:
-//   - server-control-panel : strongly read-only (personal remote + it is the app itself).
-//   - northwind-web: write, WORK identity.
-//   - acme-booking: write, PERSONAL identity (never a work e-mail).
-//   - venice-cli / supabase: read-only (upstream forks).
-//
-// Future repos come in through config.GitRepos (merged by Path in
-// effectiveRepos) — each with its own policy and identity.
 func defaultRepos() []config.GitRepo {
 	return []config.GitRepo{
-		// server-control-panel: fully writable at the user's request. Personal identity
-		// (it matches the northwind-dev remote and the history). Safety against clashing
-		// with the deploy flow: the writes use withRepoWriteLock (mutex +
-		// flock .git/panel-git.lock + an index.lock check), so a commit from the
-		// panel never interleaves with one made by a deploy running at the same time.
 		{ID: "server-control-panel", Path: "/opt/panel", Name: "Server Control Panel", Policy: policyWrite,
 			ExpName: "northwind-dev", ExpEmail: "sam.rivera@personal.example"},
 		{ID: "northwind-web", Path: "/root/projects/northwind-web", Name: "Northwind Web",
 			Policy: policyWrite, ExpName: "Sam Rivera", ExpEmail: "sam@northwind.example"},
 		{ID: "css-lee", Path: "/root/projects/acme-booking", Name: "Acme Booking",
 			Policy: policyWrite, ExpName: "northwind-dev", ExpEmail: "sam.rivera@personal.example"},
-		// venice-cli and supabase removed at the user's request (they do not show up in Git).
 	}
 }
 
@@ -41,9 +26,6 @@ const (
 	policyWrite    = "write"
 )
 
-// defaultIdentities is the seed of selectable author identities, used when
-// config.GitIdentities is empty. It reflects the user's known identities
-// (work/personal); new ones come in through config.
 func defaultIdentities() []config.GitIdentity {
 	return []config.GitIdentity{
 		{ID: "work", Label: "Work — Northwind", Name: "Sam Rivera", Email: "sam@northwind.example"},
@@ -51,7 +33,6 @@ func defaultIdentities() []config.GitIdentity {
 	}
 }
 
-// effectiveIdentities = seed + config.GitIdentities merged by ID.
 func effectiveIdentities(cfg *config.Config) []config.GitIdentity {
 	out := defaultIdentities()
 	idx := map[string]int{}
@@ -74,7 +55,6 @@ func effectiveIdentities(cfg *config.Config) []config.GitIdentity {
 	return out
 }
 
-// resolveIdentity finds an identity by ID; ok=false when it does not exist.
 func resolveIdentity(cfg *config.Config, id string) (config.GitIdentity, bool) {
 	for _, x := range effectiveIdentities(cfg) {
 		if x.ID == id {
@@ -84,11 +64,6 @@ func resolveIdentity(cfg *config.Config, id string) (config.GitIdentity, bool) {
 	return config.GitIdentity{}, false
 }
 
-// effectiveRepos resolves the final allowlist: the built-in seed as the
-// baseline, with config.GitRepos merged by Path (a config entry overrides the
-// policy/identity of a seed with the same path; new paths are appended).
-// That makes "adding a future repo" one entry in config, without losing the
-// seed; and a seed repo's policy can be hardened/relaxed from config.
 func effectiveRepos(cfg *config.Config) []config.GitRepo {
 	out := defaultRepos()
 	idx := map[string]int{}
@@ -102,7 +77,6 @@ func effectiveRepos(cfg *config.Config) []config.GitRepo {
 			}
 			key := filepath.Clean(r.Path)
 			if i, ok := idx[key]; ok {
-				// Override: fields the override leaves unset keep the seed's value.
 				if r.ID == "" {
 					r.ID = out[i].ID
 				}
@@ -118,7 +92,7 @@ func effectiveRepos(cfg *config.Config) []config.GitRepo {
 					r.ID = slugFromPath(r.Path)
 				}
 				if r.Policy == "" {
-					r.Policy = policyReadOnly // safe default: a new repo is born read-only
+					r.Policy = policyReadOnly
 				}
 				idx[key] = len(out)
 				out = append(out, r)
@@ -132,10 +106,6 @@ func slugFromPath(p string) string {
 	return filepath.Base(filepath.Clean(p))
 }
 
-// resolveRepo locates an allowlist repo by ID and confirms it is still a git
-// repository on disk (.git as a file OR a directory — worktrees use a file).
-// It returns (repo, true) only when both hold; it is the boundary that makes
-// up for the absence of a directory jail elsewhere in the app.
 func resolveRepo(cfg *config.Config, id string) (config.GitRepo, bool) {
 	if id == "" {
 		return config.GitRepo{}, false
@@ -152,7 +122,6 @@ func resolveRepo(cfg *config.Config, id string) (config.GitRepo, bool) {
 	return config.GitRepo{}, false
 }
 
-// isGitRepo confirms the presence of <path>/.git as a file or a directory.
 func isGitRepo(path string) bool {
 	if path == "" {
 		return false
@@ -164,14 +133,10 @@ func isGitRepo(path string) bool {
 	return fi.IsDir() || fi.Mode().IsRegular()
 }
 
-// canWrite reports whether the repo's policy allows writing.
 func canWrite(r config.GitRepo) bool {
 	return r.Policy == policyWrite
 }
 
-// repoStatus is the per-repo summary exposed at GET /repos: branch state,
-// dirtiness, divergence from upstream, and the match between the effective git
-// identity (the live local config) and the one the allowlist expects.
 type repoStatus struct {
 	ID                string `json:"id"`
 	Name              string `json:"name"`
@@ -189,9 +154,6 @@ type repoStatus struct {
 	Error             string `json:"error,omitempty"`
 }
 
-// describeRepo assembles a repo's repoStatus. It never propagates raw stderr:
-// on a local failure it returns a status with Error filled in and the rest
-// zeroed, so that one problematic repo does not take down the whole listing.
 func describeRepo(ctx context.Context, r config.GitRepo) repoStatus {
 	st := repoStatus{
 		ID: r.ID, Name: r.Name, Path: r.Path, Policy: r.Policy,
@@ -199,7 +161,6 @@ func describeRepo(ctx context.Context, r config.GitRepo) repoStatus {
 		ExpectedIdentity: formatIdentity(r.ExpName, r.ExpEmail),
 	}
 
-	// Current branch / detached.
 	if res, err := run(ctx, r.Path, "symbolic-ref", "--quiet", "--short", "HEAD"); err == nil && res.Code == 0 {
 		st.CurrentBranch = strings.TrimSpace(res.Stdout)
 	} else {
@@ -209,12 +170,10 @@ func describeRepo(ctx context.Context, r config.GitRepo) repoStatus {
 		}
 	}
 
-	// Dirtiness (any line in porcelain = dirty).
 	if res, err := run(ctx, r.Path, "status", "--porcelain"); err == nil && res.Code == 0 {
 		st.Dirty = strings.TrimSpace(res.Stdout) != ""
 	}
 
-	// Ahead/behind vs upstream (silent when there is no upstream).
 	if res, err := run(ctx, r.Path, "rev-list", "--left-right", "--count", "@{upstream}...HEAD"); err == nil && res.Code == 0 {
 		fields := strings.Fields(strings.TrimSpace(res.Stdout))
 		if len(fields) == 2 {
@@ -223,13 +182,10 @@ func describeRepo(ctx context.Context, r config.GitRepo) repoStatus {
 		}
 	}
 
-	// The live effective identity (the repo's local config).
 	en := configValue(ctx, r.Path, "user.name")
 	ee := configValue(ctx, r.Path, "user.email")
 	st.EffectiveIdentity = formatIdentity(en, ee)
 
-	// identity_ok: only meaningful for writable repos that define an expected
-	// identity. Read-only is always "ok" (nothing is going to be committed).
 	if !canWrite(r) || r.ExpEmail == "" {
 		st.IdentityOK = true
 	} else {
@@ -238,7 +194,6 @@ func describeRepo(ctx context.Context, r config.GitRepo) repoStatus {
 	return st
 }
 
-// configValue reads a local git config (empty when absent).
 func configValue(ctx context.Context, repoPath, key string) string {
 	res, err := run(ctx, repoPath, "config", "--local", "--get", key)
 	if err != nil || res.Code != 0 {

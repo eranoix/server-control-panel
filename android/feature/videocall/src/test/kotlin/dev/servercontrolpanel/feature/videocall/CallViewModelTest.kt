@@ -34,7 +34,6 @@ private inline fun <reified T> jsonPayload(value: T): JsonElement = testJson.enc
 
 private const val ROOM_ID = "room-1"
 
-/** Scriptable signaling stream for [CallViewModel], with no real socket. */
 private class FakeSignaling : VideocallSignaling {
     private val inbound = MutableSharedFlow<SignalingMessage>(extraBufferCapacity = 16)
     var connectCalls = 0
@@ -60,10 +59,6 @@ private class FakeSignaling : VideocallSignaling {
     fun push(message: SignalingMessage) = check(inbound.tryEmit(message))
 }
 
-/**
- * Records calls without the native library; [createPeerConnectionFor] returns `null`, so tiles
- * are added to [CallUiState.InCall.remoteTracks] without a live connection.
- */
 private class FakeSessionController : VideoCallSessionController {
     override val eglBaseContext: EglBase.Context = object : EglBase.Context {
         override fun getNativeEglContext(): Long = 0L
@@ -108,7 +103,6 @@ private class FakeSessionController : VideoCallSessionController {
     }
 }
 
-/** Records [start]/[stop] calls instead of touching the real [dev.servercontrolpanel.feature.videocall.call.CallForegroundService]. */
 private class FakeForegroundServiceController : dev.servercontrolpanel.feature.videocall.call.CallForegroundServiceController {
     var startCalls = 0
         private set

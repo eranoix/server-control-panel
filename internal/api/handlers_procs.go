@@ -1,14 +1,3 @@
-// handlers_procs.go — HTTP layer for the host process manager.
-//
-// Wired in NewRouter (api.go). Three endpoints:
-//
-//	GET  /api/procs?name=&user=&cmd=&min_cpu=&min_mem=&sort=&limit=&offset=&tree=1
-//	POST /api/procs/signal       body {pid, signal}
-//	GET  /ws/procs               server pushes a fresh list every 2s
-//
-// Authn is the standard JWT middleware applied to the protected mux in
-// NewRouter. Authz: read is open to any authenticated user; signal needs
-// either primary OR pid owned by caller's unix username.
 package api
 
 import (
@@ -77,10 +66,6 @@ func (r *Router) handleProcsSignal(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, 400, "unknown signal: "+body.Signal)
 		return
 	}
-	// Authz: primary can signal anything not on the denylist; non-primary
-	// can only signal processes they own. SignalAsOwner does the owner
-	// check + start_time re-verification atomically (defeats PID reuse
-	// TOCTOU where the kernel recycles the PID between check and kill).
 	if r.isPrimary(user) {
 		if err := procs.Signal(req.Context(), body.PID, sig); err != nil {
 			if err == procs.ErrDenied {
@@ -114,9 +99,6 @@ func (r *Router) handleProcsSignal(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
-// handleProcsStream pushes a fresh process snapshot every 2s.
-// The client sends nothing; we just keep writing. Pong watchdog catches
-// dead clients in ≤45s.
 func (r *Router) handleProcsStream(w http.ResponseWriter, req *http.Request) {
 	conn, err := wsUpgrader.Upgrade(w, req, nil)
 	if err != nil {
@@ -124,7 +106,6 @@ func (r *Router) handleProcsStream(w http.ResponseWriter, req *http.Request) {
 	}
 	defer conn.Close()
 
-	// Same constants as the docker stats stream — keepalive is identical.
 	conn.SetReadLimit(1024)
 	_ = conn.SetReadDeadline(time.Now().Add(dockerWsPongWait))
 	conn.SetPongHandler(func(string) error {
@@ -135,7 +116,6 @@ func (r *Router) handleProcsStream(w http.ResponseWriter, req *http.Request) {
 	ctx, cancel := context.WithCancel(req.Context())
 	defer cancel()
 
-	// Reader goroutine: discard frames + relay close.
 	go func() {
 		for {
 			if _, _, e := conn.ReadMessage(); e != nil {
@@ -150,7 +130,6 @@ func (r *Router) handleProcsStream(w http.ResponseWriter, req *http.Request) {
 	ping := time.NewTicker(dockerWsPingPeriod)
 	defer ping.Stop()
 
-	// Send initial frame immediately so the UI doesn't sit empty for 2s.
 	if err := writeProcsFrame(conn, ctx, procsQueryFromURL(req)); err != nil {
 		return
 	}
@@ -216,7 +195,7 @@ func procsFilterFromQuery(req *http.Request) (procs.Filter, procs.SortBy, int, i
 func procsQueryFromURL(req *http.Request) procsQuery {
 	f, by, limit, offset := procsFilterFromQuery(req)
 	if limit <= 0 || limit > 500 {
-		limit = 100 // smaller default for WS to keep frames cheap
+		limit = 100
 	}
 	return procsQuery{Filter: f, Sort: by, Limit: limit, Offset: offset}
 }

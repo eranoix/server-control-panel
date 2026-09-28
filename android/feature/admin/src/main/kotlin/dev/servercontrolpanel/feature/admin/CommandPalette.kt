@@ -33,21 +33,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.servercontrolpanel.data.sdui.SduiSection
 
-/** Placeholder of the palette's field, shared by the UI and its test. */
 internal const val PALETTE_PLACEHOLDER = "Go to…"
 
-/** Description of the button that opens the palette, for screen readers. */
 internal const val PALETTE_OPEN_DESCRIPTION = "Open the command palette"
 
-/**
- * Command palette: type a section name and jump to it from anywhere.
- *
- * It has a visible button (not only Ctrl+K) and, with an empty field, lists
- * recents and then the whole catalog so users see what it accepts. A bottom
- * sheet keeps it next to the keyboard; a centered dialog would be pushed up by the IME.
- *
- * Uses the launcher's [filterSections] so both searches always agree.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CommandPalette(
@@ -61,7 +50,6 @@ internal fun CommandPalette(
     val focus = remember { FocusRequester() }
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // Focus the field immediately so the keyboard opens with the sheet.
     LaunchedEffect(Unit) { focus.requestFocus() }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, modifier = modifier) {
@@ -80,7 +68,6 @@ internal fun CommandPalette(
                 .focusRequester(focus),
         )
 
-        // Cap the height so the sheet never covers the whole screen.
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
@@ -124,10 +111,6 @@ private fun Header(text: String) {
     )
 }
 
-/**
- * A palette row: label on the left, group on the right, since similar labels can
- * exist in different groups.
- */
 @Composable
 private fun PaletteRow(section: SduiSection, onClick: () -> Unit) {
     ListItem(
@@ -156,5 +139,4 @@ private fun PaletteRow(section: SduiSection, onClick: () -> Unit) {
     )
 }
 
-/** Makes the whole row the tap target, not just the text. */
 private fun Modifier.clickableRow(onClick: () -> Unit): Modifier = this.clickable(onClick = onClick)

@@ -10,11 +10,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * Line spacing measured against the device's real font. Must be instrumented: the
- * JVM stub `Paint` measures no font, and the spacing floor comes from
- * `Paint.getTextBounds` and `Paint.fontMetrics`.
- */
 @RunWith(AndroidJUnit4::class)
 class LineSpacingMetricsTest {
 
@@ -22,8 +17,6 @@ class LineSpacingMetricsTest {
 
     @Test
     fun cellHeightIsAlwaysPositiveInteger() {
-        // A 1:1 blit needs the atlas slot and destination rect to be the same size,
-        // so the height is never fractional at any step.
         for (body in bodies) {
             for (step in TerminalLineSpacing.entries) {
                 val m = computeTerminalCellMetrics(body, step.deltaPx)
@@ -37,8 +30,6 @@ class LineSpacingMetricsTest {
 
     @Test
     fun glyphBodyDoesNotChangeWithLineSpacing() {
-        // Tighter spacing means less vertical space, not smaller type: `textSizePx`
-        // must not depend on `cellHeightPx`.
         for (body in bodies) {
             val sizes = TerminalLineSpacing.entries.map {
                 computeTerminalCellMetrics(body, it.deltaPx).textSizePx
@@ -49,8 +40,6 @@ class LineSpacingMetricsTest {
 
     @Test
     fun cellWidthDoesNotChangeWithLineSpacing() {
-        // Changing the width would change the column count and where the remote
-        // program wraps its text.
         for (body in bodies) {
             val widths = TerminalLineSpacing.entries.map {
                 computeTerminalCellMetrics(body, it.deltaPx).cellWidthPx
@@ -61,8 +50,6 @@ class LineSpacingMetricsTest {
 
     @Test
     fun noStepClipsGlyphs() {
-        // The floor is the exact height at which the most extreme sample glyph touches
-        // the cell edge; recompute it with the GlyphAtlas baseline and allow no overflow.
         val sample = "ÂÊÍÕÜWMbdfhklt gjpqy ç,;_"
         for (body in bodies) {
             for (step in TerminalLineSpacing.entries) {
@@ -93,8 +80,6 @@ class LineSpacingMetricsTest {
 
     @Test
     fun ladderIsMonotonic_andCompactReallyGainsRows() {
-        // Two steps with the same height would be menu items that do the same thing.
-        // Hence whole-pixel deltas: fractional multipliers round together at small sizes.
         val body = 16f * 2.625f
         val heights = TerminalLineSpacing.entries.map {
             computeTerminalCellMetrics(body, it.deltaPx).cellHeightPx
@@ -109,7 +94,6 @@ class LineSpacingMetricsTest {
 
     @Test
     fun normalChangedNothing() {
-        // NORMAL must keep the original grid for users who never touch the preference.
         for (body in bodies) {
             val m = computeTerminalCellMetrics(body, TerminalLineSpacing.NORMAL.deltaPx)
             assertEquals(

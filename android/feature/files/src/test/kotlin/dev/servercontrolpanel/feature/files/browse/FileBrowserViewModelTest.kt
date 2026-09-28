@@ -14,7 +14,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 
-/** Fake [FilesRepository] for exercising the ViewModel's state machine. */
 private class FakeFilesRepository(private val onList: suspend (String) -> FileListResult) : FilesRepository() {
     override suspend fun list(path: String): FileListResult = onList(path)
 }
@@ -87,7 +86,6 @@ class FileBrowserViewModelTest {
         val repository = FakeFilesRepository { path ->
             when (path) {
                 "/" -> FileListResult.Success(path = "/", parent = "/", entries = listOf(childEntry))
-                // Empty, not an empty Success: the real repository never emits the latter.
                 "/app" -> FileListResult.Empty
                 else -> FileListResult.Error("unexpected path: $path")
             }

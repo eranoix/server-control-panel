@@ -30,12 +30,6 @@ import dev.servercontrolpanel.feature.files.transfer.KEY_RESULT_PATH
 import dev.servercontrolpanel.feature.files.transfer.PERCENT_UNKNOWN
 import dev.servercontrolpanel.feature.files.transfer.TransferViewModel
 
-/**
- * Hosted by `ShareTargetActivity`: shows the shared items, lets the user upload to the inbox
- * or pick a folder, then shows per-item progress and the exact server path each item landed at.
- *
- * Uploads go only through [TransferViewModel.startUpload]; this screen just chooses `destDir`.
- */
 @Composable
 fun ShareDestinationScreen(
     sharedItems: List<SharedItem>,
@@ -45,7 +39,6 @@ fun ShareDestinationScreen(
     transferViewModel: TransferViewModel = viewModel(),
 ) {
     val step by viewModel.step.collectAsStateWithLifecycle()
-    // Disambiguated once so the list key, upload filename and WorkManager query share one unique name.
     val items = remember(sharedItems) { disambiguateSharedItems(sharedItems) }
 
     when (val currentStep = step) {
@@ -129,7 +122,6 @@ private fun UploadingContent(
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Keyed on destDir so recomposition does not re-issue the uploads (KEEP policy also dedupes).
     LaunchedEffect(destDir) {
         items.forEach { item ->
             transferViewModel.startUpload(

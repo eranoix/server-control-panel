@@ -12,15 +12,6 @@ import (
 	"server-control-panel/internal/webpush"
 )
 
-// TestPushChannel_EndToEndThroughRouter proves the push channel end to end,
-// through the SAME rule/throttle/dedup engine the other five notify channels
-// share — not a bespoke path. It builds a real Router, a real ChannelDef +
-// Rule via the Alerts-tab CRUD paths (UpsertChannel/UpsertRule), a real
-// *webpush.Store with a real EC P-256 subscriber keypair, and Dispatches a
-// metric.threshold Event. It asserts the real, encrypted HTTP POST webpush-go
-// sends over the wire reaches a fake push endpoint with the aes128gcm
-// envelope headers a real push service would require — i.e. the previously
-// dead alert-fired payload is now actually published by real Go code.
 func TestPushChannel_EndToEndThroughRouter(t *testing.T) {
 	var mu sync.Mutex
 	var gotReq *http.Request
@@ -98,10 +89,6 @@ func TestPushChannel_EndToEndThroughRouter(t *testing.T) {
 	}
 }
 
-// genSubscriberKeysForTest mirrors internal/webpush's own genSubscriberKeys
-// test helper: a real EC P-256 keypair + random auth secret in the
-// base64url-without-padding form PushManager.subscribe() produces, so
-// webpush-go's real ECDH+HKDF encryption path is exercised, not mocked.
 func genSubscriberKeysForTest(t *testing.T) webpush.PushSubscriptionKeys {
 	t.Helper()
 	_, x, y, err := elliptic.GenerateKey(elliptic.P256(), rand.Reader)

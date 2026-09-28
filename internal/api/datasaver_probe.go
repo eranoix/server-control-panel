@@ -1,16 +1,5 @@
 package api
 
-// datasaver_probe.go — the data-saver's safety net.
-//
-// The tunnel blackout was caused by routing a device's web traffic to a proxy
-// that sing-box could not reach (NXDOMAIN): Hiddify connected, but nothing
-// opened. The lesson: TURNING ON data saving for a device may only happen if
-// that exit's proxy is PROVEN to be working — otherwise the user's connection
-// drops. This probe makes a real HTTP request THROUGH the proxy out to the
-// internet and confirms 200 + a valid exit IP. Used for (1) the health gate of
-// the per-device toggle and (2) the watchdog that auto-reverts if the proxy
-// dies later.
-
 import (
 	"context"
 	"fmt"
@@ -22,8 +11,6 @@ import (
 	"time"
 )
 
-// probeDatasaverProxy verifies that the compression proxy of the exit (vps or home)
-// really reaches the internet. Returns the exit IP as seen by the proxy.
 func (r *Router) probeDatasaverProxy(ctx context.Context, exit string) (string, error) {
 	ep, err := r.singboxManager().ProxyEndpoint(exit)
 	if err != nil {

@@ -12,10 +12,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders [FileEditorScreen] under Robolectric in every [FileEditorUiState], including the
- * states that inflate the real sora-editor `CodeEditor` inside [SoraEditorView].
- */
 @RunWith(RobolectricTestRunner::class)
 class FileEditorScreenTest {
 
@@ -25,7 +21,6 @@ class FileEditorScreenTest {
     @Test
     fun `loading state shows the progress indicator`() {
         val repository = EditorScreenFakeFilesRepository(onRead = { awaitCancellation() })
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm = FileEditorViewModel("/srv/app/main.go", repository)
         composeRule.setContent {
             FileEditorScreen(path = "/srv/app/main.go", onBack = {}, viewModel = vm)
@@ -37,7 +32,6 @@ class FileEditorScreenTest {
     @Test
     fun `error state surfaces the repository's reason and a retry action`() {
         val repository = EditorScreenFakeFilesRepository(onRead = { FileReadResult.Error("Binary files cannot be edited.") })
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm2 = FileEditorViewModel("/srv/app/bin", repository)
         composeRule.setContent {
             FileEditorScreen(path = "/srv/app/bin", onBack = {}, viewModel = vm2)
@@ -53,14 +47,12 @@ class FileEditorScreenTest {
         val repository = EditorScreenFakeFilesRepository(
             onRead = { FileReadResult.Success(content = "package main\n", mtime = 1L, language = "go") },
         )
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm3 = FileEditorViewModel("/srv/app/main.go", repository)
         composeRule.setContent {
             FileEditorScreen(path = "/srv/app/main.go", onBack = {}, viewModel = vm3)
         }
         composeRule.waitForIdle()
 
-        // The top bar title proves the Editing branch got past the CodeEditor factory without crashing.
         composeRule.onNodeWithText("main.go").assertExists()
         composeRule.onNodeWithText("Save").assertExists()
     }
@@ -76,7 +68,6 @@ class FileEditorScreenTest {
             FileEditorScreen(path = "/srv/app/main.go", onBack = {}, viewModel = viewModel)
         }
         composeRule.waitForIdle()
-        // Set the dirty flag via the ViewModel: the wrapped CodeEditor has no Compose semantics to type into.
         viewModel.onContentChanged("local edit, modified")
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Save").performClick()

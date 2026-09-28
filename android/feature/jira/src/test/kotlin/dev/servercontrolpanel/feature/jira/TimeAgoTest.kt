@@ -15,7 +15,6 @@ class TimeAgoTest {
 
     @Test
     fun `Jira's format has an offset WITHOUT a colon, and that is the one that must work`() {
-        // Plain RFC 3339 parsing rejects an offset like +0000.
         assertEquals("3 h ago", timeAgo("2026-09-09T09:00:00.000+0000", now))
     }
 
@@ -43,7 +42,6 @@ class TimeAgoTest {
 
     @Test
     fun `a future timestamp does not become a negative number`() {
-        // The device's clock may be running behind the server's.
         assertEquals("now", timeAgo(now.plusHours(2).toString(), now))
     }
 }

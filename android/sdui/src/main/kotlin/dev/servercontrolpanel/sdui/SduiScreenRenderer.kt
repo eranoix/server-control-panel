@@ -12,27 +12,6 @@ import dev.servercontrolpanel.core.sdui.SduiEnvelope
 import dev.servercontrolpanel.sdui.actionrunner.ActionOutcome
 import dev.servercontrolpanel.sdui.registry.RenderComponent
 
-/**
- * The one screen-level composable `:sdui` exports. A feature module gets an
- * already-parsed [envelope] (via `dev.servercontrolpanel.core.sdui.parseScreen`) and
- * renders it end to end — no other public entry point into this module's
- * rendering is needed.
- *
- * Components are laid out in a [LazyColumn], keyed by their own `id` (stable
- * across recompositions triggered by a screen refresh) — this also satisfies
- * A large component list is never all composed/measured at once.
- *
- * Deliberately does not touch window insets: `AppNavHost` applies
- * `imePadding()`/`consumeWindowInsets` exactly once at the nav-host level; a
- * feature screen hosting [SduiScreen] must not re-apply them here.
- *
- * [onOutcome]/[refreshKey] are optional, additive to every existing caller:
- * [onOutcome] bubbles every [ActionOutcome] dispatched anywhere on this
- * screen up to whoever hosts it; [refreshKey] flows back down so a host that
- * reacted to one (bumping [refreshKey]) can make read components (`Table`)
- * re-pull their own rows. See [RenderComponent]'s own doc comment for why
- * neither can be inferred purely from [dev.servercontrolpanel.sdui.actionrunner.ScreenState].
- */
 @Composable
 fun SduiScreen(
     envelope: SduiEnvelope,

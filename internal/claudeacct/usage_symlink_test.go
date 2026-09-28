@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// writeTranscript writes a minimal transcript with one assistant line.
 func writeTranscript(t *testing.T, dir, name string, tokens int64) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -23,19 +22,11 @@ func writeTranscript(t *testing.T, dir, name string, tokens int64) {
 	}
 }
 
-// writeIdentity writes the .claude.json with an email's oauthAccount.
-//
-// `dir` is the DEFAULT account's claudeHome, and for it the .claude.json lives
-// one level ABOVE (pathsFor: /root/.claude/ but /root/.claude.json). Writing it
-// inside leaves the identity unreadable — and an unreadable identity also yields
-// mismatch=false, meaning the positive test would pass without reading anything.
 func writeIdentity(t *testing.T, dir, email, uuid string) {
 	t.Helper()
 	writeIdentityInDir(t, filepath.Dir(dir), email, uuid)
 }
 
-// writeIdentityInDir writes the .claude.json exactly in the dir given (the
-// non-default accounts keep the file INSIDE their own config dir).
 func writeIdentityInDir(t *testing.T, dir, email, uuid string) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -50,14 +41,6 @@ func writeIdentityInDir(t *testing.T, dir, email, uuid string) {
 	}
 }
 
-// Each account's projects/ became a SYMLINK to a shared tree (a89bfc2, so that
-// `claude --continue` would survive an account swap), and filepath.WalkDir does
-// not follow a symlink, not even at the root: the sweep started visiting ONE
-// entry — the link itself — and every metric went to zero, in silence, for a
-// week.
-//
-// The test that existed built projects/ as a REAL directory, which is exactly
-// the case that does not break. This one builds the case that did break.
 func TestUsageFollowsSymlinkedProjects(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
@@ -69,7 +52,6 @@ func TestUsageFollowsSymlinkedProjects(t *testing.T) {
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// This is what the host has: projects/ is a link, not a directory.
 	if err := os.Symlink(shared, filepath.Join(home, "projects")); err != nil {
 		t.Fatal(err)
 	}
@@ -103,9 +85,6 @@ func mustEval(t *testing.T, p string) string {
 	return r
 }
 
-// An empty sweep must NOT be indistinguishable from "account with no usage": it
-// was that ambiguity that kept the symlink regression invisible. A card with no
-// number has to say why.
 func TestEmptyUsageExplainsReason(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
@@ -121,17 +100,12 @@ func TestEmptyUsageExplainsReason(t *testing.T) {
 		t.Error("an empty rollup came out with no Error — a silent 0 is the bug this test exists to prevent")
 	}
 
-	// A non-existent dir: it also explains, and does not panic.
 	sam, _ := s.AccountByID("sam")
 	if u := s.Usage(sam); u.Error == "" {
 		t.Error("a nonexistent dir came out with no Error")
 	}
 }
 
-// The credential sitting in jordan's dir belongs to sam (it was re-logged). The
-// panel drew sam's quota and tokens under the label "Jordan": the same account
-// twice, one of them with the wrong name. A plausible number under the wrong
-// name is worse than no number at all, because nothing about it looks wrong.
 func TestSlotWithOtherAccountCredentialHidesNumber(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
@@ -146,7 +120,6 @@ func TestSlotWithOtherAccountCredentialHidesNumber(t *testing.T) {
 	if err := os.Symlink(shared, filepath.Join(home, "projects")); err != nil {
 		t.Fatal(err)
 	}
-	// The jordan slot declares jordan, but the credential in the dir is sam's.
 	writeIdentity(t, home, "sam.rivera@personal.example", "uuid-sam")
 
 	s, _ := Open(base, home)
@@ -177,8 +150,6 @@ func TestSlotWithOtherAccountCredentialHidesNumber(t *testing.T) {
 	}
 }
 
-// The identity declared in the registry is an INTENTION; the credential on disk
-// is the fact. When they match nothing is blocked — the gate must not be a general brake.
 func TestMatchingIdentityDoesNotBlock(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
@@ -193,13 +164,11 @@ func TestMatchingIdentityDoesNotBlock(t *testing.T) {
 	if err := os.Symlink(shared, filepath.Join(home, "projects")); err != nil {
 		t.Fatal(err)
 	}
-	writeIdentity(t, home, "Jordan@Northwind.example ", "uuid-jordan") // case/space do not matter
+	writeIdentity(t, home, "Jordan@Northwind.example ", "uuid-jordan")
 
 	s, _ := Open(base, home)
 	jordan, _ := s.AccountByID("jordan")
 	ls := s.LoginStatus("jordan")
-	// Vacuity guard: an UNREADABLE identity also yields mismatch=false, so
-	// without this assertion the test would pass without having read anything.
 	if ls.AccountUUID != "uuid-jordan" {
 		t.Fatalf("the identity was not read (uuid=%q) — the test would pass empty", ls.AccountUUID)
 	}

@@ -1,18 +1,5 @@
 package mobilebff
 
-// push_devices.go — Android device registration for native push (FCM). The
-// device_id is MINTED BY THE CLIENT (Settings.Secure.ANDROID_ID-based; the auth
-// work was checked and confirmed that MobileRefreshStore exposes no stable
-// device identifier at all) — this endpoint only upserts by that id, it never
-// generates a new one.
-//
-// Persistence mirrors internal/auth.TrustedDevicesStore: one JSON file per user
-// under DataDir, an in-memory mutex, atomic writes (tmp+rename).
-// DeviceTokenStore, unlike TrustedDevicesStore, also has to answer for ALL
-// users at once (AllTokens, for broadcasting a Rule with no ToUser) — which is
-// why it is built once with the whole DataDir (not a specific file), and scans
-// per user on demand.
-
 import (
 	"context"
 	"encoding/json"
@@ -31,11 +18,10 @@ import (
 	"server-control-panel/internal/notify/fcmpush"
 )
 
-// DeviceEntry is one Android device registered for native push.
 type DeviceEntry struct {
 	DeviceID  string `json:"device_id"`
 	FCMToken  string `json:"fcm_token"`
-	Platform  string `json:"platform,omitempty"` // "android" today; open to more in the future
+	Platform  string `json:"platform,omitempty"`
 	CreatedAt int64  `json:"created_at"`
 	UpdatedAt int64  `json:"updated_at"`
 }
@@ -46,23 +32,15 @@ type deviceTokenFile struct {
 	Devices       []DeviceEntry `json:"devices"`
 }
 
-// DeviceTokenStore persists the devices of ALL users, one JSON file per user
-// under dataDir (mobile-devices-<user>.json). Built exactly once (see
-// internal/api/notify_wire.go) and satisfies fcmpush.DeviceStore structurally —
-// this package never imports internal/notify, and fcmpush never imports this
-// package.
 type DeviceTokenStore struct {
 	mu      sync.Mutex
 	dataDir string
 }
 
-// NewDeviceTokenStore creates a store pointing at dataDir. It reads nothing —
-// reading is lazy, per method, like TrustedDevicesStore.
 func NewDeviceTokenStore(dataDir string) *DeviceTokenStore {
 	return &DeviceTokenStore{dataDir: dataDir}
 }
 
-// DeviceTokenStorePath returns the canonical file path for one user.
 func DeviceTokenStorePath(dataDir, user string) string {
 	return filepath.Join(strings.TrimRight(dataDir, "/"), fmt.Sprintf("mobile-devices-%s.json", user))
 }
@@ -104,10 +82,6 @@ func saveDeviceTokenFile(path string, f *deviceTokenFile) error {
 	return nil
 }
 
-// Upsert stores (or replaces, by the same device_id) user's device. It returns
-// true if the device_id is NEW for this user — the caller (the HTTP handler
-// below) uses that to decide whether to seed a default DevicePrefsStore
-// (critical-only) the first time the device shows up.
 func (s *DeviceTokenStore) Upsert(user string, e DeviceEntry) (isNew bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -140,7 +114,6 @@ func (s *DeviceTokenStore) Upsert(user string, e DeviceEntry) (isNew bool, err e
 	return isNew, nil
 }
 
-// Remove deletes user's device deviceID. Idempotent.
 func (s *DeviceTokenStore) Remove(user, deviceID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -159,7 +132,6 @@ func (s *DeviceTokenStore) Remove(user, deviceID string) error {
 	return saveDeviceTokenFile(path, file)
 }
 
-// List returns user's registered devices. Missing file → [].
 func (s *DeviceTokenStore) List(user string) ([]DeviceEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -170,8 +142,6 @@ func (s *DeviceTokenStore) List(user string) ([]DeviceEntry, error) {
 	return file.Devices, nil
 }
 
-// TokensForUser satisfies fcmpush.DeviceStore: the FCM tokens of a single
-// user.
 func (s *DeviceTokenStore) TokensForUser(user string) []fcmpush.DeviceToken {
 	devices, _ := s.List(user)
 	out := make([]fcmpush.DeviceToken, 0, len(devices))
@@ -181,17 +151,11 @@ func (s *DeviceTokenStore) TokensForUser(user string) []fcmpush.DeviceToken {
 	return out
 }
 
-// AllTokens satisfies fcmpush.DeviceStore: the FCM tokens of ALL users —
-// needed for a Rule with no ToUser (broadcast). It sweeps
-// mobile-devices-*.json under dataDir; a glob, not an in-memory index, because
-// this process already tolerates (in other stores following the same pattern)
-// rereading from disk on every call rather than keeping a cache that would need
-// invalidation of its own.
 func (s *DeviceTokenStore) AllTokens() []fcmpush.DeviceToken {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	matches, _ := filepath.Glob(filepath.Join(strings.TrimRight(s.dataDir, "/"), "mobile-devices-*.json"))
-	sort.Strings(matches) // deterministic order (tests, visual dedupe in logs)
+	sort.Strings(matches)
 	var out []fcmpush.DeviceToken
 	for _, path := range matches {
 		file, err := loadDeviceTokenFile(path)
@@ -204,8 +168,6 @@ func (s *DeviceTokenStore) AllTokens() []fcmpush.DeviceToken {
 	}
 	return out
 }
-
-// ── HTTP ─────────────────────────────────────────────────────────────────────
 
 type registerDeviceInput struct {
 	Body struct {
@@ -271,8 +233,6 @@ func registerPushDevices(api huma.API, deps Deps) {
 			return nil, huma.Error500InternalServerError("failed to save the device", err)
 		}
 		if isNew && prefs != nil {
-			// Seed the alert-fatigue default: only critical gets through by
-			// push until the user opts into more.
 			_ = prefs.SeedDefaults(user, in.Body.DeviceID, deps.Notify)
 		}
 		out := &registerDeviceOutput{}

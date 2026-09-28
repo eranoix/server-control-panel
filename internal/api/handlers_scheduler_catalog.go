@@ -1,15 +1,3 @@
-// handlers_scheduler_catalog.go — server-driven catalogue of schedulable
-// task kinds, plus the per-kind authorization helper that closes
-// the scheduler's privilege-escalation bypass.
-//
-// Why a catalogue: the old UI hard-coded its task dropdown (6 options), which
-// drifted from the registered runners (jira_ai_analysis was missing) and — far
-// worse — offered primary-only kinds to every user, since the scheduler's HTTP
-// handlers never called Runner.AuthorizedFor the way the queue's enqueue path
-// does (handlers_queue.go:75). GET /api/scheduler/catalog now derives the list
-// from the live runner registry, filtered by what THIS user may actually run,
-// so the UI can never present an option the server will reject. This mirrors
-// the metrics catalogue pattern (/api/metrics/catalog).
 package api
 
 import (
@@ -24,7 +12,6 @@ import (
 	"server-control-panel/internal/sysextra"
 )
 
-// schedOption / schedOptGroup feed the dynamic <select> widgets (type=select).
 type schedOption struct {
 	Value string `json:"value"`
 	Label string `json:"label"`
@@ -34,28 +21,15 @@ type schedOptGroup struct {
 	Options []schedOption `json:"options"`
 }
 
-// handleSchedulerOptions serves GET /api/scheduler/options?source=... — the
-// dynamic option lists that power the smart dropdowns (systemd services, docker
-// containers, compose projects, local images), so the operator picks from a
-// grouped list instead of typing. Primary-only; reuses the same data the docker
-// and system pages already expose. allow_custom=true means the UI also offers a
-// "type manually" fallback (e.g. an image not yet pulled).
 func (r *Router) handleSchedulerOptions(w http.ResponseWriter, req *http.Request) {
 	source := req.URL.Query().Get("source")
 
-	// The user_sessions source is scoped to the user THEMSELVES (each account sees only its
-	// own sessions), so it is open to any authenticated user — unlike the other
-	// sources (systemd/docker/databases/…), which list host-wide resources and
-	// therefore require primary. Handled before the primary gate.
 	if source == "user_sessions" {
 		user := auth.UserFrom(req)
 		if user == "" {
 			writeErr(w, 401, "unauthorized")
 			return
 		}
-		// Always-present option: "All" saves EACH active session individually
-		// (one backup per session) at fire time. It comes first so it is the
-		// default "back up everything" path.
 		groups := []schedOptGroup{{
 			Label:   "Shortcut",
 			Options: []schedOption{{Value: "all", Label: "All active sessions (each saved individually)"}},
@@ -220,7 +194,6 @@ func (r *Router) handleSchedulerOptions(w http.ResponseWriter, req *http.Request
 			}
 		}
 	case "certbot_certs":
-		// Lists the names under /etc/letsencrypt/live/* (each dir is one certificate).
 		if entries, err := os.ReadDir("/etc/letsencrypt/live"); err == nil {
 			var opts []schedOption
 			for _, e := range entries {
@@ -240,51 +213,31 @@ func (r *Router) handleSchedulerOptions(w http.ResponseWriter, req *http.Request
 	writeJSON(w, map[string]any{"groups": groups, "allow_custom": true})
 }
 
-// schedArg describes one input field a kind accepts. The UI builds its form
-// from this schema (type drives the widget); the server stays authoritative —
-// the runners themselves revalidate args on execution.
 type schedArg struct {
 	Name        string   `json:"name"`
 	Label       string   `json:"label"`
-	Type        string   `json:"type"`              // "enum" | "string" | "string_list" | "number" | "folder" | "select"
-	Options     []string `json:"options,omitempty"` // for type=enum
-	Source      string   `json:"source,omitempty"`  // for type=select: dynamic options endpoint (systemd_units, docker_containers, compose_projects, docker_images)
+	Type        string   `json:"type"`
+	Options     []string `json:"options,omitempty"`
+	Source      string   `json:"source,omitempty"`
 	Required    bool     `json:"required,omitempty"`
 	Placeholder string   `json:"placeholder,omitempty"`
 }
 
-// schedDescriptor is one entry in the catalogue: a runner kind plus the
-// metadata the UI needs to render and validate a scheduling form for it.
 type schedDescriptor struct {
-	Kind        string `json:"kind"`
-	Label       string `json:"label"`
-	Category    string `json:"category,omitempty"` // UI group, see schedCategory
-	Description string `json:"description,omitempty"`
-	// RequiresPrimary is a cosmetic hint for the UI (badge). It is NOT the
-	// authority — the catalogue is already filtered by AuthorizedFor and the
-	// runners revalidate on execution. Kept in sync with each runner's authz
-	// by hand; the anti-drift test guards that every registered kind has an
-	// explicit descriptor.
-	RequiresPrimary bool `json:"requires_primary"`
-	// Schedulable=false means the kind exists as a runner but doesn't belong
-	// on the scheduler (e.g. jira_ai_analysis needs an interactive issue_key
-	// and runs detached). It is excluded from the catalogue the UI consumes.
-	Schedulable bool       `json:"schedulable"`
-	Args        []schedArg `json:"args"`
-	// Rich help fields for the info popup (the "i" button): what it does/why,
-	// real examples, where the result lands and what to do next. Merged from
-	// schedHelp in schedDescriptorFor.
-	Details   string   `json:"details,omitempty"`
-	UseCases  []string `json:"use_cases,omitempty"`
-	Examples  []string `json:"examples,omitempty"`
-	Output    string   `json:"output,omitempty"`
-	NextSteps []string `json:"next_steps,omitempty"`
+	Kind            string     `json:"kind"`
+	Label           string     `json:"label"`
+	Category        string     `json:"category,omitempty"`
+	Description     string     `json:"description,omitempty"`
+	RequiresPrimary bool       `json:"requires_primary"`
+	Schedulable     bool       `json:"schedulable"`
+	Args            []schedArg `json:"args"`
+	Details         string     `json:"details,omitempty"`
+	UseCases        []string   `json:"use_cases,omitempty"`
+	Examples        []string   `json:"examples,omitempty"`
+	Output          string     `json:"output,omitempty"`
+	NextSteps       []string   `json:"next_steps,omitempty"`
 }
 
-// schedDescriptors maps every registered runner kind to its scheduling
-// descriptor. A kind absent here resolves to a non-schedulable fallback via
-// schedDescriptorFor — so a newly-registered runner never silently appears in
-// the UI with an empty form; it stays hidden until someone adds a descriptor.
 var schedDescriptors = map[string]schedDescriptor{
 	"apt_upgrade": {
 		Kind:            "apt_upgrade",
@@ -579,10 +532,6 @@ var schedDescriptors = map[string]schedDescriptor{
 			{Name: "session_name", Label: "Session name (optional)", Type: "string", Placeholder: "empty = generated automatically"},
 		},
 	},
-	// jira_ai_analysis is AuthorizedFor→true for everyone, but it is NOT
-	// schedulable: it needs an interactive issue_key and runs detached via
-	// systemd-run. Mark it explicitly so the anti-drift test passes while the
-	// catalogue keeps it out of the scheduler UI.
 	"session_backup": {
 		Kind:        "session_backup",
 		Label:       "Terminal session backup",
@@ -601,7 +550,6 @@ var schedDescriptors = map[string]schedDescriptor{
 	},
 }
 
-// schedHelpEntry is the rich help shown in the info popup ("i" button).
 type schedHelpEntry struct {
 	Details   string
 	UseCases  []string
@@ -610,14 +558,8 @@ type schedHelpEntry struct {
 	NextSteps []string
 }
 
-// jobLogNote is the common "where the result lives" line: every kind streams
-// its full output to the queue, reachable from the schedule's 📄 button or the
-// Jobs page.
 const jobLogNote = "The full log of each run lives in Jobs — open it with the 📄 button on the schedule (or on the Jobs page). "
 
-// schedHelp carries the long-form help for the info popup. Kept separate from
-// the descriptor literals so the catalogue table stays compact; merged in by
-// schedDescriptorFor.
 var schedHelp = map[string]schedHelpEntry{
 	"apt_upgrade": {
 		Details:   "Updates the package index (apt-get update) and installs the available updates (apt-get upgrade -y), including OS security patches. It does not dist-upgrade (no kernel swap, no package removal).",
@@ -831,9 +773,6 @@ var schedHelp = map[string]schedHelpEntry{
 	},
 }
 
-// schedCategory groups kinds for the UI (collapsible sections + filter). Kept
-// out of the literals so the table stays compact; merged in schedDescriptorFor.
-// A kind absent here falls under "Other".
 var schedCategory = map[string]string{
 	"apt_upgrade": "Operations", "docker_pull": "Operations", "docker_compose_pull": "Operations",
 	"docker_restart": "Operations", "docker_compose_restart": "Operations", "docker_compose_up": "Operations",
@@ -852,9 +791,6 @@ var schedCategory = map[string]string{
 	"notify_message": "Notifications",
 }
 
-// schedDescriptorFor returns the explicit descriptor for a kind, or a safe
-// non-schedulable fallback so unknown/new kinds never crash the catalogue and
-// never leak into the UI with a blank form. Rich help + category merged in.
 func schedDescriptorFor(kind string) schedDescriptor {
 	d, ok := schedDescriptors[kind]
 	if !ok {
@@ -875,10 +811,6 @@ func schedDescriptorFor(kind string) schedDescriptor {
 	return d
 }
 
-// handleSchedulerCatalog serves GET /api/scheduler/catalog: the schedulable
-// kinds THIS user is authorized to run, sorted for stable output. The UI binds
-// its task picker + dynamic form to this, so it can never offer a kind the
-// server would reject (closing the dropdown-drift + bypass holes at the source).
 func (r *Router) handleSchedulerCatalog(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		writeErr(w, 405, "method not allowed")
@@ -891,8 +823,6 @@ func (r *Router) handleSchedulerCatalog(w http.ResponseWriter, req *http.Request
 	}
 	isPrim := r.isPrimary(user)
 
-	// Snapshot the registered kinds under the cfg lock, then release before
-	// calling queueRunner (which re-locks) to avoid a self-deadlock.
 	r.cfgMu.Lock()
 	kinds := make([]string, 0, len(r.queueRunners))
 	for k := range r.queueRunners {
@@ -919,12 +849,6 @@ func (r *Router) handleSchedulerCatalog(w http.ResponseWriter, req *http.Request
 	writeJSON(w, map[string]any{"kinds": out, "is_primary": isPrim})
 }
 
-// authorizeKind gates a scheduler mutation by the same Runner.AuthorizedFor
-// check the queue's enqueue path uses (handlers_queue.go:70-77). It writes the
-// HTTP error + audit event and returns false when the user may not use kind, so
-// callers just `if !r.authorizeKind(...) { return }`. This is the HTTP half of
-// the defense-in-depth bypass fix; the tick's autonomous half lives in
-// scheduler.fire() via SetAuthorizer.
 func (r *Router) authorizeKind(w http.ResponseWriter, req *http.Request, user, kind string) bool {
 	runner, ok := r.queueRunner(kind)
 	if !ok {

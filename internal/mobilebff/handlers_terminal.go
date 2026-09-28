@@ -1,13 +1,5 @@
 package mobilebff
 
-// handlers_terminal.go registers the three routes the app uses for the
-// terminal in your pocket: list sessions, get a one-shot WS ticket and read
-// the scrollback of an existing session. The app is forbidden from calling
-// /api/auth/ws-ticket or /api/terminal/* directly — only /ws/shell itself
-// escapes that, being a WebSocket URL. Every handler here is a thin wrapper
-// over internal/pty/internal/auth: no new ownership/quota rule is born in
-// this file — if something here looks like new domain logic, that is a sign
-// of scope creep, not of real need.
 import (
 	"context"
 	"encoding/base64"
@@ -25,19 +17,8 @@ import (
 
 func init() { Register("terminal", registerTerminal) }
 
-// terminalJTIKey holds the jti (the JWT's session claim) that the captureJTI
-// middleware reads off the raw *http.Request (auth.JTIFrom) and passes on to
-// the typed huma handler — which only receives a context.Context, never the raw
-// request. A key private to this file; it is not the same mechanism as
-// internal/auth (that one sets it on the *http.Request before huma enters the
-// picture; this one only forwards the already-resolved value inside the
-// huma.Context).
 type terminalJTIKey struct{}
 
-// captureJTI is requireAuth (handlers_session.go) plus capturing the session's
-// jti — needed only to mint the WS ticket, which binds it to (user, jti)
-// exactly as handleWSTicket already does for the web panel
-// (internal/api/handlers_auth.go).
 func captureJTI(ctx huma.Context, next func(huma.Context)) {
 	req, w := humago.Unwrap(ctx)
 	if auth.UserFrom(req) == "" {
@@ -47,9 +28,6 @@ func captureJTI(ctx huma.Context, next func(huma.Context)) {
 	next(huma.WithValue(ctx, terminalJTIKey{}, auth.JTIFrom(req)))
 }
 
-// TerminalSessionSummary projects the map[string]any that
-// ptysvc.SessionListForUser already returns (backend_dtach.go List()) — only
-// the fields that return value actually has, none invented.
 type TerminalSessionSummary struct {
 	Name     string `json:"name"`
 	Tab      string `json:"tab,omitempty"`
@@ -61,9 +39,6 @@ type terminalSessionsOutput struct {
 	Body []TerminalSessionSummary
 }
 
-// WSTicketRequest is the body of POST .../terminal/ws-ticket. Name is the
-// session the app wants to connect to — it may not exist yet: /ws/shell creates
-// it on the first connection (same semantics as the web panel).
 type WSTicketRequest struct {
 	Name string `json:"name"`
 }
@@ -72,8 +47,6 @@ type wsTicketInput struct {
 	Body WSTicketRequest
 }
 
-// WSTicketResponse mirrors exactly the body handleWSTicket already returns for
-// the web panel — the same mechanism, re-exposed, not a new one.
 type WSTicketResponse struct {
 	Ticket    string `json:"ticket"`
 	ExpiresIn int    `json:"expires_in"`
@@ -83,8 +56,6 @@ type wsTicketOutput struct {
 	Body WSTicketResponse
 }
 
-// ScrollbackResponse mirrors the body of handleTerminalScrollback
-// (internal/api/handlers_users.go).
 type ScrollbackResponse struct {
 	Data string `json:"data"`
 }
@@ -96,74 +67,18 @@ type scrollbackInput struct {
 }
 
 type scrollbackOutput struct {
-	// NEVER CACHE. See [noCache].
 	CacheControl string `header:"Cache-Control"`
 	Body         ScrollbackResponse
 }
 
-// noCache is the `Cache-Control` value of the routes whose body is a SLICE OF
-// A LIVE STREAM — the terminal session's log.
-//
-// The same URL returns different content every second, so storing it is
-// semantically wrong: there is no such thing as "the response of this URL". And
-// the consequence is not stale data on screen, it is a CORRUPTED screen — the
-// app replays that log into its own emulator to rebuild the session, and an old
-// slice applied before the live stream paints one picture over another.
-//
-// The app's read cache makes every successful GET cacheable and serves a copy
-// up to seven days old when the network fails (Android 15+ cuts background
-// network on its own).
-//
-// `no-store` is what the app's cache already respects explicitly, so saying it
-// here fixes any version of it.
 const noCache = "no-store"
 
-// RawLogResponse delivers the session's RAW log — the bytes the PTY wrote,
-// escapes and all — for the app to replay in its own emulator.
-//
-// ## Why base64, and not the string directly
-//
-// The log is not text: it is a terminal stream, with control bytes and, after a
-// rotation in the middle of a character, truncated UTF-8 sequences. A JSON
-// string field would run those bytes through Go's escaper (every ESC becomes
-// "\u001b", six characters for one) and would replace every invalid byte with
-// U+FFFD — corrupting precisely the escape sequences that give the stream its
-// meaning. base64 carries any byte through without interpreting any of them,
-// and the transport's gzip recovers most of the 33% bloat.
-//
-// ## Total answers one question only
-//
-// "Did I get the whole log?" — if Total > Bytes, there is older history that did
-// not fit in the request. The app uses that to tell the truth on screen instead
-// of suggesting that is all there ever was.
 type RawLogResponse struct {
 	Base64 string `json:"base64" doc:"Raw session log, base64-encoded"`
 	Bytes  int    `json:"bytes" doc:"How many log bytes are in this response"`
 	Total  int    `json:"total" doc:"Total size of the log available on the server"`
 }
 
-// HistoryResponse delivers the session's RENDERED history — the lines that
-// have already scrolled off the screen, as append-only text.
-//
-// The difference from the raw log is not one of format, it is one of nature:
-//
-//	raw log = everything that went over the wire, including the drawing in progress
-//	history = what the person SAW, once each
-//
-// Replaying the raw log into a fresh grid duplicates: the `ESC[nA` of a program
-// that repaints saturates at the top of the SCREEN and never reaches the
-// scrollback, so the earlier copy stays. It is the defect that `AttachReplay`'s
-// KDoc describes as unfixable — and it is: there is no fix on the READING side.
-// The server fixes it on the WRITING side, by keeping a live emulator on the
-// session's grid.
-//
-// Measured on a real production log: 4096 KiB of raw log yield 360 KiB of
-// history — 11.4x more conversation per byte on the same network budget.
-//
-// base64 for the same reason as the raw log: there are still SGR sequences in
-// the stream.
-// The type name is the OpenAPI schema name the Android client is generated
-// from, so it stays until the client is regenerated.
 type HistoryResponse struct {
 	Base64 string `json:"base64" doc:"Rendered session history, base64-encoded"`
 	Bytes  int    `json:"bytes" doc:"How many history bytes are in this response"`
@@ -176,7 +91,6 @@ type historyInput struct {
 }
 
 type historyOutput struct {
-	// NEVER CACHE, for the same reason as the raw log.
 	CacheControl string `header:"Cache-Control"`
 	Body         HistoryResponse
 }
@@ -187,9 +101,6 @@ type rawLogInput struct {
 }
 
 type rawLogOutput struct {
-	// NEVER CACHE. See [noCache] — this is the route the app replays into
-	// libghostty-vt itself, and it is where an old slice scrambles the screen
-	// instead of merely ageing it.
 	CacheControl string `header:"Cache-Control"`
 	Body         RawLogResponse
 }
@@ -255,8 +166,6 @@ func terminalSessionsHandler(cfg *config.Config, own *ptysvc.Ownership) func(ctx
 		primary := httpx.IsAdmin(cfg, user)
 		sessions, err := ptysvc.SessionListForUser(user, primary, own)
 		if err != nil {
-			// Graceful: no live session is not an error yet, it is an empty list — same
-			// behaviour as handleTerminalSessions.
 			return &terminalSessionsOutput{Body: []TerminalSessionSummary{}}, nil
 		}
 		out := make([]TerminalSessionSummary, 0, len(sessions))
@@ -277,18 +186,6 @@ func terminalWSTicketHandler(cfg *config.Config, own *ptysvc.Ownership) func(ctx
 		user := auth.UserFromContext(ctx)
 		name := strings.TrimSpace(in.Body.Name)
 		if name != "" {
-			// Mirrors the ownership gate that /ws/shell (HostShell,
-			// internal/pty/pty.go) already applies on attach — not a new rule.
-			// owner == "" (a name never claimed) always passes: /ws/shell creates the
-			// session on the first connection and whoever connects becomes the owner (no
-			// privilege gained). owner == user or owner == AudienceAll ("Everyone")
-			// also pass — that is attaching to something already yours or
-			// shared. Only owner != "" && owner != user (a name already
-			// claimed by ANOTHER specific user) denies, and only when the
-			// caller is not an admin (the sessions admin/master may attach to
-			// any session, the same exception /ws/shell itself makes) — 404, never
-			// 403, so as not to leak existence (same rule as
-			// handleTerminalScrollback).
 			owner := own.Owner(name)
 			if owner != "" && owner != user && owner != ptysvc.AudienceAll {
 				if !httpx.IsAdmin(cfg, user) {
@@ -327,10 +224,6 @@ func terminalRawLogHandler(cfg *config.Config, own *ptysvc.Ownership) func(ctx c
 	return func(ctx context.Context, in *rawLogInput) (*rawLogOutput, error) {
 		user := auth.UserFromContext(ctx)
 		name := strings.TrimSpace(in.Name)
-		// Same ownership gate as the scrollback: 404, never 403 — the existence of
-		// somebody else's session does not leak. Here it weighs more than in the
-		// listing: the raw log is the literal transcript of everything that went
-		// through the terminal.
 		if !ptysvc.OwnsSession(user, name, httpx.IsAdmin(cfg, user), own) {
 			return nil, huma.Error404NotFound("session not found")
 		}
@@ -347,7 +240,6 @@ func terminalHistoryHandler(cfg *config.Config, own *ptysvc.Ownership) func(ctx 
 	return func(ctx context.Context, in *historyInput) (*historyOutput, error) {
 		user := auth.UserFromContext(ctx)
 		name := strings.TrimSpace(in.Name)
-		// Same ownership gate as the raw log: 404, never 403.
 		if !ptysvc.OwnsSession(user, name, httpx.IsAdmin(cfg, user), own) {
 			return nil, huma.Error404NotFound("session not found")
 		}
@@ -360,9 +252,6 @@ func terminalHistoryHandler(cfg *config.Config, own *ptysvc.Ownership) func(ctx 
 	}
 }
 
-// stringField/int64Field/boolField safely extract a typed value from a
-// map[string]any — the shape ptysvc.SessionListForUser returns (never a Go
-// struct) — without invoking reflection or assuming the key is present.
 func stringField(m map[string]any, key string) string {
 	v, _ := m[key].(string)
 	return v

@@ -12,10 +12,6 @@ import (
 	"server-control-panel/internal/mobilebff/sdui"
 )
 
-// fakeContainer/fakeImageSummary build the minimal subset of the real Docker
-// SDK structs that dockerContainerRow/dockerImageRow read from — synthetic
-// domain values, not a live Docker daemon round trip (that's
-// docker_rows_test.go's job).
 func fakeContainer(id, name, image, state string, created int64) types.Container {
 	return types.Container{
 		ID:      id,
@@ -35,9 +31,6 @@ func fakeImageSummary(id string, repoTags []string, size, created int64) image.S
 	}
 }
 
-// testDockerCfg/testDockerViewers mirror testSchedulerCfg/testSchedulerViewers
-// (scheduler_test.go) — a real *config.Config through the real
-// ViewerFrom/httpx.IsAdmin path, never a Viewer{} literal.
 func testDockerCfg() *config.Config {
 	return &config.Config{
 		SchemaVersion: config.CurrentSchemaVersion,
@@ -53,8 +46,6 @@ func testDockerViewers() (admin, nonAdmin sdui.Viewer) {
 	cfg := testDockerCfg()
 	return sdui.ViewerFrom(cfg, "docker-admin"), sdui.ViewerFrom(cfg, "docker-user")
 }
-
-// --- Test 1: structure ------------------------------------------------
 
 func TestDockerContainersScreen_Structure(t *testing.T) {
 	admin, _ := testDockerViewers()
@@ -104,16 +95,12 @@ func TestDockerImagesScreen_Structure(t *testing.T) {
 	}
 }
 
-// TestDockerVolumesNetworksScreens_ListOnlyForEveryViewer proves volumes and
-// networks never carry a row action or a confirm_destructive component, for
-// ANY viewer — internal/docker exposes no single-item delete for either
-// (see deps.go's DockerDeps doc comment).
 func TestDockerVolumesNetworksScreens_ListOnlyForEveryViewer(t *testing.T) {
 	admin, nonAdmin := testDockerViewers()
 	for name, v := range map[string]sdui.Viewer{"admin": admin, "nonadmin": nonAdmin} {
 		volEnv := buildDockerVolumesScreen()
 		netEnv := buildDockerNetworksScreen()
-		_ = v // buildDockerVolumesScreen/buildDockerNetworksScreen take no Viewer — identical for both, proven below.
+		_ = v
 
 		volTable, ok := findComponent(t, volEnv, "volumes-table").(sdui.TableComponent)
 		if !ok {
@@ -170,9 +157,6 @@ func TestDockerComposeScreen_Structure(t *testing.T) {
 	}
 }
 
-// TestDockerPruneScreen_Structure proves the prune screen has exactly one
-// form and one confirm_destructive, no table — and that RequireTypedConfirmation
-// is set (unlike scheduler.job.delete), since prune is genuinely irreversible.
 func TestDockerPruneScreen_Structure(t *testing.T) {
 	env := buildDockerPruneScreen()
 
@@ -205,8 +189,6 @@ func TestDockerPruneScreen_Structure(t *testing.T) {
 	}
 }
 
-// TestDockerPruneScreen_AdminOnly proves a non-admin Build call returns
-// ErrScreenNotFound (404-never-403), never an emptied-but-present envelope.
 func TestDockerPruneScreen_AdminOnly(t *testing.T) {
 	admin, nonAdmin := testDockerViewers()
 
@@ -222,12 +204,6 @@ func TestDockerPruneScreen_AdminOnly(t *testing.T) {
 	}
 }
 
-// --- Test 2 (RBAC omission, on bytes) + Test 3 (non-vacuity) -----------
-
-// TestDockerContainersScreen_RBACOmissionOnBytes proves the admin envelope
-// contains the remove action id and non-admin's does not — while both
-// envelopes carry the identical table/columns (no per-row scoping exists in
-// internal/docker beyond admin/non-admin, per PLAN.md Risks).
 func TestDockerContainersScreen_RBACOmissionOnBytes(t *testing.T) {
 	admin, nonAdmin := testDockerViewers()
 
@@ -246,7 +222,6 @@ func TestDockerContainersScreen_RBACOmissionOnBytes(t *testing.T) {
 	if strings.Contains(string(nonAdminBytes), dockerActionContainerRemove) {
 		t.Errorf("non-admin envelope contains %q: %s", dockerActionContainerRemove, nonAdminBytes)
 	}
-	// Non-vacuity: the remaining row_actions stay present for the non-admin.
 	for _, want := range []string{dockerActionContainerStart, dockerActionContainerStop, dockerActionContainerRestart} {
 		if !strings.Contains(string(nonAdminBytes), want) {
 			t.Errorf("non-admin envelope does not contain %q (non-destructive action, should stay visible): %s", want, nonAdminBytes)
@@ -284,8 +259,6 @@ func TestDockerComposeScreen_RBACOmissionOnBytes(t *testing.T) {
 		t.Errorf("non-admin envelope does not contain %q (non-destructive action, should stay visible): %s", dockerActionComposeUp, nonAdminBytes)
 	}
 }
-
-// --- Test 4: no client-side logic --------------------------------------
 
 func TestDockerScreens_NoClientSideLogicKeys(t *testing.T) {
 	admin, _ := testDockerViewers()
@@ -327,8 +300,6 @@ func TestDockerScreens_NoClientSideLogicKeys(t *testing.T) {
 	}
 }
 
-// --- Test 5: preformatted values ----------------------------------------
-
 func TestFormatDockerTimestamp_ZeroIsEmpty(t *testing.T) {
 	if got := formatDockerTimestamp(0); got != "" {
 		t.Errorf("formatDockerTimestamp(0) = %q, want \"\"", got)
@@ -354,10 +325,6 @@ func TestFormatDockerBytes(t *testing.T) {
 	}
 }
 
-// TestDockerRowShapingFuncs_NeverEmitRawNumbers proves the row-shaping
-// functions always produce display-ready strings for size/timestamp keys,
-// never a raw number — using synthetic domain values, not a live Docker
-// daemon (that round trip is covered end-to-end by docker_rows_test.go).
 func TestDockerRowShapingFuncs_NeverEmitRawNumbers(t *testing.T) {
 	row := dockerContainerRow(fakeContainer("c1", "/web", "nginx:latest", "running", 1798000000))
 	if _, isString := row["created"].(string); !isString {

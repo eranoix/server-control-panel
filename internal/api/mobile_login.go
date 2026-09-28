@@ -1,28 +1,5 @@
 package api
 
-// mobile_login.go — implementation of mobilebff.PasskeyBackend.MobileLogin/
-// MobileRefresh by *Router.
-//
-// MobileLogin reuses, WITHOUT DUPLICATING, the second-factor policy of the
-// desktop login (verifyLoginMFA, extracted from handleLogin, pinned by
-// handlers_auth_test.go) — same Supabase MFA/backup-code check,
-// same fail-closed on unavailability. The only policy that does NOT apply
-// here is the trusted-device skip via the HttpOnly cookie:
-// the native app has no session cookie jar, so
-// readDeviceCookie never finds the panel_device cookie and the 2nd factor is always
-// demanded when the user has a factor enrolled — a safe degradation, never an
-// unsafe one.
-//
-// MobileRefresh performs mandatory rotation via
-// auth.MobileRefreshStore.Rotate: the refresh token that was sent stops working
-// on this very call, success or not — it never ends up "almost valid" on a
-// second attempt. The rate limit is per USERNAME (extracted in clear from the
-// token's own prefix, see ParseMobileRefreshUsername), not per IP: a
-// mobile app changes network/IP often, and the real target of the mitigation
-// is "do not let anyone brute-force the secret suffix of a
-// token", which only makes sense per identity, not per origin
-// network.
-
 import (
 	"fmt"
 	"net/http"
@@ -32,15 +9,12 @@ import (
 	"server-control-panel/internal/mobilebff"
 )
 
-// MobileLogin implements mobilebff.PasskeyBackend.
 func (r *Router) MobileLogin(req *http.Request, username, password, totpCode, deviceLabel string) (mobilebff.MobileLoginResult, error) {
 	ip := auth.ClientIP(req)
 	if !r.limiter.Allow(ip) {
 		return mobilebff.MobileLoginResult{}, mobilebff.ErrMobileLoginRateLimited
 	}
 
-	// Same email→canonical username normalization as the desktop login
-	// (handleLogin) — see the comment there for the full reasoning.
 	username = strings.TrimSpace(username)
 	if strings.Contains(username, "@") {
 		username = strings.ToLower(username)
@@ -88,7 +62,6 @@ func (r *Router) MobileLogin(req *http.Request, username, password, totpCode, de
 	case mfaBackupUsed:
 		r.auditEvent(req, username, "mobile.login.mfa.backup_used", "factor="+mfa.factorID)
 	case mfaCodeVerified:
-		// nothing extra to audit beyond the login.ok below.
 	}
 
 	r.limiter.Reset(ip)
@@ -111,7 +84,6 @@ func (r *Router) MobileLogin(req *http.Request, username, password, totpCode, de
 	}, nil
 }
 
-// MobileRefresh implements mobilebff.PasskeyBackend.
 func (r *Router) MobileRefresh(refreshToken string) (mobilebff.MobileLoginResult, error) {
 	username, ok := auth.ParseMobileRefreshUsername(refreshToken)
 	if !ok {

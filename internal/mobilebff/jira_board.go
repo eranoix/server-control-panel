@@ -1,15 +1,5 @@
 package mobilebff
 
-// jira_board.go carries the PURE logic of the kanban board: how the columns
-// are born out of the configuration, which column each issue falls into, which
-// transition takes a card to the chosen column, and which JQL each quick filter
-// means.
-//
-// The logic lives on the server so the app never keeps a second implementation
-// of the web panel's rule (`00-shell.js`: jiraColumns, jiraIssuesInCol,
-// jiraDropOnCol, applyJiraFilter): the app receives built columns and decides
-// only how to draw them. Everything here is a pure function over `[]jira.Issue`.
-
 import (
 	"encoding/json"
 	"sort"
@@ -20,12 +10,6 @@ import (
 	"server-control-panel/internal/jira"
 )
 
-// JiraBoardCard is an issue as it appears on a board card.
-//
-// Everything arrives already formatted as text: the client never builds a label
-// out of a raw struct, the same rule every SDUI screen follows (see
-// screens/misc.go, jiraIssueRow). An empty field means "Jira did not fill it
-// in", never "the app could not read it".
 type JiraBoardCard struct {
 	Key        string   `json:"key"`
 	Summary    string   `json:"summary"`
@@ -41,13 +25,6 @@ type JiraBoardCard struct {
 	DueDate    string   `json:"due_date,omitempty"`
 }
 
-// JiraBoardColumn is one column of the board, with the cards that fall into it.
-//
-// [StatusNames] and [Category] are MUTUALLY exclusive and exist so the client
-// can hand the column back on a move call without inventing vocabulary: it
-// sends the [Label] back, and the server finds the column again. [Fallback]
-// marks the "Others" column — the one that collects issues whose status matches
-// no configured column.
 type JiraBoardColumn struct {
 	Label       string          `json:"label"`
 	StatusNames []string        `json:"status_names,omitempty"`
@@ -56,12 +33,6 @@ type JiraBoardColumn struct {
 	Cards       []JiraBoardCard `json:"cards" required:"true"`
 }
 
-// defaultColumns mirrors the three CATEGORY columns the web panel uses when the
-// operator has not configured columns of their own.
-//
-// Category and not name: a status name is translatable and customizable per
-// project; `statusCategory.key` is one of the three values Jira guarantees. A
-// column by name would break in any project that calls "To Do" "Backlog".
 func defaultColumns() []JiraBoardColumn {
 	return []JiraBoardColumn{
 		{Label: "To Do", Category: "new"},
@@ -70,14 +41,6 @@ func defaultColumns() []JiraBoardColumn {
 	}
 }
 
-// configuredColumns reads the `jira_board_columns` JSON out of the vault.
-//
-// It returns nil when there is no configuration, when the JSON fails to
-// deserialize, or when the list is empty — in all of those cases the caller
-// falls back to the category columns. An invalid configuration is NOT a visible
-// error: the board keeps working with the defaults, exactly as the web panel
-// does (`catch(e){ console.warn(...) }`). A board that refuses to open because
-// a preference is crooked is worse than a board with the default columns.
 func configuredColumns(raw string) []JiraBoardColumn {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -104,15 +67,6 @@ func configuredColumns(raw string) []JiraBoardColumn {
 	return out
 }
 
-// BuildBoard distributes the issues across the columns.
-//
-// [hideDoneAfter], when greater than zero, hides issues that have been
-// done for more days than that — the same retention as the panel
-// (`jiraIssueVisible`), so the "Done" column does not grow forever.
-//
-// [order] is "field:direction" (`updated:desc`, `key:asc`, `name:asc`,
-// `type:asc`); empty or unknown preserves the order Jira returned, which is
-// already the JQL's.
 func BuildBoard(
 	rawColumns string,
 	issues []jira.Issue,
@@ -145,7 +99,6 @@ func BuildBoard(
 		columns[dest].Cards = append(columns[dest].Cards, boardCard(is))
 	}
 
-	// The "Others" column only exists when there is an orphan.
 	if byName && len(orphans) > 0 {
 		leftover := JiraBoardColumn{Label: "Others", Fallback: true}
 		for _, is := range orphans {
@@ -155,8 +108,6 @@ func BuildBoard(
 	}
 
 	for i := range columns {
-		// Cards is never nil in the response: the client tells "empty column"
-		// from "column that did not come" by the column's presence, not by null.
 		if columns[i].Cards == nil {
 			columns[i].Cards = []JiraBoardCard{}
 		}
@@ -165,10 +116,6 @@ func BuildBoard(
 	return columns
 }
 
-// issueInColumn is the SAME question the move screen asks later, and that is
-// why it is a single function: if it said "yes, it is already in this column"
-// by one criterion and the board drew by another, dragging a card onto the
-// column it is already in would turn into a real transition.
 func issueInColumn(is jira.Issue, col JiraBoardColumn) bool {
 	if col.Fallback {
 		return false
@@ -185,10 +132,6 @@ func issueInColumn(is jira.Issue, col JiraBoardColumn) bool {
 	return false
 }
 
-// issueVisible applies the done-issue retention.
-//
-// An issue with an unreadable date is always visible: disappearing because a
-// timestamp could not be parsed is losing work over a formatting detail.
 func issueVisible(is jira.Issue, hideDoneAfter int, now time.Time) bool {
 	if hideDoneAfter <= 0 {
 		return true
@@ -228,9 +171,6 @@ func boardCard(is jira.Issue) JiraBoardCard {
 	return c
 }
 
-// sortCards sorts in place. An unknown order is a deliberate no-op — the
-// client may be newer than the server and ask for a criterion the latter does
-// not know yet; returning the JQL's order is correct degradation, not an error.
 func sortCards(cards []JiraBoardCard, order string) {
 	field, desc := splitOrder(order)
 	if field == "" {
@@ -274,9 +214,6 @@ func splitOrder(order string) (field string, desc bool) {
 	return field, len(parts) == 2 && parts[1] == "desc"
 }
 
-// keyNumber extracts the numeric tail of an issue key. Sorting a key as text
-// would put ...-100 before ...-99, which is the wrong order in any project that
-// gets past two digits.
 func keyNumber(key string) int {
 	i := strings.LastIndex(key, "-")
 	if i < 0 {
@@ -286,13 +223,6 @@ func keyNumber(key string) int {
 	return n
 }
 
-// TransitionToColumn finds the transition that takes the issue to the column.
-//
-// It returns nil when NO transition gets there. That is not a failure of the app
-// nor of the server: it is the project's workflow forbidding that jump (you do
-// not go from "To Do" straight to "Done" in a workflow with mandatory review).
-// The caller turns that nil into an explained refusal and the card goes back to
-// where it was, so nobody believes a card moved when it did not.
 func TransitionToColumn(col JiraBoardColumn, transitions []jira.Transition) *jira.Transition {
 	if col.Category != "" {
 		for i := range transitions {
@@ -302,8 +232,6 @@ func TransitionToColumn(col JiraBoardColumn, transitions []jira.Transition) *jir
 		}
 		return nil
 	}
-	// By name: try each of the column's names, in the order the operator wrote
-	// them — the first is their preferred one.
 	for _, want := range col.StatusNames {
 		for i := range transitions {
 			if strings.EqualFold(transitions[i].ToName, want) {
@@ -314,9 +242,6 @@ func TransitionToColumn(col JiraBoardColumn, transitions []jira.Transition) *jir
 	return nil
 }
 
-// The web panel's quick filters, in the same order and with the same meaning.
-// The label travels with them so the app does not keep a second list that ages
-// on its own.
 var quickFilters = []struct {
 	Key   string
 	Label string
@@ -330,24 +255,13 @@ var quickFilters = []struct {
 	{"custom", "JQL"},
 }
 
-// ownBoardFilter is the JQL the operator configured as THEIR board
-// (`jira_board_jql` in the vault). It is only offered when it exists.
-//
-// It is a NAMED filter so the stored query never silently replaces "All": an
-// empty board under "My board" then means the stored query matches nothing.
 var ownBoardFilter = JiraFilterOption{Key: "board", Label: "My board"}
 
-// JiraFilterOption is one quick filter offered to the app.
 type JiraFilterOption struct {
 	Key   string `json:"key"`
 	Label string `json:"label"`
 }
 
-// BoardFilters returns the catalogue of quick filters.
-//
-// [withOwnBoard] adds "My board" — only when the operator has in fact
-// configured a board JQL. Offering a filter with no query behind it would be a
-// button that does nothing.
 func BoardFilters(withOwnBoard bool) []JiraFilterOption {
 	out := make([]JiraFilterOption, 0, len(quickFilters)+1)
 	for _, f := range quickFilters {
@@ -359,17 +273,8 @@ func BoardFilters(withOwnBoard bool) []JiraFilterOption {
 	return out
 }
 
-// FilterJQL translates a quick filter into JQL, mirroring the web panel's
-// `applyJiraFilter` line by line.
-//
-// [jqlCustom] is only used by the "custom" filter and [boardJQL] only by the
-// "board" one; in all the others both are ignored on purpose — a loose JQL
-// travelling alongside a named filter would be a second source of truth about
-// what the board is showing.
 func FilterJQL(filter, project, jqlCustom, boardJQL string) string {
 	project = strings.TrimSpace(project)
-	// "My board" with no stored query is not a state: it falls back to "all",
-	// which is what a person would expect from a filter that filters nothing.
 	if filter == ownBoardFilter.Key {
 		if q := strings.TrimSpace(boardJQL); q != "" {
 			return q
@@ -393,21 +298,14 @@ func FilterJQL(filter, project, jqlCustom, boardJQL string) string {
 		return where + "reporter = currentUser() ORDER BY updated DESC"
 	case "custom":
 		return strings.TrimSpace(jqlCustom)
-	default: // "all" and any filter this server does not know yet
+	default:
 		if project == "" {
 			return "ORDER BY updated DESC"
 		}
-		// Without a clause after the AND, the AND dangles and Jira refuses.
 		return "project = " + project + " ORDER BY updated DESC"
 	}
 }
 
-// FilterBySearch applies the free-text search over whatever the JQL already
-// brought back.
-//
-// It is a TEXT filter over the page in hand, not a second query: the web panel
-// does the same (`jiraFilteredIssues`). The difference matters to whoever reads
-// the result — "not found" here means "not in this search", not "not in Jira".
 func FilterBySearch(issues []jira.Issue, search string) []jira.Issue {
 	search = strings.ToLower(strings.TrimSpace(search))
 	if search == "" {
@@ -426,9 +324,6 @@ func FilterBySearch(issues []jira.Issue, search string) []jira.Issue {
 	return out
 }
 
-// parseJiraTime reads Jira's timestamp, which arrives as RFC3339 with a
-// colon-less zone offset ("2026-09-09T12:00:00.000-0300") — a format
-// time.RFC3339 alone does not accept.
 func parseJiraTime(s string) (time.Time, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -456,14 +351,6 @@ func firstNonEmpty(vs ...string) string {
 	return ""
 }
 
-// The board runs one search PER COLUMN: with a single shared search, done
-// issues could use up the whole quota and starve the other columns.
-
-// SplitJQL separates the search clause from the ordering one.
-//
-// Necessary because the column restriction goes in BEFORE the `ORDER BY` — a
-// `... ORDER BY updated DESC AND status = "X"` is invalid syntax, and that is
-// exactly the error naive concatenation produces.
 func SplitJQL(jql string) (where, order string) {
 	cut := orderByIndex(jql)
 	if cut < 0 {
@@ -472,9 +359,6 @@ func SplitJQL(jql string) (where, order string) {
 	return strings.TrimSpace(jql[:cut]), strings.TrimSpace(jql[cut:])
 }
 
-// orderByIndex finds the top-level "ORDER BY", ignoring case. It does not try
-// to understand parentheses: JQL allows no subquery with an ORDER BY inside, so
-// the first occurrence is always the trailing one.
 func orderByIndex(jql string) int {
 	high := strings.ToUpper(jql)
 	for _, mark := range []string{"ORDER BY", "ORDER  BY"} {
@@ -485,8 +369,6 @@ func orderByIndex(jql string) int {
 	return -1
 }
 
-// categoryJQL translates the category's stable key into the name JQL expects.
-// These are the three values Jira guarantees; anything else returns "".
 func categoryJQL(key string) string {
 	switch key {
 	case "new":
@@ -499,12 +381,6 @@ func categoryJQL(key string) string {
 	return ""
 }
 
-// ColumnRestriction is the slice of JQL that isolates one column's issues.
-//
-// The "Others" column is the complement of the others (`status NOT IN (...)`) —
-// the only way to ASK Jira for something defined as "whatever is none of the
-// rest". It returns "" when the column has no way to restrict itself, and in
-// that case the caller falls back to the single search.
 func ColumnRestriction(col JiraBoardColumn, all []JiraBoardColumn) string {
 	if col.Fallback {
 		var names []string
@@ -535,18 +411,10 @@ func ColumnRestriction(col JiraBoardColumn, all []JiraBoardColumn) string {
 	return "status IN (" + strings.Join(names, ", ") + ")"
 }
 
-// quoteJQL wraps the value in double quotes, escaping any it contains. A status
-// name with quotes in it is rare; a name with UNESCAPED quotes would break the
-// board's entire query, and not just that column.
 func quoteJQL(v string) string {
 	return `"` + strings.ReplaceAll(v, `"`, `\"`) + `"`
 }
 
-// ColumnJQL composes one column's query.
-//
-// The filter's clause goes inside parentheses because it may contain an `OR` —
-// and without the parentheses the column's `AND` would bind only to the last
-// term, silently widening the result.
 func ColumnJQL(where, order, restriction string) string {
 	parts := make([]string, 0, 2)
 	if where = strings.TrimSpace(where); where != "" {

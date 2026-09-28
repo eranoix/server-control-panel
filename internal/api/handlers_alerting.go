@@ -1,14 +1,5 @@
 package api
 
-// handlers_alerting.go: alert rules, alerting config and the WhatsApp test.
-//
-// Covers:
-//   - handleAlertList / Add / Remove / Fires (rules)
-//   - handleAlertingConfig (GET/POST alerting settings)
-//   - handleAlertingTest (sends a test message through the configured channel)
-//   - normalizeAlertingJID (helper)
-//
-
 import (
 	"bytes"
 	"encoding/json"
@@ -25,11 +16,8 @@ import (
 	"server-control-panel/internal/metrics"
 )
 
-// ---------- Alerts ----------
-
 func (r *Router) handleAlertList(w http.ResponseWriter, req *http.Request) {
 	st := r.alerts.Status()
-	// Enrich with label/unit from the catalogue (resolved by the metric key).
 	if r.metricReg != nil {
 		for i := range st {
 			if d, ok := r.metricReg.DescriptorFor(st[i].MetricKey); ok {
@@ -41,8 +29,6 @@ func (r *Router) handleAlertList(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]any{"rules": sanitizeList(st, "Name")})
 }
 
-// handleMetricsCatalog returns the metrics catalogue (descriptors) for the
-// builder's metric selector and the mini-dashboard.
 func (r *Router) handleMetricsCatalog(w http.ResponseWriter, req *http.Request) {
 	if r.metricReg == nil {
 		writeJSON(w, map[string]any{"metrics": []any{}})
@@ -51,7 +37,6 @@ func (r *Router) handleMetricsCatalog(w http.ResponseWriter, req *http.Request) 
 	writeJSON(w, map[string]any{"metrics": r.metricReg.Catalog()})
 }
 
-// handleMetricsSnapshot returns the current values of every metric.
 func (r *Router) handleMetricsSnapshot(w http.ResponseWriter, req *http.Request) {
 	if r.metricReg == nil {
 		writeJSON(w, map[string]any{"t": 0, "values": map[string]float64{}})
@@ -60,7 +45,6 @@ func (r *Router) handleMetricsSnapshot(w http.ResponseWriter, req *http.Request)
 	writeJSON(w, r.metricReg.Latest())
 }
 
-// handleMetricsSeries returns the time series of ONE metric (?key=).
 func (r *Router) handleMetricsSeries(w http.ResponseWriter, req *http.Request) {
 	key := req.URL.Query().Get("key")
 	if key == "" {
@@ -74,11 +58,6 @@ func (r *Router) handleMetricsSeries(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]any{"key": key, "points": r.metricHist.Series(key)})
 }
 
-// persistAlertRules best-effort saves rules to data/alert_rules.json so they
-// survive restarts/deploys. Failures are logged, never block the request. The
-// nil-guard makes it safe to call from recordFires on the edge transition, where
-// a few tests construct a bare &Router{} with no cfg/alerts; the real call sites
-// always have both.
 func (r *Router) persistAlertRules() {
 	if r.alerts == nil || r.cfg == nil {
 		return
@@ -98,7 +77,6 @@ func (r *Router) handleAlertAdd(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, 400, "bad json")
 		return
 	}
-	// A canonical metric must exist in the catalogue (mirrors validSeverity/validField).
 	if rule.Metric != "" && r.metricReg != nil {
 		if _, ok := r.metricReg.DescriptorFor(rule.Metric); !ok {
 			writeErr(w, 400, "unknown metric: "+rule.Metric)
@@ -176,7 +154,6 @@ func (r *Router) handleAlertingConfig(w http.ResponseWriter, req *http.Request) 
 				writeErr(w, 400, "chat_jid required when enabled")
 				return
 			}
-			// Normalize: a bare number becomes @c.us; @g.us/@c.us/@s.whatsapp.net are preserved.
 			body.ChatJID = normalizeAlertingJID(body.ChatJID)
 		}
 		switch body.MinSeverity {
@@ -201,10 +178,6 @@ func (r *Router) handleAlertingConfig(w http.ResponseWriter, req *http.Request) 
 	}
 }
 
-// handleAlertingTest fires a synthetic payload against our own
-// /_internal/alert over loopback. It uses the same dispatch path as
-// Alertmanager, so it validates the whole stack end-to-end (config + filter +
-// resolve user + SendText). Returns the dispatch's HTTP status to the caller.
 func (r *Router) handleAlertingTest(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		writeErr(w, 405, "method not allowed")
@@ -258,9 +231,6 @@ func (r *Router) handleAlertingTest(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// normalizeAlertingJID appends "@c.us" when the user passed only the number with
-// no suffix. Accepts the group format (already @g.us), individual (@c.us or
-// @s.whatsapp.net), or a plain number. Trims whitespace and "+".
 func normalizeAlertingJID(j string) string {
 	j = strings.TrimSpace(j)
 	j = strings.TrimPrefix(j, "+")

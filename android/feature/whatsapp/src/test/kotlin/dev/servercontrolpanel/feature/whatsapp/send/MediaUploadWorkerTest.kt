@@ -9,7 +9,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Fake repository that records each `uploadMedia` call and returns scripted [UploadResult]s in order. */
 private class FakeUploadRepository(
     private val results: MutableList<UploadResult> = mutableListOf(),
 ) : WhatsAppRepository() {
@@ -63,7 +62,6 @@ class MediaUploadWorkerTest {
         var progress: Int? = null
         progress = clampUploadProgress(progress, 40)
         progress = clampUploadProgress(progress, 90)
-        // A retry restarts at 0; the clamp must keep the higher value already shown.
         progress = clampUploadProgress(progress, 0)
 
         assertEquals(90, progress)

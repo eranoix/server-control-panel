@@ -21,36 +21,6 @@ import dev.servercontrolpanel.feature.videocall.CallUiState
 import dev.servercontrolpanel.feature.videocall.VideoTile
 import org.webrtc.EglBase
 
-/**
- * The call inside the floating window.
- *
- * ## Why it is not the full screen shrunk down
- *
- * In a window of about 200 dp, a 48 dp button covers a quarter of the usable
- * area and nobody hits it; a participant's name turns into a smudge and a grid
- * of four videos turns into four stamps. The right content here is **one** video
- * and **one** status line. Anyone who wants to control the call expands the
- * window — and expanding is one tap.
- *
- * ## What the status line says, and why
- *
- * This window is the only place where a call dropping can be announced while the
- * app is not in front: a notification vanishes among twenty others, whereas the
- * little window sits on top of whatever the person is looking at. That is why it
- * always shows:
- *
- * - **how many** are on the call (if it drops to 0, the call has emptied out and
- *   the person needs to know without opening anything);
- * - **microphone muted**, which is the most expensive mistake on a call and the
- *   one state people change by accident.
- *
- * ## Which video is shown
- *
- * The first REMOTE one, with the local video only as a last resort. In a little
- * window, seeing your own face tells you nothing — seeing whoever is on the
- * other side does. With no remote video yet, the local one beats a black
- * rectangle, because it proves the camera is alive.
- */
 @Composable
 fun CallInWindow(
     state: CallUiState.InCall,
@@ -71,17 +41,11 @@ fun CallInWindow(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
-                // A translucent band rather than bare text: a white label over
-                // bright video disappears exactly when somebody turns a light
-                // on.
                 .background(Color.Black.copy(alpha = 0.45f))
                 .padding(horizontal = 6.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (!state.micEnabled) {
-                // A red dot plus the word: colour alone serves neither a
-                // colour-blind viewer nor a screen reader, and it is the same
-                // rule the rest of the app already follows.
                 Box(
                     modifier = Modifier
                         .size(6.dp)
@@ -105,14 +69,6 @@ fun CallInWindow(
     }
 }
 
-/**
- * The participants sentence.
- *
- * "alone in the room" and not "0 participants": zero is a number the person has
- * to interpret; the sentence is already the conclusion. And it is the state that
- * matters most to catch at a glance in the little window — it means the
- * conversation is over and nobody said so.
- */
 internal fun participantsText(remotes: Int): String = when (remotes) {
     0 -> "alone in the room"
     1 -> "1 in the call"

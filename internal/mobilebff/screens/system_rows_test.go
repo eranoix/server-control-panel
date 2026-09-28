@@ -17,10 +17,6 @@ import (
 	"server-control-panel/internal/sysextra"
 )
 
-// fakeSystemRowsDeps builds a SystemDeps with only the List* fields
-// populated — the rows/series endpoints never call a mutating closure, so
-// KillProcess/UnitAction are deliberately left nil, mirroring
-// fakeDockerRowsDeps' rationale.
 func fakeSystemRowsDeps() SystemDeps {
 	return SystemDeps{
 		ListHistory: func() []metrics.Point {
@@ -47,10 +43,6 @@ func fakeSystemRowsDeps() SystemDeps {
 	}
 }
 
-// newSystemRowsMux wires only the seven registerSystemXRows functions onto a
-// throwaway huma.API — mirrors newDockerRowsMux's rationale: RegisterSystem
-// itself goes through the process-global sdui registries (which panic on
-// double-registration), so tests exercise the rows/series plumbing directly.
 func newSystemRowsMux(deps SystemDeps) *http.ServeMux {
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(mux, mobilebff.Prefix, huma.DefaultConfig("system-rows-test", "0"))
@@ -100,7 +92,6 @@ func TestSystemRows_Unauthenticated(t *testing.T) {
 	}
 }
 
-// TestSystemHistoryRows_WireShape pins {"rows":[{"ts","cpu","mem","load1","disk"}]}.
 func TestSystemHistoryRows_WireShape(t *testing.T) {
 	mux := newSystemRowsMux(fakeSystemRowsDeps())
 	rec, body := doSystemRowsRequest(t, mux, "/system/history", "sys-admin")
@@ -121,7 +112,6 @@ func TestSystemHistoryRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestSystemProcessesRows_WireShape pins {"rows":[{"id","pid","name","user","cpu","mem","status"}]}.
 func TestSystemProcessesRows_WireShape(t *testing.T) {
 	mux := newSystemRowsMux(fakeSystemRowsDeps())
 	rec, body := doSystemRowsRequest(t, mux, "/system/processes", "sys-admin")
@@ -145,7 +135,6 @@ func TestSystemProcessesRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestSystemPortsRows_WireShape pins {"rows":[{"id","proto","local","peer","state","process"}]}.
 func TestSystemPortsRows_WireShape(t *testing.T) {
 	mux := newSystemRowsMux(fakeSystemRowsDeps())
 	rec, body := doSystemRowsRequest(t, mux, "/system/ports", "sys-admin")
@@ -166,7 +155,6 @@ func TestSystemPortsRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestSystemUnitsRows_WireShape pins {"rows":[{"id","name","load","active","sub","description"}]}.
 func TestSystemUnitsRows_WireShape(t *testing.T) {
 	mux := newSystemRowsMux(fakeSystemRowsDeps())
 	rec, body := doSystemRowsRequest(t, mux, "/system/units", "sys-admin")
@@ -187,14 +175,6 @@ func TestSystemUnitsRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestSystemMetricsChartRows_WireShape is THE round-trip test pinning
-// chart's data shape for the first time in this project: GET
-// <series_source.endpoint> returns {"rows":[{"ts":"<pre-formatted
-// label>","value":"<plain numeric string, no unit suffix>"}, ...]}, exactly
-// matching ChartComponent's XKey="ts"/YKey="value" set in
-// buildSystemMetricsScreen. Checked for all three chart series
-// (cpu/mem/disk) since each hits a different extractor field on the same
-// metrics.Point.
 func TestSystemMetricsChartRows_WireShape(t *testing.T) {
 	mux := newSystemRowsMux(fakeSystemRowsDeps())
 	cases := []struct {
@@ -231,12 +211,6 @@ func TestSystemMetricsChartRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestSystemMetricsChartRows_WindowControlsSampleCount proves the trailing
-// sample count returned by each chart series changes with the caller's
-// saved window preference — the mechanism system.metrics.window actually
-// controls, per systemMetricsWindowMu's doc comment in system.go. Uses a
-// unique username so this test's writes cannot leak into any other test's
-// assertions.
 func TestSystemMetricsChartRows_WindowControlsSampleCount(t *testing.T) {
 	const username = "sys-window-test-rows"
 	points := make([]metrics.Point, 0, 1440)
@@ -264,11 +238,6 @@ func TestSystemMetricsChartRows_WindowControlsSampleCount(t *testing.T) {
 	}
 }
 
-// TestSystemRows_SameShapeForAdminAndNonAdmin proves history/processes/
-// ports/units rows are identical for admin and non-admin — RBAC-by-omission
-// in this package only ever removes ACTIONS from a screen, never rows;
-// internal/procs and internal/sysextra apply no per-viewer scoping to
-// either list (verified against handlers_system.go/handlers_procs.go).
 func TestSystemRows_SameShapeForAdminAndNonAdmin(t *testing.T) {
 	mux := newSystemRowsMux(fakeSystemRowsDeps())
 	for _, path := range []string{"/system/history", "/system/processes", "/system/ports", "/system/units"} {

@@ -1,16 +1,5 @@
 package api
 
-// handlers_ai_models.go — editor for the per-complexity model tiering.
-// Exposes/edits config.AIModels: which model each class of AI task
-// (Suggest/JiraAI) uses. The real resolution is env > this config > the tier
-// default (internal/aimodel); the UI edits only the config layer. Interactive
-// panels are NOT tiered — they inherit settings.json — and therefore do not
-// appear here.
-//
-// Admin-only (the same mustPrimary gate as the alerting editor). Validation uses
-// aimodel.Allowed's allowlist — the UI only sets the canonical models (dropdown);
-// a future/arbitrary model is still possible via the env var, the escape hatch.
-
 import (
 	"encoding/json"
 	"net/http"
@@ -21,9 +10,6 @@ import (
 	"server-control-panel/internal/config"
 )
 
-// handleAIModelsConfig serves GET (config, effective models, allowlist) and
-// POST (validates against the allowlist and persists). "" in any tier inherits
-// the process default (Opus).
 func (r *Router) handleAIModelsConfig(w http.ResponseWriter, req *http.Request) {
 	user := auth.UserFrom(req)
 	if !r.isPrimary(user) {
@@ -38,13 +24,10 @@ func (r *Router) handleAIModelsConfig(w http.ResponseWriter, req *http.Request) 
 		r.cfgMu.Unlock()
 		writeJSON(w, map[string]any{
 			"config": cur,
-			// EFFECTIVE models (after env>config>default) — the UI shows what is
-			// really live, which may differ from the config if an env var is set.
 			"effective": map[string]string{
 				"suggest": aimodel.For(aimodel.Suggest, cur.Suggest),
 				"jira_ai": aimodel.For(aimodel.JiraAI, cur.JiraAI),
 			},
-			// "" = "Default (Opus)" in the dropdown; inherits the process default.
 			"allowed":  []string{"", "haiku", "sonnet", "opus", "fable"},
 			"defaults": map[string]string{"suggest": "haiku", "jira_ai": ""},
 		})

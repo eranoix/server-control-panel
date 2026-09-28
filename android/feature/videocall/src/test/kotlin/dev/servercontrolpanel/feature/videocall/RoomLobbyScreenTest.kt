@@ -12,7 +12,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/** Renders [RoomLobbyScreen] under Robolectric across every [RoomLobbyUiState]. */
 @RunWith(RobolectricTestRunner::class)
 class RoomLobbyScreenTest {
 
@@ -26,7 +25,6 @@ class RoomLobbyScreenTest {
     @Test
     fun `loading state shows a spinner, not a blank screen`() {
         val source = FakeRoomsSource { awaitCancellation() }
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = RoomLobbyViewModel(source)
         composeRule.setContent { RoomLobbyScreen(onRoomSelected = {}, viewModel = viewModel) }
 
@@ -41,7 +39,6 @@ class RoomLobbyScreenTest {
             )
         }
         var selectedRoomId: String? = null
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm = RoomLobbyViewModel(source)
         composeRule.setContent {
             RoomLobbyScreen(onRoomSelected = { selectedRoomId = it }, viewModel = vm)
@@ -57,7 +54,6 @@ class RoomLobbyScreenTest {
     @Test
     fun `empty room list renders the create-a-room message instead of a blank list`() {
         val source = FakeRoomsSource { VideocallRoomsResult.Empty }
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = RoomLobbyViewModel(source)
         composeRule.setContent { RoomLobbyScreen(onRoomSelected = {}, viewModel = viewModel) }
         composeRule.waitForIdle()
@@ -73,7 +69,6 @@ class RoomLobbyScreenTest {
             if (calls == 1) VideocallRoomsResult.Error("Could not reach the signalling server.")
             else VideocallRoomsResult.Success(listOf(VideocallRoom(id = "room-1", name = "Meeting", memberCount = 1)))
         }
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = RoomLobbyViewModel(source)
         composeRule.setContent { RoomLobbyScreen(onRoomSelected = {}, viewModel = viewModel) }
         composeRule.waitForIdle()

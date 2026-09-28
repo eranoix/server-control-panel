@@ -1,35 +1,5 @@
 package mobilebff
 
-// handlers_jira.go is the Jira kanban board for the app — the same operation
-// the web panel offers, with the decisions taken on this side.
-//
-// # What changed relative to what existed
-//
-// Before, Jira reached the app through ONE SDUI screen (`jira.issues`, in
-// screens/misc.go): a table of issues, a detail, and two forms (move and
-// comment). That file's comment said, in so many words, that "the kanban
-// board stays permanently desktop-only". The opposite was decided: the board
-// is how the work is read, and without it Jira on a phone is a list of keys
-// with no sense of progress.
-//
-// # Why here and not as an eighth SDUI type
-//
-// The SDUI vocabulary is closed at 7 types, and the `sdui` package comment
-// answers exactly this situation: when a screen needs something none of the
-// 7 expresses, that is a sign of a NATIVE module, never of an eighth type. A
-// board with drag-and-drop, scrolling on two axes, multiple selection and
-// undo is not describable in JSON — what IS describable (which columns exist,
-// which cards land in each one) is DATA, and data already travels over an
-// endpoint. That is what this file serves.
-//
-// # The rule lives once, and it lives here
-//
-// Column, card distribution, transition matching and filter-to-JQL
-// translation live in jira_board.go, in pure, tested functions. The app
-// receives the board ready-made. Reimplementing that in Kotlin would mean
-// keeping two versions of the same rule — the silent divergence that killed
-// the previous mobile attempt.
-
 import (
 	"context"
 	"errors"
@@ -47,33 +17,17 @@ import (
 
 func init() { Register("jira", registerJira) }
 
-// --- responses ---------------------------------------------------------------
-
-// JiraUserRef is a Jira person reduced to what a card shows.
 type JiraUserRef struct {
 	AccountID   string `json:"account_id"`
 	DisplayName string `json:"display_name"`
 	AvatarURL   string `json:"avatar_url,omitempty"`
 }
 
-// JiraProjectRef is a project in the picker's list.
 type JiraProjectRef struct {
 	Key  string `json:"key"`
 	Name string `json:"name"`
 }
 
-// JiraBoardResponse is the whole board in a single response.
-//
-// One call and not five: on a phone every trip to the server is a chance for a
-// spinner. Projects, filters and the identity of whoever is looking change
-// slowly, and they ride along with what changes fast because the cost of
-// bringing them is negligible next to the cost of a second trip over a mobile
-// network.
-//
-// [Connected] false is a NORMAL response (HTTP 200), not an error: someone who
-// has not connected their Jira account yet needs to see the connection form,
-// and a 4xx would make the app show "failed" for a situation that is only
-// "not yet".
 type JiraBoardResponse struct {
 	Connected bool               `json:"connected"`
 	Site      string             `json:"site,omitempty"`
@@ -85,46 +39,28 @@ type JiraBoardResponse struct {
 	JQL       string             `json:"jql,omitempty"`
 	Columns   []JiraBoardColumn  `json:"columns" required:"true"`
 	Total     int                `json:"total"`
-	// Error carries Jira's refusal (invalid JQL, expired token) WITHOUT
-	// bringing the response down: the app still knows which project it is on,
-	// what the filters are and who the user is, and shows the message in place
-	// of the cards. A 502 would wipe the whole screen over a crooked JQL.
-	Error string `json:"error,omitempty"`
+	Error     string             `json:"error,omitempty"`
 }
 
 type jiraBoardInput struct {
-	Project string `query:"project" doc:"Project key; empty uses the configured project"`
-	Filter  string `query:"filter" doc:"Quick filter: all, mine, todo, inprogress, last7, reported, custom" default:"all"`
-	JQL     string `query:"jql" doc:"Custom JQL, only used with filter=custom"`
-	Search  string `query:"search" doc:"Free-text search over what the JQL returned"`
-	Sort    string `query:"sort" doc:"field:direction, e.g. updated:desc, key:asc, name:asc, type:asc"`
-	// The default is 0 (show everything) because hiding work without being
-	// asked is worse than a long column.
-	HideDoneDays int `query:"hide_done_days" doc:"Hides issues done more than N days ago; 0 shows all"`
-	Max          int `query:"max" doc:"Maximum number of issues fetched" default:"100"`
+	Project      string `query:"project" doc:"Project key; empty uses the configured project"`
+	Filter       string `query:"filter" doc:"Quick filter: all, mine, todo, inprogress, last7, reported, custom" default:"all"`
+	JQL          string `query:"jql" doc:"Custom JQL, only used with filter=custom"`
+	Search       string `query:"search" doc:"Free-text search over what the JQL returned"`
+	Sort         string `query:"sort" doc:"field:direction, e.g. updated:desc, key:asc, name:asc, type:asc"`
+	HideDoneDays int    `query:"hide_done_days" doc:"Hides issues done more than N days ago; 0 shows all"`
+	Max          int    `query:"max" doc:"Maximum number of issues fetched" default:"100"`
 }
 
 type jiraBoardOutput struct {
 	Body JiraBoardResponse
 }
 
-// JiraMoveRequest moves a card to a column.
-//
-// [Column] is the column's LABEL as it came in the board, not a transition id:
-// whoever drags picks a column, and it is the server that knows which
-// transition leads there. Sending the transition id from the client side would
-// require it to fetch the transitions before every drag — a network trip in the
-// middle of the gesture.
 type JiraMoveRequest struct {
 	Key    string `json:"key" doc:"Issue key (e.g. PROJ-42)" required:"true"`
 	Column string `json:"column" doc:"Label of the destination column" required:"true"`
 }
 
-// JiraMoveResponse reports what actually happened.
-//
-// [Status] and [Column] are the state AFTER, read from the applied transition —
-// the app confirms with those instead of assuming the desired destination
-// became reality.
 type JiraMoveResponse struct {
 	Key    string `json:"key"`
 	Status string `json:"status"`
@@ -139,13 +75,6 @@ type jiraMoveOutput struct {
 	Body JiraMoveResponse
 }
 
-// JiraIssueResponse is the opened issue: fields, comments, and where it can go
-// from where it is.
-//
-// The transitions come along because they are the answer to the question the
-// card's menu asks ("move to…"), and that menu is the ACCESSIBLE way to move —
-// a screen reader does not drag. Fetching them in a second call would leave the
-// menu empty the instant it opens.
 type JiraIssueResponse struct {
 	Key         string             `json:"key"`
 	Summary     string             `json:"summary"`
@@ -168,18 +97,12 @@ type JiraIssueResponse struct {
 	Links       []JiraIssueLinkRef `json:"links,omitempty"`
 }
 
-// JiraMoveOption is a possible destination, already translated into the
-// vocabulary of the board's COLUMNS — not into the raw status name.
-//
-// The board shows "In Progress" where Jira may say "IN REVIEW"; the menu uses
-// the column label, and [Status] keeps the real status name.
 type JiraMoveOption struct {
 	Column string `json:"column"`
 	Status string `json:"status"`
 	Name   string `json:"name,omitempty" doc:"Transition name in Jira (e.g. \"Start review\")"`
 }
 
-// JiraCommentItem is a comment already flattened for reading.
 type JiraCommentItem struct {
 	ID      string `json:"id"`
 	Body    string `json:"body"`
@@ -187,7 +110,6 @@ type JiraCommentItem struct {
 	Created string `json:"created"`
 }
 
-// JiraIssueLinkRef is the other end of a link ("blocks", "is blocked by").
 type JiraIssueLinkRef struct {
 	Relation string `json:"relation"`
 	Key      string `json:"key"`
@@ -203,7 +125,6 @@ type jiraIssueOutput struct {
 	Body JiraIssueResponse
 }
 
-// JiraCommentRequest posts a comment.
 type JiraCommentRequest struct {
 	Key  string `json:"key" required:"true"`
 	Text string `json:"text" required:"true"`
@@ -217,11 +138,6 @@ type jiraCommentOutput struct {
 	Body JiraCommentItem
 }
 
-// JiraAssignRequest changes the assignee.
-//
-// An empty [AccountID] UNASSIGNS — it is the same vocabulary as the Jira
-// client's `UpdateIssue`, and having a separate field for "remove the assignee"
-// would create two ways of saying the same thing.
 type JiraAssignRequest struct {
 	Key       string `json:"key" required:"true"`
 	AccountID string `json:"account_id" doc:"Assignee accountId; empty unassigns"`
@@ -231,7 +147,6 @@ type jiraAssignInput struct {
 	Body JiraAssignRequest
 }
 
-// JiraUsersResponse is the set of people this issue can be assigned to.
 type JiraUsersResponse struct {
 	Users []JiraUserRef `json:"users" required:"true"`
 }
@@ -245,12 +160,6 @@ type jiraUsersOutput struct {
 	Body JiraUsersResponse
 }
 
-// JiraMetaResponse is what a creation form needs to offer instead of asking
-// someone to type: the project's issue types and priorities.
-//
-// It exists because typing is the last resort — a hand-written issue type gets
-// the accent wrong, the capitalisation wrong, and the name of something that
-// project does not have.
 type JiraMetaResponse struct {
 	IssueTypes []string `json:"issue_types" required:"true"`
 	Priorities []string `json:"priorities" required:"true"`
@@ -264,7 +173,6 @@ type jiraMetaOutput struct {
 	Body JiraMetaResponse
 }
 
-// JiraCreateRequest creates an issue.
 type JiraCreateRequest struct {
 	Project     string   `json:"project" required:"true"`
 	Type        string   `json:"type" required:"true"`
@@ -281,7 +189,6 @@ type jiraCreateInput struct {
 	Body JiraCreateRequest
 }
 
-// JiraCreatedResponse returns the new key.
 type JiraCreatedResponse struct {
 	Key string `json:"key"`
 }
@@ -290,31 +197,21 @@ type jiraCreatedOutput struct {
 	Body JiraCreatedResponse
 }
 
-// JiraBulkMoveRequest moves several issues to the same column.
 type JiraBulkMoveRequest struct {
 	Keys   []string `json:"issue_keys" required:"true"`
 	Column string   `json:"column" required:"true"`
 }
 
-// JiraBulkAssignRequest assigns several issues to the same person.
 type JiraBulkAssignRequest struct {
 	Keys      []string `json:"issue_keys" required:"true"`
 	AccountID string   `json:"account_id" doc:"accountId; empty unassigns"`
 }
 
-// JiraBulkResult is the HONEST result of a bulk action.
-//
-// A batch is not atomic against Jira: every issue has its own workflow, and the
-// third one can refuse what the first accepted. Returning "ok" for the whole
-// batch would hide precisely the ones that did not go through — the only ones
-// anybody needs to act on. That is why a failure comes with a KEY and a REASON,
-// one by one.
 type JiraBulkResult struct {
 	Done   []string          `json:"done" required:"true"`
 	Failed []JiraBulkFailure `json:"failed,omitempty"`
 }
 
-// JiraBulkFailure is an issue that did not go through, with the why.
 type JiraBulkFailure struct {
 	Key    string `json:"key"`
 	Reason string `json:"reason"`
@@ -332,7 +229,6 @@ type jiraBulkOutput struct {
 	Body JiraBulkResult
 }
 
-// JiraConnectRequest connects this user's Jira account.
 type JiraConnectRequest struct {
 	Site    string `json:"site" doc:"Subdomain or host (e.g. yourcompany or yourcompany.atlassian.net)" required:"true"`
 	Email   string `json:"email" required:"true"`
@@ -344,7 +240,6 @@ type jiraConnectInput struct {
 	Body JiraConnectRequest
 }
 
-// JiraProjectRequest pins the default project.
 type JiraProjectRequest struct {
 	Project string `json:"project" required:"true"`
 }
@@ -352,8 +247,6 @@ type JiraProjectRequest struct {
 type jiraProjectInput struct {
 	Body JiraProjectRequest
 }
-
-// --- registration ------------------------------------------------------------
 
 func registerJira(api huma.API, deps Deps) {
 	huma.Register(api, huma.Operation{
@@ -485,14 +378,6 @@ func registerJira(api huma.API, deps Deps) {
 	}, jiraSetProjectHandler(deps))
 }
 
-// --- handlers ----------------------------------------------------------------
-
-// jiraClient resolves the authenticated user's client.
-//
-// It distinguishes three situations that must not collapse into the same
-// response: the BFF with no Jira configured (503 — a server problem), the user
-// with no connected account (the caller handles it, because on the board screen
-// that is the connection form) and a real credential error.
 func jiraClient(ctx context.Context, deps Deps) (*jira.Client, string, error) {
 	user := auth.UserFromContext(ctx)
 	if user == "" {
@@ -508,8 +393,6 @@ func jiraClient(ctx context.Context, deps Deps) (*jira.Client, string, error) {
 	return cli, user, nil
 }
 
-// notConnected tells whether the error is "this account has not connected Jira
-// yet" — the normal situation for someone who never configured it, not a failure.
 func notConnected(err error) bool { return errors.Is(err, jira.ErrNotConfigured) }
 
 func jiraBoardHandler(deps Deps) func(context.Context, *jiraBoardInput) (*jiraBoardOutput, error) {
@@ -522,7 +405,7 @@ func jiraBoardHandler(deps Deps) func(context.Context, *jiraBoardInput) (*jiraBo
 		cli, user, err := jiraClient(ctx, deps)
 		if err != nil {
 			if notConnected(err) {
-				return out, nil // connected:false, HTTP 200
+				return out, nil
 			}
 			return nil, err
 		}
@@ -548,7 +431,6 @@ func jiraBoardHandler(deps Deps) func(context.Context, *jiraBoardInput) (*jiraBo
 			}
 		}
 
-		// The operator's JQL is a NAMED filter, never a silent replacement for "All".
 		hasOwnBoard := strings.TrimSpace(cfg.BoardJQL) != ""
 		out.Body.Filters = BoardFilters(hasOwnBoard)
 		out.Body.Filter = validFilter(in.Filter, hasOwnBoard)
@@ -556,25 +438,16 @@ func jiraBoardHandler(deps Deps) func(context.Context, *jiraBoardInput) (*jiraBo
 		jql := FilterJQL(out.Body.Filter, project, in.JQL, cfg.BoardJQL)
 		out.Body.JQL = jql
 
-		// The quota is PER COLUMN, and that is the fix: with a single search, a
-		// project with ninety-nine done issues starved the left-hand columns — the
-		// same column showed two cards under one filter and one under another.
-		// Nobody scrolls through four hundred done issues to find out what is left
-		// to do.
 		perColumn := in.Max
 		if perColumn <= 0 || perColumn > 100 {
 			perColumn = 40
 		}
 		issues, rejection := searchByColumn(ctx, cli, cfg.BoardColumns, jql, perColumn)
 		if rejection != "" && len(issues) == 0 {
-			// A refusal from Jira does NOT wipe the screen: the app keeps project,
-			// filters and user, and shows the reason in place of the cards.
 			out.Body.Error = rejection
 			out.Body.Columns = BuildBoard(cfg.BoardColumns, nil, 0, "", time.Now())
 			return out, nil
 		}
-		// A column that failed on its own does not wipe the ones that came
-		// through: the refusal shows on top of the board, with the cards we got.
 		out.Body.Error = rejection
 		issues = FilterBySearch(issues, in.Search)
 		out.Body.Total = len(issues)
@@ -583,20 +456,6 @@ func jiraBoardHandler(deps Deps) func(context.Context, *jiraBoardInput) (*jiraBo
 	}
 }
 
-// searchByColumn runs ONE query per column, in parallel, and returns the union.
-//
-// In parallel because these are three to six network calls that do not depend
-// on one another; in series, the board would open in the sum of Jira's
-// latencies.
-//
-// The union is deduplicated by key: an issue can match two columns when the
-// operator configures overlapping names, and duplicating it would make the same
-// card appear twice. Who decides where it lands is [BuildBoard] — the same
-// function the rest of the file uses, and the first matching column wins.
-//
-// A column with no possible restriction (crooked configuration) falls back to
-// the original query: better a board with the old quota than a column left
-// empty with no explanation.
 func searchByColumn(
 	ctx context.Context,
 	cli *jira.Client,
@@ -610,7 +469,6 @@ func searchByColumn(
 	for _, col := range columns {
 		restriction := ColumnRestriction(col, columns)
 		if restriction == "" {
-			// No way to isolate this column: a single query, as before.
 			queries = []string{jql}
 			break
 		}
@@ -667,12 +525,6 @@ func validFilter(f string, withOwnBoard bool) string {
 	return "all"
 }
 
-// columnByLabel finds again the column the app returned.
-//
-// The label is the key because the label is what travelled to the screen and
-// back. A column that no longer exists (the operator reconfigured the board
-// between the load and the drag) is a 400 naming it — better than moving to a
-// similar-looking column and letting the person find out later.
 func columnByLabel(rawColumns, label string) (JiraBoardColumn, error) {
 	label = strings.TrimSpace(label)
 	if label == "" {
@@ -694,12 +546,6 @@ func rawColumnsFor(deps Deps, user string) string {
 	return deps.JiraConfigFor(user).BoardColumns
 }
 
-// moveOne is the core shared between dragging one card and the bulk action.
-//
-// It returns the resulting status. The error already reads as something written
-// for a human: when there is no transition, it says where it IS possible to go
-// from there, which is the only information capable of turning a refusal into a
-// next step.
 func moveOne(ctx context.Context, cli *jira.Client, col JiraBoardColumn, key string) (string, error) {
 	trs, err := cli.Transitions(ctx, key)
 	if err != nil {
@@ -707,9 +553,6 @@ func moveOne(ctx context.Context, cli *jira.Client, col JiraBoardColumn, key str
 	}
 	tr := TransitionToColumn(col, trs)
 	if tr == nil {
-		// Before crying refusal, check whether the issue is not already there:
-		// the board on screen may have gone stale, and "already in X" is a very
-		// different answer from "the workflow forbids it".
 		if det, e := cli.GetIssue(ctx, key); e == nil && det != nil && issueInColumn(det.Issue, col) {
 			return det.Status.Name, nil
 		}
@@ -745,9 +588,6 @@ func jiraMoveHandler(deps Deps) func(context.Context, *jiraMoveInput) (*jiraMove
 		}
 		status, err := moveOne(ctx, cli, col, key)
 		if err != nil {
-			// 409 and not 500: the server is fine, it is the ACTION that does not fit
-			// the current state. It is the code the app uses to send the card back to
-			// its original column instead of showing "server error".
 			return nil, huma.Error409Conflict(err.Error())
 		}
 		recordAudit(ctx, deps.Audit, user, "jira.issue.transition", key+" → "+col.Label)
@@ -810,9 +650,6 @@ func jiraIssueHandler(deps Deps) func(context.Context, *jiraIssueInput) (*jiraIs
 			body.Links = append(body.Links, ref)
 		}
 
-		// Comments and transitions are "best effort": the issue is already useful
-		// without them, and a failure in either one must not stop the screen from
-		// opening.
 		if cs, err := cli.Comments(ctx, key); err == nil {
 			for _, c := range cs {
 				body.Comments = append(body.Comments, JiraCommentItem{
@@ -848,8 +685,6 @@ func columnLabelOf(columns []JiraBoardColumn, key string) string {
 	return ""
 }
 
-// destinationLabel translates a transition's destination into the label of the
-// column it lands in, so the menu and the board use the same names.
 func destinationLabel(columns []JiraBoardColumn, t jira.Transition) string {
 	for _, c := range columns {
 		if c.Category != "" && c.Category == t.ToCat {
@@ -957,8 +792,6 @@ func jiraMetaHandler(deps Deps) func(context.Context, *jiraMetaInput) (*jiraMeta
 
 		if kinds, err := cli.IssueTypesForProject(ctx, project); err == nil {
 			for _, t := range kinds {
-				// A subtask requires a parent issue; offering it in a form that does not
-				// ask for a parent would produce a 400 from Jira on submit.
 				if t.Subtask {
 					continue
 				}
@@ -1081,8 +914,6 @@ func jiraConnectHandler(deps Deps) func(context.Context, *jiraConnectInput) (*st
 		if err := deps.JiraConnect(user, b.Site, b.Email, b.Token, b.Project); err != nil {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		// What gets audited is the SITE, never the token: the audit records that
-		// the account was connected, not with what.
 		recordAudit(ctx, deps.Audit, user, "jira.connect", b.Site)
 
 		out := &statusOutput{}

@@ -1,7 +1,5 @@
 package api
 
-// Game server inventory (gameservers.json), editable from the page.
-
 import (
 	"net/http"
 
@@ -28,12 +26,6 @@ func (r *Router) handleGameInventory(w http.ResponseWriter, req *http.Request) {
 		httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	// Refuse registration without a node, with the next step written into the message.
-	//
-	// Worth recording here and not only at operation time: an inventory that accepts
-	// an incomplete record only reveals the problem the moment someone hits
-	// "restart" — far from the registration that caused it. Refusing at write time puts
-	// the error next to the blank field.
 	for _, s := range body.Servers {
 		if s.No == "" {
 			httpx.WriteErr(w, http.StatusBadRequest,

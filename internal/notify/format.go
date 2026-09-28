@@ -2,11 +2,6 @@ package notify
 
 import "strings"
 
-// FormatText renders an Event as a plain-text message, the default body
-// for text channels like WhatsApp. It is deliberately dependency-free and
-// channel-agnostic — a webhook channel would marshal the Event as JSON
-// instead of calling this. alert/format.go stays dedicated to the Alertmanager
-// payload; this is the Event-native formatter.
 func FormatText(ev Event) string {
 	var b strings.Builder
 	b.WriteString(severityEmoji(ev.Severity))
@@ -17,7 +12,6 @@ func FormatText(ev Event) string {
 		b.WriteString(ev.Type)
 	}
 
-	// Context subline: "kind · origin · owner" from whatever labels exist.
 	var parts []string
 	if k := ev.Labels["kind"]; k != "" {
 		parts = append(parts, k)

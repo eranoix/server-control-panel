@@ -1,21 +1,5 @@
 package astcheck
 
-// scanner_test.go — the TEST OF THE TEST.
-//
-// A detector only proves something once someone has proven the detector. Without
-// this file, a green from any pin built on top of `Scan` would prove only that the
-// function LABELS, never that it DETECTS — and green by absence is the costliest
-// defect this repository has ever paid for.
-//
-// The matrix has two halves and both are mandatory:
-//   - synthetic violations that MUST be found (otherwise the pin is decorative);
-//   - negative controls that must NOT be failed (otherwise the pin is the kind
-//     someone switches off on the first Friday, and then it protects nothing).
-//
-// The fixtures live in testdata/ because Go ignores that directory when building
-// packages: it is the only place where deliberately wrong code can be kept
-// without contaminating the production tree.
-
 import (
 	"os"
 	"path/filepath"
@@ -23,13 +7,10 @@ import (
 	"testing"
 )
 
-// hypervisorBins is the list the fixtures use. The same slice as the
-// precedent's pin, so the behavior is comparable.
 var hypervisorBins = []string{"pct", "qm", "pvesh", "pvesm", "pveum"}
 
 func fixture(name string) string { return filepath.Join("testdata", name) }
 
-// requireOneFinding is the shared shape of the matrix's positive halves.
 func requireOneFinding(t *testing.T, cfg Config, wantFile string) Finding {
 	t.Helper()
 	res, err := Scan(cfg)
@@ -66,8 +47,6 @@ func TestScanDetectsForbiddenBin(t *testing.T) {
 }
 
 func TestScanResolvesVariable(t *testing.T) {
-	// The classic hole: `bin := "pct"` followed by exec.Command(bin, …). A textual
-	// search does not see it; intra-function literal resolution does.
 	a := requireOneFinding(t, Config{
 		Root:          fixture("resolved_var"),
 		ForbiddenBins: hypervisorBins,
@@ -78,7 +57,6 @@ func TestScanResolvesVariable(t *testing.T) {
 }
 
 func TestScanResolvesImportAlias(t *testing.T) {
-	// `import xc "os/exec"` — the alias changes the package name at the call site.
 	requireOneFinding(t, Config{
 		Root:          fixture("alias_import"),
 		ForbiddenBins: hypervisorBins,
@@ -86,8 +64,6 @@ func TestScanResolvesImportAlias(t *testing.T) {
 }
 
 func TestScanWatchedWrapper(t *testing.T) {
-	// Positive half: the verb is a parameter, it does not resolve to a literal —
-	// this is where free execution comes back under another name.
 	t.Run("unresolvable verb fails", func(t *testing.T) {
 		a := requireOneFinding(t, Config{
 			Root:               fixture("unresolvable_wrapper"),
@@ -99,7 +75,6 @@ func TestScanWatchedWrapper(t *testing.T) {
 		}
 	})
 
-	// Negative half of the SAME wrapper: a legitimate call with a literal verb.
 	t.Run("literal verb passes", func(t *testing.T) {
 		res, err := Scan(Config{
 			Root:               fixture("wrapper_literal"),
@@ -119,9 +94,6 @@ func TestScanWatchedWrapper(t *testing.T) {
 }
 
 func TestScanUnlistedWrapperAlsoFails(t *testing.T) {
-	// The wrapper list ages in silence if creating a new wrapper is free.
-	// A wrapper NOT on the list whose body calls exec.Command with an
-	// unresolvable argument fails via the exec.Command path, list or no list.
 	res, err := Scan(Config{
 		Root:               fixture("unlisted_wrapper"),
 		ForbiddenBins:      hypervisorBins,
@@ -136,9 +108,6 @@ func TestScanUnlistedWrapperAlsoFails(t *testing.T) {
 }
 
 func TestScanNegativeControl(t *testing.T) {
-	// Control 1: the false positive MEASURED on the real tree
-	// (internal/queue/runners_watchdog.go:45). If this fails here, the pin fails
-	// legitimate code and becomes a candidate for being switched off.
 	t.Run("diskUsedPct is not a command call", func(t *testing.T) {
 		res, err := Scan(Config{
 			Root:               fixture("neg_diskusedpct"),
@@ -156,12 +125,10 @@ func TestScanNegativeControl(t *testing.T) {
 		}
 	})
 
-	// Control 2: a legitimate exec.Command stays allowed. The panel runs
-	// systemctl, git and docker all the time; the pin has to know how to approve.
 	t.Run("legitimate exec.Command passes", func(t *testing.T) {
 		res, err := Scan(Config{
 			Root:               fixture("neg_legit_exec"),
-			ForbiddenBins:      hypervisorBins, // systemctl is NOT on the list
+			ForbiddenBins:      hypervisorBins,
 			RequireLiteralArgv: true,
 		})
 		if err != nil {
@@ -177,9 +144,6 @@ func TestScanNegativeControl(t *testing.T) {
 }
 
 func TestScanEmptySweepIsError(t *testing.T) {
-	// Scanning nothing is NEVER approving. In the precedent this was a comment
-	// plus a check each consumer had to remember to make; here it is API
-	// contract, so that nobody can ignore it.
 	res, err := Scan(Config{
 		Root:          fixture("no_go"),
 		ForbiddenBins: hypervisorBins,
@@ -196,10 +160,6 @@ func TestScanEmptySweepIsError(t *testing.T) {
 }
 
 func TestScanSkipsOwnTestdata(t *testing.T) {
-	// Without this explicit assertion, the violation fixtures above would fail the
-	// real tree: they contain exec.Command("pct", …) on purpose. The production
-	// sweep has to skip testdata/ — and the proof that the exclusion is not vacuous
-	// comes from the second Scan, which points straight at testdata and FINDS.
 	root := repoRoot(t)
 
 	real, err := Scan(Config{
@@ -235,8 +195,6 @@ func TestScanSkipsOwnTestdata(t *testing.T) {
 		real.Scanned, len(direct.Findings))
 }
 
-// repoRoot climbs up to the go.mod: the production sweep needs the whole
-// tree, not just this package's directory.
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := filepath.Abs(".")

@@ -8,19 +8,6 @@ import (
 	"server-control-panel/internal/pve"
 )
 
-// handlers_proxmox_storage_test.go — the pins for /api/proxmox/storage and
-// /api/proxmox/zfs.
-//
-// 🔴 The permission guard from the earlier pass is still alive, and it is what
-// these tests exercise IN BOTH STATES. The ACL was granted and the "this token
-// cannot see /storage" banner disappears on its own — but it disappears because
-// the verdict PASSED, not because somebody deleted the check. A guard that no
-// longer knows how to fail has stopped being a guard and become decoration.
-
-// stampCapacity puts capacity, zpools and the verdict into the store with the
-// stamp asked for. It builds the document ALREADY NORMALIZED — normalization
-// (content into a list, 0|1 into a boolean, fraction into a percentage) belongs to
-// internal/inventory and has its own pin there. What is proved here is what the route DELIVERS.
 func stampCapacity(t *testing.T, st *inventory.Store, pools []inventory.StoragePool, zs []inventory.ZPool, can bool, when int64) {
 	t.Helper()
 	if err := st.Replace(func(iv *inventory.Inventory) {
@@ -32,9 +19,6 @@ func stampCapacity(t *testing.T, st *inventory.Store, pools []inventory.StorageP
 	}
 }
 
-// livePools and liveZPools are the NUMBERS MEASURED on the home hypervisor
-// after the ACL: 4 storages and 2 zpools. The two most significant of each go
-// here — the image pool and the PBS datastore; rpool and backup.
 func livePools() []inventory.StoragePool {
 	return []inventory.StoragePool{
 		{ID: "local-zfs", Type: "zfspool", Content: []string{"images", "rootdir"},
@@ -53,10 +37,6 @@ func liveZPools() []inventory.ZPool {
 	}
 }
 
-// 🔴 TestCapacityComesFromStoreWithoutCallingHypervisor: capacity and zpool are a
-// HEARTBEAT, exactly like health — and for the same reason. If the route dialled
-// out, the age on display would always be "0 s" and the block would hide the very
-// case it exists to show: the storage that STOPPED being observed.
 func TestCapacityComesFromStoreWithoutCallingHypervisor(t *testing.T) {
 	for _, path := range []string{"/api/proxmox/storage", "/api/proxmox/zfs"} {
 		t.Run(path, func(t *testing.T) {
@@ -91,9 +71,6 @@ func TestCapacityComesFromStoreWithoutCallingHypervisor(t *testing.T) {
 	}
 }
 
-// TestStorageDeliversFourBarNumbers: the screen draws a usage bar, and it
-// needs the percentage AND the bytes. The percentage alone hides the difference
-// between 90% of 1 GB and 90% of 1 TB.
 func TestStorageDeliversFourBarNumbers(t *testing.T) {
 	r, st := newProxmoxRouter(t, defaultVault(), nil)
 	stampCapacity(t, st, livePools(), liveZPools(), true, testNow-10)
@@ -123,8 +100,6 @@ func TestStorageDeliversFourBarNumbers(t *testing.T) {
 	}
 }
 
-// TestZfsDeliversHealthFragAndAllocation: health, frag and alloc/free — the three the
-// operator cannot reach from outside the house today.
 func TestZfsDeliversHealthFragAndAllocation(t *testing.T) {
 	r, st := newProxmoxRouter(t, defaultVault(), nil)
 	stampCapacity(t, st, livePools(), liveZPools(), true, testNow-10)
@@ -151,9 +126,6 @@ func TestZfsDeliversHealthFragAndAllocation(t *testing.T) {
 	}
 }
 
-// 🔴 TestEmptyWithAndWithoutPrivilegeAreDIFFERENTResponses is that earlier guard,
-// exercised in BOTH states from the SAME empty list. As long as this test passes,
-// the screen never has to guess why the block is empty.
 func TestEmptyWithAndWithoutPrivilegeAreDIFFERENTResponses(t *testing.T) {
 	cases := []struct {
 		name string
@@ -193,14 +165,6 @@ func TestEmptyWithAndWithoutPrivilegeAreDIFFERENTResponses(t *testing.T) {
 	}
 }
 
-// 🔴 TestPermissionsUseSameDatastoreVerdict: the dashboard may have only ONE
-// answer to "does this token see storage?". The /permissions route and the
-// capacity block have to come out of the SAME function (pve.CanAuditDatastore)
-// — two copies of the rule diverge in silence, and this repo has already paid for
-// that (credentialKey, handlers_nodes.go).
-//
-// And both states are exercised: the path being present WITHOUT the privilege has
-// to FAIL, which is the mutation the earlier pass could not catch.
 func TestPermissionsUseSameDatastoreVerdict(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -240,8 +204,6 @@ func TestPermissionsUseSameDatastoreVerdict(t *testing.T) {
 				t.Errorf("storage_visible = %v, want %v — the screen's verdict diverged from pve.CanAuditDatastore",
 					out["storage_visible"], cs.want)
 			}
-			// The source of truth, called directly: the two have to agree
-			// ALWAYS, and not only in the cases I remembered to write down.
 			if pve.CanAuditDatastore(cs.perms) != cs.want {
 				t.Fatalf("the test case is wrong, not the handler")
 			}
@@ -249,8 +211,6 @@ func TestPermissionsUseSameDatastoreVerdict(t *testing.T) {
 	}
 }
 
-// TestCapacityOnlyAnswersGET: both routes are pure reads. A POST here is
-// neither 404 nor 500 — it is 405, and saying so saves an investigation.
 func TestCapacityOnlyAnswersGET(t *testing.T) {
 	for _, path := range []string{"/api/proxmox/storage", "/api/proxmox/zfs"} {
 		r, _ := newProxmoxRouter(t, defaultVault(), nil)
@@ -261,9 +221,6 @@ func TestCapacityOnlyAnswersGET(t *testing.T) {
 	}
 }
 
-// TestCapacityNeverObservedSaysSo: before the first tick, age -1 and an empty
-// list — and the verdict WITHOUT a stamp, so the screen does not report a missing
-// permission that nobody measured.
 func TestCapacityNeverObservedSaysSo(t *testing.T) {
 	r, _ := newProxmoxRouter(t, defaultVault(), nil)
 	w, out := callPVX(t, r, http.MethodGet, "/api/proxmox/storage", "")

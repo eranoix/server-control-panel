@@ -7,12 +7,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders [AttachmentBar] under Robolectric -- never composed before this.
- * Only the three affordances render/exist here; actually launching a picker
- * or the mic permission flow needs a real activity-result contract host and
- * is left to a real device.
- */
 @RunWith(RobolectricTestRunner::class)
 class AttachmentBarTest {
 

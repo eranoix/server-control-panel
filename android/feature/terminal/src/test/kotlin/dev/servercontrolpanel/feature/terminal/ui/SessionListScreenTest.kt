@@ -14,9 +14,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders [SessionListScreen] under Robolectric in every [SessionListUiState].
- */
 @RunWith(RobolectricTestRunner::class)
 class SessionListScreenTest {
 
@@ -26,7 +23,6 @@ class SessionListScreenTest {
     @Test
     fun `loading state shows the progress indicator`() {
         val source = FakeSessionsSource { awaitCancellation() }
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm = SessionListViewModel(source)
         composeRule.setContent {
             SessionListScreen(onSessionSelected = {}, viewModel = vm)
@@ -38,7 +34,6 @@ class SessionListScreenTest {
     @Test
     fun `error state surfaces the reason and offers retry`() {
         val source = FakeSessionsSource { TerminalSessionsResult.Error("The server is unavailable right now.") }
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm2 = SessionListViewModel(source)
         composeRule.setContent {
             SessionListScreen(onSessionSelected = {}, viewModel = vm2)
@@ -52,7 +47,6 @@ class SessionListScreenTest {
     @Test
     fun `empty state offers a new-session field instead of an empty list`() {
         val source = FakeSessionsSource { TerminalSessionsResult.Empty }
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm3 = SessionListViewModel(source)
         composeRule.setContent {
             SessionListScreen(onSessionSelected = {}, viewModel = vm3)
@@ -67,7 +61,6 @@ class SessionListScreenTest {
     fun `attaching from the empty state's field navigates with the typed name`() {
         val source = FakeSessionsSource { TerminalSessionsResult.Empty }
         var selected: String? = null
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm4 = SessionListViewModel(source)
         composeRule.setContent {
             SessionListScreen(onSessionSelected = { selected = it }, viewModel = vm4)
@@ -80,11 +73,6 @@ class SessionListScreenTest {
         assert(selected == "build") { "expected onSessionSelected(\"build\"), got $selected" }
     }
 
-    /**
-     * [SessionListContent] keys its `LazyColumn` by session name, which the server
-     * contract guarantees unique. Duplicates would be a server bug, so they are not
-     * masked client-side; this test documents the resulting crash.
-     */
     @Test
     fun `two sessions sharing the same name crash the list instead of degrading gracefully`() {
         val duplicateNamed = listOf(
@@ -94,7 +82,6 @@ class SessionListScreenTest {
         val source = FakeSessionsSource { TerminalSessionsResult.Success(duplicateNamed) }
 
         assertThrows(IllegalArgumentException::class.java) {
-            // Built outside setContent so recomposition does not create a new ViewModel.
             val vm5 = SessionListViewModel(source)
             composeRule.setContent {
                 SessionListScreen(onSessionSelected = {}, viewModel = vm5)

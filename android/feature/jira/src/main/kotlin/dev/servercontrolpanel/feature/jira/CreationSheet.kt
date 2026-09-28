@@ -34,16 +34,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import dev.servercontrolpanel.data.jira.NewIssue
 
-/** Test tag for the creation sheet. */
 internal const val TAG_CREATION_SHEET = "jira-create-sheet"
 
-/**
- * Issue creation sheet for quick capture.
- *
- * Type, priority and assignee are picked from server-provided lists, never typed, so invalid
- * values cannot be entered. Refinement fields (epic, components, versions, points) are
- * intentionally left to the web panel.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CreationSheet(
@@ -60,7 +52,6 @@ internal fun CreationSheet(
     var assignee by remember { mutableStateOf<dev.servercontrolpanel.data.jira.JiraPerson?>(null) }
     var peopleMenu by remember { mutableStateOf(false) }
 
-    // Pre-select the first type so the required field is never empty on open.
     if (type.isBlank() && state.meta.types.isNotEmpty()) {
         type = state.meta.types.first()
     }
@@ -194,7 +185,6 @@ internal fun CreationSheet(
     }
 }
 
-/** A row of exclusive choices, wrapping onto the next line. */
 @Composable
 private fun ChoiceRow(
     options: List<String>,

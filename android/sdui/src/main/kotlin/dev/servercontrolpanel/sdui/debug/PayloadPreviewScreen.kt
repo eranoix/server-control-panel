@@ -38,39 +38,6 @@ import dev.servercontrolpanel.data.sdui.SduiDataResult
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
 
-/**
- * Renders an arbitrary pasted SDUI payload with the exact same
- * [SduiScreen] renderer the real app uses, plus a per-component diagnostics
- * strip (type + the [renderPolicyFor] it resolved to) — the preview tooling
- * PITFALLS.md names as missing in teams that struggled with SDUI.
- *
- * **Self-gated on `BuildConfig.DEBUG`, not just on how it gets called.** A
- * payload pasted here names its own endpoints, and this module's build type
- * is the one signal this function trusts to decide whether that is safe: the
- * first statement below is `if (!BuildConfig.DEBUG) return`, before any
- * state, before the envelope is ever parsed. A release build of `:sdui`
- * therefore renders nothing here regardless of whether — or how carelessly —
- * a future navigation graph ever calls this composable; the guard does not
- * depend on the caller remembering to add one of its own.
- *
- * Both directions this screen can reach the network are inert, not just the
- * mutation one: [actionRunner] (built internally, never injected from
- * outside) is wired to a stub [ActionInvoker] that records the request it
- * *would* have sent instead of calling the network, and every read component
- * (`table`/`list`/`detail`/`chart`) reached under [screenState] resolves its
- * `rows_source`/`data_source`/`series_source` through that same [screenState]'s
- * [ComponentDataFetcher] — `dev.servercontrolpanel.sdui.data.rememberComponentDataState`
- * prefers a [dev.servercontrolpanel.sdui.registry.LocalScreenState]'s fetcher over the
- * real `SduiDataRepository` when one is provided, which this screen always
- * does. A pasted payload naming a real endpoint therefore never issues a real
- * request, on either the read or the write path.
- *
- * [sampleFixtures] is a name-to-raw-JSON map for the fixture picker
- * ("bundled sample payloads"). This composable does not read Android assets
- * itself — no asset-bundling convention exists yet in `:sdui` — so the
- * caller supplies whatever fixtures it wants offered (e.g. loaded from the
- * app's own assets in plan 07-09).
- */
 @Composable
 fun PayloadPreviewScreen(sampleFixtures: Map<String, String> = emptyMap()) {
     if (!BuildConfig.DEBUG) return

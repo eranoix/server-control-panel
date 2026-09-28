@@ -8,9 +8,6 @@ import (
 	"time"
 )
 
-// setupTwoAccounts builds the host's real scenario: both accounts pointing at the
-// SAME transcript tree (which is what `claude --continue` requires in order to
-// survive the swap), both logged in with the identity they declare.
 func setupTwoAccounts(t *testing.T) (*Store, string) {
 	t.Helper()
 	base := t.TempDir()
@@ -37,7 +34,6 @@ func setupTwoAccounts(t *testing.T) (*Store, string) {
 	if err := os.Symlink(shared, filepath.Join(dirSam, "projects")); err != nil {
 		t.Fatal(err)
 	}
-	// sam is not the default account: its .claude.json goes INSIDE the config dir.
 	writeIdentityInDir(t, dirSam, "sam.rivera@personal.example", "uuid-sam")
 
 	s, err := Open(base, home)
@@ -47,7 +43,6 @@ func setupTwoAccounts(t *testing.T) (*Store, string) {
 	return s, filepath.Join(shared, "-repo")
 }
 
-// writeMessages writes a transcript with one assistant line per instant.
 func writeMessages(t *testing.T, dir, session string, when []time.Time, tokens int64) {
 	t.Helper()
 	var buf []byte
@@ -63,10 +58,6 @@ func writeMessages(t *testing.T, dir, session string, when []time.Time, tokens i
 	}
 }
 
-// The live swap is the case that makes the ledger work by INTERVAL and not by
-// session: the same transcript goes on being written after the account switch
-// (that is what `--continue` does), so the tokens from before and from after
-// have different owners INSIDE the same file.
 func TestMidSessionSwapSplitsTokens(t *testing.T) {
 	s, repo := setupTwoAccounts(t)
 
@@ -75,7 +66,6 @@ func TestMidSessionSwapSplitsTokens(t *testing.T) {
 	after := now.Add(-10 * time.Minute)
 	writeMessages(t, repo, "sess-swap", []time.Time{before, after}, 1_000_000)
 
-	// Started on jordan; 20 min later switched to sam.
 	if err := s.RecordAttrib(AttribEntry{
 		Ts: before.Add(-time.Minute).Unix(), SessionID: "sess-swap", AccountID: "jordan", Source: "startup",
 	}); err != nil {
@@ -104,9 +94,6 @@ func TestMidSessionSwapSplitsTokens(t *testing.T) {
 	}
 }
 
-// Conservation: no token may vanish or be counted twice. With the shared tree,
-// sweeping per account instead of per directory would double the total — and the
-// result would look perfectly plausible.
 func TestNothingLostOrDoubled(t *testing.T) {
 	s, repo := setupTwoAccounts(t)
 	now := time.Now()
@@ -117,7 +104,6 @@ func TestNothingLostOrDoubled(t *testing.T) {
 
 	_ = s.RecordAttrib(AttribEntry{Ts: now.Add(-90 * time.Minute).Unix(), SessionID: "sess-a", AccountID: "sam"})
 	_ = s.RecordAttrib(AttribEntry{Ts: now.Add(-3 * time.Hour).Unix(), SessionID: "sess-b", AccountID: "jordan"})
-	// sess-orphan is deliberately left OUT of the ledger.
 
 	rep := s.UsageAll()
 	var sum int64
@@ -139,18 +125,12 @@ func TestNothingLostOrDoubled(t *testing.T) {
 	}
 }
 
-// A session's first entry applies RETROACTIVELY: the SessionStart hook fires a
-// few ms AFTER claude opens the transcript, so requiring ts >= entry would
-// discard the first messages of every session — hence the common case of a short
-// one. The entries that FOLLOW cannot be back-dated: they mark real switches,
-// and back-dating would steal tokens from the previous account.
 func TestFirstEntryBackdatesButLaterOnesDoNot(t *testing.T) {
 	s, repo := setupTwoAccounts(t)
 	now := time.Now()
 	first := now.Add(-30 * time.Minute)
 
 	writeMessages(t, repo, "sess-c", []time.Time{first}, 2_000_000)
-	// Hook recorded AFTER the first message, as it actually happens.
 	_ = s.RecordAttrib(AttribEntry{Ts: first.Add(2 * time.Second).Unix(), SessionID: "sess-c", AccountID: "sam"})
 
 	rep := s.UsageAll()
@@ -165,8 +145,6 @@ func TestFirstEntryBackdatesButLaterOnesDoNot(t *testing.T) {
 	}
 }
 
-// An invalid entry must not poison the ledger nor be silently accepted as though
-// it attributed something.
 func TestLedgerRejectsInvalidEntry(t *testing.T) {
 	s, _ := setupTwoAccounts(t)
 	_ = s.RecordAttrib(AttribEntry{Ts: 1, SessionID: "", AccountID: "sam"})
@@ -177,8 +155,6 @@ func TestLedgerRejectsInvalidEntry(t *testing.T) {
 	}
 }
 
-// The dir → account mapping is what connects the hook (which knows only the
-// CLAUDE_CONFIG_DIR) to the registry. An empty Dir is the default account, not "unknown".
 func TestConfigDirMapsToAccount(t *testing.T) {
 	s, _ := setupTwoAccounts(t)
 	if id := s.AccountIDForConfigDir(""); id != "jordan" {
@@ -193,14 +169,6 @@ func TestConfigDirMapsToAccount(t *testing.T) {
 	}
 }
 
-// An account BLOCKED by the identity gate must not make a token evaporate. The
-// token existed; what is missing is knowing which slot to credit it to — and
-// that is exactly the definition of the bucket. Dropping it silently would break
-// the one property that makes the panel auditable: sum(accounts) + unattributed
-// == the tree's gross total.
-//
-// This test exists because the first version did drop them: a probe against the
-// real data showed 790 million tokens vanishing between one total and another.
 func TestBlockedAccountKeepsTokens(t *testing.T) {
 	base := t.TempDir()
 	accounts := filepath.Join(base, "accounts")
@@ -218,7 +186,6 @@ func TestBlockedAccountKeepsTokens(t *testing.T) {
 	if err := os.Symlink(shared, filepath.Join(home, "projects")); err != nil {
 		t.Fatal(err)
 	}
-	// jordan carries sam's credential → blocked.
 	writeIdentity(t, home, "sam.rivera@personal.example", "uuid-sam")
 
 	dirSam := filepath.Join(accounts, "sam")

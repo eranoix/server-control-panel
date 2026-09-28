@@ -11,7 +11,6 @@ import (
 	"server-control-panel/internal/metrics"
 )
 
-// minimal Router with a metric registry exposing one known metric + an engine.
 func testRouterWithMetric(t *testing.T, key string) *Router {
 	t.Helper()
 	reg := metrics.NewRegistry()
@@ -27,10 +26,6 @@ func testRouterWithMetric(t *testing.T, key string) *Router {
 	}
 }
 
-// buildMetricRegistry must be nil-safe: on a bare Router (no queue/notify/
-// claude/docker/whatsapp), it still registers the dependency-free collectors
-// (system, jobs, auth, sessions) and produces a non-empty catalog — proving boot
-// wiring won't panic when a subsystem failed to initialize.
 func TestBuildMetricRegistryNilSafe(t *testing.T) {
 	r := &Router{cfg: &config.Config{DataDir: t.TempDir()}}
 	r.buildMetricRegistry()
@@ -41,7 +36,6 @@ func TestBuildMetricRegistryNilSafe(t *testing.T) {
 	if len(cat) == 0 {
 		t.Fatal("catalog empty — no dependency-free collectors registered")
 	}
-	// jobs + auth descriptors should be present even with nil subsystems.
 	keys := map[string]bool{}
 	for _, d := range cat {
 		keys[d.Key] = true
@@ -82,7 +76,6 @@ func TestMetricsSnapshotHandler(t *testing.T) {
 	}
 }
 
-// Adding a rule with an unknown metric key is rejected (400).
 func TestAlertAddRejectsUnknownMetric(t *testing.T) {
 	r := testRouterWithMetric(t, "test.metric")
 	w := httptest.NewRecorder()
@@ -94,8 +87,6 @@ func TestAlertAddRejectsUnknownMetric(t *testing.T) {
 	}
 }
 
-// Adding a rule with a known metric succeeds and the rule appears in the list
-// with its label/unit resolved from the catalog.
 func TestAlertAddKnownMetricEnrichesLabel(t *testing.T) {
 	r := testRouterWithMetric(t, "test.metric")
 	w := httptest.NewRecorder()
@@ -105,7 +96,6 @@ func TestAlertAddKnownMetricEnrichesLabel(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("known metric should be 200, got %d (%s)", w.Code, w.Body.String())
 	}
-	// Re-evaluate so Status has a fresh snapshot, then list.
 	r.alerts.Evaluate(r.metricReg.Latest())
 	lw := httptest.NewRecorder()
 	r.handleAlertList(lw, httptest.NewRequest("GET", "/api/metrics/rules", nil))

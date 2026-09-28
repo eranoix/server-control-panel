@@ -11,11 +11,6 @@ import (
 	"server-control-panel/internal/notify"
 )
 
-// fakeAlertsBackend is an in-memory stand-in for AlertsDeps' mutating
-// closures, plus spy counters — mirrors fakeSchedulerBackend/
-// fakeDockerActionsBackend so tests can assert SaveAlertRule/DeleteAlertRule
-// NEVER happened when validation, confirmation or authorization rejects the
-// request first.
 type fakeAlertsBackend struct {
 	mu sync.Mutex
 
@@ -115,9 +110,6 @@ func mustJSONAlerts(t *testing.T, v any) json.RawMessage {
 	return b
 }
 
-// Test 5 (validation): saving a rule with an invalid condition/threshold/
-// channel returns FieldErrors keyed to the specific field, and
-// SaveAlertRule is never called.
 func TestAlertsAction_Save_InvalidFieldsKeyed(t *testing.T) {
 	backend := newFakeAlertsBackend()
 	handle := handleAlertsRuleSave(backend.deps())
@@ -150,8 +142,6 @@ func TestAlertsAction_Save_InvalidFieldsKeyed(t *testing.T) {
 	}
 }
 
-// Test: empty name -> "name"; wildcard condition ("") is legal and requires
-// no field error.
 func TestAlertsAction_Save_EmptyNameRequired(t *testing.T) {
 	backend := newFakeAlertsBackend()
 	handle := handleAlertsRuleSave(backend.deps())
@@ -172,8 +162,6 @@ func TestAlertsAction_Save_EmptyNameRequired(t *testing.T) {
 	}
 }
 
-// Test: a valid save returns Invalidate and actually calls SaveAlertRule
-// exactly once, recording an audit event.
 func TestAlertsAction_Save_ValidRuleInvalidatesAndAudits(t *testing.T) {
 	backend := newFakeAlertsBackend()
 	handle := handleAlertsRuleSave(backend.deps())
@@ -201,13 +189,6 @@ func TestAlertsAction_Save_ValidRuleInvalidatesAndAudits(t *testing.T) {
 	}
 }
 
-// registerAlertsActionsForTest guards the ONE registration of the real
-// alerts.rule.* actions in this test binary's global sdui action registry —
-// RegisterAction panics on a duplicate ActionID (actionregistry.go), and
-// only tests that need the real registry (to exercise RunAction's
-// authorize/confirmation gates end to end) call this; every other test in
-// this file calls the handler-producing functions directly, bypassing the
-// registry entirely.
 var (
 	registerAlertsActionsTestOnce sync.Once
 	registerAlertsActionsTestDeps *fakeAlertsBackend
@@ -221,9 +202,6 @@ func registerAlertsActionsForTest() *fakeAlertsBackend {
 	return registerAlertsActionsTestDeps
 }
 
-// Test 4 (destructive gate, full round trip): delete with no confirmation ->
-// "_confirmation" field error, DeleteAlertRule never called; with
-// {"confirmed":true} it deletes exactly once.
 func TestAlertsAction_DeleteRequiresConfirmation(t *testing.T) {
 	backend := registerAlertsActionsForTest()
 	admin, _ := testAlertsViewers()
@@ -267,10 +245,6 @@ func TestAlertsAction_DeleteRequiresConfirmation(t *testing.T) {
 	}
 }
 
-// TestAlertsAction_NonAdminNotFound proves a non-admin invoking either
-// mutation directly — even fully confirmed — gets sdui.ErrActionNotFound at
-// RunAction's authorize step, and neither SaveAlertRule nor DeleteAlertRule
-// is ever reached.
 func TestAlertsAction_NonAdminNotFound(t *testing.T) {
 	backend := registerAlertsActionsForTest()
 	_, nonAdmin := testAlertsViewers()
@@ -296,9 +270,6 @@ func TestAlertsAction_NonAdminNotFound(t *testing.T) {
 	}
 }
 
-// TestAlertsAction_DeleteUnknownRuleNotFound proves deleting a rule id that
-// does not exist returns ErrActionNotFound without ever calling
-// DeleteAlertRule.
 func TestAlertsAction_DeleteUnknownRuleNotFound(t *testing.T) {
 	backend := newFakeAlertsBackend()
 	handle := handleAlertsRuleDelete(backend.deps())

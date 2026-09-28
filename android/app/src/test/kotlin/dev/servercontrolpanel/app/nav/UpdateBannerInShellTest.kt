@@ -18,10 +18,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The update banner's placement inside the shell (its design is covered by `UpdateBannerTest`):
- * in the `Scaffold`'s `topBar` slot on drawer destinations, and never on detail screens.
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class, qualifiers = "w411dp-h891dp-xxhdpi")
 class UpdateBannerInShellTest {
@@ -57,7 +53,6 @@ class UpdateBannerInShellTest {
         renderShell(UpdateState.Available(versionName = "0.1.7", downloadBytes = 1_400_329, incremental = true))
 
         composeRule.onNodeWithText("Version 0.1.7 available — 1.4 MB").assertIsDisplayed()
-        // The banner is added below the bar, not in its place.
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).assertIsDisplayed()
     }
 
@@ -68,7 +63,6 @@ class UpdateBannerInShellTest {
         composeRule.onNodeWithText("Update", substring = true).assertDoesNotExist()
     }
 
-    /** The banner uses the same condition as the shell bar, so it never shows on detail screens. */
     @Test
     fun `the banner disappears on detail screens`() {
         renderShell(UpdateState.Available(versionName = "0.1.7", downloadBytes = 1_400_329, incremental = true))
@@ -93,10 +87,6 @@ class UpdateBannerInShellTest {
         assertEquals(1, requests)
     }
 
-    /**
-     * A failed install's `PackageInstaller` message does not fit in a banner, so "Diagnostics"
-     * navigates inside the app instead of going up to `MainActivity` as an [UpdateRecovery].
-     */
     @Test
     fun `the Diagnostics button navigates to the report with the system message`() {
         var exitsToSystem = 0
@@ -118,7 +108,6 @@ class UpdateBannerInShellTest {
         composeRule.onNodeWithText("INSTALL_FAILED_UPDATE_INCOMPATIBLE", substring = true).assertExists()
     }
 
-    /** Recoveries that belong to the system (toggle, storage, browser) go up to the Activity. */
     @Test
     fun `other recoveries go up to the Activity instead of becoming navigation`() {
         var requested: UpdateRecovery? = null

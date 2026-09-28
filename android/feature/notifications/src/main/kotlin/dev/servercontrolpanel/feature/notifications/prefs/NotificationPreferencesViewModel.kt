@@ -12,28 +12,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/**
- * State rendered by [NotificationPreferencesScreen]. [Success.errorMessage] carries a
- * transient "the last toggle failed to save" message alongside the (already-reverted) rule
- * list, rather than a separate error state — the categories themselves stay on screen while
- * an error banner surfaces above them, matching the app-wide "never blank the whole screen
- * for a partial failure" shape.
- */
 sealed interface NotificationPreferencesUiState {
     data object Loading : NotificationPreferencesUiState
     data class LoadError(val message: String) : NotificationPreferencesUiState
     data class Success(val rules: List<NotifyRule>, val errorMessage: String? = null) : NotificationPreferencesUiState
 }
 
-/**
- * Drives [NotificationPreferencesScreen]: this screen is intentionally "select, don't
- * type" (toggle-per-category, no save button) — every toggle immediately issues a `PUT`
- * through [NotifyPreferencesRepository.update] scoped to [deviceId] (THIS device only,
- * never the user's other devices), reverting the toggle and surfacing an error if that
- * call fails. The server's rule catalog and `enabled_for_device` default (alert-
- * fatigue-prevention: critical-only until changed, see `notify_prefs.go`) are the single
- * source of truth — this ViewModel never hardcodes a default itself.
- */
 class NotificationPreferencesViewModel(
     private val deviceId: String,
     private val repository: NotifyPreferencesSource = NotifyPreferencesRepository(),
@@ -56,7 +40,6 @@ class NotificationPreferencesViewModel(
         }
     }
 
-    /** Toggles [ruleId] to [enabled] optimistically, then persists; reverts + surfaces an error on failure. */
     fun setRuleEnabled(ruleId: String, enabled: Boolean) {
         val current = _uiState.value
         if (current !is NotificationPreferencesUiState.Success) return

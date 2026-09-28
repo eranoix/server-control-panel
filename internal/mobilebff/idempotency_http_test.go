@@ -49,9 +49,6 @@ func TestRememberResult_RunsOncePerKey(t *testing.T) {
 }
 
 func TestRememberResult_ErrorIsNotRemembered(t *testing.T) {
-	// An action that failed has to be able to succeed on the retry: it was a
-	// failure that put it in the queue. Remembering the error would make the
-	// queue repeat the same defeat for 24 h.
 	idem := NewIdempotency(t.TempDir())
 	fail := true
 	run := func() (*testOutput, error) {
@@ -77,8 +74,6 @@ func TestRememberResult_ErrorIsNotRemembered(t *testing.T) {
 }
 
 func TestRememberResult_NoKeyAlwaysRuns(t *testing.T) {
-	// Whoever does not send the header (the web panel, a curl) gets no special
-	// path at all.
 	idem := NewIdempotency(t.TempDir())
 	runs := 0
 	run := func() (*testOutput, error) {
@@ -93,9 +88,6 @@ func TestRememberResult_NoKeyAlwaysRuns(t *testing.T) {
 }
 
 func TestIdempotencyKey_DoesNotLeakAcrossAccounts(t *testing.T) {
-	// The same key coming from two devices on different accounts must not
-	// collide: a result leaking between accounts is worse than having no
-	// idempotency at all.
 	if a, b := idempotencyKey("sam", "k1"), idempotencyKey("test", "k1"); a == b {
 		t.Fatalf("keys from different accounts collided: %q", a)
 	}
@@ -107,16 +99,6 @@ func TestIdempotencyKey_DoesNotLeakAcrossAccounts(t *testing.T) {
 	}
 }
 
-// TestDeleteBackup_RetryReturnsFirst200 proves the whole chain:
-// header → key → table → repeated response.
-//
-// The path under test is `?name=` (removing ONE session from inside the
-// backup), which is the one that actually breaks on a retry: it reads the
-// backup before touching it, and with the file already gone it answers 404.
-// (Deleting the WHOLE backup is already idempotent in the store — `os.Remove`
-// with `os.IsNotExist` tolerated —, so it proves nothing.) And 404 matters
-// because the app's queue DISCARDS 4xx: without this the user would watch the
-// action vanish as if it had failed.
 func TestDeleteBackup_RetryReturnsFirst200(t *testing.T) {
 	dataDir := t.TempDir()
 	store := sessionbackup.New(dataDir)
@@ -169,8 +151,6 @@ func TestDeleteBackup_RetryReturnsFirst200(t *testing.T) {
 	})
 
 	t.Run("with no key, the retry stays 404", func(t *testing.T) {
-		// Idempotency must not become a universal 200 that hides a real error:
-		// whoever sends no key sees the world as it is.
 		const id = "1757800000000000002"
 		seed(t, id)
 		if rec := doDelete(id, ""); rec.Code != http.StatusOK {
@@ -182,8 +162,6 @@ func TestDeleteBackup_RetryReturnsFirst200(t *testing.T) {
 	})
 }
 
-// TestIdempotency_FileInDataDir makes sure the table writes where it should
-// — an empty path would write into the process's working directory.
 func TestIdempotency_FileInDataDir(t *testing.T) {
 	dir := t.TempDir()
 	idem := NewIdempotency(dir)

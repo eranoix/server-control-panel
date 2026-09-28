@@ -34,11 +34,6 @@ import dev.servercontrolpanel.data.events.MobileEventsClient
 import dev.servercontrolpanel.data.ops.OpsAlert
 import dev.servercontrolpanel.data.ops.OpsSnapshot
 
-/**
- * Entry point for the operations dashboard. [mobileEventsClient] is the app-scoped singleton
- * constructed in `PanelApplication` — this module never casts it out of a `Context`, it is
- * threaded in explicitly by whatever screen hosts this route.
- */
 @Composable
 fun OpsDashboardRoute(
     mobileEventsClient: MobileEventsClient,
@@ -59,7 +54,6 @@ fun OpsDashboardRoute(
     )
 }
 
-/** Stateless — every dependency is a parameter, so this renders/tests without a real ViewModel. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OpsDashboardScreen(
@@ -151,10 +145,6 @@ private fun AlertRow(alert: OpsAlert) {
     }
 }
 
-/**
- * Local grouped/expandable section — no equivalent exists yet in `:design-system`, so this stays
- * private to the ops dashboard until a shared component is extracted.
- */
 @Composable
 private fun ExpandableSection(
     title: String,

@@ -6,13 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.pow
 
-/**
- * Checks that every Material color/on-color pair in both themes meets WCAG AA
- * contrast. Pure JVM test: `Color` channels need no framework.
- */
 class PanelColorsTest {
 
-    /** WCAG AA minimum for normal text. */
     private val minimumAA = 4.5
 
     private fun linearChannel(v: Float): Double {
@@ -29,7 +24,6 @@ class PanelColorsTest {
         return (maxOf(la, lb) + 0.05) / (minOf(la, lb) + 0.05)
     }
 
-    /** Pairs Material 3 draws on top of each other (`onX` over `X`). */
     private fun pairs(e: ColorScheme): List<Triple<String, Color, Color>> = listOf(
         Triple("primary/onPrimary", e.primary, e.onPrimary),
         Triple("primaryContainer/on", e.primaryContainer, e.onPrimaryContainer),
@@ -71,7 +65,6 @@ class PanelColorsTest {
 
     @Test
     fun `the app no longer uses Material's default purple`() {
-        // A no-argument lightColorScheme() falls back to the baseline purple.
         val baselinePurpleLight = Color(0xFF6750A4)
         val baselinePurpleDark = Color(0xFFD0BCFF)
         assertTrue("light theme fell back to the baseline purple", PanelLightColors.primary != baselinePurpleLight)
@@ -80,15 +73,12 @@ class PanelColorsTest {
 
     @Test
     fun `the two themes really are light and dark`() {
-        // Both surfaces on the same side of the scale would still pass the contrast tests.
         assertTrue("the light surface should be light", luminance(PanelLightColors.surface) > 0.5)
         assertTrue("the dark surface should be dark", luminance(PanelDarkColors.surface) < 0.1)
     }
 
     @Test
     fun `the warning amber stays visible on the surfaces`() {
-        // The amber is not derived from the scheme, so changing neutrals could
-        // leave it without contrast against the card's surface.
         val warningLightBackground = Color(0xFFFFEBB8)
         val warningLightText = Color(0xFF4A3400)
         val warningDarkBackground = Color(0xFF3E2D00)
@@ -102,7 +92,6 @@ class PanelColorsTest {
             "dark warning text is illegible on its card",
             contrast(warningDarkBackground, warningDarkText) >= minimumAA,
         )
-        // The card must also stand out from the surface.
         assertTrue(
             "light warning card blends into the surface",
             contrast(warningLightBackground, PanelLightColors.surface) >= 1.08,
@@ -115,7 +104,6 @@ class PanelColorsTest {
 
     @Test
     fun `the adaptive icon colors come from the scheme`() {
-        // Keeps the launcher icon in sync with the theme.
         assertTrue(AdaptiveIconBackground == PanelDarkColors.onPrimary)
         assertTrue(MarkOnBackground == PanelDarkColors.primary)
         assertTrue(

@@ -17,7 +17,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/** Renders [FileBrowserScreen] under Robolectric in every [FileBrowserUiState] with a fake repository. */
 @RunWith(RobolectricTestRunner::class)
 class FileBrowserScreenTest {
 
@@ -26,8 +25,6 @@ class FileBrowserScreenTest {
 
     private val application = ApplicationProvider.getApplicationContext<android.app.Application>()
 
-    // The inline TransferScreen builds a real TransferViewModel, which calls
-    // WorkManager.getInstance() in its init block.
     @Before
     fun setUp() {
         val config = Configuration.Builder().setExecutor(SynchronousExecutor()).build()
@@ -39,7 +36,6 @@ class FileBrowserScreenTest {
     @Test
     fun `loading state shows the progress indicator, never a blank screen`() {
         val repository = BrowserScreenFakeFilesRepository { awaitCancellation() }
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = FileBrowserViewModel(repository)
         composeRule.setContent {
             FileBrowserScreen(viewModel = viewModel, transferViewModel = transferViewModel())
@@ -51,7 +47,6 @@ class FileBrowserScreenTest {
     @Test
     fun `error state shows the server's own message and a retry action`() {
         val repository = BrowserScreenFakeFilesRepository { FileListResult.Error("The server is unavailable right now.") }
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = FileBrowserViewModel(repository)
         composeRule.setContent {
             FileBrowserScreen(viewModel = viewModel, transferViewModel = transferViewModel())
@@ -65,7 +60,6 @@ class FileBrowserScreenTest {
     @Test
     fun `empty directory renders the empty card, not a stuck spinner`() {
         val repository = BrowserScreenFakeFilesRepository { FileListResult.Empty }
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = FileBrowserViewModel(repository)
         composeRule.setContent {
             FileBrowserScreen(viewModel = viewModel, transferViewModel = transferViewModel())
@@ -87,14 +81,12 @@ class FileBrowserScreenTest {
                 ),
             )
         }
-        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = FileBrowserViewModel(repository)
         composeRule.setContent {
             FileBrowserScreen(viewModel = viewModel, transferViewModel = transferViewModel())
         }
         composeRule.waitForIdle()
 
-        // Zero-byte files are common and must format as "0 B".
         composeRule.onNodeWithText("app").assertExists()
         composeRule.onNodeWithText("readme.md").assertExists()
         composeRule.onNodeWithText("0 B").assertExists()

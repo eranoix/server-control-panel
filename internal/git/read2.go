@@ -9,8 +9,6 @@ import (
 	"server-control-panel/internal/httpx"
 )
 
-// ---- GET /tags ----
-
 type tagInfo struct {
 	Name      string `json:"name"`
 	Target    string `json:"target"`
@@ -52,10 +50,8 @@ func (s *svc) handleTags(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"tags": out})
 }
 
-// ---- GET /stashes ----
-
 type stashInfo struct {
-	Ref     string `json:"ref"` // stash@{N}
+	Ref     string `json:"ref"`
 	Hash    string `json:"hash"`
 	Subject string `json:"subject"`
 	Rel     string `json:"rel"`
@@ -88,8 +84,6 @@ func (s *svc) handleStashes(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.WriteJSON(w, map[string]any{"stashes": out})
 }
-
-// ---- GET /remotes ----
 
 func (s *svc) handleRemotes(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
@@ -124,8 +118,6 @@ func (s *svc) handleRemotes(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"remotes": out})
 }
 
-// ---- GET /identities ----
-
 func (s *svc) handleIdentities(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
 		return
@@ -136,13 +128,6 @@ func (s *svc) handleIdentities(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"identities": effectiveIdentities(s.cfg)})
 }
 
-// ---- GET /pr-url ----
-
-// handlePRURL builds the Pull/Merge Request creation URL from the origin
-// remote and the branch — the Git Graph model (it opens the pre-filled form at
-// the provider). It supports GitHub, GitLab and Bitbucket. No `gh`/API: it is
-// only a navigation URL (the user authenticates in their own browser), so it
-// does not violate the identity separation (no automated action on the account).
 func (s *svc) handlePRURL(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
 		return
@@ -174,7 +159,6 @@ func (s *svc) handlePRURL(w http.ResponseWriter, r *http.Request) {
 
 var remoteRe = regexp.MustCompile(`^(?:git@|https?://|ssh://git@)([^/:]+)[:/](.+?)(?:\.git)?/?$`)
 
-// prURLFor translates (remoteURL, branch) into the provider's PR creation URL.
 func prURLFor(remoteURL, branch string) (string, string, error) {
 	m := remoteRe.FindStringSubmatch(remoteURL)
 	if m == nil {
@@ -199,7 +183,6 @@ type errMsg string
 
 func (e errMsg) Error() string { return string(e) }
 
-// splitLines breaks the output into non-empty lines.
 func splitLines(s string) []string {
 	s = strings.TrimRight(s, "\n")
 	if s == "" {

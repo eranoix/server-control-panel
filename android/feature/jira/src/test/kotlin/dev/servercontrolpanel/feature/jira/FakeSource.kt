@@ -13,11 +13,9 @@ import dev.servercontrolpanel.data.jira.JiraBoard
 import dev.servercontrolpanel.data.jira.JiraResult
 import dev.servercontrolpanel.data.jira.BulkResult
 
-/** A test card, with the bare minimum filled in. */
 internal fun card(key: String, status: String = "Backlog", category: String = "new") =
     JiraCard(key = key, summary = "summary of $key", status = status, category = category)
 
-/** A three-column board, holding whatever cards it is given. */
 internal fun testBoard(
     toDo: List<JiraCard> = emptyList(),
     inProgress: List<JiraCard> = emptyList(),
@@ -39,7 +37,6 @@ internal fun testBoard(
     rejection = rejection,
 )
 
-/** Test double for [JiraSource] that records the calls made, since many tests assert what was sent or not sent. */
 internal class FakeSource(
     private var board: JiraResult<JiraBoard> = JiraResult.Ok(testBoard()),
     private var onMove: (String, String) -> JiraResult<String> = { _, _ -> JiraResult.Ok("Pronto") },

@@ -26,18 +26,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * The key bar's three states, auto-collapse with a physical keyboard and swipe-up
- * secondary functions, rendered under Robolectric. Height is asserted because the bar
- * is the only permanent chrome below the grid; [ExtraKeysBarActionTest] covers bytes.
- */
 @RunWith(RobolectricTestRunner::class)
 class ExtraKeysBarScreenTest {
 
     @get:Rule
     val composeRule = createComposeRule()
 
-    /** Holds the bar's state the way `TerminalRoute` does. */
     private fun setBar(
         initial: ExtraKeysBarState = ExtraKeysBarState.ONE_ROW,
         hasHardwareKeyboard: Boolean = false,
@@ -63,7 +57,6 @@ class ExtraKeysBarScreenTest {
         setBar(initial = ExtraKeysBarState.COLLAPSED)
 
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(32.dp)
-        // The minimum set needed for Ctrl+C and quitting vim.
         composeRule.onNodeWithText("Esc").assertExists()
         composeRule.onNodeWithText("^C").assertExists()
         composeRule.onNodeWithText("Tab").assertExists()
@@ -123,7 +116,6 @@ class ExtraKeysBarScreenTest {
     fun `a connected physical keyboard collapses the bar on its own`() {
         setBar(initial = ExtraKeysBarState.TWO_ROWS, hasHardwareKeyboard = true)
 
-        // No tap needed: a physical keyboard alone collapses the bar.
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(32.dp)
     }
 
@@ -133,7 +125,6 @@ class ExtraKeysBarScreenTest {
 
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(32.dp)
         composeRule.onNodeWithTag(EXTRA_KEYS_HANDLE_TAG).performClick()
-        // The handle still works with a physical keyboard connected.
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(40.dp)
     }
 
@@ -141,8 +132,6 @@ class ExtraKeysBarScreenTest {
     fun `without a physical keyboard auto-collapse leaves the user's choice alone`() {
         setBar(initial = ExtraKeysBarState.COLLAPSED, hasHardwareKeyboard = false)
 
-        // Auto-collapse only acts when a physical keyboard connects or disconnects,
-        // so it does not override the handle's choice on entry.
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(32.dp)
         assertEquals(ExtraKeysBarState.ONE_ROW, ExtraKeysBarState.forHardwareKeyboard(present = false))
         assertEquals(ExtraKeysBarState.COLLAPSED, ExtraKeysBarState.forHardwareKeyboard(present = true))
@@ -172,8 +161,6 @@ class ExtraKeysBarScreenTest {
             swipeUp(startY = bottom, endY = top - 300f)
         }
 
-        // Esc's secondary is Ctrl+C (0x03); once recognized as a swipe, the tap (ESC)
-        // is cancelled.
         assertEquals(1, sent.size)
         assertArrayEquals(byteArrayOf(0x03), sent[0])
     }

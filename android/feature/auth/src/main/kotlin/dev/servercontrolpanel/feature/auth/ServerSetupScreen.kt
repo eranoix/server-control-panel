@@ -24,16 +24,6 @@ import androidx.compose.ui.unit.dp
 import dev.servercontrolpanel.data.config.ConfigureServerResult
 import dev.servercontrolpanel.data.config.ServerConfigRepository
 
-/**
- * First-run gate: nothing else in the app can reach a real server until a
- * base URL is configured here. This is now the FALLBACK path — the primary
- * first-run flow is [PasskeyRegisterFlow], whose scanned QR already carries
- * the server address (`PairingPayload.serverUrl`), so pairing normally never
- * requires typing a hostname. This screen stays reachable via
- * `onManualSetupRequested` for a device that cannot scan (no camera, no
- * admin physically present with the panel) or a manual override for local
- * development.
- */
 @Composable
 fun ServerSetupScreen(
     serverConfigRepository: ServerConfigRepository,

@@ -10,8 +10,6 @@ import (
 	"server-control-panel/internal/mobilebff/sdui"
 )
 
-// Action ids the four screens in this file reference from their tables'
-// row_actions and forms' submit_action.
 const (
 	miscActionAISettingsSave = "ai.settings.save"
 
@@ -28,15 +26,8 @@ const (
 	miscActionQueueJobCancel = "queue.job.cancel"
 )
 
-// miscAdminViewer is the RegisterAction authorize gate for every admin-only
-// mutation in this file (ai.settings.save, all three deploy.app.* actions):
-// mirrors handleAIModelsConfig's r.isPrimary and handlers_deploy.go's
-// r.mustPrimary exactly. A non-admin direct invocation gets
-// ErrActionNotFound at RunAction's step 2, before the handler ever runs
 func miscAdminViewer(v sdui.Viewer) bool { return v.IsAdmin() }
 
-// registerMiscActions registers the ten mutations fanned out by this file.
-// Called once by RegisterMisc (misc.go).
 func registerMiscActions(deps MiscDeps) {
 	sdui.RegisterAction(
 		sdui.ActionDescriptor{
@@ -106,14 +97,6 @@ func registerMiscActions(deps MiscDeps) {
 			Method:     "POST",
 			Endpoint:   "/api/mobile/v1/actions/" + miscActionDeployAppRedeploy,
 			Permission: "admin",
-			// Non-destructive deliberately: the must-haves list
-			// only "delete a deployed app" and "cancel a running
-			// job" as requiring confirm_destructive. Redeploying erases no
-			// state — it merely enqueues a new deploy.Spec
-			// via deps.TriggerRedeploy (which delegates to r.queue.Enqueue,
-			// the same mechanics as handlers_deploy.go's enqueueDeploy), so
-			// it sits at the same rank as the five systemd verbs in
-			// system_actions.go (admin, with no extra confirmation).
 		},
 		miscAdminViewer,
 		handleDeployAppRedeploy(deps),
@@ -125,12 +108,6 @@ func registerMiscActions(deps MiscDeps) {
 			Endpoint:    "/api/mobile/v1/actions/" + miscActionDeployAppDelete,
 			Permission:  "admin",
 			Destructive: true,
-			// Destructive:true is the real SERVER-SIDE gate (see
-			// RunAction's step 3) — the ConfirmDestructiveComponent
-			// in misc.go is only the UI half of the same rule. Without
-			// confirm.Confirmed, RunAction never gets as far as calling
-			// handleDeployAppDelete, so deps.DestroyDeployApp runs zero
-			// times.
 		},
 		miscAdminViewer,
 		handleDeployAppDelete(deps),
@@ -142,13 +119,6 @@ func registerMiscActions(deps MiscDeps) {
 			Method:     "POST",
 			Endpoint:   "/api/mobile/v1/actions/" + miscActionQueueJobRerun,
 			Permission: "authenticated",
-			// Not admin-only via the binary gate: any authenticated user
-			// can retry THEIR OWN job. The ownership check
-			// (job.Owner == v.Username, or admin) and the per-kind
-			// permission check (deps.AuthorizedForRerun) live inside the
-			// handler itself — RunAction's authorize gate cannot express
-			// "owner of the resource", only an isolated Viewer (see
-			// deps.go's MiscDeps doc comment).
 		},
 		authenticatedViewer,
 		handleQueueJobRerun(deps),
@@ -160,30 +130,17 @@ func registerMiscActions(deps MiscDeps) {
 			Endpoint:    "/api/mobile/v1/actions/" + miscActionQueueJobCancel,
 			Permission:  "authenticated",
 			Destructive: true,
-			// The same server-side gate as deploy.app.delete.
-			// Also not admin-only: cancelling YOUR OWN job is allowed to
-			// any authenticated user, with the ownership check inside the
-			// handler (see handleQueueJobCancel) — the same asymmetry
-			// that handlers_queue.go's handleQueueByID's "cancel" branch
-			// already has today (ownership alone, no extra AuthorizedFor).
 		},
 		authenticatedViewer,
 		handleQueueJobCancel(deps),
 	)
 }
 
-// --- ai.settings --------------------------------------------------------
-
 type aiSettingsSaveInput struct {
 	Suggest string `json:"suggest"`
 	JiraAI  string `json:"jira_ai"`
 }
 
-// aiModelFromWire reverses aiModelOptionValue (misc.go): the mobile client's
-// "inherit" is persisted as "" — internal/aimodel's own normalize() already
-// treats them as aliases, this is only about keeping config.json's stored
-// form consistent with what handleAIModelsConfig already writes for the web
-// panel.
 func aiModelFromWire(m string) string {
 	if m == "inherit" {
 		return ""
@@ -191,11 +148,6 @@ func aiModelFromWire(m string) string {
 	return m
 }
 
-// handleAISettingsSave implements ai.settings.save. Validates suggest/jira_ai
-// independently against aimodel.Allowed (mirroring handleAIModelsConfig's own
-// POST validation), returning field-keyed FieldErrors — never a single
-// generic error — so the client can highlight the exact select that failed.
-// Never touches a secret: config.AIModels carries only model-tier strings.
 func handleAISettingsSave(deps MiscDeps) sdui.ActionHandler {
 	return func(_ context.Context, v sdui.Viewer, _ map[string]string, input json.RawMessage) (sdui.ActionResult, error) {
 		var in aiSettingsSaveInput
@@ -229,8 +181,6 @@ func handleAISettingsSave(deps MiscDeps) sdui.ActionHandler {
 	}
 }
 
-// --- jira.issues ----------------------------------------------------------
-
 type jiraConnectInput struct {
 	Site    string `json:"site"`
 	Email   string `json:"email"`
@@ -238,11 +188,6 @@ type jiraConnectInput struct {
 	Project string `json:"project"`
 }
 
-// handleJiraConnect implements jira.connect. Field-keyed validation on the
-// three required inputs; the token itself is passed straight into
-// deps.JiraConnect (which stores it in the per-user vault) and is
-// NEVER echoed back in the ActionResult — Invalidate re-fetches jira.issues'
-// screen, which will report "connected" without the token value.
 func handleJiraConnect(deps MiscDeps) sdui.ActionHandler {
 	return func(_ context.Context, v sdui.Viewer, _ map[string]string, input json.RawMessage) (sdui.ActionResult, error) {
 		var in jiraConnectInput
@@ -280,12 +225,6 @@ type jiraIssueSelectInput struct {
 	Key string `json:"key"`
 }
 
-// handleJiraIssueSelect implements jira.issue.select — writes the tapped
-// issue's key into the per-viewer state misc.go declares
-// (jiraSelectedIssueByUser), then invalidates the three components whose
-// fixed endpoints read that state at fetch time. See misc.go's doc comment
-// on jiraSelectedIssueMu for the full rationale (mirrors system.go's
-// systemMetricsWindowByUser).
 func handleJiraIssueSelect() sdui.ActionHandler {
 	return func(_ context.Context, v sdui.Viewer, params map[string]string, input json.RawMessage) (sdui.ActionResult, error) {
 		key := params["id"]
@@ -309,13 +248,6 @@ type jiraIssueTransitionInput struct {
 	TransitionID string `json:"transition_id"`
 }
 
-// handleJiraIssueTransition implements jira.issue.transition. Re-fetches the
-// CURRENT set of valid transitions for the selected issue and checks the
-// submitted transition_id against it before ever calling deps.JiraTransition
-// — an invalid/stale transition id returns FieldErrors, never a raw Jira API
-// error passthrough (Task 2's transition-validity test). This also closes a
-// TOCTOU window where the transition picker's own options had gone stale
-// between fetch and submit.
 func handleJiraIssueTransition(deps MiscDeps) sdui.ActionHandler {
 	return func(ctx context.Context, v sdui.Viewer, _ map[string]string, input json.RawMessage) (sdui.ActionResult, error) {
 		var in jiraIssueTransitionInput
@@ -362,7 +294,6 @@ type jiraIssueCommentInput struct {
 	Comment string `json:"comment"`
 }
 
-// handleJiraIssueComment implements jira.issue.comment.
 func handleJiraIssueComment(deps MiscDeps) sdui.ActionHandler {
 	return func(ctx context.Context, v sdui.Viewer, _ map[string]string, input json.RawMessage) (sdui.ActionResult, error) {
 		var in jiraIssueCommentInput
@@ -390,8 +321,6 @@ func handleJiraIssueComment(deps MiscDeps) sdui.ActionHandler {
 	}
 }
 
-// --- deploy.apps ------------------------------------------------------------
-
 type deployAppCreateInput struct {
 	Name        string `json:"name"`
 	Domain      string `json:"domain"`
@@ -399,12 +328,6 @@ type deployAppCreateInput struct {
 	ComposeFile string `json:"compose_file"`
 }
 
-// handleDeployAppCreate implements deploy.app.create. Field-keyed validation
-// on name (the one truly required field — mirrors handlers_deploy.go's own
-// handleDeployApps POST, which defaults Branch/ComposeFile server-side too).
-// Manages internal/deploy's PaaS app catalog — an entry here is an arbitrary
-// OTHER app this VPS hosts, never this process's own self-deploy trigger
-// (see this file's package doc comment in misc.go).
 func handleDeployAppCreate(deps MiscDeps) sdui.ActionHandler {
 	return func(_ context.Context, v sdui.Viewer, _ map[string]string, input json.RawMessage) (sdui.ActionResult, error) {
 		var in deployAppCreateInput
@@ -437,10 +360,6 @@ func handleDeployAppCreate(deps MiscDeps) sdui.ActionHandler {
 	}
 }
 
-// handleDeployAppRedeploy implements deploy.app.redeploy. params["id"] is the
-// row's app name. Enqueues a new deploy via deps.TriggerRedeploy (which
-// mirrors enqueueDeploy — internal/queue's "app_deploy" job kind, never
-// this process's own self-deploy job).
 func handleDeployAppRedeploy(deps MiscDeps) sdui.ActionHandler {
 	return func(_ context.Context, v sdui.Viewer, params map[string]string, _ json.RawMessage) (sdui.ActionResult, error) {
 		name := params["id"]
@@ -457,10 +376,6 @@ func handleDeployAppRedeploy(deps MiscDeps) sdui.ActionHandler {
 	}
 }
 
-// handleDeployAppDelete implements deploy.app.delete. params["id"] is the
-// row's app name. Destructive:true already keeps RunAction from
-// ever calling this handler without confirm.Confirmed — see
-// registerMiscActions' doc comment on this action's ActionDescriptor.
 func handleDeployAppDelete(deps MiscDeps) sdui.ActionHandler {
 	return func(ctx context.Context, v sdui.Viewer, params map[string]string, _ json.RawMessage) (sdui.ActionResult, error) {
 		name := params["id"]
@@ -477,15 +392,6 @@ func handleDeployAppDelete(deps MiscDeps) sdui.ActionHandler {
 	}
 }
 
-// --- queue.jobs --------------------------------------------------------------
-
-// handleQueueJobRerun implements queue.job.retry. params["id"] is the job id.
-// Resource-level ownership (job.Owner == v.Username, or admin) is checked
-// HERE, not via RegisterAction's binary authorize gate, which cannot express
-// per-resource ownership (see registerMiscActions' doc comment on this
-// action). deps.AuthorizedForRerun re-applies the same per-kind
-// authorization handlers_queue.go's "rerun" branch already enforces before
-// calling deps.RerunQueueJob (the real internal/queue.Queue.Rerun).
 func handleQueueJobRerun(deps MiscDeps) sdui.ActionHandler {
 	return func(_ context.Context, v sdui.Viewer, params map[string]string, _ json.RawMessage) (sdui.ActionResult, error) {
 		id := params["id"]
@@ -516,12 +422,6 @@ func handleQueueJobRerun(deps MiscDeps) sdui.ActionHandler {
 	}
 }
 
-// handleQueueJobCancel implements queue.job.cancel. Destructive:true
-// already keeps RunAction from ever calling this handler without
-// confirm.Confirmed. The ownership check below mirrors handleQueueByID's own
-// posture for its "cancel" branch: possession alone, no additional
-// AuthorizedFor-by-kind check (unlike rerun) — matching
-// handlers_queue.go exactly.
 func handleQueueJobCancel(deps MiscDeps) sdui.ActionHandler {
 	return func(_ context.Context, v sdui.Viewer, params map[string]string, _ json.RawMessage) (sdui.ActionResult, error) {
 		id := params["id"]

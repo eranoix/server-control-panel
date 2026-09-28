@@ -41,7 +41,6 @@ import org.webrtc.VideoTrack
 private val testJson = Json { ignoreUnknownKeys = true }
 private const val ROOM_ID = "room-bg"
 
-/** Fake signaling with no socket; duplicated because androidTest cannot see the `test` source set. */
 private class FakeSignaling : VideocallSignaling {
     private val inbound = MutableSharedFlow<SignalingMessage>(extraBufferCapacity = 16)
 
@@ -54,10 +53,6 @@ private class FakeSignaling : VideocallSignaling {
     fun push(message: SignalingMessage) = check(inbound.tryEmit(message))
 }
 
-/**
- * Records teardown calls. A real peer connection needs a second client, but this proves that
- * backgrounding or screen-off never reaches [dispose] or [closePeerConnectionFor].
- */
 private class FakeSessionController : VideoCallSessionController {
     override val eglBaseContext: EglBase.Context = object : EglBase.Context {
         override fun getNativeEglContext(): Long = 0L
@@ -97,22 +92,10 @@ private fun joinedMessage() = SignalingMessage(
     ),
 )
 
-/**
- * A joined call must keep [CallForegroundService] alive when the app is backgrounded or the
- * screen turns off.
- *
- * This library module has no Activity, so backgrounding is driven with [UiDevice.pressHome].
- * `ACTION_SCREEN_OFF` is a protected broadcast apps cannot send, so screen-off uses
- * [UiDevice.sleep] and [UiDevice.wakeUp].
- */
 @RunWith(AndroidJUnit4::class)
 @OptIn(ExperimentalCoroutinesApi::class)
 class BackgroundedCallSurvivesTest {
 
-    /**
-     * The camera and microphone service types require CAMERA and RECORD_AUDIO before
-     * `startForeground()`, or it throws `SecurityException`; production checks the same thing.
-     */
     @get:Rule
     val grantCameraAndMic: GrantPermissionRule =
         GrantPermissionRule.grant(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
@@ -128,7 +111,6 @@ class BackgroundedCallSurvivesTest {
 
     @After
     fun tearDown() {
-        // Never leave the real service running for later tests.
         CallForegroundService.stop(context)
         waitUntil(timeoutMs = 5_000) { !CallForegroundService.isRunning }
         Dispatchers.resetMain()
@@ -150,7 +132,6 @@ class BackgroundedCallSurvivesTest {
         signaling.push(joinedMessage())
         dispatcher.scheduler.advanceUntilIdle()
 
-        // onStartCommand() runs asynchronously, so poll.
         assertTrue(
             "CallForegroundService never reported running after join",
             waitUntil(timeoutMs = 5_000) { CallForegroundService.isRunning },
@@ -203,7 +184,6 @@ class BackgroundedCallSurvivesTest {
     }
 }
 
-/** Polls [condition] until it is true or [timeoutMs] elapses; returns the final observed value. */
 private fun waitUntil(timeoutMs: Long, pollMs: Long = 100, condition: () -> Boolean): Boolean {
     val deadline = System.currentTimeMillis() + timeoutMs
     while (System.currentTimeMillis() < deadline) {

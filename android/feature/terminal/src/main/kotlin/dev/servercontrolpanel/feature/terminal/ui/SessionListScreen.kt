@@ -65,21 +65,6 @@ import dev.servercontrolpanel.data.terminal.TerminalSession
 import dev.servercontrolpanel.designsystem.PanelIcons
 import dev.servercontrolpanel.designsystem.panelStatusColors
 
-/**
- * The terminal sessions screen. Each row packs, in one compact card:
- *
- * ```
- * ┌──────────────────────────────────────────────┐
- * │ ▣  Server                     ● active    ⋮  │
- * │    3 h ago · 2 backups                       │
- * └──────────────────────────────────────────────┘
- * ```
- *
- * an icon, the name in monospace, an "active" badge in a column on the right
- * (the question while scanning is "which one is active?"), a one-line meta row
- * and a menu of actions. The summary bar leads to the backups sheet
- * ([BackupsSheet]), and each session can be saved from its menu.
- */
 @Composable
 fun SessionListScreen(
     onSessionSelected: (String) -> Unit,
@@ -96,12 +81,9 @@ fun SessionListScreen(
     var ending by remember { mutableStateOf<String?>(null) }
     var assigning by remember { mutableStateOf<String?>(null) }
 
-    // Assignment targets load when the screen appears, not in the ViewModel's
-    // constructor, so whoever constructs it controls what starts.
     LaunchedEffect(Unit) { viewModel.loadTargets() }
 
     Column(modifier = modifier.fillMaxSize()) {
-        // The notice takes height only when there is one.
         notice?.let { text ->
             OperationNotice(text = text, onClose = viewModel::clearNotice)
         }
@@ -126,8 +108,6 @@ fun SessionListScreen(
                 onSaveSession = { viewModel.saveBackup(it) },
                 onRename = { renaming = it },
                 previews = previews,
-                // Non-admins get an empty list (the route returns 404), so the
-                // option is hidden rather than shown and failing.
                 canAssign = !targets.isNullOrEmpty(),
                 onPeek = { viewModel.togglePreview(it) },
                 onAssign = { assigning = it },
@@ -178,11 +158,6 @@ fun SessionListScreen(
     }
 }
 
-/**
- * The result of the last operation. Not a `Snackbar`, which vanishes after 4 s:
- * answers like "3 restored, 2 skipped" deserve a second read, so this stays until
- * dismissed.
- */
 @Composable
 private fun OperationNotice(text: String, onClose: () -> Unit) {
     Surface(
@@ -232,10 +207,6 @@ private fun ErrorContent(message: String, onRetry: () -> Unit) {
     }
 }
 
-/**
- * No sessions, but possibly with backups (e.g. after the machine restarts), so
- * restoring is offered next to creating a new session.
- */
 @Composable
 private fun EmptyContent(onAttach: (String) -> Unit, onOpenBackups: () -> Unit) {
     Column(
@@ -316,10 +287,6 @@ private fun SessionList(
     }
 }
 
-/**
- * The top row: session count, active count and the two actions for the whole
- * set. Outside the `LazyColumn` so scrolling never hides access to backups.
- */
 @Composable
 private fun SummaryBar(
     total: Int,
@@ -394,7 +361,6 @@ private fun SessionRow(
                 Text(
                     text = session.name,
                     style = MaterialTheme.typography.titleSmall,
-                    // Monospace, so `web-2` is not misread in a session name.
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -409,8 +375,6 @@ private fun SessionRow(
                 )
             }
             if (session.attached) {
-                // Only active sessions get a badge; a badge on every row would
-                // distinguish nothing.
                 ActiveBadge(color = statusColors.ok.accent)
                 Spacer(modifier = Modifier.width(4.dp))
             }
@@ -442,7 +406,6 @@ private fun SessionRow(
                             onClick = { menuOpen = false; onRename() },
                         )
                         DropdownMenuItem(
-                            // The label follows the state: "Close preview" when open.
                             text = { Text(if (previewOpen) "Close preview" else "Peek") },
                             onClick = { menuOpen = false; onPeek() },
                         )
@@ -454,8 +417,6 @@ private fun SessionRow(
                         }
                         HorizontalDivider()
                         DropdownMenuItem(
-                            // Set apart and in the error colour: the only
-                            // irreversible action here.
                             text = {
                                 Text(
                                     text = "End…",
@@ -474,11 +435,6 @@ private fun SessionRow(
     }
 }
 
-/**
- * The session preview, inside the row's own card rather than a sheet, so the
- * other sessions being compared stay visible. Monospace and horizontally
- * scrollable, since wrapping would break tables, progress bars and trees.
- */
 @Composable
 private fun PreviewCard(preview: PreviewUiState) {
     Surface(
@@ -495,8 +451,6 @@ private fun PreviewCard(preview: PreviewUiState) {
                 }
 
                 is PreviewUiState.Empty -> Text(
-                    // Empty is information, not failure: a new session has not
-                    // written anything yet.
                     text = "The session has not written anything yet.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -521,11 +475,6 @@ private fun PreviewCard(preview: PreviewUiState) {
 }
 
 
-/**
- * Confirmation before ending a session. It names the session and the consequence
- * (everything running inside ends and does not come back), and the confirm button
- * carries the verb rather than "OK".
- */
 @Composable
 private fun EndDialog(
     name: String,
@@ -552,11 +501,6 @@ private fun EndDialog(
     )
 }
 
-/**
- * Who the session shows up for, chosen from a list: the server accepts any
- * target, so a mistyped name would silently hide the session from everyone.
- * "Everyone" is explained, since "*" means nothing to most people.
- */
 @Composable
 private fun AssignSheet(
     name: String,
@@ -611,24 +555,14 @@ private fun ActiveBadge(color: Color) {
     }
 }
 
-/**
- * The meta row: the session's age and its originating tab, if any. Age is the
- * only time information the server sends (`created`, not last activity).
- */
 private fun sessionMeta(session: TerminalSession): String {
     val parts = mutableListOf(readableAge(session.created))
-    // The tab only when it differs from the name; the server usually fills it
-    // with the session name, and repeating it conveys nothing.
     session.tab
         ?.takeIf { it.isNotBlank() && !it.equals(session.name, ignoreCase = true) }
         ?.let { parts += it }
     return parts.joinToString(" · ")
 }
 
-/**
- * "3 h ago", "2 d ago". Under a minute is "now": a ticking clock in the list would
- * only draw attention to what does not matter.
- */
 internal fun readableAge(createdAtSeconds: Long, nowSeconds: Long = System.currentTimeMillis() / 1000): String {
     val delta = (nowSeconds - createdAtSeconds).coerceAtLeast(0)
     return when {
@@ -641,7 +575,6 @@ internal fun readableAge(createdAtSeconds: Long, nowSeconds: Long = System.curre
     }
 }
 
-/** At the end of the list: most of the time the user opens an existing session. */
 @Composable
 private fun NewSessionCard(onAttach: (String) -> Unit) {
     Card(
@@ -716,7 +649,6 @@ private fun RenameDialog(currentName: String, onConfirm: (String) -> Unit, onCan
     )
 }
 
-/** The session chips inside a backup, used by the backups sheet; shares the list's visual language. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SessionChips(names: List<String>, onTap: (String) -> Unit) {

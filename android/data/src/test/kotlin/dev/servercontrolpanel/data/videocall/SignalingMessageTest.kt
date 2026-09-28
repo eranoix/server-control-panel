@@ -9,10 +9,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Fixtures follow the shape produced by marshaling real `internal/videocall/types.go` values in Go,
- * so they prove the data classes in `SignalingMessage.kt` match the server's actual JSON.
- */
 class SignalingMessageTest {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -123,10 +119,6 @@ class SignalingMessageTest {
         assertEquals("ping", msg.type)
     }
 
-    /**
-     * Decodes `credential` (not `password`), `user` (not `display_name`) and `clientId` (used to
-     * dedupe ghost tiles) from a bare `JoinResponse`, without the `joined` envelope.
-     */
     @Test
     fun decodesJoinResponseWithTurnAndPolitenessSeed() {
         val fixture = """{"peer_id":"peerA1","room":{"id":"room123","name":"Meeting room","owner":"sam","members":["sam","guest"],"created_at":1735689600},"peers":[{"id":"peerB2","user":"guest","client_id":"client-uuid-1"}],"turn":{"urls":["turn:vps.example.com:3478?transport=udp"],"username":"1735693200:sam","credential":"aGVsbG8td29ybGQtaG1hYy1iNjQ=","ttl":3600},"politeness_seed":"peerA1"}"""

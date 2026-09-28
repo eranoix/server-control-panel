@@ -7,10 +7,6 @@ import (
 	"testing"
 )
 
-// TestSnapshotDtachReadsLog: with dtach, SnapshotSession captures 1 window/1
-// pane and reads the scrollback from the pty LOG (a
-// users/*/session-logs/<name>.log glob) — the stand-in for capture-pane. ANSI is
-// stripped so the replay via cat stays readable.
 func TestSnapshotDtachReadsLog(t *testing.T) {
 	dir := t.TempDir()
 	reg, _ := LoadRegistry(filepath.Join(dir, "reg.json"))
@@ -33,7 +29,6 @@ func TestSnapshotDtachReadsLog(t *testing.T) {
 	if snap.Name != name {
 		t.Fatalf("snap.Name = %q, want %q", snap.Name, name)
 	}
-	// dtach = 1 window / 1 pane (it does not multiplex the screen).
 	if len(snap.Windows) != 1 || len(snap.Windows[0].Panes) != 1 {
 		t.Fatalf("unexpected dtach structure: %+v", snap.Windows)
 	}
@@ -45,7 +40,6 @@ func TestSnapshotDtachReadsLog(t *testing.T) {
 		t.Errorf("scrollback should have ANSI stripped: %q", sb)
 	}
 
-	// scrollbackLines<=0 skips the scrollback capture.
 	re, err := SnapshotSession(name, 0)
 	if err != nil {
 		t.Fatalf("SnapshotSession(0): %v", err)

@@ -9,21 +9,8 @@ import (
 	"time"
 )
 
-// Usage and player history.
-//
-// Why on the server and not in the browser: the chart that lived only in the
-// page's memory reset on every F5 and recorded nothing while nobody was
-// watching — useless for exactly the questions it should answer, "did the
-// server go down overnight?" or "was anyone playing yesterday?".
-//
-// About the player count: it is A2S sampling, not log parsing. The dedicated
-// server's log emits no join/leave line I could verify against, and a guessed
-// regex would break silently the day somebody joined. Sampling the count is
-// less detailed (it does not say WHO joined) but it is always true.
-
-// Sample is one point of the series.
 type Sample struct {
-	T       int64   `json:"t"` // unix seconds
+	T       int64   `json:"t"`
 	CPU     float64 `json:"cpu"`
 	Mem     float64 `json:"mem"`
 	Players int     `json:"players"`
@@ -32,13 +19,13 @@ type Sample struct {
 
 const (
 	histInterval = 60 * time.Second
-	histMax      = 1440 // 24h at 1 sample/min
+	histMax      = 1440
 )
 
 type history struct {
 	mu    sync.RWMutex
 	path  string
-	data  map[string][]Sample // by server id
+	data  map[string][]Sample
 	dirty bool
 }
 
@@ -76,7 +63,6 @@ func (h *history) get(id string, since int64) []Sample {
 	return out
 }
 
-// flush writes to disk. Best-effort: failing here must not bring anything down.
 func (h *history) flush() {
 	h.mu.Lock()
 	if !h.dirty {
@@ -95,8 +81,6 @@ func (h *history) flush() {
 	}
 }
 
-// StartSampler runs in the background collecting one sample per minute from
-// every server in the inventory. It stops together with the ctx.
 func (m *Manager) StartSampler(ctx context.Context) {
 	go func() {
 		tick := time.NewTicker(histInterval)
@@ -128,7 +112,6 @@ func (m *Manager) StartSampler(ctx context.Context) {
 
 func round2(f float64) float64 { return float64(int(f*100+0.5)) / 100 }
 
-// History returns the samples from the last `hours` hours.
 func (m *Manager) History(id string, hours int) []Sample {
 	if hours <= 0 || hours > 24 {
 		hours = 6

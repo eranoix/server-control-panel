@@ -11,16 +11,6 @@ import (
 	"server-control-panel/internal/mobilebff/sdui"
 )
 
-// Catalogue entries for the two synthetic screens that
-// handlers_screens_test.go already registers in this same test binary:
-//
-//   - "test.screens.basic" is visible to anyone authenticated, mirroring its
-//     builder (which never refuses by role);
-//   - "test.screens.adminonly" is admin-only, mirroring the builder that
-//     returns sdui.ErrScreenNotFound for a non-admin.
-//
-// The pair is what lets us prove, over real HTTP, both halves of the contract:
-// what shows up and — more importantly — what is OMITTED.
 func init() {
 	sdui.RegisterCatalog("test.screens.basic", sdui.GroupSystem, "Basic screen", func(sdui.Viewer) bool { return true })
 	sdui.RegisterCatalog("test.screens.adminonly", sdui.GroupSecurity, "Admin only", func(v sdui.Viewer) bool { return v.IsAdmin() })
@@ -55,9 +45,6 @@ func sectionIDs(resp ScreensResponse) []string {
 	return ids
 }
 
-// GET /screens with no session returns 401 through the same requireAuth that
-// protects /screens/{id} — the catalogue reveals the administrative surface and
-// can never be anonymous.
 func TestListScreens_Unauthenticated(t *testing.T) {
 	rec, _ := listScreens(t, "")
 	if rec.Code != http.StatusUnauthorized {
@@ -65,8 +52,6 @@ func TestListScreens_Unauthenticated(t *testing.T) {
 	}
 }
 
-// The admin gets both sections, each with id, group and label — the three
-// fields the picker needs to draw the grouped list.
 func TestListScreens_AdminSeesEverythingWithGroupAndLabel(t *testing.T) {
 	rec, resp := listScreens(t, "screenadmin")
 	if rec.Code != http.StatusOK {
@@ -88,11 +73,6 @@ func TestListScreens_AdminSeesEverythingWithGroupAndLabel(t *testing.T) {
 	}
 }
 
-// The CORE of the catalogue's RBAC: the admin-only section does not come marked
-// as unavailable to the non-admin — it does not come at all. A disabled item
-// would confirm the screen exists and would hand back the enumeration that the
-// 404 of /screens/{id} exists to deny, so the test checks the RAW body: the id
-// must not appear anywhere in the response, not even as loose text.
 func TestListScreens_NonAdminOmitsForbiddenSection(t *testing.T) {
 	rec, resp := listScreens(t, "screenviewer")
 	if rec.Code != http.StatusOK {
@@ -119,10 +99,6 @@ func TestListScreens_NonAdminOmitsForbiddenSection(t *testing.T) {
 	}
 }
 
-// `sections` always serializes as an array, never as null: the Kotlin client
-// distinguishes an empty list (draw the empty state) from a missing field
-// (malformed payload), and a `null` here would become a crash or a blank screen
-// with no explanation.
 func TestListScreens_SectionsIsAlwaysAnArray(t *testing.T) {
 	rec, _ := listScreens(t, "screenviewer")
 	body := rec.Body.String()
@@ -134,9 +110,6 @@ func TestListScreens_SectionsIsAlwaysAnArray(t *testing.T) {
 	}
 }
 
-// The sections arrive grouped and contiguous — the app draws one header per
-// group in the order the items arrive, so a group that reappears after another
-// one would produce two headers with the same name.
 func TestListScreens_GroupsArriveContiguous(t *testing.T) {
 	_, resp := listScreens(t, "screenadmin")
 

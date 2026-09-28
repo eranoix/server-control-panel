@@ -5,9 +5,6 @@ import (
 	"time"
 )
 
-// On a fetch error (e.g. HTTP 429), RateLimits must serve the last-known-good
-// result marked Stale, instead of collapsing to "unavailable". This is the
-// non-regression guard for the quota-availability fix.
 func TestRateLimitsServesStaleOnError(t *testing.T) {
 	s := &Store{}
 	acct := Account{ID: "test-stale-acct"}
@@ -17,10 +14,10 @@ func TestRateLimitsServesStaleOnError(t *testing.T) {
 	}
 	rateMu.Lock()
 	rateCache[acct.ID] = rateCacheEntry{
-		good:      &good,                                            // we have an older good result
-		goodAt:    time.Now().Add(-10 * time.Minute),                // stale (> rateTTL) but usable
-		lastErr:   RateLimitStatus{Error: "unavailable (HTTP 429)"}, // last attempt errored
-		nextRetry: time.Now().Add(5 * time.Minute),                  // still backing off
+		good:      &good,
+		goodAt:    time.Now().Add(-10 * time.Minute),
+		lastErr:   RateLimitStatus{Error: "unavailable (HTTP 429)"},
+		nextRetry: time.Now().Add(5 * time.Minute),
 	}
 	rateMu.Unlock()
 	defer func() { rateMu.Lock(); delete(rateCache, acct.ID); rateMu.Unlock() }()
@@ -37,7 +34,6 @@ func TestRateLimitsServesStaleOnError(t *testing.T) {
 	}
 }
 
-// A fresh good result (within rateTTL) is served directly, not marked stale.
 func TestRateLimitsServesFreshGood(t *testing.T) {
 	s := &Store{}
 	acct := Account{ID: "test-fresh-acct"}

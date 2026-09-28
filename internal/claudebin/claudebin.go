@@ -1,20 +1,3 @@
-// Package claudebin resolves the path to the `claude` CLI without depending on
-// the PATH the process inherited.
-//
-// Why it exists: the control plane runs as a systemd service, whose PATH is
-// systemd's default (/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin) —
-// WITHOUT ~/.local/bin, which is where Claude Code's native installer puts the
-// binary. The paths that exec `claude` DIRECTLY (dtach/systemd-run and
-// exec.Command, with no login shell to source the profile) died with
-//
-//	dtach: could not execute claude: No such file or directory
-//
-// which reached the front end as the inscrutable "create session: exit status 1"
-// from the "Work now" button. Ordinary terminal sessions did not break because
-// they spawn `bash -l`, which rebuilds the PATH from the profile — masking the
-// problem in exactly the most-used flows.
-//
-// Resolving it here makes every AI spawn independent of the supervisor's PATH.
 package claudebin
 
 import (
@@ -24,8 +7,6 @@ import (
 	"sync"
 )
 
-// EnvOverride is the escape hatch for pointing at a specific binary (e.g. a
-// test build, or an installation outside the known paths).
 const EnvOverride = "PANEL_CLAUDE_BIN"
 
 var (
@@ -33,9 +14,6 @@ var (
 	cached string
 )
 
-// candidates lists the known Claude Code installations, in the order an operator
-// would expect them to win: the per-user native installer first, then the system
-// prefixes (npm -g, package).
 func candidates() []string {
 	var out []string
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
@@ -57,12 +35,6 @@ func executable(p string) bool {
 	return fi.Mode().Perm()&0o111 != 0
 }
 
-// Path returns the ABSOLUTE path to the `claude` CLI, or a bare "claude" when
-// nothing was found (preserving the old behavior instead of failing early: if the
-// binary shows up in the child's PATH, it still works).
-//
-// Only an ABSOLUTE result is cached — so an installation done after the server
-// booted is seen on the next call, with no restart.
 func Path() string {
 	mu.Lock()
 	defer mu.Unlock()
@@ -88,10 +60,6 @@ func Path() string {
 	return "claude"
 }
 
-// Dir returns the resolved binary's directory, or "" when resolution fell back to
-// the relative form. Used to stitch that directory into the PATH of AI sessions —
-// Claude Code itself (hooks, statusline, subagents) calls `claude` by name, so it
-// is not enough for the spawn's argv to be absolute.
 func Dir() string {
 	p := Path()
 	if !filepath.IsAbs(p) {
@@ -100,10 +68,6 @@ func Dir() string {
 	return filepath.Dir(p)
 }
 
-// PathEnv returns the PATH value an AI session should receive: the process's
-// current PATH with `claude`'s directory in front (without duplicating). It
-// returns "" when there is nothing to add — the caller then injects no variable,
-// letting the child inherit the env normally.
 func PathEnv() string {
 	dir := Dir()
 	if dir == "" {

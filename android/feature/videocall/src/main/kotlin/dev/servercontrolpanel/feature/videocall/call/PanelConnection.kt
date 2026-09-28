@@ -12,11 +12,6 @@ import dev.servercontrolpanel.feature.videocall.CallPermissionChecker
 
 private const val TAG = "PanelConnection"
 
-/**
- * Opens the app's launch activity with [EXTRA_ROOM_ID] so the in-app call screen can take over.
- * Uses the package launch intent because feature modules cannot depend on `:app`'s MainActivity;
- * `MainActivity.consumeDeepLink` routes the extra to the call screen.
- */
 private fun launchHostActivity(context: Context, roomId: String) {
     val intent = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -24,21 +19,10 @@ private fun launchHostActivity(context: Context, roomId: String) {
     context.startActivity(intent)
 }
 
-/**
- * One self-managed Telecom call. Telecom renders the ringing UI itself, so
- * [onShowIncomingCallUi] is a no-op to avoid a competing UI.
- *
- * [onAnswer] does not join WebRTC itself ([dev.servercontrolpanel.feature.videocall.CallViewModel.joinRoom]
- * is the only join path). It checks CAMERA and RECORD_AUDIO (otherwise `startForeground()` throws
- * `SecurityException`), starts [CallForegroundService], marks the call active and opens the app.
- *
- * As a [RingingCallHandle], [ActiveCallRegistry] can end it when a `call-ended` push arrives.
- */
 class PanelConnection(
     private val context: Context,
     private val callId: String,
     private val roomId: String,
-    // Injectable so tests can drive the granted and denied branches deterministically.
     private val permissionChecker: CallPermissionChecker = AndroidCallPermissionChecker(context),
     private val launchHostActivity: (Context, String) -> Unit = ::launchHostActivity,
 ) : Connection(), RingingCallHandle {
@@ -52,7 +36,6 @@ class PanelConnection(
     override fun onAnswer() {
         val missing = permissionChecker.missingPermissions()
         if (missing.isNotEmpty()) {
-            // The user can revoke permissions in Settings after the lobby granted them.
             Log.w(TAG, "answer refused, missing permission: $missing")
             teardown(DisconnectCause(DisconnectCause.ERROR, "missing_permission"))
             return
@@ -71,10 +54,8 @@ class PanelConnection(
     }
 
     override fun onShowIncomingCallUi() {
-        // No-op: Telecom renders the call UI.
     }
 
-    /** Called by [ActiveCallRegistry] when a `call-ended` push arrives. */
     override fun endCall() {
         teardown(DisconnectCause(DisconnectCause.REMOTE))
     }

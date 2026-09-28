@@ -1,26 +1,3 @@
-// handlers_jira.go — HTTP layer for the Jira Cloud kanban (J1).
-//
-// Config (site, email, token, project_key, board_jql) is per-user, stored
-// in the secrets vault under keys jira_site / jira_email / jira_token /
-// jira_project / jira_board_jql. The token never leaves the server; the
-// /config GET returns a `has_token` boolean instead.
-//
-// Routes wired in NewRouter:
-//
-//	GET    /api/jira/config                         current config (no token)
-//	POST   /api/jira/config                         save config (token only persisted when set)
-//	DELETE /api/jira/config                         wipe config (deletes vault keys)
-//	GET    /api/jira/health                         myself() probe — validates creds
-//	GET    /api/jira/projects                       list projects
-//	GET    /api/jira/issuetypes?project=KEY         issue types for a project
-//	GET    /api/jira/board?jql=...&start=&max=      kanban issues
-//	GET    /api/jira/issue/{key}                    detail
-//	POST   /api/jira/issue                          create
-//	GET    /api/jira/issue/{key}/transitions        available transitions
-//	POST   /api/jira/issue/{key}/transition         {transition_id}
-//	GET    /api/jira/issue/{key}/comments           list comments
-//	POST   /api/jira/issue/{key}/comment            {body}
-//	GET    /api/jira/users?project=KEY&q=foo        assignable users picker
 package api
 
 import (
@@ -37,14 +14,10 @@ import (
 	"server-control-panel/internal/scope"
 )
 
-// logJiraErr is a small helper so every handler that calls into the Jira
-// client surfaces upstream failures into journalctl with the same shape.
 func logJiraErr(where, ctx string, err error) {
 	log.Printf("[jira] %s failed (%s): %v", where, ctx, err)
 }
 
-// jiraClientFor returns a configured client for the caller, or
-// (nil, ErrNotConfigured) if no token has been saved yet.
 func (r *Router) jiraClientFor(req *http.Request) (*jira.Client, *jira.Config, error) {
 	user := auth.UserFrom(req)
 	if user == "" {
@@ -54,7 +27,6 @@ func (r *Router) jiraClientFor(req *http.Request) (*jira.Client, *jira.Config, e
 	if err != nil {
 		return nil, nil, err
 	}
-	// Return a Config snapshot too — handler /api/jira/health uses it.
 	u, _ := scope.New(user)
 	uv := scope.NewUserVault(r.secrets, u)
 	cfg := &jira.Config{
@@ -69,13 +41,6 @@ func (r *Router) jiraClientFor(req *http.Request) (*jira.Client, *jira.Config, e
 
 func valOf(uv *scope.UserVault, k string) string { v, _ := uv.Get(k); return v }
 
-// userVault opens a user's PERSONAL vault for writing.
-//
-// Extracted because three paths write a Jira credential into the same box (the
-// POST branch of handleJiraConfig, and the JiraConnect/JiraSetProject closures
-// the mobile BFF uses) and each one repeated scope.New + the vault check. One
-// more copy of that sequence is one more chance for someone to forget the
-// `r.secrets == nil` guard and write into a vault that does not exist.
 func (r *Router) userVault(user string) (*scope.UserVault, error) {
 	u, err := scope.New(user)
 	if err != nil {
@@ -87,10 +52,6 @@ func (r *Router) userVault(user string) (*scope.UserVault, error) {
 	return scope.NewUserVault(r.secrets, u), nil
 }
 
-// jiraClientForOwner is the request-less variant used by the queue
-// worker (which has no http.Request — only the job owner). Same vault
-// lookup as jiraClientFor but factored so background jobs can run with
-// the operator's credentials without re-authenticating.
 func (r *Router) jiraClientForOwner(user string) (*jira.Client, error) {
 	if user == "" {
 		return nil, errors.New("unauthorized")
@@ -127,8 +88,6 @@ func (r *Router) handleJiraConfig(w http.ResponseWriter, req *http.Request) {
 
 	switch req.Method {
 	case http.MethodGet:
-		// no-store so the SW / browser never serves a stale board layout
-		// (no-cache/must-revalidate/Pragma are redundant or deprecated legacy).
 		w.Header().Set("Cache-Control", "no-store")
 		site, _ := uv.Get("jira_site")
 		email, _ := uv.Get("jira_email")
@@ -157,14 +116,6 @@ func (r *Router) handleJiraConfig(w http.ResponseWriter, req *http.Request) {
 			writeErr(w, 400, "bad json")
 			return
 		}
-		// Setters that empty-string skip — UI can save only the fields it
-		// changed without wiping the token. board_columns explicit set to
-		// "[]" wipes; "null"/empty skips.
-		//
-		// Errors are NO LONGER swallowed: if vault.Set fails (disk full,
-		// fsync error) the UI used to say "saved" while nothing changed.
-		// Now we abort on first failure and report 500 with the key that
-		// failed so the operator can recover.
 		var lastErr error
 		setIf := func(key, val string) {
 			if lastErr != nil || strings.TrimSpace(val) == "" {
@@ -176,7 +127,7 @@ func (r *Router) handleJiraConfig(w http.ResponseWriter, req *http.Request) {
 		}
 		setIf("jira_site", body.Site)
 		setIf("jira_email", body.Email)
-		setIf("jira_token", body.Token) // only overwrite when user typed a new one
+		setIf("jira_token", body.Token)
 		setIf("jira_project", body.ProjectKey)
 		setIf("jira_board_jql", body.BoardJQL)
 		setIf("jira_board_columns", body.BoardColumns)
@@ -263,8 +214,6 @@ func (r *Router) handleJiraBoard(w http.ResponseWriter, req *http.Request) {
 	max, _ := strconv.Atoi(q.Get("max"))
 	issues, total, err := cli.Search(req.Context(), jql, start, max)
 	if err != nil {
-		// log upstream errors so we can diagnose (vault token expired,
-		// JQL rejected, API version mismatch, etc.). 502 to client.
 		logJiraErr("board", "jql="+jql, err)
 		writeErr(w, 502, err.Error())
 		return
@@ -292,7 +241,6 @@ func (r *Router) handleJiraUsers(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]any{"users": list})
 }
 
-// handleJiraIssue dispatches /api/jira/issue/{key}[/transitions|/transition|/comments|/comment]
 func (r *Router) handleJiraIssue(w http.ResponseWriter, req *http.Request) {
 	cli, _, err := r.jiraClientFor(req)
 	if err != nil {
@@ -303,7 +251,6 @@ func (r *Router) handleJiraIssue(w http.ResponseWriter, req *http.Request) {
 	rest = strings.TrimPrefix(rest, "/")
 
 	if rest == "" {
-		// POST /api/jira/issue — create
 		if req.Method != http.MethodPost {
 			writeErr(w, 405, "method not allowed")
 			return
@@ -419,7 +366,6 @@ func (r *Router) handleJiraIssue(w http.ResponseWriter, req *http.Request) {
 	case "work":
 		r.handleJiraAIWork(w, req, key)
 	default:
-		// /{key}/comment/{id} → edit/delete one comment
 		if strings.HasPrefix(action, "comment/") {
 			r.handleJiraCommentByID(w, req, key, strings.TrimPrefix(action, "comment/"))
 			return

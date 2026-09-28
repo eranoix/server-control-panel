@@ -18,20 +18,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * Answering from the lock screen starts [CallForegroundService] and opens the app with the room
- * id; declining does neither and unregisters the call from [ActiveCallRegistry].
- *
- * Runs on a device rather than Robolectric because the shadow of `android.telecom.Connection`
- * is not trusted; [PanelConnection] is constructed directly, as `PanelConnectionService` does.
- */
 @RunWith(AndroidJUnit4::class)
 class LockScreenAnswerDeclineTest {
 
-    /**
-     * `startForeground()` with camera and microphone types throws `SecurityException` unless both
-     * are granted. The denied path is covered through the injectable `permissionChecker`.
-     */
     @get:Rule
     val grantCameraAndMic: GrantPermissionRule =
         GrantPermissionRule.grant(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
@@ -40,7 +29,6 @@ class LockScreenAnswerDeclineTest {
 
     @Before
     fun setUp() {
-        // Isolates this class from service state left by earlier instrumented tests.
         CallForegroundService.stop(context)
         waitUntil(timeoutMs = 5_000) { !CallForegroundService.isRunning }
     }
@@ -72,7 +60,6 @@ class LockScreenAnswerDeclineTest {
         assertEquals("room-lock-answer", launchedRoomId)
         assertEquals(Connection.STATE_ACTIVE, connection.state)
 
-        // onDisconnect() must also stop the service it started.
         connection.onDisconnect()
         assertTrue(
             "CallForegroundService did not stop after onDisconnect()",
@@ -111,7 +98,6 @@ class LockScreenAnswerDeclineTest {
     }
 }
 
-/** Polls [condition] until it is true or [timeoutMs] elapses; returns the final observed value. */
 private fun waitUntil(timeoutMs: Long, pollMs: Long = 100, condition: () -> Boolean): Boolean {
     val deadline = System.currentTimeMillis() + timeoutMs
     while (System.currentTimeMillis() < deadline) {

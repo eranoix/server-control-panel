@@ -1,23 +1,5 @@
 package api
 
-// handlers_nodes.go — the multi-node inventory API and per-node revocation.
-//
-// Two rules govern this file, and both exist because the alternative has
-// already bitten someone in this repository:
-//
-//  1. AGE IS BORN HERE. `age_seconds` and `stale` are computed on the server,
-//     at serialization time (inventory.View). The browser only FORMATS. This
-//     project spans two machines and a tailnet; the clock on the operator's
-//     machine is not a controlled variable, and a client running fast would
-//     make everything look expired.
-//
-//  2. THREE VAULT STATES, NEVER TWO: vault unavailable → 503 on mutations and
-//     an explicit state on reads; key missing → credential CredMissing; key
-//     present → "ok". Collapsing the first two would report "no credential"
-//     when the whole vault is down.
-//     The inventory stays READABLE in all three cases: a dead vault must not
-//     wipe the node list off the screen.
-
 import (
 	"context"
 	"encoding/json"
@@ -37,33 +19,21 @@ import (
 	"server-control-panel/internal/scope"
 )
 
-// Vault keys written by the credential provisioning tool (the pve credential tool).
-// Each value is the WHOLE token in the form "panel@pve!<name>=<secret>", which is
-// what the PVEAPIToken header requires — storing the bare secret was the defect
-// that only a live call revealed.
 const (
-	pveSecretAdmin = "pve_token_admin"
-	pveSecretAudit = "pve_token_audit"
-	// pveSecretPanel is the full-access token. It replaces the audit token on
-	// hypervisor reads when present; the audit token stays the fallback so a
-	// machine without it only loses the routes that need it.
+	pveSecretAdmin      = "pve_token_admin"
+	pveSecretAudit      = "pve_token_audit"
 	pveSecretPanel      = "pve_token_panel"
 	pveSecretNodePrefix = "pve_token_node_"
 	pveTokenUser        = "panel@pve"
 	pveTokenNodePrefix  = "node-"
 )
 
-// Vault states. There are THREE because merging two of them is the defect this
-// file exists in order not to repeat.
 const (
 	vaultOK          = "ok"
 	vaultMissing     = "absent"
 	vaultUnreachable = "unreachable"
 )
 
-// hypervisorOps is the slice of the PVE client these handlers use. A local
-// interface so a test can inject a double without a mock framework — and so the
-// type makes it explicit that the handler cannot do more than this.
 type hypervisorOps interface {
 	Start(ctx context.Context, node string, vmid int, typ string) (string, error)
 	Stop(ctx context.Context, node string, vmid int, typ string) (string, error)
@@ -73,31 +43,17 @@ type hypervisorOps interface {
 	ListTokens(ctx context.Context, user string) ([]pve.TokenInfo, error)
 	ClusterResources(ctx context.Context) ([]pve.Resource, error)
 
-	// The Proxmox tab. It lives in the SAME interface and the SAME dial(): two
-	// interfaces would be two truths about what the dashboard can do on the
-	// hypervisor, and the second would age in silence.
 	NodeStatus(ctx context.Context, node string) (pve.NodeStatus, error)
 	TaskList(ctx context.Context, node string, opt pve.TaskListOptions) ([]pve.Task, error)
 	TaskLog(ctx context.Context, node, upid string) ([]string, error)
 	DisksList(ctx context.Context, node string) ([]pve.Disk, error)
 
-	// Pool topology. Answers "what do I lose if this disk dies?" — the link
-	// between `ZFSList` (the pool) and `DisksList` (the physical disk), which
-	// neither of the two gave on its own.
 	ZFSList(ctx context.Context, node string) ([]pve.ZPool, error)
 	ZFSTopology(ctx context.Context, node, pool string) (pve.ZPoolTopology, error)
 
-	// Backup freshness. It only started answering once full access was granted:
-	// before that the token got an empty list about a full datastore, and the
-	// screen had no way to know the chain had died.
 	DatastoreBackups(ctx context.Context, node, storage string) (pve.BackupFreshness, error)
-	// Without this the screen confuses "disarmed on purpose" with "failed", and
-	// permanent red trains people to ignore it — the disease that has already
-	// cost this lab the credibility of its alarm channel.
 	BackupJobs(ctx context.Context) ([]pve.BackupJob, error)
 
-	// Parity with the Proxmox screen. The last four only answer since full
-	// access was granted.
 	RRDNode(ctx context.Context, node string, j pve.RRDWindow) ([]pve.RRDPoint, error)
 	RRDGuest(ctx context.Context, node string, vmid int, typ string, j pve.RRDWindow) ([]pve.RRDPoint, error)
 	Network(ctx context.Context, node string) ([]pve.Interface, error)
@@ -111,55 +67,27 @@ type hypervisorOps interface {
 	SnapshotCreate(ctx context.Context, node string, vmid int, typ, name, description string) (string, error)
 	SnapshotDelete(ctx context.Context, node string, vmid int, typ, name string) (string, error)
 
-	// Console and rollback. ConsoleAttach returns an ALREADY AUTHENTICATED
-	// connection: neither the ticket nor the port crosses this boundary, and that
-	// is why the signature does not mention them — what is not returned cannot be
-	// handed to the browser by accident.
 	ConsoleAttach(ctx context.Context, node string, vmid int, typ string) (pve.ConsoleConn, string, error)
-	// Shell on the hypervisor ITSELF — the "Shell" button of the Proxmox screen.
-	// Requires Sys.Console, which only exists since full access was granted.
 	ConsoleAttachNode(ctx context.Context, node string) (pve.ConsoleConn, string, error)
 
-	// Power on the hypervisor ITSELF. The one action in the dashboard whose
-	// mistake has no remote undo: the machine has no IPMI, and the one routing
-	// the admin network is the machine itself.
 	NodePower(ctx context.Context, node string, cmd pve.PowerCommand) (string, error)
 	SnapshotRollback(ctx context.Context, node string, vmid int, typ, name string) (string, error)
 
-	// Maintenance. The three were born together but do NOT use the same
-	// credential: Reboot goes through the node's token (VM.PowerMgmt, which it
-	// already had), Clone and VZDump go through the dashboard's token, because
-	// they require VM.Allocate on /vms/<newid> and Datastore.AllocateSpace on
-	// /storage/<name> — paths where the node's token has no ACL at all.
 	Reboot(ctx context.Context, node string, vmid int, typ string) (string, error)
 	NextID(ctx context.Context) (int, error)
 	Clone(ctx context.Context, node string, vmid int, typ string, newID int, name, snapname string) (string, error)
 	VZDump(ctx context.Context, node string, vmid int, storage, mode, compress string) (string, error)
 
-	// The note that EXPLAINS what the box does. It comes from PVE's `description`
-	// field (the "Notes" of the native screen), which was already filled in on
-	// every guest and on the hypervisor itself. The dashboard READS it; it does
-	// not invent a second description that would diverge from the first the next
-	// day.
 	Description(ctx context.Context, node string, vmid int, typ string) (string, error)
 
-	// Writing the note is the ONLY operation in this batch that changes
-	// CONFIGURATION. It goes through the dashboard's token, like clone and
-	// backup: the same route serves guest and hypervisor, and the hypervisor case
-	// is NODE-scoped, not guest-scoped.
 	SetDescription(ctx context.Context, node string, vmid int, typ, text string) error
 }
 
-// nodeVault is the slice of the vault we need. Get returns (value, exists) —
-// and it is `exists` that separates "missing" from "unreachable", because
-// whoever cannot reach the vault never gets as far as calling Get.
 type nodeVault interface {
 	Get(key string) (string, bool)
 	Delete(key string) error
 }
 
-// inventoryStoreOrNil follows the deployStoreOrNil shape: a missing subsystem
-// answers 503, never a panic and never a lying empty list.
 func (r *Router) inventoryStoreOrNil(w http.ResponseWriter) *inventory.Store {
 	if r.inventoryStore == nil {
 		writeErr(w, 503, "inventory unavailable")
@@ -168,8 +96,6 @@ func (r *Router) inventoryStoreOrNil(w http.ResponseWriter) *inventory.Store {
 	return r.inventoryStore
 }
 
-// nodeVaultOrErr resolves the operator's vault. An error here means
-// "unreachable" — that is a state, not an emptiness.
 func (r *Router) nodeVaultOrErr() (nodeVault, error) {
 	if r.nodeVaultFn != nil {
 		return r.nodeVaultFn()
@@ -180,8 +106,6 @@ func (r *Router) nodeVaultOrErr() (nodeVault, error) {
 	return scope.NewUserVault(r.secrets, scope.User(r.cfg.Primary)), nil
 }
 
-// vaultToken returns the token value and the STATE of the vault. The three
-// possible returns are disjoint and the caller picks the HTTP status from them.
 func (r *Router) vaultToken(key string) (value, state string) {
 	v, err := r.nodeVaultOrErr()
 	if err != nil {
@@ -194,9 +118,6 @@ func (r *Router) vaultToken(key string) (value, state string) {
 	return s, vaultOK
 }
 
-// dial builds a PVE client from a vault token. The descriptor (base_url, pinned
-// CA, ServerName, address to dial) comes from data/pve/pve.json — never from
-// argv and never from a plaintext env var.
 func (r *Router) dial(tokenValue string) (hypervisorOps, error) {
 	if r.pveDial != nil {
 		return r.pveDial(tokenValue)
@@ -210,10 +131,6 @@ func (r *Router) dial(tokenValue string) (hypervisorOps, error) {
 	return pve.New(cfg)
 }
 
-// nodeSlug turns an inventory ID into the trailing part of the token name,
-// which is how the provisioning tool named them: lxc/207 "apps" → node-apps.
-// The slug comes from the node's NAME, not from the VMID: the token was created
-// by name.
 func nodeSlug(n inventory.Node) string {
 	s := strings.ToLower(strings.TrimSpace(n.Name))
 	s = strings.Map(func(r rune) rune {
@@ -232,14 +149,6 @@ func nodeKey(n inventory.Node) string {
 }
 func nodeTokenID(n inventory.Node) string { return pveTokenNodePrefix + nodeSlug(n) }
 
-// hypervisorReadSecret picks the token the dashboard READS the
-// hypervisor with: the full-access one when it exists in the vault, the audit
-// one when it does not.
-//
-// It is ONE function, and every read path goes through it. Two copies of this
-// choice — one in the poller and one in the handler — would diverge the day
-// someone touched one of them, and the symptom would be a screen showing fresh
-// data on half the panels and 403 on the other half.
 func (r *Router) hypervisorReadSecret() string {
 	if _, state := r.vaultToken(pveSecretPanel); state == vaultOK {
 		return pveSecretPanel
@@ -247,11 +156,6 @@ func (r *Router) hypervisorReadSecret() string {
 	return pveSecretAudit
 }
 
-// credentialKey says which vault key answers for a node. The poller and the
-// handler must both use it, or the screen can show an expiry date and "no
-// credential" at the same time.
-//
-// The hypervisor has no "per-node" token: what observes it is the audit one.
 func credentialKey(n inventory.Node) string {
 	if n.Kind == inventory.NodeKindHost {
 		return pveSecretAudit
@@ -259,11 +163,6 @@ func credentialKey(n inventory.Node) string {
 	return nodeKey(n)
 }
 
-// handleNodes routes /api/nodes and its subroutes.
-//
-// A PVE guest ID contains a slash ("lxc/207"), so the path cannot be sliced
-// naively: the verb is the LAST segment when that segment is a known one, and
-// everything before it is the ID.
 func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -308,19 +207,12 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 		}
 		r.nodePower(w, req, st, id)
 	case "note":
-		// GET reads, PUT writes. PUT and not POST because the note is a field of
-		// a resource that already exists — and it is the verb PVE itself requires
-		// further down.
 		if req.Method != http.MethodGet && req.Method != http.MethodPut {
 			writeErr(w, 405, "method not allowed")
 			return
 		}
 		r.nodeNote(w, req, st, id)
 	case "clone":
-		// GET prepares (next free id + suggested name), POST executes. Keeping
-		// both on the same verb keeps preparation and execution next to each
-		// other: splitting them would invite preparing in one place and executing
-		// in another, with the id coming from anywhere at all.
 		if req.Method != http.MethodGet && req.Method != http.MethodPost {
 			writeErr(w, 405, "method not allowed")
 			return
@@ -341,8 +233,6 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// now is the handler's clock. Injectable so a test can prove expiry without
-// waiting — the same reason as in freshness.go and in the poller.
 func (r *Router) now() time.Time {
 	if r.inventoryNow != nil {
 		return r.inventoryNow()
@@ -352,14 +242,11 @@ func (r *Router) now() time.Time {
 
 func (r *Router) ttl() time.Duration {
 	if r.inventoryPoller != nil {
-		// The SAME TTL as the loop: two different values would make the screen
-		// disagree with the poller about what has expired.
 		return r.inventoryPoller.TTL()
 	}
 	return 90 * time.Second
 }
 
-// listNodes delivers the views with the age ALREADY resolved.
 func (r *Router) listNodes(w http.ResponseWriter, st *inventory.Store) {
 	inv, err := st.Snapshot()
 	if err != nil {
@@ -367,30 +254,16 @@ func (r *Router) listNodes(w http.ResponseWriter, st *inventory.Store) {
 		return
 	}
 	seen := inventory.View(inv, r.ttl(), r.now())
-	// An unavailable vault does NOT wipe the list: it becomes a state stamped on
-	// every node that speaks the PVE API. A readable inventory is the floor.
 	vaultState := r.enrichVault(seen)
 	writeJSON(w, map[string]any{
 		"nodes":       nonNil(seen),
 		"ttl_seconds": int64(r.ttl().Seconds()),
 		"vault":       vaultState,
 		"observed_at": r.now().Unix(),
-		// 🔴 The SECOND clock (pollclock.go). Each node's `age_seconds` says how
-		// long the dashboard has KNOWN that; `poll` says how long ago it ASKED.
-		// With only one of them, a mute node and a dead poller look like the same
-		// screen — and the second hypothesis accuses every node at once, all of
-		// them innocent.
-		"poll": inventory.ViewPoll(inv, r.ttl(), r.now()),
+		"poll":        inventory.ViewPoll(inv, r.ttl(), r.now()),
 	})
 }
 
-// enrichVault reconciles what the model holds against what the vault HAS
-// right now, and returns the vault's global state. The three cases stay apart:
-//
-//	vault down  → vaultUnreachable; credentials stay as the model left
-//	              them (we do not invent CredMissing for failing to look)
-//	key gone    → CredMissing on that node
-//	key present → keep what the model says (ok/revoked/expired)
 func (r *Router) enrichVault(seen []inventory.NodeView) string {
 	v, err := r.nodeVaultOrErr()
 	if err != nil {
@@ -401,15 +274,10 @@ func (r *Router) enrichVault(seen []inventory.NodeView) string {
 			continue
 		}
 		if seen[i].Credential.State == inventory.CredRevoked {
-			// Revoked beats missing: revocation deletes the key from the vault,
-			// and without this guard the node would read as never having had one.
 			continue
 		}
 		value, ok := v.Get(credentialKey(seen[i].Node))
 		if !ok || strings.TrimSpace(value) == "" {
-			// A key that is not in the vault is a MISSING credential — and that is
-			// different from revoked (which is a recorded action) and from expired
-			// (which is the calendar).
 			seen[i].Credential.State = inventory.CredMissing
 			seen[i].Credential.TokenID = ""
 		}
@@ -510,12 +378,6 @@ func findNode(inv inventory.Inventory, id string) (inventory.Node, bool) {
 	return inventory.Node{}, false
 }
 
-// nodePower runs start/stop/shutdown and only answers success after the
-// hypervisor's task has finished well.
-//
-// 🔴 PVE's POST returns 200 with a UPID as soon as the TASK IS CREATED — the VM
-// can still fail to come up right afterwards. Passing that 200 along would be
-// the screen saying "powered on" for a VM that did not power on.
 func (r *Router) nodePower(w http.ResponseWriter, req *http.Request, st *inventory.Store, id string) {
 	var body struct {
 		Action string `json:"action"`
@@ -550,7 +412,6 @@ func (r *Router) nodePower(w http.ResponseWriter, req *http.Request, st *invento
 	value, state := r.vaultToken(nodeKey(no))
 	switch state {
 	case vaultUnreachable:
-		// Distinct from vaultMissing on purpose: the operator's action differs.
 		writeErr(w, 503, "vault unreachable — the node credential could not be read")
 		return
 	case vaultMissing:
@@ -575,11 +436,6 @@ func (r *Router) nodePower(w http.ResponseWriter, req *http.Request, st *invento
 	case "shutdown":
 		upid, err = cli.Shutdown(ctx, node, no.VMID, kind)
 	case "reboot":
-		// Reboot WAITS for the task, unlike clone and backup. The reason is the
-		// same one that justifies WaitTask on shutdown: a guest that ignores the
-		// request from the inside stays powered on, and the task is the only place
-		// where that shows up. A "rebooted" for something that did not reboot is
-		// worse than no error at all.
 		upid, err = cli.Reboot(ctx, node, no.VMID, kind)
 	}
 	if err != nil {
@@ -587,41 +443,26 @@ func (r *Router) nodePower(w http.ResponseWriter, req *http.Request, st *invento
 		return
 	}
 
-	// The proof that it happened: the task finished, and it finished doing what
-	// was asked. `WARNINGS: n` counts as done — see waitTask.
 	warnings, err := waitTask(ctx, cli, node, upid)
 	if err != nil {
 		r.auditEvent(req, auth.UserFrom(req), "pve.power", fmt.Sprintf("node=%s action=%s upid=%s status=failed", id, action, upid))
-		// The exitstatus is attached EXPLICITLY, without depending on how
-		// pve.Error.Error() formats it: when Status is 0 (which is the case for a
-		// task that ended badly), that formatter takes the Err branch and the
-		// Body — which carries the exitstatus — never shows up. The real reason
-		// for the failure is the only clue the operator has.
 		writeErr(w, 502, "task "+upid+" did not finish cleanly: "+pveErrorDetail(err))
 		return
 	}
 
 	r.auditEvent(req, auth.UserFrom(req), "pve.power",
 		fmt.Sprintf("node=%s action=%s upid=%s status=ok warnings=%s", id, action, upid, warnings))
-	// The warning does NOT disappear: it travels together with the success,
-	// because whoever does not see it here will not see it anywhere.
 	writeJSON(w, map[string]any{"node": id, "action": action, "upid": upid, "status": "ok", "warnings": warnings})
 }
 
-// kindAndHost returns the guest's type ("lxc"|"qemu") and the hypervisor node,
-// both derived from the ID that discovery recorded ("lxc/207").
 func kindAndHost(n inventory.Node) (kind, host string) {
 	kind = "lxc"
 	if i := strings.Index(n.ID, "/"); i > 0 {
 		kind = n.ID[:i]
 	}
-	// The host is the hypervisor's name; discovery records it as the node
-	// "node/<name>". PVE guests only have one hypervisor in this topology.
 	return kind, "pve"
 }
 
-// pveErrorDetail returns the error message plus the body the hypervisor sent,
-// without duplicating it when it is already there.
 func pveErrorDetail(err error) string {
 	msg := err.Error()
 	var pe *pve.Error
@@ -650,24 +491,6 @@ func pveErrorCode(err error) int {
 	}
 }
 
-// 🔴 revokeCredential is the whole revocation procedure, and the ORDER is the
-// point.
-//
-//  1. DELETE the token on PVE, with the ADMIN token (a disjoint role)
-//  2. CONFIRMATION: a real call with the just-revoked operational token has to
-//     return 401. PVE re-reads user.cfg on every request, with no TTL, so the
-//     "under a minute" requirement comes out BY CONSTRUCTION — and any cache
-//     in the dashboard would only make it worse. That is why there is no cache
-//     of credential state here.
-//  3. ONLY THEN delete it from the vault. Last, because internal/secrets does
-//     a read-modify-write of the whole map WITHOUT flock: a concurrent write
-//     can RESURRECT the key.
-//  4. RE-CHECK that the key is gone — that is the detection of the
-//     resurrection above.
-//
-// Inverted, the order produces the worst possible state: a clean vault with the
-// token ALIVE on the hypervisor. An orphan credential nobody can revoke any
-// more, because nobody knows any longer that it exists.
 func (r *Router) revokeCredential(w http.ResponseWriter, req *http.Request, st *inventory.Store, id string) {
 	inv, err := st.Snapshot()
 	if err != nil {
@@ -700,14 +523,11 @@ func (r *Router) revokeCredential(w http.ResponseWriter, req *http.Request, st *
 	}
 	ctx := req.Context()
 
-	// Step 1 — the hypervisor first.
 	if err := admin.DeleteToken(ctx, pveTokenUser, nodeTokenID(no)); err != nil {
 		writeErr(w, pveErrorCode(err), "step=pve.delete failed: "+err.Error()+" (the vault was NOT touched)")
 		return
 	}
 
-	// Step 2 — confirm with the revoked token itself. Without this proof, the
-	// dashboard would be saying "revoked" on the strength of its own optimism.
 	if nodeState == vaultOK {
 		operational, err := r.dial(nodeValue)
 		if err == nil {
@@ -720,19 +540,16 @@ func (r *Router) revokeCredential(w http.ResponseWriter, req *http.Request, st *
 		}
 	}
 
-	// Step 3 — the vault last.
 	if err := vault.Delete(nodeKeyName); err != nil {
 		writeErr(w, 500, "step=vault.delete failed: "+err.Error()+" (token ALREADY revoked on the hypervisor)")
 		return
 	}
 
-	// Step 4 — did the key really disappear? (resurrection by race)
 	if _, still := vault.Get(nodeKeyName); still {
 		writeErr(w, 500, "step=vault.recheck failed: the key "+nodeKeyName+" reappeared in the vault (concurrent write)")
 		return
 	}
 
-	// The screen shows the REAL state, immediately — never a cache.
 	if err := st.Replace(func(iv *inventory.Inventory) {
 		for i := range iv.Nodes {
 			if iv.Nodes[i].ID == id {
@@ -754,15 +571,6 @@ func (r *Router) revokeCredential(w http.ResponseWriter, req *http.Request, st *
 	})
 }
 
-// loadPVEDescriptor reads data/pve/pve.json — the PUBLIC descriptor of the
-// hypervisor (base_url, address to dial, ServerName and the path to the pinned
-// CA). No secret lives in it: the token always comes from the vault.
-//
-// Absence is a legitimate state and NOT a fatal error: with no descriptor the
-// inventory carries on with the nodes from seeds.json alone. A dashboard that
-// refuses to start because the hypervisor is not configured is the opposite of
-// what this work promises — the dashboard is precisely where you go to look
-// when something has gone down.
 func loadPVEDescriptor(dataDir string) (*pve.Config, error) {
 	path := filepath.Join(dataDir, "pve", "pve.json")
 	raw, err := os.ReadFile(path)
@@ -780,8 +588,6 @@ func loadPVEDescriptor(dataDir string) (*pve.Config, error) {
 	}
 	ca := d.CAFile
 	if ca != "" && !filepath.IsAbs(ca) {
-		// The descriptor stores the path relative to the dashboard's root;
-		// resolving it here avoids depending on the process's working directory.
 		ca = filepath.Join(filepath.Dir(filepath.Dir(dataDir)), ca)
 		if _, err := os.Stat(ca); err != nil {
 			ca = filepath.Join(dataDir, "pve", filepath.Base(d.CAFile))
@@ -792,10 +598,6 @@ func loadPVEDescriptor(dataDir string) (*pve.Config, error) {
 	}, nil
 }
 
-// startInventoryPoller starts the discovery loop, in the same block as the
-// other collectors. With no store or no descriptor it simply does not start —
-// and the route keeps serving whatever is on disk, with the age growing, which
-// is exactly what the operator is meant to see.
 func (r *Router) startInventoryPoller(ctx context.Context) {
 	if r.inventoryStore == nil {
 		return
@@ -816,30 +618,11 @@ func (r *Router) startInventoryPoller(ctx context.Context) {
 	p := inventory.NewPoller(r.inventoryStore, cli, inventory.Sources{
 		Seeds:       inventory.SeedsSource(r.cfg.DataDir),
 		Credentials: r.credentialSource(),
-		// The other sources join in when there is something to aggregate; nil is
-		// safe.
 	}, inventory.PollerConfig{})
 	r.inventoryPoller = p
 	go p.Run(ctx)
 }
 
-// The poller's credential source. The poller cannot fill Node.Credential by
-// itself; without this every node would read as CredMissing and the expiry
-// warning could never fire.
-//
-// The assembly respects the layers: internal/inventory cannot reach the vault
-// and internal/pve cannot reach the vault; what joins the two halves is this
-// handler, the only place that knows both.
-//
-// # Why the expiry is cached and the token id is not
-//
-// The token id comes from the VAULT — a local, cheap read, done on every tick
-// so that a revocation shows up on screen on the next one. The expiry comes
-// from the HYPERVISOR and only the ADMIN token can read it (the audit one gets
-// 403 — that is the role disjunction working, measured). Using the revocation
-// credential every 30 s to read a date that only changes when someone recreates
-// a token would widen the exposure of the most powerful token in the lab for no
-// gain at all. Hence the one-hour cache.
 const expiresCacheTTL = time.Hour
 
 func (r *Router) credentialSource() func([]inventory.Node) (map[string]inventory.Credential, error) {
@@ -848,10 +631,6 @@ func (r *Router) credentialSource() func([]inventory.Node) (map[string]inventory
 	var readAt time.Time
 
 	return func(nodes []inventory.Node) (map[string]inventory.Credential, error) {
-		// 🔴 The vault is an IN-MEMORY map loaded at boot. A secret written by
-		// ANOTHER process (`panelctl secrets set`, the pve credential tool)
-		// would stay invisible until the next restart, so reload when the file
-		// changed. In the common case this is one os.Stat.
 		if r.secrets != nil {
 			if _, err := r.secrets.ReloadIfChanged(); err != nil {
 				log.Printf("inventory: the vault could not be re-read (%v) — carrying on with the in-memory copy", err)
@@ -859,8 +638,6 @@ func (r *Router) credentialSource() func([]inventory.Node) (map[string]inventory
 		}
 		v, err := r.nodeVaultOrErr()
 		if err != nil {
-			// An unreachable vault is NOT a missing credential (the collapse in
-			// handlers_ai.go:186). The poller keeps the last known state.
 			return nil, err
 		}
 
@@ -886,9 +663,6 @@ func (r *Router) credentialSource() func([]inventory.Node) (map[string]inventory
 			}
 			tokenID, _, err := pve.SplitTokenValue(value)
 			if err != nil {
-				// A value outside the "<tokenid>=<secret>" form is the old
-				// provisioning defect. Better to assert nothing than to assert
-				// something wrong.
 				continue
 			}
 			out[n.ID] = inventory.Credential{TokenID: tokenID, Expire: exp[tokenName(tokenID)]}
@@ -897,8 +671,6 @@ func (r *Router) credentialSource() func([]inventory.Node) (map[string]inventory
 	}
 }
 
-// tokenName extracts the token name from the full id: "panel@pve!node-lab" →
-// "node-lab", which is how PVE returns it in /access/users/{u}/token.
 func tokenName(tokenID string) string {
 	if i := strings.Index(tokenID, "!"); i >= 0 {
 		return tokenID[i+1:]
@@ -906,9 +678,6 @@ func tokenName(tokenID string) string {
 	return tokenID
 }
 
-// tokenExpires reads the expiry dates on the hypervisor. Requires the ADMIN
-// token: the audit one gets 403 on this route, and that refusal is the role
-// disjunction doing its job.
 func (r *Router) tokenExpires() (map[string]int64, error) {
 	value, state := r.vaultToken(pveSecretAdmin)
 	if state != vaultOK {

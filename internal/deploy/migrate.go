@@ -1,19 +1,3 @@
-// migrate.go — migration of apps.json from the v1 format (a RAW array of App,
-// tied to a single node) to the v2 envelope
-// {schema_version, projects, deployments} of the multi-node vocabulary.
-//
-// The mould is internal/config/migrate.go (MigrateV1ToV2): a fail-closed flock,
-// a re-read AFTER acquiring the lock, a backup before any write, a rollback if
-// the write fails, and a non-fatal audit event. Two real differences in this
-// file, measured before a line of it was written:
-//
-//  1. The v1 apps.json is a RAW ARRAY (`[{"name":"hello",…}]`) — it has nowhere
-//     to keep a schema_version, unlike config.json. That is why detection here
-//     goes BY SHAPE (see DetectShape), not by a version field.
-//  2. This file has THREE possible writers (the HTTP server, the queue runner
-//     and the panelctl behind the post-receive hook), and only the server
-//     migrates: panelctl REFUSES an envelope it does not understand instead of
-//     rewriting it (see GuardCLI).
 package deploy
 
 import (
@@ -30,41 +14,25 @@ import (
 	"server-control-panel/internal/auth"
 )
 
-// AppsSchemaVersion is the envelope version THIS binary reads and writes.
-// An envelope on a different version is refused, never rewritten (an old binary
-// that rewrites a newer document erases the fields it does not know about).
 const AppsSchemaVersion = 2
 
-// DefaultNodeID is the node where the deploys that predate the multi-node model
-// live. Every v1 App becomes a Deployment stamped with it — "no node_id" is not
-// a state v2 admits.
 const DefaultNodeID = "vps-187"
 
-// File is the v2 envelope written to <dataDir>/deploy/apps.json.
 type File struct {
 	SchemaVersion int          `json:"schema_version"`
 	Projects      []Project    `json:"projects"`
 	Deployments   []Deployment `json:"deployments"`
 }
 
-// Project is the publishable application, independent of where it runs.
-//
-// The function that used to return the compose namespace was called Project and
-// was renamed to ComposeProject (store.go) — the domain name takes precedence
-// over the docker detail, and Go does not admit a type and a function of the
-// same name in the same package.
 type Project struct {
-	ID   string `json:"id"`   // stable slug; today the same as the v1 app name
-	Name string `json:"name"` // displayed label
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
-// Deployment is the publication of a Project on a Node. It is DeployRecord
-// raised to a first-class citizen: it holds the configuration v1 kept inside
-// App (branch, compose, env, history) plus the NodeID v1 did not have.
 type Deployment struct {
-	ID          string            `json:"id"`         // "<project_id>@<node_id>"
-	ProjectID   string            `json:"project_id"` // points at Project.ID
-	NodeID      string            `json:"node_id"`    // the node this deployment runs on
+	ID          string            `json:"id"`
+	ProjectID   string            `json:"project_id"`
+	NodeID      string            `json:"node_id"`
 	Branch      string            `json:"branch"`
 	ComposeFile string            `json:"compose_file"`
 	Domain      string            `json:"domain"`
@@ -77,41 +45,25 @@ type Deployment struct {
 	Deploys     []DeployRecord    `json:"deploys"`
 }
 
-// Shape is the shape of apps.json on disk. It exists because v1 has no version:
-// classifying the file is the first decision any reader of it makes.
 type Shape string
 
 const (
-	ShapeMissing Shape = "missing"  // file does not exist — fresh install
-	ShapeV1Array Shape = "v1-array" // raw App array (old format)
-	ShapeV2      Shape = "v2"       // envelope {schema_version: 2, …}
-	ShapeUnknown Shape = "unknown"  // anything else: a future version, garbage, or truncated
+	ShapeMissing Shape = "missing"
+	ShapeV1Array Shape = "v1-array"
+	ShapeV2      Shape = "v2"
+	ShapeUnknown Shape = "unknown"
 )
 
-// ErrConcurrentAppsMigration is returned when the apps.json lock is already
-// taken — another process (the server, the queue runner or the panelctl behind
-// the hook) is in the middle of a write. It fails CLOSED, like config's
-// ErrConcurrentMigration: systemd retries the boot and the second attempt sees
-// v2 and does nothing.
 var ErrConcurrentAppsMigration = errors.New("deploy: concurrent apps.json migration in progress")
 
-// appsPath is the path of the registry. It mirrors Store.file() on purpose: the
-// migration and the store contend for the SAME file and the SAME lock.
 func appsPath(dataDir string) string {
 	return filepath.Join(dataDir, "deploy", "apps.json")
 }
 
-// appsLockPath is the store's .apps.lock — reused here on purpose. A lock of
-// the migration's own would not stop the post-receive hook from writing to the
-// file in the middle of it; it is the same file, so it has to be the same lock.
 func appsLockPath(dataDir string) string {
 	return filepath.Join(dataDir, "deploy", ".apps.lock")
 }
 
-// DetectShape classifies the apps.json on disk. The second return is the
-// schema_version observed (0 when the document has none), used in the refusal
-// messages — saying "unknown format" without saying WHICH format forces
-// the operator to open the file by hand.
 func DetectShape(dataDir string) (Shape, int, error) {
 	raw, err := os.ReadFile(appsPath(dataDir))
 	if err != nil {
@@ -124,11 +76,6 @@ func DetectShape(dataDir string) (Shape, int, error) {
 	return sh, ver, nil
 }
 
-// detectShapeBytes is the detection BY SHAPE (difference 1 at the top of this
-// file). An empty file counts as unknown, not as an empty list: zero bytes is
-// the signature of a power cut between the rename and the flush — and this
-// house has a UPS with no data cable. Treating it as "no apps" would wipe the
-// registry.
 func detectShapeBytes(raw []byte) (Shape, int) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
@@ -153,7 +100,6 @@ func detectShapeBytes(raw []byte) (Shape, int) {
 		}
 		var f File
 		if json.Unmarshal(trimmed, &f) != nil {
-			// Claims to be v2 but does not decode as v2: garbage with the right label.
 			return ShapeUnknown, envelope.SchemaVersion
 		}
 		return ShapeV2, envelope.SchemaVersion
@@ -162,23 +108,8 @@ func detectShapeBytes(raw []byte) (Shape, int) {
 	}
 }
 
-// cliBinaryName is the binary that does NOT migrate. Naming it in the message
-// is the whole point of the guard: whoever reads the error needs to know WHICH
-// binary is out of date, otherwise the symptom is a rejected `git push` with
-// text the operator cannot decipher.
 const cliBinaryName = "panelctl"
 
-// GuardCLI is the refusal: panelctl shares apps.json with the server but NEVER
-// migrates it. When it meets a shape this binary does not write, it fails
-// CLOSED — without opening the store, without writing, without a backup —
-// instead of rewriting the file into the format it knows.
-//
-// It mirrors internal/config/config_io.go:57 (a config whose schema_version is
-// higher than the binary's aborts instead of being rewritten). apps.json had no
-// such protection: an old panelctl opening the store would write the v2 back as
-// a v1 array on the first `git push`, erasing the node_id of every deployment.
-//
-// Operational consequence: the server and panelctl have to be released TOGETHER.
 func GuardCLI(dataDir string) error {
 	shape, version, err := DetectShape(dataDir)
 	if err != nil {
@@ -202,39 +133,12 @@ func GuardCLI(dataDir string) error {
 	}
 }
 
-// AppsMigration gathers what MigrateApps needs. A struct (and not loose
-// arguments) for the same reason as config.MigrationDeps: the caller does not
-// have to memorise an order, and the next migration extends it without breaking
-// existing calls.
 type AppsMigration struct {
-	// DataDir is the state directory; the registry lives at <DataDir>/deploy/apps.json.
 	DataDir string
-	// Audit, when non-nil, receives the "migration.apps.v2" event. An audit
-	// failure does NOT undo the migration — it is already committed to disk.
-	Audit *auth.AuditLog
-	// NodeID is the node that inherits the single-node deploys. A field (rather
-	// than the constant used directly) so a test can vary it, like config's Primary.
-	NodeID string
+	Audit   *auth.AuditLog
+	NodeID  string
 }
 
-// MigrateApps converts the v1 apps.json into the v2 envelope. It is idempotent
-// (a cheap no-op once it is already v2), reentrant across PROCESSES (the server
-// and the panelctl behind the post-receive hook can both find it pending at the
-// same time) and atomic (backup first, write via tmp+rename with fsync,
-// rollback on error).
-//
-// The steps, in order:
-//
-//  1. A cheap read BEFORE the lock: v2 or absent leave without touching a thing.
-//  2. Process mutex (TryLock) + flock LOCK_EX|LOCK_NB on the store's .apps.lock.
-//  3. RE-READ from disk: the other process may have migrated in the meantime.
-//  4. Classify by shape; an unknown one aborts WITHOUT writing anything.
-//  5. Backup at apps.json.bak.<unix-ts> (hardlink; a copy if that is not possible).
-//  6. Convert each App into 1 Project + 1 Deployment carrying NodeID.
-//  7. Write the envelope with writeFileAtomic (fsync of file and directory).
-//  8. Audit "migration.apps.v2" (non-fatal).
-//
-// An error at 7 restores the backup over apps.json (rollback).
 func MigrateApps(d AppsMigration) error {
 	if d.DataDir == "" {
 		return errors.New("deploy: migrate: DataDir empty")
@@ -244,15 +148,10 @@ func MigrateApps(d AppsMigration) error {
 	}
 	path := appsPath(d.DataDir)
 
-	// Step 1: the cheap no-op. Without it, every boot would create the lock file
-	// and contend for the flock with the hook for nothing.
 	if sh, _, err := DetectShape(d.DataDir); err == nil && (sh == ShapeV2 || sh == ShapeMissing) {
 		return nil
 	}
 
-	// Step 2: both locks, in the SAME order Store.lock() takes them — an
-	// inverted order between two paths is the recipe for deadlock. TryLock (and
-	// not Lock) because the semantics here are to fail closed, like config.
 	if !appsFileMu.TryLock() {
 		return ErrConcurrentAppsMigration
 	}
@@ -271,8 +170,6 @@ func MigrateApps(d AppsMigration) error {
 	}
 	defer func() { _ = syscall.Flock(int(lockF.Fd()), syscall.LOCK_UN) }()
 
-	// Step 3: RE-READ after the lock. Between step 1 and now, the other process
-	// may have migrated the whole file.
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -281,13 +178,11 @@ func MigrateApps(d AppsMigration) error {
 		return fmt.Errorf("deploy: migrate: read apps.json: %w", err)
 	}
 
-	// Step 4: classify.
 	shape, version := detectShapeBytes(raw)
 	switch shape {
 	case ShapeV2:
-		return nil // another process migrated while we were waiting for the lock
+		return nil
 	case ShapeV1Array:
-		// continue below
 	default:
 		return fmt.Errorf(
 			"deploy: migrate: apps.json in unknown format (schema_version=%d, this binary reads %d) at %s: "+
@@ -300,7 +195,6 @@ func MigrateApps(d AppsMigration) error {
 		return fmt.Errorf("deploy: migrate: apps.json v1 unreadable at %s: %w", path, err)
 	}
 
-	// Step 5: the backup, BEFORE any write.
 	bakPath := fmt.Sprintf("%s.bak.%d", path, time.Now().Unix())
 	if err := snapshotFile(path, bakPath); err != nil {
 		return fmt.Errorf("deploy: migrate: backup: %w", err)
@@ -321,7 +215,6 @@ func MigrateApps(d AppsMigration) error {
 		return fmt.Errorf("migrate apps %s: rollback from %s: %w", label, bakPath, cause)
 	}
 
-	// Step 6: the conversion. One v1 App = one Project + one Deployment on the local node.
 	f := File{
 		SchemaVersion: AppsSchemaVersion,
 		Projects:      make([]Project, 0, len(apps)),
@@ -337,13 +230,10 @@ func MigrateApps(d AppsMigration) error {
 	if err != nil {
 		return rollback("marshal envelope", err)
 	}
-	// Step 7: the durable write. A rename without fsync leaves a zero-byte file
-	// on an abrupt power cut — an expected failure mode in this house.
 	if err := writeFileAtomic(path, out, 0o600); err != nil {
 		return rollback("write envelope", err)
 	}
 
-	// Step 8: the audit. Non-fatal: the migration is already on disk.
 	if d.Audit != nil {
 		d.Audit.Append(auth.Event{
 			User:   "system",
@@ -356,9 +246,6 @@ func MigrateApps(d AppsMigration) error {
 	return nil
 }
 
-// appToV2 converts a v1 App into the Project+Deployment pair. The deployment's
-// ID is derived (project@node) instead of drawn at random: the same app on the
-// same node has to produce the same ID on any rerun, or the migration is not idempotent.
 func appToV2(a App, nodeID string) (Project, Deployment) {
 	return Project{ID: a.Name, Name: a.Name},
 		Deployment{
@@ -378,15 +265,6 @@ func appToV2(a App, nodeID string) (Project, Deployment) {
 		}
 }
 
-// v2ToApp is the compatibility layer's way back: the handlers and the hook go
-// on speaking App while the disk is already v2.
-//
-// App.Name receives the project's ID, NOT the display Project.Name: Name is the
-// app's identity throughout the rest of the subsystem (the DNS-safe slug
-// validated by ValidName, the name of the bare repo, of the work-tree and of
-// the compose project). Using the label here would give a renamed project a new
-// identity on every round-trip — measured: the other node's deployment VANISHED
-// from the envelope, because the upsert by name no longer found the earlier entry.
 func v2ToApp(p Project, d Deployment) App {
 	name := d.ProjectID
 	if name == "" {
@@ -407,10 +285,6 @@ func v2ToApp(p Project, d Deployment) App {
 	}
 }
 
-// snapshotFile creates dst as a hardlink of src (the single-file equivalent of
-// the `cp -al` config uses), falling back to a copy when the link is not
-// possible. The hardlink is what makes the backup cheap AND immune to being
-// rewritten by a rename: the rename swaps the name, not the inode the backup holds.
 func snapshotFile(src, dst string) error {
 	if err := os.Link(src, dst); err == nil {
 		return nil
@@ -422,11 +296,6 @@ func snapshotFile(src, dst string) error {
 	return os.WriteFile(dst, raw, 0o600)
 }
 
-// writeFileAtomic writes via .new+rename with an fsync of the file AND of the
-// directory. A deliberate copy of internal/config/migrate.go:451-482 (and not
-// an import) so as not to create a deploy→config dependency: config is loaded
-// by everyone, and the cycle would show up the first time config needed to talk
-// about deploy.
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -442,7 +311,6 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 		os.Remove(tmp)
 		return err
 	}
-	// Without this Sync the rename can reach the disk before the content.
 	if err := f.Sync(); err != nil {
 		f.Close()
 		os.Remove(tmp)
@@ -455,7 +323,6 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 		os.Remove(tmp)
 		return err
 	}
-	// Without this Sync of the DIRECTORY the rename itself may not survive the cut.
 	if df, err := os.Open(dir); err == nil {
 		_ = df.Sync()
 		_ = df.Close()

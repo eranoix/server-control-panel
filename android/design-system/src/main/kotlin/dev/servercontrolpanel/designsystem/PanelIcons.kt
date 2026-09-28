@@ -6,16 +6,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
 
-/**
- * Material glyphs the app needs that `material-icons-core` does not ship,
- * avoiding the 35.7 MB `material-icons-extended` artifact.
- *
- * Path data is copied from Google's official 24dp Material SVGs, so these align
- * with the core icons. Each vector is built once (`by lazy`), like `Icons.Filled.*`.
- */
 object PanelIcons {
 
-    /** Memory chip (RAM). */
     val Memory: ImageVector by lazy {
         materialVector(
             name = "Memory",
@@ -25,7 +17,6 @@ object PanelIcons {
         )
     }
 
-    /** Stacked disks (storage). */
     val Disk: ImageVector by lazy {
         materialVector(
             name = "Disk",
@@ -34,7 +25,6 @@ object PanelIcons {
         )
     }
 
-    /** Speedometer (CPU load). */
     val Speedometer: ImageVector by lazy {
         materialVector(
             name = "Speedometer",
@@ -44,7 +34,6 @@ object PanelIcons {
         )
     }
 
-    /** Layers (Docker images, volumes). */
     val Layers: ImageVector by lazy {
         materialVector(
             name = "Layers",
@@ -53,7 +42,6 @@ object PanelIcons {
         )
     }
 
-    /** Two opposing arrows (swap). */
     val Swap: ImageVector by lazy {
         materialVector(
             name = "Swap",
@@ -61,7 +49,6 @@ object PanelIcons {
         )
     }
 
-    /** Stopwatch (uptime). */
     val Stopwatch: ImageVector by lazy {
         materialVector(
             name = "Stopwatch",
@@ -71,7 +58,6 @@ object PanelIcons {
         )
     }
 
-    /** Heart monitor (subsystem health). */
     val Health: ImageVector by lazy {
         materialVector(
             name = "Health",
@@ -83,7 +69,6 @@ object PanelIcons {
         )
     }
 
-    /** Rocket (deployment). */
     val Delivery: ImageVector by lazy {
         materialVector(
             name = "Delivery",
@@ -96,7 +81,6 @@ object PanelIcons {
         )
     }
 
-    /** Terminal window with a prompt. */
     val Terminal: ImageVector by lazy {
         materialVector(
             name = "Terminal",
@@ -105,7 +89,6 @@ object PanelIcons {
         )
     }
 
-    /** Folder (server files). */
     val Folder: ImageVector by lazy {
         materialVector(
             name = "Folder",
@@ -113,7 +96,6 @@ object PanelIcons {
         )
     }
 
-    /** Speech bubble (WhatsApp). */
     val Chat: ImageVector by lazy {
         materialVector(
             name = "Chat",
@@ -122,7 +104,6 @@ object PanelIcons {
         )
     }
 
-    /** Video camera (video call); `Icons.Filled.Call` would suggest a voice call. */
     val Videocam: ImageVector by lazy {
         materialVector(
             name = "Videocam",
@@ -131,7 +112,6 @@ object PanelIcons {
         )
     }
 
-    /** Sign out, arrow pointing outward (core's `ExitToApp` points inward). */
     val Logout: ImageVector by lazy {
         materialVector(
             name = "Logout",
@@ -140,7 +120,6 @@ object PanelIcons {
         )
     }
 
-    /** Closed box (a container, distinct from its image). */
     val Box: ImageVector by lazy {
         materialVector(
             name = "Box",
@@ -149,7 +128,6 @@ object PanelIcons {
         )
     }
 
-    /** Shield (firewall). */
     val Shield: ImageVector by lazy {
         materialVector(
             name = "Shield",
@@ -158,7 +136,6 @@ object PanelIcons {
         )
     }
 
-    /** Key (stored secret). */
     val Key: ImageVector by lazy {
         materialVector(
             name = "Key",
@@ -168,7 +145,6 @@ object PanelIcons {
         )
     }
 
-    /** Globe (DNS). */
     val Globe: ImageVector by lazy {
         materialVector(
             name = "Globe",
@@ -179,7 +155,6 @@ object PanelIcons {
         )
     }
 
-    /** Bar chart (network usage). */
     val Chart: ImageVector by lazy {
         materialVector(
             name = "Chart",
@@ -187,7 +162,6 @@ object PanelIcons {
         )
     }
 
-    /** Phone (a paired device, not an account). */
     val Phone: ImageVector by lazy {
         materialVector(
             name = "Phone",
@@ -196,7 +170,6 @@ object PanelIcons {
         )
     }
 
-    /** Processor chip (CPU and processes). */
     val Cpu: ImageVector by lazy {
         materialVector(
             name = "Cpu",
@@ -206,7 +179,6 @@ object PanelIcons {
         )
     }
 
-    /** Plug (listening port). */
     val Plug: ImageVector by lazy {
         materialVector(
             name = "Plug",
@@ -215,7 +187,6 @@ object PanelIcons {
         )
     }
 
-    /** Monitor with a cursor (an active session, not the account). */
     val ActiveSession: ImageVector by lazy {
         materialVector(
             name = "ActiveSession",
@@ -224,7 +195,6 @@ object PanelIcons {
         )
     }
 
-    /** Paper clip (attach a file). */
     val Clip: ImageVector by lazy {
         materialVector(
             name = "Clip",
@@ -235,10 +205,6 @@ object PanelIcons {
         )
     }
 
-    /**
-     * Kanban board with three columns of different heights. Material's
-     * `view_column` has equal columns and reads as a table at 24dp.
-     */
     val Board: ImageVector by lazy {
         materialVector(
             name = "Board",
@@ -249,10 +215,6 @@ object PanelIcons {
 
 }
 
-/**
- * Builds a 24dp Material-style `ImageVector` with one black path; the `Icon`
- * tint replaces the color.
- */
 private fun materialVector(name: String, pathData: String): ImageVector =
     ImageVector.Builder(
         name = name,

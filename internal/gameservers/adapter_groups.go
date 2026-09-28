@@ -7,18 +7,6 @@ import (
 	"strings"
 )
 
-// Privilege groups and the ban list.
-//
-// Enshrouded has no RCON: what rules over what each player may do is the group
-// they fall into, and the player picks the group by typing that group's PASSWORD
-// on joining. Hence the community's Admin/Friend/Guest pattern.
-//
-// A critical rule documented by the community and handled here in validation:
-// a password repeated across groups TAKES THE SERVER DOWN at boot. Since that
-// would only surface as "the server does not come up" after saving, the check
-// happens before writing.
-
-// Group is a server role.
 type Group struct {
 	Name                 string `json:"name"`
 	Password             string `json:"password"`
@@ -30,7 +18,6 @@ type Group struct {
 	ReservedSlots        int    `json:"reservedSlots"`
 }
 
-// Groups reads every group out of the config.
 func (enshrouded) Groups(s Server) ([]Group, error) {
 	cfg, err := readJSONFile(enshConfigPath(s))
 	if err != nil {
@@ -75,7 +62,6 @@ func validateGroups(gs []Group, slotCount int) error {
 		if names[strings.ToLower(g.Name)] {
 			return fmt.Errorf("duplicate group name: '%s'", g.Name)
 		}
-		// THIS is the one that breaks the server at boot if it gets through.
 		if pwds[g.Password] {
 			return fmt.Errorf("duplicate password in group '%s' — identical passwords across groups bring the server down at startup", g.Name)
 		}
@@ -93,7 +79,6 @@ func validateGroups(gs []Group, slotCount int) error {
 	return nil
 }
 
-// SaveGroups replaces the whole list of groups, validating before writing.
 func (enshrouded) SaveGroups(s Server, gs []Group) error {
 	path := enshConfigPath(s)
 	b, err := os.ReadFile(path)
@@ -124,7 +109,6 @@ func (enshrouded) SaveGroups(s Server, gs []Group) error {
 	return writeJSONAtomic(path, cfg, s.Root)
 }
 
-// Bans reads the list of banned accounts.
 func (enshrouded) Bans(s Server) ([]string, error) {
 	cfg, err := readJSONFile(enshConfigPath(s))
 	if err != nil {
@@ -141,7 +125,6 @@ func (enshrouded) Bans(s Server) ([]string, error) {
 	return out, nil
 }
 
-// SaveBans replaces the ban list (one SteamID64 per line).
 func (enshrouded) SaveBans(s Server, list []string) error {
 	path := enshConfigPath(s)
 	cfg, err := readJSONFile(path)
@@ -165,11 +148,6 @@ func (enshrouded) SaveBans(s Server, list []string) error {
 	return writeJSONAtomic(path, cfg, s.Root)
 }
 
-// writeJSONAtomic becomes a thin shell over writeAtomic: it only marshals and
-// delegates. Kept (rather than removed) because both callers end up with a
-// one-line diff each — review reads "the writer changed", nothing beyond that.
-//
-// The previous body preserved the MODE and silently lost the OWNER.
 func writeJSONAtomic(path string, cfg map[string]interface{}, ref string) error {
 	out, err := json.MarshalIndent(cfg, "", "    ")
 	if err != nil {

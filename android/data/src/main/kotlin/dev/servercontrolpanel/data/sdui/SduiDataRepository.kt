@@ -8,32 +8,14 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import java.io.IOException
 
-/**
- * Outcome of resolving one SDUI component's `rows_source`/`data_source`/
- * `series_source`. A plain domain shape — no caller ever sees a raw
- * [JsonElement] parse exception or an [okhttp3.OkHttpClient] type.
- */
 sealed interface SduiDataResult {
     data class Success(val body: JsonElement) : SduiDataResult
     data object Empty : SduiDataResult
     data class Error(val reason: String) : SduiDataResult
 }
 
-/** The only path outside the BFF mobile/v1 tree this repository will ever call. */
 private const val ALLOWED_ENDPOINT_PREFIX = "/api/mobile/v1/"
 
-/**
- * The single call site into [SduiDataClient] for an [SduiDataSource]
- * descriptor. [dataSource].endpoint is used verbatim — this repository never
- * appends, rewrites or templates it — except for the boundary check below.
- *
- * A descriptor is server-authored (RBAC-filtered, trusted at parse
- * time), but this is still the one place a tampered or malformed descriptor
- * would surface, so an endpoint outside the BFF mobile namespace is refused
- * before any network call is attempted — the same boundary
- * `android/build-logic`'s `BffOnlyNetworkPlugin` already enforces on this
- * module's own source literals, applied here to a runtime value instead.
- */
 class SduiDataRepository(
     private val client: SduiDataClient = SduiDataClient(),
 ) {

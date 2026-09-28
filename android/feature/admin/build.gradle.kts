@@ -1,5 +1,3 @@
-// Thin SDUI host: fetches a section's screen descriptor from the BFF and hands
-// it to :sdui. No per-section logic.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
@@ -20,7 +18,6 @@ android {
 
 dependencies {
     implementation(project(":core"))
-    // Provides the section glyphs missing from material-icons-core (see SectionIcon).
     implementation(project(":design-system"))
     implementation(project(":data"))
     implementation(project(":sdui"))
@@ -29,12 +26,10 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
-    // Core icon set only (823 KB); the extended set is 35.7 MB and unused here.
     implementation(libs.compose.material.icons.core)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.kotlinx.coroutines.core)
-    // Needed directly: :data declares serialization-json as `implementation`, not `api`.
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)

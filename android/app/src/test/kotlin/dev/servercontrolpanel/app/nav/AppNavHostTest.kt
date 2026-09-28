@@ -42,11 +42,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.net.URLEncoder
 
-/**
- * The whole shell: hamburger, drawer, navigation and deep links. Tapped notifications and
- * calls answered on the lock screen both arrive as `pendingDeepLinkRoute` and must land on
- * the right route.
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class, qualifiers = "w411dp-h891dp-xxhdpi")
 class AppNavHostTest {
@@ -87,14 +82,11 @@ class AppNavHostTest {
     fun `the hamburger opens the drawer`() {
         renderShell()
 
-        // A closed drawer is still composed, just off screen, so assert visibility, not existence.
         composeRule.onNodeWithText(AppDestination.Dev.label).assertIsNotDisplayed()
 
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).performClick()
         composeRule.waitForIdle()
 
-        // Match by icon description: the current destination's label appears twice
-        // (drawer item and top bar title).
         AppDestination.entries.forEach { destination ->
             composeRule.onNodeWithContentDescription(destination.iconDescription).assertIsDisplayed()
         }
@@ -110,14 +102,10 @@ class AppNavHostTest {
         composeRule.onNodeWithContentDescription(AppDestination.Dev.iconDescription).performClick()
         composeRule.waitForIdle()
 
-        // Each parent has a concrete route; a single parameterised route made all parents
-        // one destination to Navigation.
         assertEquals(parentRoute("dev"), currentRoute())
-        // Drawer closed: the Settings label, which only appears inside it, is off screen.
         composeRule.onNodeWithText(AppDestination.Settings.label).assertIsNotDisplayed()
     }
 
-    /** A parent opens its own grid; the client never picks an admin section on its own. */
     @Test
     fun `a parent opens its grid, not a section chosen by the client`() {
         renderShell()
@@ -128,11 +116,9 @@ class AppNavHostTest {
         composeRule.waitForIdle()
 
         assertEquals(parentRoute("docker"), currentRoute())
-        // The parent names no section: the section is picked by tapping a child in the grid.
         assertNull(navController.currentBackStackEntry?.arguments?.getString("sectionId"))
     }
 
-    /** Licences live at the end of the drawer and must stay reachable. */
     @Test
     fun `licences stay reachable from the drawer`() {
         renderShell()
@@ -145,11 +131,6 @@ class AppNavHostTest {
         assertEquals(AppDestination.Settings.route, currentRoute())
     }
 
-    /**
-     * Switching from one parent to another straight through the drawer, without pressing back.
-     * `launchSingleTop` and `restoreState` compare by destination, so parents must be distinct
-     * destinations. Several hops are needed because the failure only shows from the second one.
-     */
     @Test
     fun `the drawer switches between parents without pressing back`() {
         renderShell()
@@ -169,11 +150,6 @@ class AppNavHostTest {
         }
     }
 
-    /**
-     * Entering the Terminal twice must not leave two on the stack: each would have its own
-     * ViewModel replaying the scrollback, drawing every line twice. Every entry point needs
-     * `popUpTo(start)` along with `launchSingleTop`.
-     */
     @Test
     fun `entering the Terminal twice does not stack two terminals`() {
         renderShell()
@@ -185,7 +161,6 @@ class AppNavHostTest {
             composeRule.waitForIdle()
             assertEquals(ROUTE_TERMINAL, currentRoute())
 
-            // Inside the Terminal there is no hamburger, only "back" (child screen contract).
             composeRule.onNodeWithContentDescription(BACK_DESCRIPTION).performClick()
             composeRule.waitForIdle()
         }
@@ -213,10 +188,6 @@ class AppNavHostTest {
         assertEquals("room-7", navController.currentBackStackEntry?.arguments?.getString("roomId"))
     }
 
-    /**
-     * Detail screens bring their own bar (or are full-screen, like the call):
-     * the shell's bar must not stack on top of them.
-     */
     @Test
     fun `a detail screen does not get the shell bar`() {
         renderShell(pendingDeepLinkRoute = resolveVideocallDeepLink("room-7")?.navRoute)
@@ -224,20 +195,13 @@ class AppNavHostTest {
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).assertDoesNotExist()
     }
 
-    /** Opens the drawer and picks [destination]. */
     private fun navigateFromDrawer(destination: AppDestination) {
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).performClick()
         composeRule.waitForIdle()
-        // By icon description: clicking the label would be ambiguous, it appears twice.
         composeRule.onNodeWithContentDescription(destination.iconDescription).performClick()
         composeRule.waitForIdle()
     }
 
-    /**
-     * A top-level destination has one header, the shell's. The hamburger only exists on the
-     * shell bar (Material's TopAppBar leaves no countable semantics), so more than one
-     * hamburger means more than one shell was drawn.
-     */
     @Test
     fun `a top-level destination does not stack two headers`() {
         renderShell()
@@ -249,16 +213,10 @@ class AppNavHostTest {
                 1,
                 composeRule.onAllNodesWithContentDescription(OPEN_DRAWER_DESCRIPTION).fetchSemanticsNodes().size,
             )
-            // A root has nowhere to go back to.
             composeRule.onNodeWithContentDescription(BACK_DESCRIPTION).assertDoesNotExist()
         }
     }
 
-    /**
-     * "Back" on a navigation root has nowhere to go: top level gets a hamburger, and the back
-     * arrow is for detail screens only. Walks every drawer destination so a new one cannot
-     * reintroduce it.
-     */
     @Test
     fun `no top-level destination shows back`() {
         renderShell()
@@ -271,11 +229,6 @@ class AppNavHostTest {
         }
     }
 
-    /**
-     * A detail screen has a working back arrow. Uses the file editor rather than the terminal,
-     * whose `withFrameNanos` loop draws frames forever under the test clock and exhausts the
-     * heap; the editor exercises the same bar contract.
-     */
     @Test
     fun `a detail screen has back and it goes back`() {
         renderShell()
@@ -284,7 +237,6 @@ class AppNavHostTest {
         composeRule.waitForIdle()
 
         assertEquals("files/edit/{path}", currentRoute())
-        // Detail bar: arrow yes, hamburger no.
         composeRule.onNodeWithContentDescription(BACK_DESCRIPTION).assertExists()
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).assertDoesNotExist()
 
@@ -295,12 +247,6 @@ class AppNavHostTest {
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).assertExists()
     }
 
-    /**
-     * "Refresh" on the Terminal bar is reachable and wired to the ViewModel that draws the list,
-     * the one from the destination's [androidx.navigation.NavBackStackEntry], not a second copy.
-     * Collecting with [Dispatchers.Unconfined] records every emission, so the transient
-     * `Loading` is seen even if the load finishes immediately.
-     */
     @Test
     fun `refresh stays reachable on the Terminal bar and reloads the list`() {
         renderShell()
@@ -336,7 +282,6 @@ class AppNavHostTest {
             throw AssertionError("signing out does not refresh the session")
     }
 
-    /** Mirrors `MainActivity`'s `when`: a live session shows the shell, a dead session shows the sign-in. */
     @Composable
     private fun SessionGate(session: SessionManager, signOut: FakeSignOut) {
         val state by session.state.collectAsStateWithLifecycle()
@@ -361,7 +306,6 @@ class AppNavHostTest {
         composeRule.setContent { PanelTheme { SessionGate(session, signOut) } }
         composeRule.waitForIdle()
 
-        // Signed in: the shell is up and the sign-in is not.
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).assertExists()
         composeRule.onNodeWithText(SIGN_IN_SCREEN).assertDoesNotExist()
 
@@ -376,11 +320,6 @@ class AppNavHostTest {
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).assertDoesNotExist()
     }
 
-    /**
-     * The real one (`SignOutRepository`, covered in `:data`) is `suspend`
-     * because it revokes on the BFF before wiping the tokens. Here only the
-     * local effect matters, and synchronous keeps the assertion deterministic.
-     */
     private class FakeSignOut(private val session: SessionManager) : SignOutSource {
         override suspend fun signOut() = blockingSignOut()
         fun blockingSignOut() {
@@ -391,10 +330,6 @@ class AppNavHostTest {
     private companion object {
         const val SIGN_IN_SCREEN = "Sign in to Server Control Panel"
 
-        /**
-         * Drawer destinations that compose under Robolectric. Apps is left out because its grid
-         * leads to Call and WhatsApp, which need WebRTC/WebView that the JVM lacks.
-         */
         val JVM_RENDERABLE_DESTINATIONS = listOf(
             AppDestination.Home,
             AppDestination.System,

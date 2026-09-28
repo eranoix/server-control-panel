@@ -17,9 +17,6 @@ import (
 	"github.com/shirou/gopsutil/v4/process"
 )
 
-// sanitizeCmdline strips ASCII control bytes and caps length so a process
-// emitting `<script>...` or terminal escape sequences in its argv cannot
-// poison the JSON response or leak into x-text/x-html via Alpine.
 func sanitizeCmdline(s string) string {
 	if s == "" {
 		return ""
@@ -35,7 +32,6 @@ func sanitizeCmdline(s string) string {
 		case r == '\t' || r == ' ':
 			b.WriteRune(' ')
 		case r < 0x20 || r == 0x7f:
-			// drop control bytes
 		default:
 			b.WriteRune(r)
 		}
@@ -70,12 +66,8 @@ type CPUInfo struct {
 	Cores   int       `json:"cores"`
 	Percent []float64 `json:"percent"`
 	Overall float64   `json:"overall"`
-	// Steal = % of CPU time the HYPERVISOR stole from this VM (overcrowded
-	// host / noisy neighbours). Invisible to per-process %CPU — which is why
-	// the sum of the processes "does not add up" to the real slowness. >10–15% = a provider
-	// problem. Iowait = % waiting on disk. Computed by delta between collections.
-	Steal  float64 `json:"steal"`
-	Iowait float64 `json:"iowait"`
+	Steal   float64   `json:"steal"`
+	Iowait  float64   `json:"iowait"`
 }
 
 type MemInfo struct {
@@ -121,24 +113,19 @@ type GoRuntimeInfo struct {
 	NumCPU     int    `json:"num_cpu"`
 }
 
-// state for the steal/iowait computation by DELTA between collections (non-blocking:
-// no extra sleep — it uses the difference of the cumulative /proc/stat counters).
 var (
 	lastCPUTimes cpu.TimesStat
 	haveLastCPU  bool
 	cpuTimesMu   sync.Mutex
 )
 
-// cpuStealIowait returns (steal%, iowait%) for the interval since the last collection.
-// The first call returns 0/0 (no baseline yet).
 func cpuStealIowait(ctx context.Context) (float64, float64) {
-	ts, err := cpu.TimesWithContext(ctx, false) // aggregate (all cores)
+	ts, err := cpu.TimesWithContext(ctx, false)
 	if err != nil || len(ts) == 0 {
 		return 0, 0
 	}
 	cur := ts[0]
 	total := func(t cpu.TimesStat) float64 {
-		// sum of the states (Guest is already included in User in the kernel — do not add it)
 		return t.User + t.System + t.Idle + t.Nice + t.Iowait + t.Irq + t.Softirq + t.Steal
 	}
 	cpuTimesMu.Lock()
@@ -207,21 +194,11 @@ func Collect(ctx context.Context) (*Stats, error) {
 	}
 
 	if parts, err := disk.PartitionsWithContext(ctx, false); err == nil {
-		// Deduplicate by DEVICE, not by mount point.
-		//
-		// A container bind-mounts /etc/hosts, /etc/hostname and
-		// /etc/resolv.conf as three separate entries in /proc/mounts. Their
-		// mount points differ, so a mount-point key lets all three through,
-		// and each then reports the size of the filesystem behind it -- the
-		// panel showed three identical "disks" of the same hundreds of GB.
-		// The device is what actually identifies a volume.
 		seenDevice := map[string]bool{}
 		for _, p := range parts {
 			if p.Device != "" && seenDevice[p.Device] {
 				continue
 			}
-			// A bind-mounted FILE is never a disk. Reporting one as a disk is
-			// wrong everywhere, not just in a container.
 			if fi, statErr := os.Stat(p.Mountpoint); statErr != nil || !fi.IsDir() {
 				continue
 			}
@@ -258,7 +235,6 @@ func Collect(ctx context.Context) (*Stats, error) {
 			c, _ := p.CPUPercentWithContext(ctx)
 			ps = append(ps, pair{p, c})
 		}
-		// quick partial sort: pick top 10 by cpu
 		for i := 0; i < len(ps) && i < 10; i++ {
 			maxIdx := i
 			for j := i + 1; j < len(ps); j++ {

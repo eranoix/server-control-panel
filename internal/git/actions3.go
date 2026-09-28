@@ -8,10 +8,6 @@ import (
 	"server-control-panel/internal/httpx"
 )
 
-// actions3.go — branches/tags/stashes/submodules.
-
-// ---- POST /remote/prune (removes remote refs that are gone) ----
-
 func (s *svc) handleRemotePrune(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
 	if !ok {
@@ -49,8 +45,6 @@ func (s *svc) handleRemotePrune(w http.ResponseWriter, r *http.Request) {
 	httpx.AuditEvent(s.audit, r, caller, "git.remote_prune", repo.ID+":"+remote)
 	httpx.WriteJSON(w, map[string]any{"ok": true})
 }
-
-// ---- POST /tag/push (pushes one tag to the remote) ----
 
 func (s *svc) handleTagPush(w http.ResponseWriter, r *http.Request) {
 	caller, repo, ok := s.writeGate(w, r)
@@ -98,8 +92,6 @@ func (s *svc) handleTagPush(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"ok": true})
 }
 
-// ---- GET /stash/show?index= (preview of a stash's content) ----
-
 func (s *svc) handleStashShow(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
 		return
@@ -125,8 +117,6 @@ func (s *svc) handleStashShow(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"index": idx, "diff": res.Stdout})
 }
 
-// ---- GET /patch?hash= (generates a commit's .patch: format-patch -1 --stdout) ----
-
 func (s *svc) handlePatch(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
 		return
@@ -151,12 +141,10 @@ func (s *svc) handlePatch(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"hash": hash, "patch": res.Stdout})
 }
 
-// ---- GET /submodules e POST /submodule/update ----
-
 type submoduleInfo struct {
 	Path   string `json:"path"`
 	Hash   string `json:"hash"`
-	Status string `json:"status"` // " "=ok, "-"=not initialized, "+"=out of sync, "U"=conflict
+	Status string `json:"status"`
 }
 
 func (s *svc) handleSubmodules(w http.ResponseWriter, r *http.Request) {
@@ -177,7 +165,6 @@ func (s *svc) handleSubmodules(w http.ResponseWriter, r *http.Request) {
 			if ln == "" {
 				continue
 			}
-			// format: "<status><sha> <path> (<desc>)" — status is the 1st char
 			st := string(ln[0])
 			rest := strings.TrimSpace(ln[1:])
 			fields := strings.Fields(rest)

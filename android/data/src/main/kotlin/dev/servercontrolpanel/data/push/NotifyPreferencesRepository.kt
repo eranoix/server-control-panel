@@ -6,7 +6,6 @@ import dev.servercontrolpanel.mobileapiclient.infrastructure.ServerException
 import dev.servercontrolpanel.mobileapiclient.model.PutNotifyPrefsInputBody
 import java.io.IOException
 
-/** One category (server-side Rule) this device can be pushed for, and whether it currently is. */
 data class NotifyRule(
     val id: String,
     val name: String,
@@ -15,36 +14,21 @@ data class NotifyRule(
     val enabledForDevice: Boolean,
 )
 
-/** Outcome of reading this device's current preferences (`GET /api/mobile/v1/notify/preferences`). */
 sealed interface NotifyPreferencesResult {
     data class Success(val rules: List<NotifyRule>) : NotifyPreferencesResult
     data class Error(val reason: String) : NotifyPreferencesResult
 }
 
-/** Outcome of persisting this device's preferences (`PUT /api/mobile/v1/notify/preferences`). */
 sealed interface UpdateNotifyPreferencesResult {
     data object Success : UpdateNotifyPreferencesResult
     data class Error(val reason: String) : UpdateNotifyPreferencesResult
 }
 
-/**
- * Abstraction `NotificationPreferencesViewModel` (`:feature-notifications`) depends on, so its
- * unit tests supply a fake instead of touching the generated mobile BFF client directly
- * same convention as `dev.servercontrolpanel.data.terminal.TerminalSessionsSource`.
- */
 interface NotifyPreferencesSource {
     suspend fun fetch(deviceId: String): NotifyPreferencesResult
     suspend fun update(deviceId: String, enabledRuleIds: List<String>): UpdateNotifyPreferencesResult
 }
 
-/**
- * The single call site into the generated mobile BFF client for this device's push-category
- * preferences — mirrors [PushDeviceRepository]'s shape. [fetch] reads the server's Rule catalog
- * plus which of them this `device_id` currently receives (the server, not this repository, owns
- * the alert-fatigue default of "critical-only until changed" — see `notify_prefs.go`); [update]
- * persists the full replacement set of enabled Rule IDs for that same device, immediately, with
- * no separate "save" step.
- */
 class NotifyPreferencesRepository(
     private val mobileApi: MobileApi = MobileApi(),
 ) : NotifyPreferencesSource {

@@ -9,13 +9,9 @@ import (
 	"time"
 )
 
-// TestBindTwoListeners — the agent opens EXACTLY two listeners, and both are
-// explicit. Proved by connecting to each one.
 func TestBindTwoListeners(t *testing.T) {
 	s, _ := testServer(t, "the-right-one")
 
-	// A loopback IP that is not 127.0.0.1 plays the "bridge" in the test: it is
-	// a real, explicit address and does not depend on the machine's network.
 	const bridgeFake = "127.0.0.2"
 	port := freePort(t)
 
@@ -42,12 +38,6 @@ func TestBindTwoListeners(t *testing.T) {
 	}
 }
 
-// TestBindRejectsWildcard — an empty or wildcard bridgeIP is an ERROR that names
-// the reason.
-//
-// Binding on a wildcard and "filtering afterwards" leaves the port EXISTING for
-// whoever arrives by any other interface — including one nobody has created
-// yet. The filter protects the data; it does not protect the surface.
 func TestBindRejectsWildcard(t *testing.T) {
 	for _, tc := range []struct{ ip, wantInErr string }{
 		{"", "empty"},
@@ -65,7 +55,6 @@ func TestBindRejectsWildcard(t *testing.T) {
 		}
 	}
 
-	// Negative control: a valid IP must NOT be refused.
 	end, err := listenAddrs("192.168.100.7", 8710)
 	if err != nil {
 		t.Fatalf("FALSE POSITIVE: legitimate IP refused: %v", err)
@@ -78,8 +67,6 @@ func TestBindRejectsWildcard(t *testing.T) {
 	}
 }
 
-// TestHealthzWithoutSecret — a PROCESS probe: no authentication, and revealing
-// nothing beyond liveness.
 func TestHealthzWithoutSecret(t *testing.T) {
 	s, _ := testServer(t, "the-right-one")
 	w := request(t, s, http.MethodGet, "/healthz", "", "")
@@ -87,9 +74,6 @@ func TestHealthzWithoutSecret(t *testing.T) {
 		t.Fatalf("expected 200 with no Authorization, got %d", w.Code)
 	}
 	body := w.Body.String()
-	// It must not leak the node name, a path, or whether a secret is
-	// provisioned: the health gate has to reach the route before any credential
-	// exists, and whoever reaches it must learn nothing useful for an attack.
 	for _, forbidden := range []string{"test", "/opt", "token", "bearer", "secret", "version"} {
 		if strings.Contains(strings.ToLower(body), forbidden) {
 			t.Errorf("/healthz leaked %q into the body: %s", forbidden, body)
@@ -99,7 +83,6 @@ func TestHealthzWithoutSecret(t *testing.T) {
 
 func TestMetricsFormat(t *testing.T) {
 	s, _ := testServer(t, "the-right-one")
-	// Generate traffic so there is an operation series.
 	request(t, s, http.MethodPost, "/v1/op/server.status", "the-right-one", `{}`)
 	request(t, s, http.MethodPost, "/v1/op/nonexistent", "the-right-one", `{}`)
 
@@ -123,7 +106,6 @@ func TestMetricsFormat(t *testing.T) {
 	}
 }
 
-// TestUnknownOperationIs404 — "does not exist" and "failed" never blur.
 func TestUnknownOperationIs404(t *testing.T) {
 	s, back := testServer(t, "the-right-one")
 	w := request(t, s, http.MethodPost, "/v1/op/maintenance.run", "the-right-one", `{}`)
@@ -135,8 +117,6 @@ func TestUnknownOperationIs404(t *testing.T) {
 	}
 }
 
-// TestBodyLimited — 413 BEFORE the handler is called. A limit that only acts
-// after the work is no limit.
 func TestBodyLimited(t *testing.T) {
 	s, back := testServer(t, "the-right-one")
 	big := `{"x":"` + strings.Repeat("a", maxBody+100) + `"}`
@@ -161,7 +141,6 @@ func freePort(t *testing.T) int {
 }
 
 func reachable(target string) bool {
-	// Start-up is asynchronous: retry for up to 3 s before giving up.
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		c, err := net.DialTimeout("tcp", target, 250*time.Millisecond)

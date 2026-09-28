@@ -11,7 +11,6 @@ import (
 	"server-control-panel/internal/config"
 )
 
-// handleFSBrowse lists only subdirectories, sets parent, and is primary-gated.
 func TestFSBrowse(t *testing.T) {
 	root := t.TempDir()
 	for _, d := range []string{"alpha", "beta"} {
@@ -24,14 +23,12 @@ func TestFSBrowse(t *testing.T) {
 	}
 	r := &Router{cfg: &config.Config{Primary: "sam"}}
 
-	// non-primary → 403
 	rec := httptest.NewRecorder()
 	r.handleFSBrowse(rec, schedReq(http.MethodGet, "/api/fs/browse?path="+root, "jordan", ""))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("non-primary browse: status=%d want 403", rec.Code)
 	}
 
-	// primary → lists the two dirs (not the file), parent set
 	rec = httptest.NewRecorder()
 	r.handleFSBrowse(rec, schedReq(http.MethodGet, "/api/fs/browse?path="+root, "sam", ""))
 	if rec.Code != 200 {
@@ -52,7 +49,6 @@ func TestFSBrowse(t *testing.T) {
 		t.Errorf("parent = %q, want %q", out.Parent, filepath.Dir(root))
 	}
 
-	// relative path rejected
 	rec = httptest.NewRecorder()
 	r.handleFSBrowse(rec, schedReq(http.MethodGet, "/api/fs/browse?path=relative/x", "sam", ""))
 	if rec.Code != 400 {
@@ -60,29 +56,24 @@ func TestFSBrowse(t *testing.T) {
 	}
 }
 
-// remote-connect validates name/type/permission before touching rclone.
 func TestBackupRemoteConnectValidation(t *testing.T) {
 	r := &Router{cfg: &config.Config{Primary: "sam"}}
 
-	// non-primary → 403
 	rec := httptest.NewRecorder()
 	r.handleBackupRemoteConnect(rec, schedReq(http.MethodPost, "/api/backup/remote-connect", "jordan", `{"name":"g","type":"drive","token":"x"}`))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("non-primary connect: status=%d want 403", rec.Code)
 	}
-	// invalid name → 400
 	rec = httptest.NewRecorder()
 	r.handleBackupRemoteConnect(rec, schedReq(http.MethodPost, "/api/backup/remote-connect", "sam", `{"name":"bad name","type":"drive","token":"x"}`))
 	if rec.Code != 400 {
 		t.Errorf("invalid name: status=%d want 400", rec.Code)
 	}
-	// unsupported type → 400
 	rec = httptest.NewRecorder()
 	r.handleBackupRemoteConnect(rec, schedReq(http.MethodPost, "/api/backup/remote-connect", "sam", `{"name":"x","type":"ftp_weird","token":"x"}`))
 	if rec.Code != 400 {
 		t.Errorf("unsupported type: status=%d want 400", rec.Code)
 	}
-	// flag-smuggling value (leading '-') → 400 (argument injection guard)
 	rec = httptest.NewRecorder()
 	r.handleBackupRemoteConnect(rec, schedReq(http.MethodPost, "/api/backup/remote-connect", "sam", `{"name":"g","type":"drive","token":"--config=/etc/x"}`))
 	if rec.Code != 400 {

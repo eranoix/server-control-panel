@@ -39,17 +39,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.launch
 
-/**
- * The file editor screen: renders [FileEditorUiState] from
- * [FileEditorViewModel]. [path] is a stable navigation argument -- one
- * [FileEditorViewModel] instance per opened file, scoped to this composable
- * via [viewModelFactory] since the ViewModel takes a constructor argument
- * `viewModel()`'s default factory cannot supply.
- *
- * IME/edge-to-edge insets: this screen applies neither `imePadding()` nor a
- * second `consumeWindowInsets` -- `AppNavHost`'s `NavHost` modifier already
- * applies both exactly once around every destination, this one included.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FileEditorScreen(
@@ -64,9 +53,6 @@ fun FileEditorScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
-    // "Saved" is an explicit, visible confirmation rather than a silent
-    // state change: fires exactly once per successful save, detected as
-    // the Saving -> Editing(saveError == null) transition.
     var wasSaving by remember { mutableStateOf(false) }
     LaunchedEffect(state) {
         val current = state
@@ -81,9 +67,6 @@ fun FileEditorScreen(
         topBar = {
             TopAppBar(
                 title = { Text(text = fileNameOf(path)) },
-                // A DETAIL screen: a real back arrow — it closes the editor
-                // and returns to the file browser. The top level has no such
-                // arrow; there the spot belongs to the shell's hamburger.
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -121,9 +104,6 @@ fun FileEditorScreen(
                     )
                 }
                 is FileEditorUiState.Conflict -> {
-                    // The buffer stays visible underneath the blocking dialog
-                    // so the admin's own unsaved edit is never hidden while
-                    // choosing what to do with it.
                     SoraEditorView(
                         content = current.localContent,
                         language = current.language,
@@ -161,12 +141,6 @@ private fun EditingContent(state: FileEditorUiState.Editing, onContentChanged: (
     }
 }
 
-/**
- * The concrete, unavoidable answer to "the file changed on the server
- * since it was opened" -- a blocking dialog, never a silent overwrite.
- * "Overwrite anyway" is styled as the destructive action since it
- * discards the server-side change the admin is being shown right here.
- */
 @Composable
 private fun ConflictDialog(
     state: FileEditorUiState.Conflict,

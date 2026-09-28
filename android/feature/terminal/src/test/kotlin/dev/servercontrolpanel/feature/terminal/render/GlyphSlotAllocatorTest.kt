@@ -40,7 +40,6 @@ class GlyphSlotAllocatorTest {
         val allocator = GlyphSlotAllocator(capacity = 2)
         allocator.acquire(key('a'))
         allocator.acquire(key('b'))
-        // Touch 'a' so 'b' becomes the LRU one.
         allocator.acquire(key('a'))
 
         val third = allocator.acquire(key('c'))

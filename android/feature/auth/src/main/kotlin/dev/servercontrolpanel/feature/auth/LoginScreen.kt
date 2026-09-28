@@ -50,47 +50,25 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** Which of the two ways in is on screen. */
 enum class LoginMode {
-    /** The buttons: passkey (primary), password, pair by QR. */
     Choice,
 
-    /** The username/password form (and the 2FA code, when the server asks). */
     Password,
 }
 
-/**
- * The state rendered by [LoginScreen]. A single flat object (rather than a
- * sealed hierarchy) because the screen needs to show an error, a busy state
- * and the form all at once — an "either/or" state would force duplicating the
- * typed text in every branch.
- */
 data class LoginUiState(
     val mode: LoginMode = LoginMode.Choice,
     val busy: Boolean = false,
     val error: String? = null,
-    /** This device's passkey exists but has not been approved in the panel yet. */
     val pendingApproval: Boolean = false,
     val username: String = "",
     val password: String = "",
     val totpRequired: Boolean = false,
     val totpCode: String = "",
-    /** `false` when the Keystore failed and the session will not survive the next boot. */
     val sessionPersistent: Boolean = true,
     val serverUrl: String? = null,
 )
 
-/**
- * Drives this device's login. Both ways end in the SAME place —
- * [SessionManager.establish] — because the BFF issues the same access+refresh
- * pair down either path (`passkeyLoginFinishOutput` deliberately uses the same
- * shape as `mobileLoginOutput`, see `internal/mobilebff/auth_passkey.go`).
- *
- * Whoever observes the result is NOT this screen: it is `MainActivity`,
- * through [SessionManager.state]. That way "logged in" has a single source of
- * truth, and a 401 that drops the session on any other screen brings the
- * operator back here down the same path.
- */
 class LoginViewModel(
     private val session: SessionManager,
     private val passkeyRepository: PasskeyLoginSource,
@@ -111,9 +89,6 @@ class LoginViewModel(
                     session.establish(result.accessToken, result.refreshToken, result.expiresIn)
                     _uiState.update { it.copy(busy = false) }
                 }
-                // The right credential, still inert. It is a dead end only
-                // until someone approves it in the panel — the screen says
-                // where, and the retry button stays there for afterwards.
                 LoginResult.PendingApproval ->
                     _uiState.update { it.copy(busy = false, pendingApproval = true, error = null) }
                 is LoginResult.Failed ->
@@ -130,13 +105,6 @@ class LoginViewModel(
         it.copy(mode = LoginMode.Choice, error = null, totpRequired = false, totpCode = "")
     }
 
-    /**
-     * Changing user tears down the second-factor step.
-     *
-     * `totpRequired` is a server answer ABOUT ONE ACCOUNT — carrying it over
-     * to the next account would show the code field to someone who may not
-     * even have 2FA, and would send the old code along on the first attempt.
-     */
     fun onUsernameChange(value: String) = _uiState.update {
         if (value == it.username) it else it.copy(username = value, totpRequired = false, totpCode = "")
     }
@@ -151,11 +119,6 @@ class LoginViewModel(
             _uiState.update { it.copy(error = "Enter your username and password.") }
             return
         }
-        // Without this guard the button becomes a silent NOTHING: the
-        // server receives an empty code, answers `totp_required` again (not an
-        // error), and the screen refreshes into the state it was already in —
-        // no message, no visible change. The operator taps "Sign in" and
-        // concludes the app has frozen.
         if (snapshot.totpRequired && snapshot.totpCode.isBlank()) {
             _uiState.update { it.copy(error = "Enter the verification code to continue.") }
             return
@@ -170,26 +133,12 @@ class LoginViewModel(
             when (result) {
                 is PasswordLoginResult.Success -> {
                     session.establish(result.accessToken, result.refreshToken, result.expiresInSeconds)
-                    // `totpRequired = false` along with it: this screen
-                    // survives the logout (the ViewModel belongs to the
-                    // process, and MainActivity only swaps what is on top), so
-                    // without clearing it here the next login opens already
-                    // showing the code field — for an account that may not
-                    // even use 2FA.
                     _uiState.update {
                         it.copy(busy = false, password = "", totpCode = "", totpRequired = false)
                     }
                 }
-                // Not an error: it is the same `totp_required` branch as
-                // the desktop panel. It only asks for the code and keeps what
-                // has already been typed.
                 PasswordLoginResult.TotpRequired ->
                     _uiState.update { it.copy(busy = false, totpRequired = true, error = null) }
-                // Only the code was wrong: stay ON THE CODE STEP and clear
-                // the field, so the operator can type the next one without
-                // erasing the previous one by hand. Sending them back to the
-                // password (which is what the old message did) is the
-                // shortest path to a lockout.
                 is PasswordLoginResult.InvalidCode ->
                     _uiState.update {
                         it.copy(busy = false, totpRequired = true, totpCode = "", error = result.reason)
@@ -201,13 +150,6 @@ class LoginViewModel(
     }
 }
 
-/**
- * Turns the error from a passkey ceremony into something ACTIONABLE. The raw
- * message from [PasskeyError] says what happened; what the operator lacks is
- * what to do next — and the most common case on a fresh install
- * ([PasskeyError.NoPasskeyAvailable]) is precisely the one where the answer is
- * not "try again", it is "pair this device first".
- */
 internal fun PasskeyError.helpText(): String = when (this) {
     PasskeyError.NoPasskeyAvailable ->
         "$message Tap \"Pair this device\" to register a passkey by QR code, " +
@@ -217,12 +159,6 @@ internal fun PasskeyError.helpText(): String = when (this) {
     else -> message
 }
 
-/**
- * The app's sign-in screen. Passkey first (it is the product's primary path),
- * password just below as an always-available alternative, and QR pairing as a
- * third option — because on a fresh install there is NO passkey on this device
- * yet, and without that way out the screen would be a dead end.
- */
 @Composable
 fun LoginScreen(
     modifier: Modifier = Modifier,
@@ -246,9 +182,6 @@ fun LoginScreen(
         }
 
         if (!state.sessionPersistent) {
-            // The operator needs to know BEFORE being puzzled: with no
-            // Keystore, the session is not stored and vanishes at the next
-            // boot. See KeystoreTokenStore.
             WarningCard(
                 title = "The session will not be remembered",
                 body = "This device has no key vault available, so the app keeps the " +
@@ -397,13 +330,6 @@ private fun WarningCard(title: String, body: String) {
     }
 }
 
-/**
- * Builds the default [LoginViewModel] from the [LocalContext] — the same
- * DI-free arrangement as [passkeyRegisterViewModel]. The difference that
- * matters: the [SessionManager] is NOT constructed here, it comes from
- * [AppSession] — a session is a single per-process state (see that object's
- * KDoc), so this screen takes the very one `MainActivity` observes.
- */
 @Composable
 private fun defaultLoginViewModel(): LoginViewModel {
     val context = LocalContext.current

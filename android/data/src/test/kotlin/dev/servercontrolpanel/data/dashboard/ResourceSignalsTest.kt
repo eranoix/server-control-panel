@@ -7,10 +7,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Threshold grading measured against a snapshot of the real machine (see [DashboardFixtures]),
- * where `alerts` is empty and `health_ok = true` yet the resources still need attention.
- */
 class ResourceSignalsTest {
 
     private fun signal(id: String, system: dev.servercontrolpanel.data.ops.SystemSnapshot = productionLike()) =
@@ -28,10 +24,6 @@ class ResourceSignalsTest {
         assertNotNull("load 11.97 on 8 cores must raise a signal", warning.firstOrNull { it.id == "cpu" })
     }
 
-    /**
-     * Steal is never an alert: nothing inside the VM can change it, and a daily
-     * unfixable alarm teaches people to ignore red.
-     */
     @Test
     fun `high steal does not reach the attention card`() {
         val warning = attentionSignals(gradeResources(productionLike(steal = 37.0)))
@@ -45,7 +37,6 @@ class ResourceSignalsTest {
 
     @Test
     fun `swap at 100 percent with free RAM is a warning, not critical`() {
-        // With RAM to spare, full swap is normal after long uptime.
         assertEquals(Severity.WARNING, signal("swap").severity)
     }
 
@@ -78,13 +69,11 @@ class ResourceSignalsTest {
 
     @Test
     fun `steal is always OK, information but never an alert`() {
-        // The number stays visible, it just never raises severity.
         assertEquals(Severity.OK, signal("steal").severity)
         assertEquals(Severity.OK, signal("steal", productionLike(steal = 20.0)).severity)
         assertEquals(Severity.OK, signal("steal", productionLike(steal = 37.0)).severity)
     }
 
-    /** Steal still informs: it explains a slow machine whose usage is not high. */
     @Test
     fun `high steal keeps its number and explanation`() {
         val s = signal("steal", productionLike(steal = 37.0))
@@ -108,7 +97,6 @@ class ResourceSignalsTest {
 
     @Test
     fun `CPU is graded by load per core, not by instant usage`() {
-        // High usage with low load per core is a spike, not a queue.
         val peak = productionLike(load1 = 3.2)
         assertEquals(Severity.OK, signal("cpu", peak).severity)
         assertEquals("91%", signal("cpu", peak).headline)
@@ -170,18 +158,15 @@ class ResourceSignalsTest {
 
     @Test
     fun `network leaves the value column empty because two rates do not fit`() {
-        // Two rates wrap badly at phone width; an empty headline hides the column.
         assertEquals("", signal("network").headline)
         assertTrue(gradeResources(productionLike()).filter { it.id != "network" }.all { it.headline.isNotBlank() })
     }
 
     @Test
     fun `the worst signal comes first in the attention list`() {
-        // Memory at 97% makes swap critical too (no room to page and no RAM to allocate).
         val system = productionLike(memUsedPercent = 97.0)
         val warning = attentionSignals(gradeResources(system))
 
-        // Pins the rule (worst first), not which of the tied critical signals wins.
         assertEquals(Severity.CRITICAL, warning.first().severity)
         assertTrue(
             "both critical signals must be on top: ${warning.map { it.id }}",

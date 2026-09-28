@@ -5,10 +5,6 @@ import (
 	"testing"
 )
 
-// recordingPushSender captures the allowDevice closure PushChannel.Send
-// built for the call and, on demand, reports which of a fixed device set it
-// actually let through — this is how these tests observe allowDevice's
-// per-device decisions without a real transport.
 type recordingPushSender struct {
 	lastAllow func(deviceID string) bool
 }
@@ -23,11 +19,6 @@ func (r *recordingPushSender) SendToAll(_ context.Context, _ []byte, _ SendOptio
 	return 0
 }
 
-// fakePrefsResolver is an in-memory DevicePrefsResolver test double: known
-// maps deviceID->ruleID->allowed explicitly; any deviceID not present in
-// known at all is "unknown" and must fail OPEN (see DevicePrefsResolver's
-// doc comment) — recorded here as a separate set so tests can prove both
-// branches.
 type fakePrefsResolver struct {
 	known map[string]map[string]bool
 }
@@ -35,14 +26,11 @@ type fakePrefsResolver struct {
 func (f *fakePrefsResolver) Allowed(deviceID, ruleID string) bool {
 	rules, ok := f.known[deviceID]
 	if !ok {
-		return true // unknown device: fail open
+		return true
 	}
 	return rules[ruleID]
 }
 
-// TestAllowDevice_PerRuleFiltering proves the filter is genuinely per-Rule
-// (via ev.RuleID), not a channel-wide or event-type-only gate: the same
-// device is allowed for one Rule and blocked for another.
 func TestAllowDevice_PerRuleFiltering(t *testing.T) {
 	sender := &recordingPushSender{}
 	prefs := &fakePrefsResolver{known: map[string]map[string]bool{
@@ -65,8 +53,6 @@ func TestAllowDevice_PerRuleFiltering(t *testing.T) {
 	}
 }
 
-// TestAllowDevice_PerDeviceFiltering proves the filter is genuinely
-// per-device: for the SAME Rule, one device is allowed and another is not.
 func TestAllowDevice_PerDeviceFiltering(t *testing.T) {
 	sender := &recordingPushSender{}
 	prefs := &fakePrefsResolver{known: map[string]map[string]bool{
@@ -86,11 +72,6 @@ func TestAllowDevice_PerDeviceFiltering(t *testing.T) {
 	}
 }
 
-// TestAllowDevice_UnknownDeviceFailsOpen proves a device the resolver has
-// never heard of (e.g. every pre-existing internal/webpush browser
-// subscription, which this feature never registers a DevicePrefsStore row
-// for) is NOT silently defaulted to critical-only — it must keep receiving
-// every push exactly like before per-device preferences shipped.
 func TestAllowDevice_UnknownDeviceFailsOpen(t *testing.T) {
 	sender := &recordingPushSender{}
 	prefs := &fakePrefsResolver{known: map[string]map[string]bool{
@@ -109,9 +90,6 @@ func TestAllowDevice_UnknownDeviceFailsOpen(t *testing.T) {
 	}
 }
 
-// TestAllowDevice_NilPrefsAllowsEveryone proves that with no
-// DevicePrefsResolver wired at all (nil), PushChannel keeps the earlier
-// broadcast behavior — every device is allowed unconditionally.
 func TestAllowDevice_NilPrefsAllowsEveryone(t *testing.T) {
 	sender := &recordingPushSender{}
 	c := NewPushChannel(sender, nil)
@@ -123,9 +101,6 @@ func TestAllowDevice_NilPrefsAllowsEveryone(t *testing.T) {
 	}
 }
 
-// TestAllowDevice_EmptyRuleIDFailsOpen proves a direct/test-only Send call
-// that bypasses Router.handle() (and therefore never got a RuleID) does not
-// silently drop a legitimate alert — it fails open rather than closed.
 func TestAllowDevice_EmptyRuleIDFailsOpen(t *testing.T) {
 	sender := &recordingPushSender{}
 	prefs := &fakePrefsResolver{known: map[string]map[string]bool{
@@ -140,8 +115,6 @@ func TestAllowDevice_EmptyRuleIDFailsOpen(t *testing.T) {
 	}
 }
 
-// TestAllowDevice_ToDeviceRestrictsToOneDevice proves ChannelConfig.ToDevice
-// narrows delivery to exactly one device_id, independent of DevicePrefs.
 func TestAllowDevice_ToDeviceRestrictsToOneDevice(t *testing.T) {
 	sender := &recordingPushSender{}
 	c := NewPushChannel(sender, nil)

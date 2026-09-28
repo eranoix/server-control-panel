@@ -68,7 +68,6 @@ class TelecomIncomingCallHandlerTest {
     fun `onIncomingCall does not crash when Telecom rejects the call`() {
         callPort.throwOnNextCall = SecurityException("account disabled")
 
-        // Must not throw: a rejected call is logged and dropped.
         handler.onIncomingCall(roomId = "r1", roomName = "Room", from = "alice", callId = "c1")
     }
 

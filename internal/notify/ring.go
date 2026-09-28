@@ -1,12 +1,9 @@
 package notify
 
-// ring is a fixed-capacity circular buffer of Events used for the in-app
-// history feed and rule dry-runs. It is NOT thread-safe on its own; the Router
-// guards every access with histMu (Dispatch writes, History/DryRun read).
 type ring struct {
 	buf   []Event
-	next  int // index of the next write
-	count int // number of valid entries (<= len(buf))
+	next  int
+	count int
 }
 
 func newRing(capacity int) *ring {
@@ -24,7 +21,6 @@ func (r *ring) push(ev Event) {
 	}
 }
 
-// snapshot returns the buffered events newest-first.
 func (r *ring) snapshot() []Event {
 	out := make([]Event, 0, r.count)
 	n := len(r.buf)

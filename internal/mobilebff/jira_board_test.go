@@ -19,8 +19,6 @@ func testIssue(key, status, category string) jira.Issue {
 }
 
 func TestBoardWithoutConfigUsesThreeCategories(t *testing.T) {
-	// This project calls "To Do" "Backlog". Columns by NAME would break on
-	// it; by category, they do not.
 	issues := []jira.Issue{
 		testIssue("V-1", "Backlog", "new"),
 		testIssue("V-2", "IN REVIEW", "indeterminate"),
@@ -75,7 +73,6 @@ func TestOtherColumnOnlyExistsWithOrphans(t *testing.T) {
 }
 
 func TestInvalidConfigFallsBackToDefaultInsteadOfBreaking(t *testing.T) {
-	// A crooked preference in the vault must not keep the board from opening.
 	for _, bad := range []string{"this is not json", "[]", "{}", "   "} {
 		cols := BuildBoard(bad, []jira.Issue{testIssue("V-1", "Backlog", "new")}, 0, "", time.Now())
 		if len(cols) != 3 {
@@ -107,8 +104,6 @@ func TestOldDoneIssuesDisappearButOnlyDoneOnes(t *testing.T) {
 }
 
 func TestIssueWithoutReadableDateNeverAgesOut(t *testing.T) {
-	// Losing work over a date-formatting detail would be the worst possible
-	// outcome of a cosmetic preference.
 	noDate := testIssue("V-1", "Ready", "done")
 	noDate.Updated = "yesterday afternoon"
 
@@ -136,8 +131,6 @@ func TestSortByKeyIsNumericNotAlphabetic(t *testing.T) {
 }
 
 func TestUnknownOrderKeepsJQLOrder(t *testing.T) {
-	// A newer client may ask for a criterion this server does not know yet.
-	// Degrading to the JQL's order is correct; an error is not.
 	issues := []jira.Issue{
 		testIssue("V-3", "Backlog", "new"),
 		testIssue("V-1", "Backlog", "new"),
@@ -161,7 +154,6 @@ func TestTransitionToColumnByCategory(t *testing.T) {
 }
 
 func TestTransitionToColumnByNameRespectsOperatorOrder(t *testing.T) {
-	// The operator wrote "In Progress" first: that is their preference.
 	col := JiraBoardColumn{Label: "Doing", StatusNames: []string{"In Progress", "IN REVIEW"}}
 	trs := []jira.Transition{
 		{ID: "21", Name: "Review", ToName: "IN REVIEW", ToCat: "indeterminate"},
@@ -174,8 +166,6 @@ func TestTransitionToColumnByNameRespectsOperatorOrder(t *testing.T) {
 }
 
 func TestNoTransitionToColumnReturnsNil(t *testing.T) {
-	// The project's workflow forbids the jump. This is NOT an error — it is the
-	// answer that sends the card back to its original column with a reason.
 	col := JiraBoardColumn{Label: "Done", Category: "done"}
 	trs := []jira.Transition{{ID: "11", ToName: "In Progress", ToCat: "indeterminate"}}
 	if tr := TransitionToColumn(col, trs); tr != nil {
@@ -184,8 +174,6 @@ func TestNoTransitionToColumnReturnsNil(t *testing.T) {
 }
 
 func TestIssueAlreadyInColumnIsRecognized(t *testing.T) {
-	// The same function the board draws with. If they diverged, dragging a card
-	// onto the column it is already in would turn into a real transition.
 	col := JiraBoardColumn{Label: "In Progress", Category: "indeterminate"}
 	if !issueInColumn(testIssue("V-1", "IN REVIEW", "indeterminate"), col) {
 		t.Error("the issue is already in this column and that has to be recognized")
@@ -204,8 +192,6 @@ func TestFilterJQLMirrorsWebPanel(t *testing.T) {
 		{"mine", "PANEL", "", "project = PANEL AND assignee = currentUser() AND statusCategory != Done ORDER BY rank ASC"},
 		{"reported", "", "", "reporter = currentUser() ORDER BY updated DESC"},
 		{"custom", "PANEL", "labels = urgent", "labels = urgent"},
-		// A filter this server does not know falls back to "all" — the app may
-		// be newer than the server.
 		{"made-up", "PANEL", "", "project = PANEL ORDER BY updated DESC"},
 	}
 	for _, c := range cases {
@@ -216,8 +202,6 @@ func TestFilterJQLMirrorsWebPanel(t *testing.T) {
 }
 
 func TestJQLNeverHasDanglingAND(t *testing.T) {
-	// The bug the web panel patches with a regex after assembling. Here the
-	// assembly is born right.
 	for _, f := range []string{"all", "mine", "todo", "inprogress", "last7", "reported", "other"} {
 		for _, p := range []string{"", "PANEL"} {
 			jql := FilterJQL(f, p, "", "")
@@ -250,7 +234,6 @@ func TestSearchLooksAtKeySummaryStatusLabelAndAssignee(t *testing.T) {
 }
 
 func TestCardCarriesPreformattedAssignee(t *testing.T) {
-	// The client never builds a label out of a raw struct.
 	is := testIssue("V-1", "Backlog", "new")
 	is.Assignee = &jira.User{
 		AccountID:   "acc-1",
@@ -292,11 +275,7 @@ func containsSeq(s, sub string) bool {
 
 func hasPrefixSeq(s, p string) bool { return len(s) >= len(p) && s[:len(p)] == p }
 
-// --- one search per column ----------------------------------------------------
-
 func TestSplitJQLSeparatesWhereFromOrder(t *testing.T) {
-	// The column restriction goes in BEFORE the ORDER BY. Concatenating without
-	// splitting produces "... ORDER BY updated DESC AND status = X", which is invalid.
 	cases := []struct{ jql, where, order string }{
 		{"project = PANEL ORDER BY updated DESC", "project = PANEL", "ORDER BY updated DESC"},
 		{"project = PANEL order by rank ASC", "project = PANEL", "order by rank ASC"},
@@ -313,8 +292,6 @@ func TestSplitJQLSeparatesWhereFromOrder(t *testing.T) {
 }
 
 func TestCategoryRestrictionUsesJQLVocabulary(t *testing.T) {
-	// The stable key is "new"; JQL wants "To Do". Sending the raw key would bring
-	// back zero issues in silence — the worst possible failure on a board.
 	cases := map[string]string{
 		"new":           `statusCategory = "To Do"`,
 		"indeterminate": `statusCategory = "In Progress"`,
@@ -338,7 +315,6 @@ func TestNameRestrictionListsColumnStatuses(t *testing.T) {
 }
 
 func TestOtherColumnQueriesTheCOMPLEMENT(t *testing.T) {
-	// "Whatever is none of the others" is only askable of Jira as NOT IN.
 	all := []JiraBoardColumn{
 		{Label: "A", StatusNames: []string{"Backlog"}},
 		{Label: "B", StatusNames: []string{"Ready"}},
@@ -352,8 +328,6 @@ func TestOtherColumnQueriesTheCOMPLEMENT(t *testing.T) {
 }
 
 func TestUnrestrictableColumnReturnsEmpty(t *testing.T) {
-	// The caller uses this to fall back to the single search, instead of building
-	// a crooked query that would bring the column back empty with no explanation.
 	if got := ColumnRestriction(JiraBoardColumn{Label: "?"}, nil); got != "" {
 		t.Errorf("a column with neither category nor names should return empty, got %q", got)
 	}
@@ -363,8 +337,6 @@ func TestUnrestrictableColumnReturnsEmpty(t *testing.T) {
 }
 
 func TestColumnJQLWrapsFilterInPARENTHESES(t *testing.T) {
-	// Without the parentheses, a filter with an OR would bind only to the last
-	// term and the board would bring back more than it should — silent widening.
 	got := ColumnJQL(`project = PANEL OR project = TTW`, "ORDER BY updated DESC", `statusCategory = "To Do"`)
 	want := `(project = PANEL OR project = TTW) AND statusCategory = "To Do" ORDER BY updated DESC`
 	if got != want {
@@ -391,10 +363,7 @@ func TestQuotedStatusNameDoesNotBreakWHOLEQuery(t *testing.T) {
 	}
 }
 
-// --- the operator's own board filter ------------------------------------------
-
 func TestOwnBoardOnlyAppearsByChoice(t *testing.T) {
-	// A configured board_jql must never replace the "All" filter.
 	if got := FilterJQL("all", "PANEL", "", "project = OTHER"); got != "project = PANEL ORDER BY updated DESC" {
 		t.Errorf("the operator's JQL must not hijack the 'All' filter: %q", got)
 	}
@@ -404,7 +373,6 @@ func TestOwnBoardOnlyAppearsByChoice(t *testing.T) {
 }
 
 func TestOwnBoardWithoutQueryFallsBackToAll(t *testing.T) {
-	// A filter with no query behind it would be a button that does nothing.
 	if got := FilterJQL("board", "PANEL", "", ""); got != "project = PANEL ORDER BY updated DESC" {
 		t.Errorf("%q", got)
 	}

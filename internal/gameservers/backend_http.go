@@ -12,35 +12,6 @@ import (
 	"time"
 )
 
-// BackendHTTP is the Backend the panel uses when the node has `transport: agent` (the config value for the agent transport).
-// It talks to that node's node-agent over the internal bridge.
-//
-// # ONE FORWARDER, NOT 23 FUNCTIONS — and why
-//
-// The obvious design asks for "one function per operation". That is not what is
-// written here, and the reason is the very thing that counts as this
-// architecture's most expensive defect: the two back-ends drifting apart slowly
-// until a screen works on one node and not on another.
-//
-// Twenty-three functions are twenty-three places where the panel can assemble an
-// envelope different from the one the node decodes. With ONE generic forwarder
-// (operation name + document bytes), there is nowhere to diverge: the envelope
-// is opaque to this file, and the one that defines the shape is BackendLocal,
-// which is also the one that reads it. Parity stops being tested and becomes
-// structural.
-//
-// As a bonus, the criterion ("no operation-name literal in this file") ends up
-// satisfied more strongly than it asked for: there is no operation name here at
-// all, neither as a literal nor as a constant — only the `op` that arrives as a
-// parameter, validated against the catalog before it becomes a URL.
-//
-// # THE TOKEN IS INJECTED ON THE SERVER
-//
-// The bearer enters at the CONSTRUCTION of the client, on the panel's server
-// side, in the same pattern as the token proxy that already exists in the repo.
-// It never reaches the browser and never travels in the URL: a query string
-// leaks into access logs, into Referer and into browser history, and fanhub.py
-// (which accepts `?t=`) is the precedent this code refuses on purpose.
 type BackendHTTP struct {
 	base   *url.URL
 	token  string
@@ -49,27 +20,13 @@ type BackendHTTP struct {
 }
 
 const (
-	// maxResponse caps the response document. Without it, a compromised (or just
-	// broken) agent takes the panel down through memory — the panel is the work
-	// tool, and a node must not be able to kill it.
-	maxResponse = 8 << 20 // 8 MiB
+	maxResponse = 8 << 20
 
-	// operationTimeout is the ceiling of a named operation. Genuinely long operations
-	// (restore, update) are container start/stop, which Docker returns from fast;
-	// the work carries on afterwards.
 	operationTimeout = 60 * time.Second
 
-	// artifactTimeout is bigger because a file passes through there: a large world
-	// over a LAN bridge takes longer than an operation and must not die halfway.
 	artifactTimeout = 15 * time.Minute
 )
 
-// NewBackendHTTP assembles a node's client.
-//
-// `base` is the agent's root (e.g. http://10.0.0.5:9977). The token is mandatory:
-// an agent with no secret is inert and answers 401 to everything, so a client
-// without a token would only produce a confusing authorization error — failing
-// here names the cause.
 func NewBackendHTTP(base, token, no string) (*BackendHTTP, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, fmt.Errorf("http back-end of node %q requires a token: the agent answers 401 to everything without a credential", no)
@@ -92,9 +49,6 @@ func NewBackendHTTP(base, token, no string) (*BackendHTTP, error) {
 func (b *BackendHTTP) Describe() string { return "http:" + b.no + " (" + b.base.Host + ")" }
 
 func (b *BackendHTTP) Execute(ctx context.Context, op OpName, body json.RawMessage) (json.RawMessage, error) {
-	// Validate against the catalog BEFORE dialing: a name this binary does not
-	// know is a programming error in the panel, and finding it out through a 404
-	// from the node would spend a network round trip to say what was known here.
 	if !knownOp(op) {
 		return nil, &UnknownOperationError{Op: op}
 	}
@@ -106,8 +60,6 @@ func (b *BackendHTTP) Execute(ctx context.Context, op OpName, body json.RawMessa
 	defer cancel()
 
 	target := *b.base
-	// PathEscape on the name: it comes from a catalog constant, but escaping is
-	// what keeps the sentence "the client does not assemble paths" true.
 	target.Path = strings.TrimRight(target.Path, "/") + "/v1/op/" + url.PathEscape(string(op))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), bytes.NewReader(body))
@@ -133,8 +85,6 @@ func (b *BackendHTTP) Execute(ctx context.Context, op OpName, body json.RawMessa
 
 	switch {
 	case res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden:
-		// A 401 must NOT become "the operation failed". They are opposite actions for
-		// the operator — one is to swap the token, the other is to go look at the node.
 		return nil, &AuthorizationError{Msg: fmt.Sprintf("node %q rejected the credential (HTTP %d)", b.no, res.StatusCode)}
 	case res.StatusCode == http.StatusNotFound:
 		return nil, &UnknownOperationError{Op: op}
@@ -173,15 +123,9 @@ func (b *BackendHTTP) Open(ctx context.Context, h Handle) (io.ReadCloser, error)
 		res.Body.Close()
 		return nil, &OperationError{Msg: errorMessage(body, res.StatusCode, b.no)}
 	}
-	// The caller closes (Backend.Open's contract).
 	return res.Body, nil
 }
 
-// Receive sends bytes to the node and receives the Handle back.
-//
-// A direct stream, no multipart and no base64: the request body IS the artifact.
-// Multipart would exist in order to carry the NAME along, and the name is
-// exactly what must not cross the boundary.
 func (b *BackendHTTP) Receive(ctx context.Context, r io.Reader) (Handle, error) {
 	target := *b.base
 	target.Path = strings.TrimRight(target.Path, "/") + "/v1/artifact"
@@ -215,14 +159,10 @@ func (b *BackendHTTP) Receive(ctx context.Context, r io.Reader) (Handle, error) 
 	return Handle(env.Handle), nil
 }
 
-// authorize puts the bearer in the HEADER, never in the URL. See the file header.
 func (b *BackendHTTP) authorize(r *http.Request) {
 	r.Header.Set("Authorization", "Bearer "+b.token)
 }
 
-// knownOp consults the catalog. It walks AllOps instead of keeping a map
-// of its own: a map of its own is a second list that one day falls out of sync
-// with the first, which is the defect the closed catalog exists not to have.
 func knownOp(op OpName) bool {
 	for _, o := range AllOps {
 		if o == op {
@@ -232,7 +172,6 @@ func knownOp(op OpName) bool {
 	return false
 }
 
-// errorMessage extracts the agent's error field, with a readable indent.
 func errorMessage(raw []byte, code int, no string) string {
 	var env struct {
 		Error string `json:"error"`

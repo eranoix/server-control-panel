@@ -1,22 +1,5 @@
 package whatsapp
 
-// registry.go — allocates TCP ports from the 3100-3199 range for per-profile
-// WAHA containers, persisting the allocation in
-// /var/lib/panel-whatsapp/port-registry.json.
-//
-// The range cap (100 profiles) is the design's practical ceiling — beyond
-// that the RAM taken by WAHA Core containers becomes prohibitive (~150 MB
-// each). Once we hit the limit, move to WAHA Plus (one container, N sessions).
-//
-// API:
-//   - Alloc(user) assigns a new port or returns the existing one (idempotent).
-//   - Lookup(user) reads without allocating — used on the hot path (webhook routing).
-//   - Release(user) frees the port when the profile is decommissioned.
-//
-// Concurrency: an internal mutex covers the map plus the atomic JSON flush.
-// Concurrent Allocs never return the same port; a Release during a Lookup is
-// safe (it returns false instead).
-
 import (
 	"encoding/json"
 	"errors"
@@ -28,35 +11,26 @@ import (
 )
 
 const (
-	// PortRangeMin/PortRangeMax bound the port pool. Each container exposes the
-	// WAHA API through network_mode: host, so the port is globally unique on
-	// the host.
 	PortRangeMin = 3100
 	PortRangeMax = 3199
 
 	registryFile = "port-registry.json"
 )
 
-// ErrPortRangeExhausted: 100 profiles allocated — no room left until one is freed.
 var ErrPortRangeExhausted = errors.New("whatsapp: port range exhausted (3100-3199)")
 
-// Entry is one allocation persisted to disk.
 type Entry struct {
 	User string `json:"user"`
 	Port int    `json:"port"`
 }
 
-// Registry records who is on which port. Persisted in
-// <root>/port-registry.json (an atomic write via rename).
 type Registry struct {
 	mu      sync.Mutex
 	root    string
 	path    string
-	entries map[string]int // user → port
+	entries map[string]int
 }
 
-// NewRegistry opens or creates the registry under root (normally
-// /var/lib/panel-whatsapp). It creates root with 0o755 if needed.
 func NewRegistry(root string) (*Registry, error) {
 	if root == "" {
 		return nil, errors.New("whatsapp: registry root required")
@@ -75,7 +49,6 @@ func NewRegistry(root string) (*Registry, error) {
 	return r, nil
 }
 
-// load reads the JSON from disk — ENOENT is fine (an empty registry).
 func (r *Registry) load() error {
 	data, err := os.ReadFile(r.path)
 	if err != nil {
@@ -92,14 +65,13 @@ func (r *Registry) load() error {
 	}
 	for _, e := range raw.Entries {
 		if e.User == "" || e.Port < PortRangeMin || e.Port > PortRangeMax {
-			continue // corrupt entries are skipped
+			continue
 		}
 		r.entries[e.User] = e.Port
 	}
 	return nil
 }
 
-// flush writes the state to disk atomically (tmp + rename). The caller holds mu.
 func (r *Registry) flush() error {
 	out := make([]Entry, 0, len(r.entries))
 	for u, p := range r.entries {
@@ -117,11 +89,6 @@ func (r *Registry) flush() error {
 	return os.Rename(tmp, r.path)
 }
 
-// Alloc returns the port assigned to user, creating a new one when necessary.
-// Idempotent: repeated calls return the same port.
-//
-// Strategy: take the lowest free port in the range. It is deterministic
-// (which makes inspection and migration easier) and keeps the ports dense.
 func (r *Registry) Alloc(user string) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -149,7 +116,6 @@ func (r *Registry) Alloc(user string) (int, error) {
 	return 0, ErrPortRangeExhausted
 }
 
-// Lookup returns user's port without allocating. ok=false when none was ever allocated.
 func (r *Registry) Lookup(user string) (int, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -157,7 +123,6 @@ func (r *Registry) Lookup(user string) (int, bool) {
 	return p, ok
 }
 
-// Release returns user's port to the pool. A no-op when user was not registered.
 func (r *Registry) Release(user string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -173,7 +138,6 @@ func (r *Registry) Release(user string) error {
 	return nil
 }
 
-// List returns an ordered snapshot of the entries (read-only).
 func (r *Registry) List() []Entry {
 	r.mu.Lock()
 	defer r.mu.Unlock()

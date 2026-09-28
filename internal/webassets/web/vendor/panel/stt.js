@@ -1,10 +1,3 @@
-// PanelSTT: speech-to-text adapter with pluggable drivers (Web Speech, whisper-local).
-// Output goes through callbacks (onPartial / onFinal / onError / onEnd).
-//
-// Web Speech quirks this wrapper handles:
-//   1. It stops by itself after silence (~5s in Chrome), so it auto-restarts.
-//   2. On mobile it needs a user gesture: start it directly from the click
-//      handler, not from a setTimeout.
 (function () {
   'use strict';
   const isBrowser = typeof window !== 'undefined';
@@ -23,7 +16,6 @@
     return getLastLang() || (navigator.language || 'en-US');
   }
 
-  // ---- Web Speech driver ----------------------------------------------------
   const webSpeechDriver = {
     name: 'web-speech',
     available() { return SR_AVAILABLE; },
@@ -36,10 +28,6 @@
       rec.maxAlternatives = 1;
       setLastLang(rec.lang);
 
-      // With opts.stream, recognize THAT track (Chrome 135+ desktop,
-      // SpeechRecognition.start(track)); otherwise Web Speech listens to the
-      // system default mic, which may not be the call's mic. Where
-      // start(track) throws (unsupported), fall back to plain start() for good.
       const srcTrack = opts.stream && opts.stream.getAudioTracks ? (opts.stream.getAudioTracks()[0] || null) : null;
       let useTrack = !!srcTrack;
       const startRec = () => {
@@ -61,8 +49,6 @@
       const armIdle = () => {
         if (idleTimer) clearTimeout(idleTimer);
         idleTimer = setTimeout(() => {
-          // No partial for idleMs: stop even in continuous mode, otherwise the
-          // mic stays open draining battery on low background noise.
           if (!stopRequested) {
             stopRequested = true;
             try { rec.stop(); } catch (_) {}
@@ -88,8 +74,6 @@
       };
 
       rec.onerror = (ev) => {
-        // Recoverable: no-speech, aborted, audio-capture (mic briefly busy).
-        // Only the errors in `fatal` stop the session.
         const fatal = ['not-allowed', 'service-not-allowed', 'language-not-supported', 'bad-grammar'];
         if (fatal.indexOf(ev.error) >= 0) {
           stopRequested = true;
@@ -105,8 +89,6 @@
           if (opts.onEnd) opts.onEnd({ reason: 'manual', text: finalBuffer });
           return;
         }
-        // The API ends by itself; restart at most 5 times so a broken driver
-        // cannot loop forever.
         restartGuard++;
         if (restartGuard > 5) {
           if (opts.onEnd) opts.onEnd({ reason: 'restart-exhausted', text: finalBuffer });
@@ -122,8 +104,6 @@
         }
       };
 
-      // onstart means recognition is really listening: this, not the click,
-      // is what acks the initiator.
       rec.onstart = () => { if (opts.onReady) opts.onReady(); };
 
       try {
@@ -145,11 +125,6 @@
     },
   };
 
-  // ---- whisper-local driver (WhisperLive backend via Go bridge) -------------
-  // Pipeline: AudioWorklet PCM16 16kHz mono → WS /ws/stt/transcribe → Go bridge
-  // → WhisperLive. Server sends {type:'partial',text} while a segment evolves
-  // and {type:'final'} when it completes.
-  // opts.token (JWT) is required. opts.stream is optional (defaults to the mic).
   const whisperLocalDriver = {
     name: 'whisper-local',
     available() {
@@ -191,9 +166,6 @@
           });
           ownsStream = true;
         }
-        // Ask for 16kHz so the browser's low-pass resampler does the work
-        // (naive decimation aliases and hurts Whisper accuracy). If the browser
-        // ignores it, the worklet resamples itself.
         ac = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
         await ac.audioWorklet.addModule('/vendor/panel/audio-pcm-worklet.js');
         micSource = ac.createMediaStreamSource(stream);
@@ -210,16 +182,12 @@
 
         workletNode.port.onmessage = (ev) => {
           if (stopped) return;
-          // Muted (first audio track disabled): send nothing, saving upload
-          // bandwidth and mobile battery.
           const audioTracks = stream && stream.getAudioTracks ? stream.getAudioTracks() : [];
           if (audioTracks.length && !audioTracks[0].enabled) return;
-          const buf = ev.data; // ArrayBuffer
+          const buf = ev.data;
           if (wsReady && ws.readyState === WebSocket.OPEN) {
             try { ws.send(buf); } catch (_) {}
           } else {
-            // Queue up to 100 frames (~8s) until the WS opens, so slow
-            // connections do not lose the first words.
             if (pending.length < 100) pending.push(buf);
           }
         };
@@ -240,9 +208,6 @@
           let msg;
           try { msg = JSON.parse(ev.data); } catch (_) { return; }
           if (msg.type === 'ready') {
-            // 'ready' means the WhisperLive upstream really accepted, so it acks
-            // the initiator (ws.onopen only means the Go bridge is up). A
-            // missing 'ready' is covered by the caller's connect timeout.
             if (opts.onReady) opts.onReady();
           } else if (msg.type === 'partial') {
             if (opts.onPartial) opts.onPartial({ text: msg.text || '', buffer });
@@ -260,8 +225,6 @@
               confidence: typeof msg.confidence === 'number' ? msg.confidence : 1.0,
             });
           } else if (msg.type === 'error') {
-            // whisper-failed is transient by design (one bad batch must not kill
-            // the session); it only becomes fatal after 3+ failures in 30s.
             const trulyFatal = ['upstream-unavailable', 'upstream-init-failed', 'upstream-disconnect', 'crash', 'no-token', 'bad-handshake'].includes(msg.code);
             if (msg.code === 'whisper-failed') {
               const now = Date.now();
@@ -273,7 +236,6 @@
               if (session._whisperFailHistory.length >= 3) {
                 if (opts.onError) opts.onError({ code: 'whisper-failed', fatal: true, message: 'unstable STT backend (3+ failures in 30s)' });
               } else {
-                // No onError here, so the caller's loop guard is not triggered.
                 if (window.PANEL_DEBUG) console.warn('[panel:stt] whisper-failed (transient ' + session._whisperFailHistory.length + '/3)');
               }
             } else if (trulyFatal) {
@@ -308,7 +270,6 @@
     },
   };
 
-  // ---- Driver registry ------------------------------------------------------
   const drivers = { 'web-speech': webSpeechDriver, 'whisper-local': whisperLocalDriver };
   let currentBackend = 'web-speech';
 
@@ -331,9 +292,6 @@
     getLastLang,
     setLastLang,
     defaultLang,
-    // start({ lang, continuous, interimResults, onPartial, onFinal, onError, onEnd, idleMs, token, stream, prompt })
-    // Returns a handle with .stop(). `token` is used only by whisper-local;
-    // `stream` by both (web-speech via start(track), where supported).
     start(opts) {
       opts = opts || {};
       const driverName = opts.backend || currentBackend;
@@ -345,8 +303,6 @@
       const session = { driver: driverName };
       return d.start(session, opts);
     },
-    // Checks whether the server's whisper-local backend is alive (used at boot
-    // to pick the default backend).
     async probeWhisperLocal() {
       try {
         const r = await fetch('/api/stt/health', { cache: 'no-store' });

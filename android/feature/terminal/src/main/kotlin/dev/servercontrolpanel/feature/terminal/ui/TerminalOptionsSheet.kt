@@ -45,41 +45,25 @@ import dev.servercontrolpanel.feature.terminal.prefs.TypingMode
 import dev.servercontrolpanel.feature.terminal.prefs.TerminalScrollback
 import dev.servercontrolpanel.feature.terminal.prefs.TerminalFontSizePreference
 
-/** Test tag for the options sheet, which must cost no height while closed. */
 const val OPTIONS_SHEET_TAG = "terminal-options-sheet"
 
-/** Label of the button that opens the sheet, on the top bar. */
 const val OPTIONS_DESCRIPTION = "Terminal options"
 
-/** Label of the button that raises the software keyboard without relying on a tap on the grid. */
 const val SHOW_KEYBOARD_LABEL = "Show keyboard"
 
-/** Test tag for the sheet's keyboard button. */
 const val SHOW_KEYBOARD_TAG = "show-keyboard-button"
 
-/** Label of the sheet's paste button, the paste path that needs no selection. */
 const val PASTE_LABEL = "Paste"
 
-/** Test tag for the sheet's paste button. */
 const val PASTE_TAG = "paste-button"
 
-// There is deliberately no "clear history" button: erasing the user's history
-// is never an acceptable way out of a display defect.
-/** Test tag for each line-spacing step. */
 fun lineSpacingTag(step: TerminalLineSpacing): String = "line-spacing-${step.name}"
 
-/** Tag for each input mode's chip, for the test that proves the switch. */
 fun typingModeTag(mode: TypingMode): String = "mode-typing-${mode.name}"
 
-/** Tag for each history-size chip. */
 fun scrollbackTag(step: TerminalScrollback): String = "scrollback-${step.name}"
 
 
-/**
- * A section header: icon and title on one line, a short caption below. The icon
- * gives the category at a glance, keeping explanations short enough for the whole
- * sheet to fit on one screen.
- */
 @Composable
 private fun SectionHeader(icon: ImageVector, title: String, caption: String? = null) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -103,10 +87,6 @@ private fun SectionHeader(icon: ImageVector, title: String, caption: String? = n
     }
 }
 
-/**
- * The chips of one choice, in a `FlowRow`, so a chip that does not fit moves
- * whole to the next line instead of breaking mid-word.
- */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun <T> ChipLadder(
@@ -131,12 +111,6 @@ private fun <T> ChipLadder(
     }
 }
 
-/**
- * Holds the episodic controls (font size, line spacing, typing mode, scrollback,
- * paste, attach) that are not needed while reading output; kept on the screen
- * they cost about 160 dp of permanent height. A bottom sheet, within thumb reach,
- * with room to scroll. Closed, it is not in the composition at all.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TerminalOptionsSheet(
@@ -191,10 +165,6 @@ fun TerminalOptionsSheet(
     }
 }
 
-/**
- * The sheet content, kept apart from the `ModalBottomSheet` dialog window so its
- * rules can be tested on the JVM without window animations.
- */
 @Composable
 internal fun TerminalOptionsContent(
     fontSizeSp: Float,
@@ -228,8 +198,6 @@ internal fun TerminalOptionsContent(
         Text(text = "Font size", style = MaterialTheme.typography.titleMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                // With visible lines pinned, the size is derived, so show that
-                // instead of the hand-picked value.
                 Text(
                     text = if (visibleRows == VisibleRows.AUTOMATIC) {
                         "${fontSizeSp.toInt()}sp"
@@ -237,12 +205,8 @@ internal fun TerminalOptionsContent(
                         "derived from ${visibleRows.lines} lines"
                     },
                 )
-                // The resulting grid in numbers: whether `ls -l` fits is a
-                // question about columns.
                 Text(
                     text = "current grid: $gridCols columns × $gridRows rows" +
-                        // Reference and visible heights differ only when something
-                        // covers the grid (keyboard, banner, attachment bar). See [GridGeometry].
                         if (referenceHeightPx != visibleHeightPx) {
                             "  ·  ${visibleHeightPx}px of ${referenceHeightPx}px"
                         } else {
@@ -296,8 +260,6 @@ internal fun TerminalOptionsContent(
 
         HorizontalDivider()
 
-        // A switch rather than a fixed choice: shell commands need every key as
-        // typed, while prose for the agent benefits from autocorrect. See TypingMode.
         SectionHeader(
             icon = Icons.Filled.Edit,
             title = "Keyboard",
@@ -313,8 +275,6 @@ internal fun TerminalOptionsContent(
 
         HorizontalDivider()
 
-        // Scrollback sets both the emulator capacity and how much log is fetched
-        // when the session opens, hence "scroll back and reread".
         SectionHeader(
             icon = Icons.Filled.Refresh,
             title = "Scrollback",
@@ -333,29 +293,19 @@ internal fun TerminalOptionsContent(
 
         HorizontalDivider()
 
-        // Escape hatch to raise the keyboard without tapping the grid, and the
-        // only route to it when the program (e.g. `htop`) owns grid taps.
         OutlinedButton(onClick = onShowKeyboard, modifier = Modifier.testTag(SHOW_KEYBOARD_TAG)) {
             Text(text = SHOW_KEYBOARD_LABEL)
         }
 
-        // Copy lives on the floating toolbar, which needs a selection; paste
-        // needs an always-available path.
         OutlinedButton(onClick = onPaste, modifier = Modifier.testTag(PASTE_TAG)) {
             Text(text = PASTE_LABEL)
         }
 
-        // Next to Paste because both put a reference to something outside the
-        // terminal onto the command line; attach uploads it to the server first
-        // so the remote program can open it. Episodic, so it lives in the sheet;
-        // upload progress shows on the attachment bar.
         OutlinedButton(onClick = onAttach, modifier = Modifier.testTag(ATTACH_TAG)) {
             Text(text = ATTACH_LABEL)
         }
 
 
-        // Shown only while the exemption is not granted, and only behind an
-        // explicit tap: the app never asks on its own.
         if (!batteryExempt) {
             HorizontalDivider()
 
@@ -376,5 +326,4 @@ internal fun TerminalOptionsContent(
     }
 }
 
-/** Test tag for each visible-lines step. */
 internal fun visibleRowsTag(option: VisibleRows): String = "lines-visible-${option.lines}"

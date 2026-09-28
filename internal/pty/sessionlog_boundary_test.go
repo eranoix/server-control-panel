@@ -8,15 +8,6 @@ import (
 	"testing"
 )
 
-// `dtach`'s CHATTER IS A RULE ABOUT THE STREAM, NOT ABOUT THE CHUNK.
-//
-// The PTY pump delivers whatever `read()` returned. The goodbye is 20 bytes and
-// nothing guarantees it fits in a single chunk — while the filter looked at one
-// chunk at a time, a split literal went through whole. Measured across the logs
-// on this machine before the fix: 32 `ESC[999H` and 24 `[detached]` recorded, 13
-// and 23 of them in the app's session, which rebuilds the screen by replaying the
-// log and therefore faithfully reproduced "go to the last line and scroll" — the
-// dark screen with the content one scroll above.
 func TestDtachChatterDoesNotLeakAtBlockBoundary(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -61,8 +52,6 @@ func TestDtachChatterDoesNotLeakAtBlockBoundary(t *testing.T) {
 	}
 }
 
-// The PROGRAM's content that comes after the attach clear has to survive intact
-// — the filter cuts the multiplexer's message, not the output.
 func TestRealContentSurvivesFilter(t *testing.T) {
 	dir := t.TempDir()
 	w, _, _, release := acquireSessionLog(dir, "u", "s")
@@ -76,12 +65,6 @@ func TestRealContentSurvivesFilter(t *testing.T) {
 	}
 }
 
-// `[detached]` WITHOUT the `ESC[999H` right before it is program output, not
-// `dtach`'s goodbye — and it must not silence the log.
-//
-// It used to be enough for the word to appear for the connection to stop
-// recording forever. On a machine where you work on the terminal's own code,
-// that is one `grep` away: the session stayed alive and its history died there.
 func TestWordDetachedInProgramOutputDoesNotSilenceLog(t *testing.T) {
 	dir := t.TempDir()
 	w, _, _, release := acquireSessionLog(dir, "u", "s")
@@ -94,8 +77,6 @@ func TestWordDetachedInProgramOutputDoesNotSilenceLog(t *testing.T) {
 	}
 }
 
-// CSI M is DL (Delete Line), not an X10 mouse report — and the filter ate the
-// sequence plus THREE bytes of content along with it.
 func TestMouseFilterDoesNotEatDeleteLine(t *testing.T) {
 	entry := []byte("before\x1b[Mafter all of this\r\n")
 	output := stripMouseReports(entry)
@@ -107,8 +88,6 @@ func TestMouseFilterDoesNotEatDeleteLine(t *testing.T) {
 	}
 }
 
-// What the filter MUST keep eating: the SGR-1006 report, which is what really
-// turns up in the logs (a shell echoing in cooked mode).
 func TestMouseFilterStillEatsSGRReport(t *testing.T) {
 	output := stripMouseReports([]byte("before\x1b[<35;80;24Mafter\r\n"))
 	if bytes.Contains(output, []byte("35;80;24")) {
@@ -119,8 +98,6 @@ func TestMouseFilterStillEatsSGRReport(t *testing.T) {
 	}
 }
 
-// attachReplay must not end in dtach's message: the client rebuilds everything
-// correctly and then erases it — a black screen with the content one scroll above.
 func TestAttachReplayDoesNotEndInDtachMessage(t *testing.T) {
 	dir := t.TempDir()
 	path := sessionLogPath(dir, "u", "s")

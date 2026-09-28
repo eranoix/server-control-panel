@@ -2,10 +2,6 @@ package dev.servercontrolpanel.core.sdui
 
 import java.io.File
 
-/**
- * Reads the shared SDUI fixtures from `sdui.fixtures.dir` (the repo's
- * `contracts/sdui/fixtures`). Never read a copy, which could go stale.
- */
 object SduiFixtures {
     val directory: File by lazy {
         val path = System.getProperty("sdui.fixtures.dir")

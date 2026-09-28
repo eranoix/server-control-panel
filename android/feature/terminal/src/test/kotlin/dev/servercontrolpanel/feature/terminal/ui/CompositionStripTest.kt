@@ -18,10 +18,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * The composition strip makes text mode usable but adds chrome between the grid and
- * the keyboard: it must appear with a word in flight and keep a stable height.
- */
 @RunWith(RobolectricTestRunner::class)
 class CompositionStripTest {
 
@@ -30,7 +26,6 @@ class CompositionStripTest {
 
     @Test
     fun `in terminal mode with no composition the strip emits no node`() {
-        // Disappearing is safe here: the strip cannot come back until the mode changes.
         composeRule.setContent {
             Column(modifier = Modifier.fillMaxSize()) {
                 CompositionStrip(text = "", reserveSpace = false)
@@ -40,14 +35,8 @@ class CompositionStripTest {
         composeRule.onNodeWithTag(COMPOSITION_STRIP_TAG).assertDoesNotExist()
     }
 
-    /**
-     * The height must not change between composing and not composing: each change
-     * resizes the grid, sends a SIGWINCH and forces a full repaint that can garble
-     * the screen.
-     */
     @Test
     fun `in text mode the height is the same whether composing or not`() {
-        // One composition with changing text, as happens on a live screen.
         var text by mutableStateOf("")
         composeRule.setContent {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -70,7 +59,6 @@ class CompositionStripTest {
             composingHeight,
         )
 
-        // Releasing the word must not change the height either.
         text = ""
         composeRule.waitForIdle()
         assertEquals(
@@ -92,8 +80,6 @@ class CompositionStripTest {
 
     @Test
     fun `the strip takes one line regardless of word length`() {
-        // A long word must not wrap, since wrapping changes the height mid-typing
-        // (hence `maxLines = 1` and horizontal scrolling).
         var text by mutableStateOf("hi")
         composeRule.setContent {
             Column(modifier = Modifier.fillMaxSize()) { CompositionStrip(text = text) }

@@ -5,13 +5,6 @@ import android.net.Uri
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 
-/**
- * Wires [TransferGarbageCollector] to the real `WorkManager`/`ContentResolver`
- * -- the seam callers outside this module use instead of depending on
- * `androidx.work` or this feature's internals directly. Meant to be called
- * once per process start, off the main thread (this does a blocking
- * `WorkInfo` lookup per tracked transfer).
- */
 object TransferMaintenance {
     fun sweepAbandonedTransfers(context: Context) {
         val appContext = context.applicationContext

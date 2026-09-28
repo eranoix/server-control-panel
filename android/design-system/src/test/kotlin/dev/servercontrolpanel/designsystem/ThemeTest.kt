@@ -19,10 +19,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 
-/**
- * Checks the colors the theme actually applies for each appearance choice.
- * Flipping Robolectric's `night` qualifier drives `isSystemInDarkTheme()`.
- */
 @RunWith(RobolectricTestRunner::class)
 class ThemeTest {
 
@@ -33,7 +29,6 @@ class ThemeTest {
         RuntimeEnvironment.setQualifiers(if (dark) "+night" else "+notnight")
     }
 
-    /** Luminance of the applied surface color, showing which scheme was used. */
     private fun appliedSurface(themeMode: ThemeMode): Float {
         var surface = Color.Unspecified
         composeRule.setContent {
@@ -72,8 +67,6 @@ class ThemeTest {
 
     @Test
     fun `status colors follow the manual choice, not the system`() {
-        // StatusColors derives light/dark from the scheme, so a dark system with
-        // LIGHT chosen must still give the light amber.
         systemDark(true)
         var notification = StatusColorPair(Color.Unspecified, Color.Unspecified, Color.Unspecified)
         composeRule.setContent {

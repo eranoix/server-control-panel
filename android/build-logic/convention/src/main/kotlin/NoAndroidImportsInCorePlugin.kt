@@ -7,10 +7,6 @@ import org.gradle.api.tasks.TaskAction
 import org.gradle.kotlin.dsl.register
 import java.io.File
 
-/**
- * :core's whole contract is zero I/O, zero Android — these import prefixes
- * are the mechanical definition of "violates that contract".
- */
 private val FORBIDDEN_IMPORT_PREFIXES = listOf(
     "import android.",
     "import androidx.",
@@ -20,8 +16,6 @@ private val FORBIDDEN_IMPORT_PREFIXES = listOf(
 
 abstract class CheckNoAndroidImportsTask : DefaultTask() {
 
-    // Always re-runs (no up-to-date caching): this is a correctness gate, not
-    // a task worth the complexity of incremental input tracking.
     @get:Internal
     var kotlinSourceFiles: List<File> = emptyList()
 
@@ -49,11 +43,6 @@ abstract class CheckNoAndroidImportsTask : DefaultTask() {
     }
 }
 
-/**
- * Registers checkNoAndroidImports and wires it into the check lifecycle task
- * so a violation is a real build failure, not a lint warning that can be
- * ignored.
- */
 class NoAndroidImportsInCorePlugin : Plugin<Project> {
     override fun apply(project: Project) {
         val sourceTree = project.fileTree(project.file("src/main/kotlin"))

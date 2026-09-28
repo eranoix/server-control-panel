@@ -12,23 +12,6 @@ import dev.servercontrolpanel.data.files.TransferRepository
 import java.io.FileNotFoundException
 import java.io.IOException
 
-/**
- * Downloads a server file into the system's shared MediaStore Downloads
- * collection, resuming from wherever it left off after a
- * cancellation, retry or process death.
- *
- * The resume offset is never tracked as a separately-persisted byte counter:
- * it is read back from the MediaStore entry's own on-disk size
- * (`ParcelFileDescriptor.statSize`) every time this worker starts, which is
- * self-healing by construction -- there is no separate counter that can
- * ever drift from what is actually written to disk. Only the MediaStore
- * [Uri] itself needs to survive across attempts, via [TransferStateStore].
- */
-// @JvmOverloads: WorkManager's default factory instantiates by reflection,
-// looking for exactly `(Context, WorkerParameters)`, which parameters with
-// default values in Kotlin do NOT generate. Without this, "Could not create
-// Worker" and FAILED before the first line of doWork — see the KDoc of
-// UploadWorker.
 class DownloadWorker @JvmOverloads constructor(
     context: Context,
     params: WorkerParameters,
@@ -83,9 +66,6 @@ class DownloadWorker @JvmOverloads constructor(
         }
 
         if (failureReason != null) {
-            // The MediaStore entry and its written bytes stay exactly as they
-            // are -- the next attempt at this same unique work name resumes
-            // from `statSizeOrZero(mediaUri)`, not from zero.
             return Result.retry()
         }
 
@@ -99,9 +79,6 @@ class DownloadWorker @JvmOverloads constructor(
         val existing = stateStore.downloadState(workName)?.mediaUri?.let(Uri::parse)
         if (existing != null) {
             if (uriIsUsable(existing)) return existing
-            // A prior attempt's entry disappeared from under us (e.g. cleared
-            // manually from the system Downloads app) -- start over with a
-            // fresh entry rather than failing forever against a dead URI.
             stateStore.clearDownload(workName)
         }
         val values = ContentValues().apply {

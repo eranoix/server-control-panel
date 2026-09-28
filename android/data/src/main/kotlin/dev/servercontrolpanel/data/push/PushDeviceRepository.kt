@@ -6,19 +6,11 @@ import dev.servercontrolpanel.mobileapiclient.infrastructure.ServerException
 import dev.servercontrolpanel.mobileapiclient.model.RegisterDeviceInputBody
 import java.io.IOException
 
-/** Outcome of registering/unregistering this device for push (`/api/mobile/v1/notify/devices`). */
 sealed interface PushDeviceResult {
     data object Success : PushDeviceResult
     data class Error(val reason: String) : PushDeviceResult
 }
 
-/**
- * The single call site into the generated mobile BFF client (`:data:mobile-api-client`) for
- * FCM device registration — mirrors `dev.servercontrolpanel.data.terminal.TerminalRepository`'s exact
- * shape. Calls the real, only device-registration endpoints
- * (`POST`/`DELETE /api/mobile/v1/notify/devices`) — never the non-existent
- * `/api/mobile/v1/devices/register` an earlier draft cited.
- */
 class PushDeviceRepository(
     private val mobileApi: MobileApi = MobileApi(),
 ) {

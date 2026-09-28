@@ -17,10 +17,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The update banner. It must show the size of what is actually downloaded (the patch), not
- * the rebuilt APK, since on a slow connection that decides whether the user updates.
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class, qualifiers = "w411dp-h891dp-xxhdpi")
 class UpdateBannerTest {
@@ -28,10 +24,6 @@ class UpdateBannerTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    /**
-     * Measured sizes: an incremental patch, a full patch and the raw APK. Decimal MB, not MiB,
-     * so the number matches what the device shows for the same file.
-     */
     @Test
     fun `the size is shown in MB with one decimal and a decimal point`() {
         assertEquals("1.4 MB", formatDownloadSize(1_400_329))
@@ -205,7 +197,6 @@ class UpdateBannerTest {
         assertEquals(UpdateRecovery.ALLOW_UNKNOWN_SOURCES, requested)
     }
 
-    /** "Try again" takes the same path as "Update"; the coordinator resumes the partial download. */
     @Test
     fun `try again reuses the update path`() {
         var updated = 0

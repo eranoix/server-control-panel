@@ -1,15 +1,5 @@
 package whatsapp
 
-// handlers_media.go — serving media files + download by msgID
-//
-// Covers handleMedia (GET /api/whatsapp/media/<path>), which serves from
-// MediaRoot with an anti-traversal check. handleMessageDownload (POST
-// /api/whatsapp/messages/download) fetches media straight from WAHA when it
-// is not on local disk (a cache miss). mediaExtFor and sanitizeMsgID are
-// helpers.
-//
-// Extracted from api.go.
-
 import (
 	"errors"
 	"net/http"
@@ -18,12 +8,6 @@ import (
 	"strings"
 )
 
-// localMediaRel returns rel only when it points at a file that REALLY exists
-// inside MediaRoot; otherwise "". The backfill and sync used to write
-// Media.Path with WAHA's mediaUrl even without downloading the bytes, so the
-// frontend rendered an <img src> and took a 404. With Path="" the frontend
-// shows the "Download" button instead (on-demand download). http(s) URLs are
-// preserved (the frontend consumes them directly).
 func (s *Store) localMediaRel(rel string) string {
 	if rel == "" {
 		return ""
@@ -41,24 +25,11 @@ func (s *Store) localMediaRel(rel string) string {
 	return ""
 }
 
-// handleMedia serves files from MediaRoot under /api/whatsapp/media/<path>.
-// path is validated against traversal; only files inside MediaRoot are served.
-// A thin wrapper: it parses r.URL.Path and delegates to ServeMediaRel
-// (service_export.go), which the mobile BFF reuses.
 func (s *Service) handleMedia(w http.ResponseWriter, r *http.Request) {
 	rel := strings.TrimPrefix(r.URL.Path, "/api/whatsapp/media/")
 	s.ServeMediaRel(w, r, rel)
 }
 
-// handleMessageDownload is the on-demand media endpoint.
-// Path: POST /api/whatsapp/messages/download/<msgID>?chat=<jid>
-// — chat is required because the store indexes messages per chat (a msgID is
-// globally unique, but the lookup goes through the chat hash). The frontend
-// already has the active conversation's jid, so it passes it in the query.
-//
-// A thin wrapper: it parses the HTTP request and delegates the whole
-// orchestration (cache hit/miss, backend choice, persistence) to
-// DownloadMediaForMessage (service_export.go), which the mobile BFF reuses.
 func (s *Service) handleMessageDownload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost && r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -91,9 +62,6 @@ func (s *Service) handleMessageDownload(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// mediaExtFor picks the file extension: 1) from the filename when there is
-// one, 2) inferred from the mime, 3) extracted from the URL, 4) ".bin" as a
-// last resort.
 func mediaExtFor(mimeType, filename, urlStr string) string {
 	if filename != "" {
 		if e := filepath.Ext(filename); e != "" && len(e) <= 8 {
@@ -124,7 +92,6 @@ func mediaExtFor(mimeType, filename, urlStr string) string {
 	case "application/pdf":
 		return ".pdf"
 	}
-	// Fallback: extract it from the URL (WAHA serves as /api/files/<session>/<id>.<ext>)
 	if i := strings.LastIndex(urlStr, "."); i > 0 {
 		if e := urlStr[i:]; len(e) <= 8 && !strings.ContainsAny(e, "/?&") {
 			return e
@@ -133,8 +100,6 @@ func mediaExtFor(mimeType, filename, urlStr string) string {
 	return ".bin"
 }
 
-// sanitizeMsgID turns a msgID (which may carry @ . _ - characters) into a
-// filename safe on any FS. It keeps alphanumerics and replaces the rest with _.
 func sanitizeMsgID(id string) string {
 	var b strings.Builder
 	for _, r := range id {

@@ -7,7 +7,6 @@ import (
 	"testing"
 )
 
-// TestRegistryRoundTrip: Put/Get/Has/Rename/Delete + persistence across a reload.
 func TestRegistryRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session-registry.json")
 	reg, err := LoadRegistry(path)
@@ -28,7 +27,6 @@ func TestRegistryRoundTrip(t *testing.T) {
 		t.Error("Created was not filled in by Put")
 	}
 
-	// Rename keeps socket/pid and re-keys.
 	if err := reg.Rename("main", "work"); err != nil {
 		t.Fatalf("Rename: %v", err)
 	}
@@ -40,7 +38,6 @@ func TestRegistryRoundTrip(t *testing.T) {
 		t.Fatalf("after Rename: %+v ok=%v", rec2, ok)
 	}
 
-	// Persistence: reload from disk.
 	reg2, err := LoadRegistry(path)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
@@ -49,7 +46,6 @@ func TestRegistryRoundTrip(t *testing.T) {
 		t.Fatalf("after reload: %+v ok=%v", got, ok)
 	}
 
-	// Delete is idempotent.
 	if err := reg2.Delete("work"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -60,22 +56,18 @@ func TestRegistryRoundTrip(t *testing.T) {
 		t.Fatalf("Delete of a nonexistent record should be a no-op: %v", err)
 	}
 
-	// A nil receiver is tolerated on the read paths.
 	var nilReg *Registry
 	if nilReg.Has("x") || nilReg.List() != nil {
 		t.Error("nil receiver did not degrade as expected")
 	}
 }
 
-// TestNewSessionBackendIsDtach: after the migration, the engine is always dtach.
 func TestNewSessionBackendIsDtach(t *testing.T) {
 	if b := NewSessionBackend("/tmp/x", nil); b.Kind() != "dtach" {
 		t.Errorf("NewSessionBackend Kind = %q, want dtach", b.Kind())
 	}
 }
 
-// TestSessionLogTeeRotation: the writer appends, rotates by size and never fails
-// (best-effort). It also checks the path helper.
 func TestSessionLogTeeRotation(t *testing.T) {
 	dir := t.TempDir()
 	want := filepath.Join(dir, "users", "sam", "session-logs", "main.log")
@@ -84,11 +76,10 @@ func TestSessionLogTeeRotation(t *testing.T) {
 	}
 	w := openSessionLog(dir, "sam", "main")
 	defer w.Close()
-	chunk := make([]byte, 1<<20) // 1 MiB
+	chunk := make([]byte, 1<<20)
 	for i := range chunk {
 		chunk[i] = 'x'
 	}
-	// Write > maxSessionLogBytes (8 MiB) to force at least one rotation.
 	for i := 0; i < 10; i++ {
 		if n, err := w.Write(chunk); n != len(chunk) || err != nil {
 			t.Fatalf("best-effort Write broke: n=%d err=%v", n, err)
@@ -98,7 +89,6 @@ func TestSessionLogTeeRotation(t *testing.T) {
 	if _, err := os.Stat(want + ".1"); err != nil {
 		t.Errorf("rotated log (.1) does not exist: %v", err)
 	}
-	// The active log must exist and be smaller than the ceiling.
 	fi, err := os.Stat(want)
 	if err != nil {
 		t.Fatalf("active log missing: %v", err)
@@ -106,7 +96,6 @@ func TestSessionLogTeeRotation(t *testing.T) {
 	if fi.Size() > maxSessionLogBytes {
 		t.Errorf("active log %d > ceiling %d (did not rotate)", fi.Size(), int64(maxSessionLogBytes))
 	}
-	// Path sanity: it lives under users/<user>/session-logs/.
 	if !strings.Contains(want, filepath.Join("users", "sam", "session-logs")) {
 		t.Errorf("unexpected path: %s", want)
 	}

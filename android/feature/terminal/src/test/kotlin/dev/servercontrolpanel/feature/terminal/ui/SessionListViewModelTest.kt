@@ -31,7 +31,6 @@ private class FakeTerminalSessionsSource(
     }
 }
 
-/** Fake write source that records requests, since several tests check that a call did not happen. */
 private class FakeBackupSource(
     private val targets: TargetsResult = TargetsResult.Success(listOf("sam", "jordan", "*")),
     private var preview: PreviewResult = PreviewResult.Success("$ ls\nbin  etc", 2),
@@ -79,8 +78,6 @@ class SessionListViewModelTest {
 
     @After
     fun tearDown() {
-        // Drain before resetting Main: a pending coroutine waking after resetMain()
-        // would fail a later, unrelated test with "uncaught exceptions".
         dispatcher.scheduler.advanceUntilIdle()
         Dispatchers.resetMain()
     }
@@ -192,13 +189,12 @@ class SessionListViewModelTest {
 
     @Test
     fun `closing the preview while loading does not reopen it`() = runTest {
-        // A response arriving after the user closed the preview must not reopen it.
         val backup = FakeBackupSource()
         val vm = vmWith(backup)
         dispatcher.scheduler.advanceUntilIdle()
 
-        vm.togglePreview("main")   // opens and starts loading
-        vm.togglePreview("main")   // closes before the response comes back
+        vm.togglePreview("main")
+        vm.togglePreview("main")
         dispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(null, vm.previews.value["main"])
@@ -206,7 +202,6 @@ class SessionListViewModelTest {
 
     @Test
     fun `an empty preview is its own state, not an error`() = runTest {
-        // A fresh session has no output yet, which is not a failure.
         val backup = FakeBackupSource(preview = PreviewResult.Success("   ", 0))
         val vm = vmWith(backup)
         dispatcher.scheduler.advanceUntilIdle()
@@ -219,13 +214,10 @@ class SessionListViewModelTest {
 
     @Test
     fun `without permission the targets are empty and the screen hides the option`() = runTest {
-        // The route returns 404 to non-admins; an empty list tells the screen to hide
-        // "Visible to...".
         val backup = FakeBackupSource(targets = TargetsResult.Error("not found"))
         val vm = vmWith(backup)
         dispatcher.scheduler.advanceUntilIdle()
 
-        // `null` means "not asked yet", distinct from "asked and got none".
         assertEquals(null, vm.targets.value)
 
         vm.loadTargets()
@@ -244,7 +236,6 @@ class SessionListViewModelTest {
         val afterFirst = vm.targets.value
         assertEquals(listOf("sam", "jordan", "*"), afterFirst)
 
-        // The screen calls this on recomposition; repeated calls must be no-ops.
         vm.loadTargets()
         vm.loadTargets()
         dispatcher.scheduler.advanceUntilIdle()

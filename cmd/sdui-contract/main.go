@@ -1,11 +1,3 @@
-// Command sdui-contract generates contracts/sdui/contract.json from the Go
-// types in internal/mobilebff/sdui — never the other way round. Run through
-// `make sdui-contract`; it is not part of the binary served in production.
-//
-// The generated file is committed on purpose: contract_test.go carries a drift
-// test that regenerates and compares byte for byte against what is in the repo,
-// so a changed component field without running `make sdui-contract` fails
-// `go test ./internal/mobilebff/sdui/...` (and therefore CI).
 package main
 
 import (

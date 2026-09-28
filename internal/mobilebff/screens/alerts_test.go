@@ -10,9 +10,6 @@ import (
 	"server-control-panel/internal/notify"
 )
 
-// testAlertsCfg/testAlertsViewers mirror testDockerCfg/testDockerViewers — a
-// real *config.Config through the real ViewerFrom/httpx.IsAdmin path, never a
-// Viewer{} literal.
 func testAlertsCfg() *config.Config {
 	return &config.Config{
 		SchemaVersion: config.CurrentSchemaVersion,
@@ -29,9 +26,6 @@ func testAlertsViewers() (admin, nonAdmin sdui.Viewer) {
 	return sdui.ViewerFrom(cfg, "alerts-admin"), sdui.ViewerFrom(cfg, "alerts-user")
 }
 
-// testAlertsDeps returns an AlertsDeps sufficient to build the screen —
-// only EventOptions/ChannelOptions matter for buildAlertsRulesScreen (the
-// rows endpoint, which uses ListAlertRules, is covered separately below).
 func testAlertsDeps() AlertsDeps {
 	return AlertsDeps{
 		EventOptions: func() []EventOption {
@@ -49,10 +43,6 @@ func testAlertsDeps() AlertsDeps {
 	}
 }
 
-// Test 1 (structure): the built screen has one table (rule name/condition/
-// channel/enabled) with a delete row action (Destructive: true), and one
-// form (create/edit) with fields for name, condition, threshold, channel and
-// an enabled toggle.
 func TestAlertsRulesScreen_Structure(t *testing.T) {
 	admin, _ := testAlertsViewers()
 	env, err := buildAlertsRulesScreenForViewer(testAlertsDeps(), admin)
@@ -127,12 +117,6 @@ func TestAlertsRulesScreen_Structure(t *testing.T) {
 	}
 }
 
-// Test 2 (RBAC, on bytes): a non-admin's Build call returns
-// sdui.ErrScreenNotFound — internal/notify's real HTTP handlers
-// (handleNotifyRules/handleNotifyRuleDelete) are mustPrimary-gated on every
-// method including GET, so this screen has no read-only non-admin view to
-// fall back to; the whole screen is admin-only, matching that real backend
-// posture exactly (see alerts.go's package doc comment).
 func TestAlertsRulesScreen_AdminOnly(t *testing.T) {
 	admin, nonAdmin := testAlertsViewers()
 	deps := testAlertsDeps()
@@ -149,8 +133,6 @@ func TestAlertsRulesScreen_AdminOnly(t *testing.T) {
 	}
 }
 
-// Test 3 (non-vacuity): the admin payload has the full table, form and both
-// actions actually present in the serialized bytes.
 func TestAlertsRulesScreen_NonVacuity(t *testing.T) {
 	admin, _ := testAlertsViewers()
 	env, err := buildAlertsRulesScreenForViewer(testAlertsDeps(), admin)
@@ -165,10 +147,6 @@ func TestAlertsRulesScreen_NonVacuity(t *testing.T) {
 	}
 }
 
-// Test 4 (destructive gate): alerts.rule.delete carries Destructive: true —
-// the actual zero-calls-without-confirmation proof lives in
-// alerts_actions_test.go (RunAction's confirmation gate is exercised there
-// against the real registry).
 func TestAlertsRulesAction_DeleteIsDestructive(t *testing.T) {
 	registerAlertsActionsForTest()
 	found := false
@@ -203,4 +181,4 @@ func mustMarshalAlerts(t *testing.T, env *sdui.Envelope) string {
 	return string(b)
 }
 
-var _ = notify.SeverityInfo // keeps the import documenting where the threshold values come from
+var _ = notify.SeverityInfo

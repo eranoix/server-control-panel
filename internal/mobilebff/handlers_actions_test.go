@@ -74,8 +74,6 @@ func postAction(mux *http.ServeMux, actionID, username, body string) *httptest.R
 	return rec
 }
 
-// Test 1: an unauthenticated POST returns 401 — inherited from the protected
-// mux (requireAuth), not reimplemented here.
 func TestHandleAction_Unauthenticated_401(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: actionsTestCfg()})
@@ -89,8 +87,6 @@ func TestHandleAction_Unauthenticated_401(t *testing.T) {
 	}
 }
 
-// Test 2: a successful action returns 200 with a body containing "patch" or
-// "invalidate" — never both, never neither.
 func TestHandleAction_Success_ReturnsPatchXorInvalidate(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: actionsTestCfg()})
@@ -114,8 +110,6 @@ func TestHandleAction_Success_ReturnsPatchXorInvalidate(t *testing.T) {
 	}
 }
 
-// Test 3: an action that returns FieldErrors produces HTTP 422 with the exact
-// body {"error":"validation_failed","fields":{...}}, Content-Type: application/json.
 func TestHandleAction_ValidationFailure_422FieldKeyed(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: actionsTestCfg()})
@@ -145,10 +139,6 @@ func TestHandleAction_ValidationFailure_422FieldKeyed(t *testing.T) {
 	}
 }
 
-// Test 4: an unknown action_id and a known but not-permitted action_id return
-// the SAME 404 {"error":"unknown_action"} for the Viewer — byte for byte,
-// for the same reason GET /screens/{id} unifies both cases (see
-// sdui.ErrActionNotFound).
 func TestHandleAction_UnknownAndUnauthorized_Are404Identical(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: actionsTestCfg()})
@@ -167,16 +157,12 @@ func TestHandleAction_UnknownAndUnauthorized_Are404Identical(t *testing.T) {
 		t.Errorf("body = %q, want %q", unknownRec.Body.String(), wantBody)
 	}
 
-	// Non-vacuity proof: an admin DOES run the same action.
 	adminRec := postAction(mux, "test.actions.adminonly", "actionadmin", `{}`)
 	if adminRec.Code != http.StatusOK {
 		t.Fatalf("admin: status = %d, want 200 (body=%s) — without this the test above would be vacuous", adminRec.Code, adminRec.Body.String())
 	}
 }
 
-// Test 5 (destructive-action confirmation end to end over HTTP): POST to a
-// destructive action with {} returns 422 with _confirmation; the same POST
-// with {"confirmation":{"confirmed":true}} returns 200.
 func TestHandleAction_DestructiveOverHTTP_RequiresConfirmation(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: actionsTestCfg()})
@@ -195,8 +181,6 @@ func TestHandleAction_DestructiveOverHTTP_RequiresConfirmation(t *testing.T) {
 	}
 }
 
-// Test 6: a body larger than the limit (1 MiB) returns 413 instead of being
-// read into memory in full — MaxBytesReader stops the read before that.
 func TestHandleAction_BodyOverLimit_413(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: actionsTestCfg()})
@@ -216,9 +200,6 @@ func TestHandleAction_BodyOverLimit_413(t *testing.T) {
 	}
 }
 
-// Test 7: GET/PUT/DELETE on the same route return 405 — behaviour inherited
-// from http.ServeMux's method-based routing (Go 1.22+), not reimplemented
-// in the handler.
 func TestHandleAction_WrongMethod_405(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: actionsTestCfg()})

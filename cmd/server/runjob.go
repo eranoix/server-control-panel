@@ -22,17 +22,6 @@ import (
 	"server-control-panel/internal/secrets"
 )
 
-// runDetachedJob is the entrypoint for `server-control-panel run-job <id>`. It runs a
-// single queued job OUT OF PROCESS — launched by the main server-control-panel into its
-// own systemd scope so a deploy/restart can't kill it. It reconstructs the
-// request-independent runner wiring (per-owner Jira client + repo map +
-// prompt registry, all derived from scope.New(user)+vault — zero HTTP), runs
-// the job, and reports status ONLY through the per-job detached file. It never
-// touches state.json — that strict writer split is what makes the two live
-// processes race-free.
-//
-// Currently only jira_ai_analysis is launched detached, but the dispatch is
-// kind-generic: any registered runner could run here.
 func runDetachedJob(id string) error {
 	if id == "" {
 		return errors.New("run-job: empty job id")
@@ -48,13 +37,9 @@ func runDetachedJob(id string) error {
 		return err
 	}
 
-	// Cancel on SIGTERM/SIGINT (e.g. `systemctl stop <scope>`), so the runner
-	// can unwind and we can record an honest terminal status.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	// Open the job's log file (same LogPath the main process recorded). Fresh
-	// truncate — this is the run of record for this id.
 	logPath := job.LogPath
 	if logPath == "" {
 		logPath = filepath.Join(queueRoot, "runs", id+".log")
@@ -70,8 +55,6 @@ func runDetachedJob(id string) error {
 
 	runner, err := buildDetachedRunner(cfg, job.Kind)
 	if err != nil {
-		// Record the failure so the main process surfaces it instead of
-		// eventually marking the job interrupted.
 		_ = queue.WriteDetachedStatus(queueRoot, id, queue.DetachedStatus{
 			Status: queue.StatusFailed, Error: err.Error(),
 			Started: time.Now().Unix(), Finished: time.Now().Unix(),
@@ -82,7 +65,7 @@ func runDetachedJob(id string) error {
 	started := time.Now().Unix()
 	cur := queue.DetachedStatus{Status: queue.StatusRunning, Started: started}
 	write := func() { _ = queue.WriteDetachedStatus(queueRoot, id, cur) }
-	write() // announce running immediately
+	write()
 
 	progress := func(p int) {
 		if p < 0 {
@@ -104,7 +87,6 @@ func runDetachedJob(id string) error {
 	cur.Finished = time.Now().Unix()
 	switch {
 	case ctx.Err() != nil:
-		// Asked to stop (scope stopped). Honest interrupted, re-runnable.
 		cur.Status = queue.StatusInterrupted
 		cur.Error = "interrupted: detached job stopped"
 	case runErr != nil:
@@ -119,8 +101,6 @@ func runDetachedJob(id string) error {
 	return runErr
 }
 
-// readJobFromState reads one job record out of state.json without spinning up
-// a full Queue (which would start workers + reconcile). Read-only.
 func readJobFromState(queueRoot, id string) (*queue.Job, error) {
 	data, err := os.ReadFile(filepath.Join(queueRoot, "state.json"))
 	if err != nil {
@@ -140,9 +120,6 @@ func readJobFromState(queueRoot, id string) (*queue.Job, error) {
 	return nil, fmt.Errorf("run-job: job %s not found in state.json", id)
 }
 
-// buildDetachedRunner reconstructs the runner for a kind in a standalone
-// process. Mirrors the Router's wiring (api.go NewRunner) but without any HTTP
-// dependency — the factories derive everything from scope.New(user)+vault.
 func buildDetachedRunner(cfg *config.Config, kind string) (queue.Runner, error) {
 	switch kind {
 	case "jira_ai_analysis":
@@ -182,17 +159,10 @@ func buildDetachedRunner(cfg *config.Config, kind string) (queue.Runner, error) 
 			}
 			return m
 		}
-		// The detached job has to run on the SAME account assigned to the "jobs"
-		// consumer. Without this, a job assigned to Sam would fall back to the
-		// default account (jordan) when run detached (the primary path). A failing
-		// Open → nil resolver → inherits the default, no regression.
 		var jobsDir func() string
 		if cas, err := claudeacct.Open(cfg.DataDir, cfg.ClaudeHome); err == nil {
 			jobsDir = func() string { return cas.ConfigDirFor(claudeacct.ConsumerJobs) }
 		}
-		// Same model tier as the in-process path. cfg is read from disk when
-		// runjob starts, so an edit made in the UI (persisted into config.json)
-		// applies to the next detached job; the env overrides it.
 		jobsModel := func() string { return aimodel.For(aimodel.JiraAI, cfg.AIModels.JiraAI) }
 		return jiraai.NewRunner(clientFor, repoMapFor, aiprompts.New(cfg.DataDir), jobsDir, jobsModel), nil
 	default:

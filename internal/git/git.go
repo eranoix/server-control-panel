@@ -11,25 +11,15 @@ import (
 	"server-control-panel/internal/secrets"
 )
 
-// svc carries the dependencies shared by the routes (read in git.go, write in
-// write.go, PR in pr.go). cfg.GitRepos is treated as immutable post-load
-// (read, never written at runtime). vault is the credential vault (it may be
-// nil when secrets are disabled) — used only to read the GitHub token for the
-// PR routes.
 type svc struct {
 	cfg   *config.Config
 	audit *auth.AuditLog
 	vault *secrets.Store
 }
 
-// Handler assembles the Git client's sub-mux (mounted at /api/git/ by api.go).
-// EVERY route opens with httpx.MustPrimary — a primary-only surface. The
-// mould = files.Handler (NewServeMux + HandleFunc), but reusing
-// httpx.{WriteJSON,WriteErr,AuditEvent} (exported) instead of its own helpers.
 func Handler(cfg *config.Config, audit *auth.AuditLog, vault *secrets.Store) http.Handler {
 	s := &svc{cfg: cfg, audit: audit, vault: vault}
 	mux := http.NewServeMux()
-	// Reading
 	mux.HandleFunc("/repos", s.handleRepos)
 	mux.HandleFunc("/graph", s.handleGraph)
 	mux.HandleFunc("/status", s.handleStatus)
@@ -42,11 +32,9 @@ func Handler(cfg *config.Config, audit *auth.AuditLog, vault *secrets.Store) htt
 	mux.HandleFunc("/remotes", s.handleRemotes)
 	mux.HandleFunc("/identities", s.handleIdentities)
 	mux.HandleFunc("/pr-url", s.handlePRURL)
-	// Inspection (read3.go): blame, file history, compare refs
 	mux.HandleFunc("/blame", s.handleBlame)
 	mux.HandleFunc("/filelog", s.handleFileLog)
 	mux.HandleFunc("/compare", s.handleCompare)
-	// Basic writing (write.go)
 	mux.HandleFunc("/write", s.handleWrite)
 	mux.HandleFunc("/stage", s.handleStage)
 	mux.HandleFunc("/unstage", s.handleUnstage)
@@ -55,7 +43,6 @@ func Handler(cfg *config.Config, audit *auth.AuditLog, vault *secrets.Store) htt
 	mux.HandleFunc("/branch/create", s.handleBranchCreate)
 	mux.HandleFunc("/checkout", s.handleCheckout)
 	mux.HandleFunc("/discard", s.handleDiscard)
-	// Advanced actions (actions.go)
 	mux.HandleFunc("/tag/create", s.handleTagCreate)
 	mux.HandleFunc("/tag/delete", s.handleTagDelete)
 	mux.HandleFunc("/cherry-pick", s.handleCherryPick)
@@ -76,7 +63,6 @@ func Handler(cfg *config.Config, audit *auth.AuditLog, vault *secrets.Store) htt
 	mux.HandleFunc("/fetch", s.handleFetch)
 	mux.HandleFunc("/pull", s.handlePull)
 	mux.HandleFunc("/push", s.handlePush)
-	// Advanced ops (actions2.go): reflog/undo, interactive rebase, conflicts, cherry-pick onto
 	mux.HandleFunc("/reflog", s.handleReflog)
 	mux.HandleFunc("/reflog/reset", s.handleReflogReset)
 	mux.HandleFunc("/rebase/todo", s.handleRebaseTodo)
@@ -87,18 +73,15 @@ func Handler(cfg *config.Config, audit *auth.AuditLog, vault *secrets.Store) htt
 	mux.HandleFunc("/conflict/sides", s.handleConflictSides)
 	mux.HandleFunc("/conflict/resolve", s.handleConflictResolve)
 	mux.HandleFunc("/cherry-pick-onto", s.handleCherryPickOnto)
-	// Worktrees (worktrees.go)
 	mux.HandleFunc("/worktrees", s.handleWorktrees)
 	mux.HandleFunc("/worktree/add", s.handleWorktreeAdd)
 	mux.HandleFunc("/worktree/remove", s.handleWorktreeRemove)
-	// Branches/tags/stashes/submodules (actions3.go)
 	mux.HandleFunc("/remote/prune", s.handleRemotePrune)
 	mux.HandleFunc("/tag/push", s.handleTagPush)
 	mux.HandleFunc("/stash/show", s.handleStashShow)
 	mux.HandleFunc("/submodules", s.handleSubmodules)
 	mux.HandleFunc("/submodule/update", s.handleSubmoduleUpdate)
 	mux.HandleFunc("/patch", s.handlePatch)
-	// Pull Requests (pr.go) — native, through the GitHub API
 	mux.HandleFunc("/pr/list", s.handlePRList)
 	mux.HandleFunc("/pr/get", s.handlePRGet)
 	mux.HandleFunc("/pr/create", s.handlePRCreate)
@@ -109,14 +92,10 @@ func Handler(cfg *config.Config, audit *auth.AuditLog, vault *secrets.Store) htt
 	return mux
 }
 
-// gate runs MustPrimary and returns (caller, ok). ok=false means the error
-// response has already been written.
 func (s *svc) gate(w http.ResponseWriter, r *http.Request) (string, bool) {
 	return httpx.MustPrimary(w, r, s.cfg, s.audit)
 }
 
-// repoParam resolves the repo from the "repo" query (id), writing a 404 when
-// it is not in the allowlist or is not a git repo on disk.
 func (s *svc) repoParam(w http.ResponseWriter, r *http.Request) (config.GitRepo, bool) {
 	id := r.URL.Query().Get("repo")
 	repo, ok := resolveRepo(s.cfg, id)
@@ -127,7 +106,6 @@ func (s *svc) repoParam(w http.ResponseWriter, r *http.Request) (config.GitRepo,
 	return repo, true
 }
 
-// requireGet refuses methods != GET.
 func requireGet(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		httpx.WriteErr(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -135,8 +113,6 @@ func requireGet(w http.ResponseWriter, r *http.Request) bool {
 	}
 	return true
 }
-
-// ---- GET /repos ----
 
 func (s *svc) handleRepos(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
@@ -146,8 +122,6 @@ func (s *svc) handleRepos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	// GitRepos==nil → effectiveRepos returns only the seed; we filter down to the
-	// ones that exist on disk. An empty list → [] (200), never a panic/500.
 	out := []repoStatus{}
 	for _, repo := range effectiveRepos(s.cfg) {
 		if !isGitRepo(repo.Path) {
@@ -158,11 +132,6 @@ func (s *svc) handleRepos(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"repos": out})
 }
 
-// ---- GET /graph ----
-
-// Commit is a node of the graph. Lane is assigned server-side by layoutGraph
-// so that the front end's SVG renderer can stay dumb (it only draws) and the
-// layout stays testable by a Go unit test.
 type Commit struct {
 	Hash    string   `json:"hash"`
 	Short   string   `json:"short"`
@@ -175,10 +144,6 @@ type Commit struct {
 	Lane    int      `json:"lane"`
 }
 
-// Edge links a commit (the child, at row FromRow/FromLane) to its parent. If
-// the parent is not inside the returned window (dangling at the edge of the
-// limit), ToRow=-1 and Dangling=true — the renderer draws a truncated stub,
-// never a line running off into nothing.
 type Edge struct {
 	FromRow  int  `json:"from_row"`
 	ToRow    int  `json:"to_row"`
@@ -187,8 +152,6 @@ type Edge struct {
 	Dangling bool `json:"dangling"`
 }
 
-// Graph is the payload of /graph: commits already carrying a lane, edges, the
-// maximum lane, and whether the limit truncated anything.
 type Graph struct {
 	Commits   []Commit `json:"commits"`
 	Edges     []Edge   `json:"edges"`
@@ -210,8 +173,6 @@ func (s *svc) handleGraph(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit := clampLimit(atoiDefault(q.Get("limit"), 200), 200)
 
-	// Filters: ref scope + author/date. It asks for limit+1 so that truncation
-	// can be detected (the "load more" button).
 	args := []string{"log", "--date-order", "--max-count=" + strconv.Itoa(limit+1)}
 	if a := q.Get("author"); a != "" && len(a) <= 200 {
 		args = append(args, "--author="+a)
@@ -223,7 +184,6 @@ func (s *svc) handleGraph(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "--until="+u)
 	}
 	args = append(args, "--pretty=format:%H%x00%P%x00%an%x00%ae%x00%aI%x00%D%x00%s")
-	// Ref scope (mutually exclusive, in this order of priority):
 	switch {
 	case q.Get("current") == "1":
 		args = append(args, "HEAD")
@@ -244,7 +204,6 @@ func (s *svc) handleGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if res.Code != 0 {
-		// A repo with no commits (HEAD nonexistent) → an empty graph, not an error.
 		httpx.WriteJSON(w, Graph{Commits: []Commit{}, Edges: []Edge{}})
 		return
 	}
@@ -258,8 +217,6 @@ func (s *svc) handleGraph(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, g)
 }
 
-// parseLog converts the output of `git log --pretty=format:%H\0%P\0%an\0%aI\0%D\0%s`
-// into []Commit (without lanes). Records are separated by \n; fields by \x00.
 func parseLog(out string) []Commit {
 	out = strings.TrimRight(out, "\n")
 	if out == "" {
@@ -299,8 +256,6 @@ func shortHash(h string) string {
 	return h
 }
 
-// parseRefs breaks the %D field ("HEAD -> branch, origin/main, tag: v1") into
-// a clean list. Empty on commits with no decoration.
 func parseRefs(d string) []string {
 	d = strings.TrimSpace(d)
 	if d == "" {
@@ -317,20 +272,13 @@ func parseRefs(d string) []string {
 	return out
 }
 
-// layoutGraph assigns deterministic lanes and generates edges. The classic
-// lane algorithm: it walks the commits top to bottom (already in date-order);
-// each lane "waits for" the hash of the next commit that will land in it. The
-// first parent stays in the child's lane; extra parents (merges) get lanes of
-// their own; when two lanes wait for the same commit they converge (one
-// survives, the others are released). Edges to parents outside the window are
-// truncated (Dangling); they never point off into nothing.
 func layoutGraph(commits []Commit) Graph {
 	rowOf := make(map[string]int, len(commits))
 	for i, c := range commits {
 		rowOf[c.Hash] = i
 	}
 
-	lanes := []string{} // lanes[k] = the hash lane k is waiting for ("" = free)
+	lanes := []string{}
 	edges := []Edge{}
 	maxLane := 0
 
@@ -356,8 +304,6 @@ func layoutGraph(commits []Commit) Graph {
 	for i := range commits {
 		c := &commits[i]
 
-		// The commit's lane = the first lane waiting for it; extra lanes that were
-		// also waiting for it converge (and are released).
 		myLane := -1
 		for k := range lanes {
 			if lanes[k] == c.Hash {
@@ -369,7 +315,6 @@ func layoutGraph(commits []Commit) Graph {
 			}
 		}
 		if myLane == -1 {
-			// An unawaited tip (a branch head): allocate a lane, reserving it.
 			myLane = reserve(c.Hash)
 		}
 		c.Lane = myLane
@@ -378,18 +323,18 @@ func layoutGraph(commits []Commit) Graph {
 		}
 
 		if len(c.Parents) == 0 {
-			lanes[myLane] = "" // the lane ends here (root)
+			lanes[myLane] = ""
 			continue
 		}
 		for pi, p := range c.Parents {
 			var pLane int
 			if pi == 0 {
-				lanes[myLane] = p // the first parent stays in the child's lane
+				lanes[myLane] = p
 				pLane = myLane
 			} else if ex := indexOf(p); ex >= 0 {
-				pLane = ex // a lane is already waiting for this parent → converge
+				pLane = ex
 			} else {
-				pLane = reserve(p) // merge: the extra parent gets a new lane
+				pLane = reserve(p)
 			}
 			if pLane > maxLane {
 				maxLane = pLane
@@ -410,8 +355,6 @@ func layoutGraph(commits []Commit) Graph {
 	}
 	return Graph{Commits: commits, Edges: edges, MaxLane: maxLane}
 }
-
-// ---- GET /status ----
 
 func (s *svc) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
@@ -441,14 +384,11 @@ func (s *svc) handleStatus(w http.ResponseWriter, r *http.Request) {
 type statusEntry struct {
 	Path      string `json:"path"`
 	Orig      string `json:"orig,omitempty"`
-	Index     string `json:"index"`    // status staged (X)
-	Worktree  string `json:"worktree"` // status unstaged (Y)
+	Index     string `json:"index"`
+	Worktree  string `json:"worktree"`
 	Untracked bool   `json:"untracked,omitempty"`
 }
 
-// parseStatusV2 interprets `status --porcelain=v2 --branch -z`. Tokens are
-// separated by NUL; '1'/'2' lines carry the path to the end of the record
-// (and '2' consumes one extra token = origPath); '?' = untracked; '#' = headers.
 func parseStatusV2(out string) (branch string, detached bool, entries []statusEntry) {
 	entries = []statusEntry{}
 	toks := strings.Split(out, "\x00")
@@ -483,7 +423,7 @@ func parseStatusV2(out string) (branch string, detached bool, entries []statusEn
 			}
 			xy := fields[1]
 			e := statusEntry{Path: fields[9], Index: string(xy[0]), Worktree: string(xy[1])}
-			if i+1 < len(toks) { // origPath = the next token
+			if i+1 < len(toks) {
 				e.Orig = toks[i+1]
 				i++
 			}
@@ -504,8 +444,6 @@ func parseStatusV2(out string) (branch string, detached bool, entries []statusEn
 	}
 	return branch, detached, entries
 }
-
-// ---- GET /branches ----
 
 func (s *svc) handleBranches(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
@@ -553,10 +491,6 @@ func (s *svc) handleBranches(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"branches": out})
 }
 
-// ---- GET /diff ----
-
-// handleDiff returns the patch of a path: working tree, staged (?staged=1),
-// or from a specific commit (?hash=). Always with the path AFTER "--".
 func (s *svc) handleDiff(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
 		return
@@ -580,7 +514,6 @@ func (s *svc) handleDiff(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteErr(w, http.StatusBadRequest, "invalid hash")
 			return
 		}
-		// Diff of the commit vs its first parent (^! covers the root commit).
 		args = []string{"diff", hash + "^!", "--"}
 	} else if q.Get("staged") == "1" || q.Get("staged") == "true" {
 		args = []string{"diff", "--cached", "--"}
@@ -598,10 +531,6 @@ func (s *svc) handleDiff(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"diff": res.Stdout})
 }
 
-// ---- GET /file ----
-
-// handleFile returns a file's content: working tree (no ?ref=) or as of a
-// commit's state (?ref=<hash>). For Monaco to open/edit/view.
 func (s *svc) handleFile(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
 		return
@@ -636,7 +565,6 @@ func (s *svc) handleFile(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSON(w, map[string]any{"content": res.Stdout, "ref": ref, "path": path})
 		return
 	}
-	// Working tree: read from disk, jailed to the repo root.
 	content, err := readRepoFile(repo.Path, path)
 	if err != nil {
 		switch err {
@@ -650,10 +578,6 @@ func (s *svc) handleFile(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"content": content, "path": path})
 }
 
-// ---- GET /show ----
-
-// handleShow returns a commit's metadata + the changed files (name-status),
-// for "click the commit → list of files".
 func (s *svc) handleShow(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
 		return
@@ -670,7 +594,6 @@ func (s *svc) handleShow(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteErr(w, http.StatusBadRequest, "invalid hash")
 		return
 	}
-	// Metadata.
 	meta, err := run(r.Context(), repo.Path, "show", "-s",
 		"--pretty=format:%H%x00%an%x00%ae%x00%aI%x00%P%x00%s%x00%b", hash)
 	if err != nil || meta.Code != 0 {
@@ -686,11 +609,9 @@ func (s *svc) handleShow(w http.ResponseWriter, r *http.Request) {
 			"subject": f[5], "body": f[6],
 		}
 	}
-	// Changed files (vs the first parent; a root commit uses --root).
 	fres, _ := run(r.Context(), repo.Path, "diff-tree", "--no-commit-id",
 		"--name-status", "-r", "-z", "--root", hash)
 	files := parseNameStatusZ(fres.Stdout)
-	// numstat (+/− per file) merged by path.
 	nres, _ := run(r.Context(), repo.Path, "diff-tree", "--no-commit-id",
 		"--numstat", "-r", "-z", "--root", hash)
 	stats := parseNumstatZ(nres.Stdout)
@@ -717,8 +638,6 @@ type changedFile struct {
 	Del    int    `json:"del"`
 }
 
-// parseNumstatZ interprets `diff-tree --numstat -z`: <add>\t<del>\t<path>,
-// with renames bringing <add>\t<del>\0<old>\0<new>. Binaries carry "-".
 func parseNumstatZ(out string) map[string][2]int {
 	m := map[string][2]int{}
 	toks := strings.Split(out, "\x00")
@@ -734,7 +653,7 @@ func parseNumstatZ(out string) map[string][2]int {
 		add, _ := strconv.Atoi(parts[0])
 		del, _ := strconv.Atoi(parts[1])
 		path := parts[2]
-		if path == "" && i+2 < len(toks) { // rename: the path comes in the next 2 tokens
+		if path == "" && i+2 < len(toks) {
 			path = toks[i+2]
 			i += 2
 		}
@@ -745,8 +664,6 @@ func parseNumstatZ(out string) map[string][2]int {
 	return m
 }
 
-// parseNameStatusZ interprets `diff-tree --name-status -z`: <status>\0<path>
-// pairs, with renames bringing <Rxxx>\0<orig>\0<new>.
 func parseNameStatusZ(out string) []changedFile {
 	toks := strings.Split(out, "\x00")
 	files := []changedFile{}
@@ -767,8 +684,6 @@ func parseNameStatusZ(out string) []changedFile {
 	return files
 }
 
-// parseTrack interprets the %(upstream:track) field: "[ahead 1, behind 2]",
-// "[ahead 3]", "[behind 4]", "[gone]" or "". It returns (ahead, behind, gone).
 func parseTrack(s string) (ahead, behind int, gone bool) {
 	s = strings.Trim(strings.TrimSpace(s), "[]")
 	if s == "" {
@@ -793,7 +708,6 @@ func parseTrack(s string) (ahead, behind int, gone bool) {
 	return ahead, behind, gone
 }
 
-// atoiDefault does a tolerant Atoi (default on error/empty).
 func atoiDefault(s string, def int) int {
 	if s == "" {
 		return def

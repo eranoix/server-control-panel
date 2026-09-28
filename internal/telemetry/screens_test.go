@@ -6,24 +6,16 @@ import (
 	"testing"
 )
 
-// knownGroups are the 8 navigation groups of the panel inventory,
-// plus the two SOLO screens — `dashboard` and `config` — which belong to no
-// group at all because they do not live in a tab bar.
 var knownGroups = map[string]struct{}{
 	"dashboard": {}, "system": {}, "games": {}, "docker": {},
 	"dev": {}, "security": {}, "apps": {}, "operations": {},
 	"config": {},
 }
 
-// soloScreens are the legitimate ONE-segment ids: a screen that exists alone,
-// with no tab bar. Any other 1-segment id is a group emitted without a tab.
 var soloScreens = map[string]struct{}{"dashboard": {}, "config": {}}
 
-const wantTotal = 76 // 46 tab-level + 29 sub-actions + the `unknown` bucket
+const wantTotal = 76
 
-// TestScreenIDsMatchInventory is the test the research demands: it fails any id
-// that does not match the inventory. Without it, triage receives ids that
-// correspond to no screen at all and gets stuck.
 func TestScreenIDsMatchInventory(t *testing.T) {
 	all := AllScreens()
 
@@ -58,9 +50,6 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 		}
 	})
 
-	// A tab-level id has exactly 2 segments; the SOLO screens are the only
-	// legitimate exceptions. Any other 1-segment id would be a group emitted
-	// without a tab — useless data for triage.
 	t.Run("one-segment-only-standalone-screens", func(t *testing.T) {
 		for _, id := range all {
 			if id == "unknown" || strings.Contains(id, ".") {
@@ -78,14 +67,13 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 		}
 	})
 
-	// Anchors: the sub-actions that motivated the inventory ("screen inside a dead screen").
 	t.Run("sub-action-anchors", func(t *testing.T) {
 		for _, id := range []string{
 			"operations.tasks.jira.detail.worklog",
 			"operations.git.reflog",
 			"docker.containers.logs",
 			"dev.ai.routing",
-			"system.fans", // the exception documented above — only exists in this fork
+			"system.fans",
 		} {
 			if !IsKnownScreen(id) {
 				t.Errorf("anchor id %q missing from the canonical list", id)
@@ -93,8 +81,6 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 		}
 	})
 
-	// Ids added later to the list. Some have no tab yet and report 0 until
-	// they do.
 	t.Run("list-re-edition", func(t *testing.T) {
 		for _, id := range []string{
 			"config",
@@ -109,7 +95,6 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 		}
 	})
 
-	// Counts that pin the shape of the list down against careless editing.
 	t.Run("counts-per-family", func(t *testing.T) {
 		account := func(pref string) int {
 			n := 0
@@ -136,8 +121,6 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 	})
 }
 
-// TestScreenIDFormat is what stops a free-form id from becoming a "valid" id: no
-// uppercase, no space, no accent, no slash, no `..`.
 func TestScreenIDFormat(t *testing.T) {
 	re := regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z0-9-]+)*$`)
 	for _, id := range AllScreens() {
@@ -147,8 +130,6 @@ func TestScreenIDFormat(t *testing.T) {
 	}
 }
 
-// TestUnknownScreenIsNotAllowlisted is the log-poisoning mitigation seen from
-// the allowlist side: nothing outside the file may pass.
 func TestUnknownScreenIsNotAllowlisted(t *testing.T) {
 	for _, id := range []string{
 		"../../etc/passwd",
@@ -167,7 +148,6 @@ func TestUnknownScreenIsNotAllowlisted(t *testing.T) {
 	}
 }
 
-// TestAllScreensIsACopy: the caller must not be able to shuffle the internal list.
 func TestAllScreensIsACopy(t *testing.T) {
 	a := AllScreens()
 	orig := a[0]

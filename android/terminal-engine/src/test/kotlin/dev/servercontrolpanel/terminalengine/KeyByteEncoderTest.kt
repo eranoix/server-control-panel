@@ -99,9 +99,6 @@ class KeyByteEncoderTest {
 
     @Test
     fun `a bare printable hardware key with no modifiers and no unicode mapping returns null`() {
-        // A key code with neither a control mapping nor a resolvable unicode
-        // char (unmapped in Robolectric's default virtual keyboard layout)
-        // must return null so the caller can decide what, if anything, to do.
         assertNull(KeyByteEncoder.encode(keyDown(KeyEvent.KEYCODE_UNKNOWN)))
     }
 }

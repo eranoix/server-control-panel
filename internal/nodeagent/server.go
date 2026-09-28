@@ -14,15 +14,11 @@ import (
 )
 
 const (
-	// maxBody caps the incoming document. A named operation receives a small
-	// envelope; a large body is a symptom, not a use.
-	maxBody = 1 << 20 // 1 MiB
+	maxBody = 1 << 20
 
-	// headerReadTimeout closes off trivial slowloris.
 	headerReadTimeout = 10 * time.Second
 )
 
-// Server is the agent, ready to listen.
 type Server struct {
 	Ag      *Agent
 	Secret  Secret
@@ -30,58 +26,22 @@ type Server struct {
 	handler http.Handler
 }
 
-// NewServer assembles the routing.
-//
-// ONE route serves the whole catalogue: `POST /v1/op/{op}`. There is no route
-// per operation, and that is deliberate — with a single route, the agent's list
-// of capabilities is exactly the `registry` map, in one place, walkable by a
-// test. With N routes, the list becomes "whatever happens to be in the
-// ServeMux", which nobody can assert from the outside.
 func NewServer(ag *Agent, secret Secret, met *Metrics) *Server {
 	s := &Server{Ag: ag, Secret: secret, Met: met}
 
 	mux := http.NewServeMux()
-	// Method-and-path patterns (Go 1.22+). No external router: there are three
-	// routes, and the project's own rules say chi only comes in when the
-	// middleware chain justifies it.
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /metrics", s.metrics)
 	mux.Handle("POST /v1/op/{op}", RequireBearer(secret, http.HandlerFunc(s.runOp)))
-	// ARTEFACT route. New surface, added on purpose and registered in the
-	// allowlist of exec_test.go as well — which is the mechanism working, not
-	// being worked around: adding a route has to be a deliberate act, visible in
-	// the diff, not an impossible one.
-	//
-	// Why it needs to exist: a file stream does not fit in a JSON document, so
-	// Backend.Open is the only point where bytes cross the boundary. Without
-	// this route, `world.export` and `backup.download` would return a Handle
-	// nobody can open over the network, and the world and backup round-trip the
-	// acceptance criterion demands would have no way to happen.
-	//
-	// Why it does NOT widen the execution surface: the handle is opaque and
-	// random, it is not a path; whoever did not receive one from an earlier
-	// operation has nothing to send here. A real path sent in place of the
-	// handle is simply not in the vault.
 	mux.Handle("GET /v1/artifact/{handle}", RequireBearer(secret, http.HandlerFunc(s.openArtifact)))
-	// The INBOUND side of the artefact, closing the gap the read side declared:
-	// without it, importing a world would require the dashboard to know the
-	// node's disk. The body is the file; no name and no path cross over.
 	mux.Handle("POST /v1/artifact", RequireBearer(secret, http.HandlerFunc(s.receiveArtifact)))
 
 	s.handler = mux
 	return s
 }
 
-// Handler exposes the assembled routing (used in tests with httptest).
 func (s *Server) Handler() http.Handler { return s.handler }
 
-// healthz is a PROCESS probe, not a data surface.
-//
-// It answers without authentication on purpose — the deploy script's health
-// gate has to reach it before any credential exists. In exchange it reveals
-// NOTHING beyond liveness: no server name, no path, no version, no hint of
-// whether a secret is provisioned. Whoever is on the outside learns only that
-// the process answered.
 func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -93,15 +53,11 @@ func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {
 	_, _ = io.WriteString(w, s.Met.Render())
 }
 
-// runOp resolves the name against the registry and delegates.
 func (s *Server) runOp(w http.ResponseWriter, r *http.Request) {
 	name := gameservers.OpName(r.PathValue("op"))
 
 	op, exists := Lookup(name)
 	if !exists {
-		// 404, never 400 or 500: "does not exist" and "failed" must never get
-		// confused in a diagnosis — it is the difference between hunting a bug in
-		// the agent and hunting a typo in the client.
 		s.Met.Count(string(name), "unknown")
 		respond(w, http.StatusNotFound, map[string]any{"error": "unknown operation", "op": string(name)})
 		return
@@ -114,8 +70,6 @@ func (s *Server) runOp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(body) > maxBody {
-		// 413 BEFORE calling the handler: the limit is worth nothing if the work
-		// has already happened.
 		s.Met.Count(string(name), "large")
 		respond(w, http.StatusRequestEntityTooLarge, map[string]any{"error": "body above the limit"})
 		return
@@ -134,12 +88,6 @@ func (s *Server) runOp(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, res)
 }
 
-// openArtifact hands over the bytes a Handle refers to.
-//
-// There is no `Content-Disposition` carrying a client-supplied name, and no
-// file name in the response: the name is the dashboard's business, and it
-// already received it alongside the handle. Echoing back here a name the client
-// sent is how header injection gets in.
 func (s *Server) openArtifact(w http.ResponseWriter, r *http.Request) {
 	h := gameservers.Handle(r.PathValue("handle"))
 	if s.Ag == nil || s.Ag.Back == nil {
@@ -149,8 +97,6 @@ func (s *Server) openArtifact(w http.ResponseWriter, r *http.Request) {
 	}
 	rc, err := s.Ag.Back.Open(r.Context(), h)
 	if err != nil {
-		// 404 for a handle that does not resolve: the same "does not exist"
-		// silence the vault already gives, forged and expired alike.
 		s.Met.Count("artifact", "unknown")
 		respond(w, http.StatusNotFound, map[string]any{"error": err.Error()})
 		return
@@ -160,18 +106,12 @@ func (s *Server) openArtifact(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	if _, err := io.Copy(w, rc); err != nil {
-		// The header has already gone out. Only the counter records it — writing
-		// an error body here would produce a corrupt file that LOOKS complete.
 		s.Met.Count("artifact", "error")
 		return
 	}
 	s.Met.Count("artifact", "ok")
 }
 
-// receiveArtifact accepts bytes and returns the Handle that refers to them.
-//
-// The real limit belongs to the back-end (maxReceived); all that is guaranteed
-// here is that the body is not read without a ceiling before it gets there.
 func (s *Server) receiveArtifact(w http.ResponseWriter, r *http.Request) {
 	if s.Ag == nil || s.Ag.Back == nil {
 		s.Met.Count("artifact-in", "error")
@@ -194,27 +134,6 @@ func respond(w http.ResponseWriter, code int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// BIND
-//
-// The agent listens on TWO EXPLICIT listeners: loopback and the IP of the
-// internal bridge it was handed. Never `":port"`, never `0.0.0.0`.
-//
-// Why two explicit listeners and not a wildcard with a filter afterwards:
-// binding on a wildcard leaves the port EXISTING for whoever arrives by any
-// other route — a new interface, a VPN, a bridge somebody adds later. The
-// filter protects the data; it does not protect the surface. With an explicit
-// listener, the port simply does not exist outside the two addresses.
-//
-// Why not bind to a VPN interface such as tailscale0: the game guests are not
-// on the VPN, joining it would need /dev/net/tun and a reboot on each of them,
-// and the VPN is an administration path, not a data path. Coupling game traffic
-// to it would bring back the single-tunnel failure mode the design rejects.
-//
-// With no encryption on the wire, security rests ENTIRELY on the per-node
-// bearer checked with ConstantTimeCompare, which is why those mitigations are
-// mandatory.
-
-// listenAddrs validates and returns the two addresses.
 func listenAddrs(bridgeIP string, port int) ([]string, error) {
 	if port <= 0 || port > 65535 {
 		return nil, fmt.Errorf("invalid port: %d", port)
@@ -234,12 +153,6 @@ func listenAddrs(bridgeIP string, port int) ([]string, error) {
 	}, nil
 }
 
-// Listen opens both listeners and serves.
-//
-// A failure of EITHER one brings the agent down at start-up. Better not to come
-// up than to come up listening on less than was asked for (the node is
-// unreachable and somebody notices) or on more than was asked for (nobody
-// notices, which is the dangerous case).
 func (s *Server) Listen(ctx context.Context, bridgeIP string, port int) error {
 	addrs, err := listenAddrs(bridgeIP, port)
 	if err != nil {

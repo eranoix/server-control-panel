@@ -1,14 +1,3 @@
-// Package scheduler is the cron-driven job runner for server-control-panel.
-//
-// It owns a JSON store of Job definitions (cron expr + kind + args) and a
-// single goroutine that ticks every 30s, deciding what to fire and pushing
-// each fire as an enqueue into the F3 queue. Run logs, retry, alerting on
-// failure, and "run as root" all live here.
-//
-// Why a separate package rather than expanding queue: the queue is about
-// "run this now, capture its output"; the scheduler is about "decide when
-// to call enqueue". Keeping them apart means /api/queue still works without
-// the scheduler — and tests for either subsystem stay focused.
 package scheduler
 
 import (
@@ -26,75 +15,52 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-// Job is one scheduled definition.
 type Job struct {
-	ID         string          `json:"id"`
-	Name       string          `json:"name"`
-	Schedule   string          `json:"schedule"` // standard 5-field cron expr
-	Kind       string          `json:"kind"`     // matches a queue.Runner kind
-	Args       json.RawMessage `json:"args,omitempty"`
-	Enabled    bool            `json:"enabled"`
-	Owner      string          `json:"owner"`                 // username; jobs run as this user's identity
-	RunAsRoot  bool            `json:"run_as_root,omitempty"` // primary-only; audited
-	TimeoutSec int             `json:"timeout_sec,omitempty"` // reserved; runOne currently runs with no timeout (0 = unlimited). Real wiring is a follow-up
-	RetryMax   int             `json:"retry_max,omitempty"`   // reserved; no retry today. Real wiring is a follow-up
-	AlertOn    AlertMode       `json:"alert_on,omitempty"`
-	// Chaining: on completion, fire another task. ThenOn:
-	// "success" (default) | "always" | "failure". ThenArgs in the kind's format.
-	ThenKind string          `json:"then_kind,omitempty"`
-	ThenArgs json.RawMessage `json:"then_args,omitempty"`
-	ThenOn   string          `json:"then_on,omitempty"`
-	// Notify on completion: sends the result to the chosen channels
-	// (notify spine IDs). NotifyOn: "success"|"always"|"failure".
-	NotifyChannels []string `json:"notify_channels,omitempty"`
-	NotifyOn       string   `json:"notify_on,omitempty"`
-	LastFire       int64    `json:"last_fire,omitempty"`
-	LastStatus     string   `json:"last_status,omitempty"` // "ok" | "failed" | "skipped"
-	LastJobID      string   `json:"last_job_id,omitempty"`
-	NextFire       int64    `json:"next_fire,omitempty"` // computed
-	Created        int64    `json:"created"`
-	Updated        int64    `json:"updated"`
+	ID             string          `json:"id"`
+	Name           string          `json:"name"`
+	Schedule       string          `json:"schedule"`
+	Kind           string          `json:"kind"`
+	Args           json.RawMessage `json:"args,omitempty"`
+	Enabled        bool            `json:"enabled"`
+	Owner          string          `json:"owner"`
+	RunAsRoot      bool            `json:"run_as_root,omitempty"`
+	TimeoutSec     int             `json:"timeout_sec,omitempty"`
+	RetryMax       int             `json:"retry_max,omitempty"`
+	AlertOn        AlertMode       `json:"alert_on,omitempty"`
+	ThenKind       string          `json:"then_kind,omitempty"`
+	ThenArgs       json.RawMessage `json:"then_args,omitempty"`
+	ThenOn         string          `json:"then_on,omitempty"`
+	NotifyChannels []string        `json:"notify_channels,omitempty"`
+	NotifyOn       string          `json:"notify_on,omitempty"`
+	LastFire       int64           `json:"last_fire,omitempty"`
+	LastStatus     string          `json:"last_status,omitempty"`
+	LastJobID      string          `json:"last_job_id,omitempty"`
+	NextFire       int64           `json:"next_fire,omitempty"`
+	Created        int64           `json:"created"`
+	Updated        int64           `json:"updated"`
 }
 
-// AlertMode controls when failures notify the operator.
-//
-// VESTIGIAL: routing and silencing of scheduler events now live in the
-// notify spine's rules. AlertMode is kept for backwards compatibility — it
-// still gates whether the Alerter callback runs at all (and thus whether an
-// enqueue failure reaches notify) — but it is no longer where operators
-// configure who gets pinged. A scheduled job's execution result flows
-// through the queue terminal hook with origin:"scheduler" regardless of this
-// knob.
 type AlertMode string
 
 const (
 	AlertNever  AlertMode = "never"
-	AlertFail   AlertMode = "fail" // default — only on failure
+	AlertFail   AlertMode = "fail"
 	AlertAlways AlertMode = "always"
 )
 
-// Enqueuer is the subset of queue.Queue the scheduler uses. Keeps the
-// scheduler unit-testable without spinning a real worker pool. Real impl
-// is queue.Queue.Enqueue; we wrap it in QueueEnqueuer below.
 type Enqueuer interface {
 	Enqueue(kind string, args json.RawMessage, owner, source string) (string, error)
 }
 
-// Alerter is the failure-notification escape hatch. The HTTP layer wires
-// a function that sends a WhatsApp message via the per-user manager.
 type Alerter func(owner string, j *Job, jobID string, status string, lastErr string)
 
-// Errors.
 var (
 	ErrNotFound = errors.New("job not found")
 	ErrBadInput = errors.New("invalid input")
 )
 
-// Authorizer reports whether owner may run kind. Wired by the HTTP layer to
-// Runner.AuthorizedFor. nil = no autonomous-fire gating (tests).
 type Authorizer func(owner, kind string) bool
 
-// Scheduler holds the parser + persistence + tick loop.
 type Scheduler struct {
 	path    string
 	parser  cron.Parser
@@ -107,8 +73,6 @@ type Scheduler struct {
 	stopped bool
 }
 
-// New constructs a scheduler bound to a JSON file. Caller must call Start
-// to fire the tick loop and Stop on shutdown.
 func New(path string, enq Enqueuer) (*Scheduler, error) {
 	s := &Scheduler{
 		path:   path,
@@ -124,14 +88,8 @@ func New(path string, enq Enqueuer) (*Scheduler, error) {
 	return s, nil
 }
 
-// SetAlerter wires an Alerter. Optional; nil = no notifications.
 func (s *Scheduler) SetAlerter(a Alerter) { s.alert = a }
 
-// OnQueueTerminal is called by the HTTP layer when a queue job reaches a
-// terminal state. If the job's source maps to a scheduler job with a chained
-// follow-up (ThenKind) and the trigger condition matches, it enqueues the
-// follow-up. Chained enqueues use a "scheduler-chain:" source so they never
-// chain again (no loops). Authz is rechecked for the follow-up kind.
 func (s *Scheduler) OnQueueTerminal(source, status string) {
 	id := ""
 	switch {
@@ -140,7 +98,7 @@ func (s *Scheduler) OnQueueTerminal(source, status string) {
 	case strings.HasPrefix(source, "scheduler-manual:"):
 		id = strings.TrimPrefix(source, "scheduler-manual:")
 	default:
-		return // "scheduler-chain:" and others do not chain (avoids a loop)
+		return
 	}
 	s.mu.Lock()
 	j, ok := s.jobs[id]
@@ -154,7 +112,7 @@ func (s *Scheduler) OnQueueTerminal(source, status string) {
 		return
 	}
 	success := status == "done"
-	run := success // default = "success"
+	run := success
 	switch thenOn {
 	case "always":
 		run = true
@@ -175,18 +133,12 @@ func (s *Scheduler) OnQueueTerminal(source, status string) {
 	log.Printf("scheduler: chain of %s → enqueued %q", id, thenKind)
 }
 
-// SetAuthorizer wires the per-fire authorization check. Optional;
-// nil = autonomous fires are not gated (the HTTP create/update/run-now gates
-// still apply). Guards only the autonomous tick path — manual RunNow is
-// already authorized at the HTTP layer.
 func (s *Scheduler) SetAuthorizer(a Authorizer) { s.authz = a }
 
-// Start launches the tick goroutine. Idempotent.
 func (s *Scheduler) Start() {
 	go s.loop()
 }
 
-// Stop terminates the tick loop. Idempotent.
 func (s *Scheduler) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -197,7 +149,6 @@ func (s *Scheduler) Stop() {
 	s.stopped = true
 }
 
-// List returns a snapshot of all jobs sorted by next_fire ascending.
 func (s *Scheduler) List(owner string) []*Job {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -222,7 +173,6 @@ func (s *Scheduler) List(owner string) []*Job {
 	return out
 }
 
-// Get returns a snapshot of one job by id.
 func (s *Scheduler) Get(id string) (*Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -234,8 +184,6 @@ func (s *Scheduler) Get(id string) (*Job, error) {
 	return &cp, nil
 }
 
-// Save inserts (when in.ID is empty) or updates an existing job. The cron
-// expression is validated; bad expressions are rejected.
 func (s *Scheduler) Save(in Job) (*Job, error) {
 	if strings.TrimSpace(in.Name) == "" {
 		return nil, fmt.Errorf("%w: name", ErrBadInput)
@@ -267,7 +215,6 @@ func (s *Scheduler) Save(in Job) (*Job, error) {
 	return &cp, nil
 }
 
-// Delete removes a job.
 func (s *Scheduler) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -278,8 +225,6 @@ func (s *Scheduler) Delete(id string) error {
 	return s.saveLocked()
 }
 
-// RunNow fires a job immediately as if a tick had hit. Returns the queue
-// job ID it enqueued.
 func (s *Scheduler) RunNow(id string) (string, error) {
 	s.mu.Lock()
 	j, ok := s.jobs[id]
@@ -290,8 +235,6 @@ func (s *Scheduler) RunNow(id string) (string, error) {
 	return s.fire(j, true)
 }
 
-// NextFires returns the next n fire timestamps for the given cron expr;
-// the UI uses it to preview "next 5 executions" when editing.
 func (s *Scheduler) NextFires(expr string, n int) ([]time.Time, error) {
 	sch, err := s.parser.Parse(expr)
 	if err != nil {
@@ -309,13 +252,9 @@ func (s *Scheduler) NextFires(expr string, n int) ([]time.Time, error) {
 	return out, nil
 }
 
-// --- internals ---
-
 func (s *Scheduler) loop() {
 	tick := time.NewTicker(30 * time.Second)
 	defer tick.Stop()
-	// fire immediately on startup so jobs that were past-due during a
-	// crash still get one tick before the next 30s window.
 	s.tickOnce()
 	for {
 		select {
@@ -344,11 +283,6 @@ func (s *Scheduler) tickOnce() {
 			continue
 		}
 		if j.NextFire <= now.Unix() {
-			// Catch-up detection: if the scheduled time is more than
-			// 5 minutes ago, the host was likely down/paused and we
-			// missed at least one firing window. We still fire ONCE
-			// (rewinding the timeline would spam the queue with identical jobs)
-			// but record the gap so the operator sees it in the audit log.
 			missedBy := now.Unix() - j.NextFire
 			if missedBy > 300 {
 				log.Printf("scheduler: %s late by %ds (host was down/slow?); firing once and continuing",
@@ -371,18 +305,6 @@ func (s *Scheduler) tickOnce() {
 	}
 }
 
-// fire enqueues a single job. The "manual" flag flips audit trail / source.
-//
-// fire is the single chokepoint for POST/PUT/run-now (manual=true) and the
-// autonomous tick (manual=false). The autonomous path is gated here by the
-// Authorizer: a job whose owner is no longer allowed to run its kind
-// (e.g. saved before the authz fix, or whose kind became primary-only) is
-// skipped instead of enqueued — closing the bypass at the tick. We return
-// (nil) rather than an error so tickOnce doesn't log "fire: ..." every cron
-// interval (a `* * * * *` orphan would otherwise spam the log); LastStatus is
-// recorded as "skipped" and a single informative line is logged. Manual fires
-// are already authorized at the HTTP layer, so !manual scopes the gate to the
-// autonomous path only.
 func (s *Scheduler) fire(j *Job, manual bool) (string, error) {
 	if !manual && s.authz != nil && !s.authz(j.Owner, j.Kind) {
 		s.mu.Lock()
@@ -473,9 +395,6 @@ func (s *Scheduler) saveLocked() error {
 		return err
 	}
 	tmp := s.path + ".tmp"
-	// fsync before the rename — without it the rename updates the inode but
-	// the bytes may not have reached the disk; a power loss just after the
-	// rename can bring scheduler.json back empty or truncated.
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
@@ -494,17 +413,9 @@ func (s *Scheduler) saveLocked() error {
 		_ = os.Remove(tmp)
 		return err
 	}
-	// Atomic write order: tmp+rename. The previous sequence (rename
-	// path→bak, then rename tmp→path) left a window where a crash
-	// between renames meant NO scheduler.json existed — boot would
-	// start with zero jobs. New order: rename tmp→path (single atomic
-	// op POSIX-guaranteed) THEN copy the new file to .bak as a separate
-	// best-effort backup. If the .bak copy fails, scheduler.json is
-	// still correct and the next save retries the backup.
 	if err := os.Rename(tmp, s.path); err != nil {
 		return err
 	}
-	// Best-effort backup; never let backup failure poison the save.
 	if data2, err := os.ReadFile(s.path); err == nil {
 		_ = os.WriteFile(s.path+".bak", data2, 0o600)
 	}

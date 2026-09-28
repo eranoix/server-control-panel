@@ -15,10 +15,6 @@ import org.junit.Before
 import org.junit.Test
 import java.io.IOException
 
-/**
- * [SignOutRepository]: server-side revocation happens on the right path, the local session always
- * ends (even when the server never answers), and with no server configured signing out still works.
- */
 class SignOutRepositoryTest {
 
     private lateinit var server: MockWebServer
@@ -53,7 +49,6 @@ class SignOutRepositoryTest {
     private fun signedInSession(): SessionManager = SessionManager(
         tokenStore = InMemoryTokenStore(),
         refresher = NeverCalledRefresher(),
-        // Keeps the global `ApiClient` token from leaking between cases.
         publishAccessToken = {},
     ).apply { establish(accessToken = "access-1", refreshToken = "refresh-1", expiresInSeconds = 900) }
 
@@ -80,7 +75,6 @@ class SignOutRepositoryTest {
         assertNull(session.currentAccessToken())
     }
 
-    /** Signing out must work offline, otherwise the session would stay alive on the device. */
     @Test
     fun `a server that is down does not block local sign out`() = runTest {
         server.shutdown()

@@ -35,11 +35,6 @@ import dev.servercontrolpanel.data.jira.JiraCard
 import java.time.LocalDate
 import java.time.OffsetDateTime
 
-/**
- * Card edge colour from the status category (`new`, `indeterminate`, `done`), which Jira
- * guarantees, unlike status names. Deliberately avoids the health colours of
- * `panelStatusColors`, so stage is never confused with urgency.
- */
 @Composable
 internal fun categoryColor(category: String): Color = when (category) {
     "done" -> Color(0xFF5E9E76)
@@ -48,13 +43,6 @@ internal fun categoryColor(category: String): Color = when (category) {
     else -> MaterialTheme.colorScheme.outline
 }
 
-/**
- * Compact board card sized for about 125 dp columns: key, summary, assignee initials and age.
- * Other fields live on the issue sheet.
- *
- * The card is a single accessibility target whose description is richer than what is shown,
- * including priority, type and status.
- */
 @Composable
 internal fun BoardCard(
     card: JiraCard,
@@ -84,8 +72,6 @@ internal fun BoardCard(
     ) {
         Column(
             modifier = Modifier
-                // Drawn instead of a sibling Box, which would need IntrinsicSize.Min and
-                // remeasure on every drag frame.
                 .drawBehind { drawRect(color = band, size = Size(3.dp.toPx(), size.height)) }
                 .padding(start = 10.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
                 .fillMaxWidth(),
@@ -102,14 +88,12 @@ internal fun BoardCard(
                 )
                 Spacer(Modifier.weight(1f))
                 if (selecting) {
-                    // Checkbox and overdue badge never share the row; together they push the key.
                     Checkbox(
                         checked = selected,
                         onCheckedChange = { onSelect() },
                         modifier = Modifier.size(20.dp),
                     )
                 } else if (due == "overdue") {
-                    // Overdue is the only badge kept on the compact card.
                     Text(
                         text = "!",
                         style = MaterialTheme.typography.labelMedium,
@@ -122,7 +106,6 @@ internal fun BoardCard(
             Spacer(Modifier.height(4.dp))
             Text(
                 text = card.summary,
-                // 12sp: bodyMedium fits too few words per line at this width.
                 fontSize = 12.sp,
                 lineHeight = 15.sp,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -168,7 +151,6 @@ internal fun BoardCard(
     }
 }
 
-/** Screen reader description of a card, including the details the compact card hides. */
 internal fun cardDescription(card: JiraCard, age: String, due: String): String = buildString {
     append(card.key)
     append(", ")

@@ -14,9 +14,6 @@ import (
 	"server-control-panel/internal/whatsapp"
 )
 
-// newWhatsappMediaTestAPI assembles an isolated huma.API with only the media
-// registrar — the same technique as newWhatsappTestAPI, avoiding any dependence
-// on the global order/registration of the other handlers_*.go packages.
 func newWhatsappMediaTestAPI(svc *fakeWhatsappSvc) (huma.API, *http.ServeMux) {
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(mux, Prefix, huma.DefaultConfig("test", "0.0"))
@@ -24,11 +21,6 @@ func newWhatsappMediaTestAPI(svc *fakeWhatsappSvc) (huma.API, *http.ServeMux) {
 	return api, mux
 }
 
-// TestWhatsAppMedia_Get_CallsDownloadAndDelegatesToServeMediaRel proves the
-// required order: DownloadMediaForMessage resolves the cache hit/miss BEFORE the
-// handler returns the StreamResponse, and the rel it returns is exactly what
-// reaches ServeMediaRel — without that, a cache miss would serve a file that does
-// not exist yet.
 func TestWhatsAppMedia_Get_CallsDownloadAndDelegatesToServeMediaRel(t *testing.T) {
 	svc := &fakeWhatsappSvc{
 		downloadRel:  "chats/jid/msg123.jpg",
@@ -57,11 +49,6 @@ func TestWhatsAppMedia_Get_CallsDownloadAndDelegatesToServeMediaRel(t *testing.T
 	}
 }
 
-// TestWhatsAppMedia_Get_DownloadErrorBecomesRightStatus proves that
-// *whatsapp.DownloadMediaError, returned directly by the handler, is mapped
-// by huma to the right HTTP status through the StatusError interface — without
-// rewriting the status mapping in the BFF (one single source of
-// truth for the status).
 func TestWhatsAppMedia_Get_DownloadErrorBecomesRightStatus(t *testing.T) {
 	svc := &fakeWhatsappSvc{
 		downloadErr: &whatsapp.DownloadMediaError{Status: http.StatusNotFound, Msg: "message not found"},
@@ -77,8 +64,6 @@ func TestWhatsAppMedia_Get_DownloadErrorBecomesRightStatus(t *testing.T) {
 	}
 }
 
-// TestWhatsAppMedia_Get_Unauthenticated401 keeps parity with the BFF's other
-// routes: with no session, 401 before any call to the service.
 func TestWhatsAppMedia_Get_Unauthenticated401(t *testing.T) {
 	svc := &fakeWhatsappSvc{}
 	_, mux := newWhatsappMediaTestAPI(svc)
@@ -95,9 +80,6 @@ func TestWhatsAppMedia_Get_Unauthenticated401(t *testing.T) {
 	}
 }
 
-// buildMultipart assembles a multipart/form-data body with one file and text
-// fields, returning the finished body and the Content-Type (with boundary) to use
-// in the test request's header.
 func buildMultipart(t *testing.T, filename string, fileContent []byte, fields map[string]string) (*bytes.Buffer, string) {
 	t.Helper()
 	buf := &bytes.Buffer{}
@@ -120,9 +102,6 @@ func buildMultipart(t *testing.T, filename string, fileContent []byte, fields ma
 	return buf, w.FormDataContentType()
 }
 
-// TestWhatsAppMedia_Upload_DelegatesToSendFileDedup proves that the multipart's
-// bytes and fields reach SendFileDedup intact, and that the response returns the
-// id the fake "sent".
 func TestWhatsAppMedia_Upload_DelegatesToSendFileDedup(t *testing.T) {
 	svc := &fakeWhatsappSvc{sendFileID: "wamid-upload-1"}
 	_, mux := newWhatsappMediaTestAPI(svc)
@@ -163,10 +142,6 @@ func TestWhatsAppMedia_Upload_DelegatesToSendFileDedup(t *testing.T) {
 	}
 }
 
-// TestWhatsAppMedia_Upload_NoFileReturns422 ensures that "file" is
-// required: without it, huma stops the request at multipart validation
-// (422 — the same status as any other missing required field in the BFF)
-// before any call to the service.
 func TestWhatsAppMedia_Upload_NoFileReturns422(t *testing.T) {
 	svc := &fakeWhatsappSvc{sendFileID: "should-not-be-used"}
 	_, mux := newWhatsappMediaTestAPI(svc)
@@ -196,9 +171,6 @@ func TestWhatsAppMedia_Upload_NoFileReturns422(t *testing.T) {
 	}
 }
 
-// TestIsWhatsAppMediaUpload_MatchesOnlyUploadRoute proves the matcher used by
-// RegisterLargeBody: it matches the exact upload route, but not the download one
-// (same prefix, different method) nor any other route.
 func TestIsWhatsAppMediaUpload_MatchesOnlyUploadRoute(t *testing.T) {
 	cases := []struct {
 		method string

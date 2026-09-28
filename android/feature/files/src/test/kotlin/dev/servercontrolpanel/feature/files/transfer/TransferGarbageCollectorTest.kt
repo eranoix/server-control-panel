@@ -6,13 +6,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * An in-memory [SharedPreferences] fake -- [TransferStateStore]'s internal
- * `SharedPreferences`-taking constructor exists exactly so tests can hand it
- * one of these instead of a real, `Context`-backed prefs file (this module
- * has no Robolectric; a real `getSharedPreferences` call would hit an
- * un-stubbed Android runtime method).
- */
 private class FakeSharedPreferences : SharedPreferences {
     private val values = mutableMapOf<String, Any?>()
 

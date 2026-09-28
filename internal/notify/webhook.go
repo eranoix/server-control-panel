@@ -10,11 +10,8 @@ import (
 	"strings"
 )
 
-// TypeWebhook is the channel type id for generic outbound webhooks.
 const TypeWebhook = "webhook"
 
-// WebhookChannel POSTs the Event as JSON to a configured URL — the generic
-// escape hatch (Slack/Discord incoming webhooks, n8n, custom endpoints, …).
 type WebhookChannel struct{ client *http.Client }
 
 func NewWebhookChannel() *WebhookChannel { return &WebhookChannel{client: &http.Client{}} }
@@ -25,19 +22,9 @@ func (w *WebhookChannel) Send(ctx context.Context, ev Event, cfg ChannelConfig) 
 	if cfg.URL == "" {
 		return errMissing("webhook", "url")
 	}
-	// Minimal guard: only http(s). The destination is configured by the primary
-	// admin on their own host, so we don't impose an allowlist — but we refuse
-	// non-http schemes (file://, gopher://, …) outright.
 	if !strings.HasPrefix(cfg.URL, "http://") && !strings.HasPrefix(cfg.URL, "https://") {
 		return fmt.Errorf("webhook: url must be http(s)")
 	}
-	// 🔴 A FIXED BODY WINS, AND IT NEVER MIXES WITH THE EVENT.
-	//
-	// When the destination is public (a free-plan ntfy topic, say), what goes
-	// out is EXACTLY the configured text — nothing from the Event crosses over.
-	// Attaching "just the title" or "just the severity" would already be telling
-	// the public what broke and when; the only safe version is the one that
-	// carries nothing.
 	body := []byte(cfg.FixedBody)
 	kind := "text/plain; charset=utf-8"
 	if cfg.FixedBody == "" {

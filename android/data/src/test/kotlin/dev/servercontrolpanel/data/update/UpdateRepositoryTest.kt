@@ -20,10 +20,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-/**
- * The update channel against a real HTTP server (MockWebServer), focused on resumption: a
- * download cut in half must keep its bytes on disk and resume from the exact offset.
- */
 class UpdateRepositoryTest {
 
     @get:Rule
@@ -31,7 +27,6 @@ class UpdateRepositoryTest {
 
     private lateinit var server: MockWebServer
 
-    /** 40 KiB of deterministic content. */
     private val content = ByteArray(40 * 1024) { (it % 251).toByte() }
     private val contentSha = sha256(content)
 
@@ -59,10 +54,6 @@ class UpdateRepositoryTest {
         sha256 = sha,
     )
 
-    /**
-     * The server omits `patch` when it has none for the given base (the most common case),
-     * and the generated client must deserialize that.
-     */
     @Test
     fun manifestWithoutPatchDoesNotBreakDeserialization() = runTest {
         server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(MANIFEST_WITHOUT_PATCH))
@@ -76,7 +67,6 @@ class UpdateRepositoryTest {
         assertFalse(result.manifest.upToDate)
     }
 
-    /** The other shape of the same case: an explicit `"patch": null`, which an older server would send. */
     @Test
     fun manifestWithExplicitNullPatchIsAlsoAccepted() = runTest {
         server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(MANIFEST_NULL_PATCH))
@@ -98,7 +88,6 @@ class UpdateRepositoryTest {
         assertEquals(31_135_416L, result.manifest.latest.apkSizeBytes)
     }
 
-    /** 503 means nothing has been published yet, which is not an error. */
     @Test
     fun unpublishedChannelIsNotAnError() = runTest {
         server.enqueue(MockResponse().setResponseCode(503).setBody("""{"detail":"update channel not published yet"}"""))
@@ -128,16 +117,11 @@ class UpdateRepositoryTest {
 
         val done = events.filterIsInstance<ArtifactDownloadProgress.Done>().single()
         assertArrayEquals(content, done.file.readBytes())
-        // No Range on the first trip: there was nothing on disk to resume.
         val request = server.takeRequest()
         assertNull(request.getHeader("Range"))
         assertNull(request.getHeader("If-Range"))
     }
 
-    /**
-     * First attempt gets half and fails as a connection error, keeping the partial file.
-     * The second sends `Range: bytes=<half>-` with the ETag in `If-Range` and yields an intact file.
-     */
     @Test
     fun interruptedDownloadResumesWhereItStopped() = runTest {
         val half = content.size / 2
@@ -164,10 +148,6 @@ class UpdateRepositoryTest {
         assertEquals("\"$contentSha\"", resumed.getHeader("If-Range"))
     }
 
-    /**
-     * When `If-Range` does not match the server sends the whole file with 200, so the partial
-     * must be truncated instead of appended to.
-     */
     @Test
     fun status200ToRangeRequestTruncatesPartialInsteadOfAppending() = runTest {
         val target = File(temp.newFolder(), "artifact.hdiff")
@@ -181,7 +161,6 @@ class UpdateRepositoryTest {
         assertEquals(content.size.toLong(), target.length())
     }
 
-    /** 416: the partial is not a valid prefix, so delete it and ask for a fresh attempt. */
     @Test
     fun impossibleRangeDeletesPartialAndAsksForRetry() = runTest {
         val target = File(temp.newFolder(), "artifact.hdiff")
@@ -195,10 +174,6 @@ class UpdateRepositoryTest {
         assertFalse("the invalid partial must not survive", target.exists())
     }
 
-    /**
-     * Bytes with the wrong hash never reach `hpatchz`, and the file is deleted because
-     * resuming a corrupted download would keep the corruption.
-     */
     @Test
     fun mismatchedHashDeletesFileAndMarksCorrupted() = runTest {
         server.enqueue(fullResponse(content))
@@ -211,7 +186,6 @@ class UpdateRepositoryTest {
         assertFalse(target.exists())
     }
 
-    /** An intact file already on disk is not downloaded again. */
     @Test
     fun completeIntactFileIsNotDownloadedAgain() = runTest {
         val target = File(temp.newFolder(), "artifact.hdiff")
@@ -223,7 +197,6 @@ class UpdateRepositoryTest {
         assertEquals(0, server.requestCount)
     }
 
-    /** A partial larger than the target is leftover from something else, so start over. */
     @Test
     fun partialLargerThanTargetIsDiscardedAndDownloadRestarts() = runTest {
         val target = File(temp.newFolder(), "artifact.hdiff")
@@ -262,10 +235,6 @@ class UpdateRepositoryTest {
         )
     }
 
-    /**
-     * The `url` comes from the network, and the `Authorization` interceptor would attach the
-     * Bearer token to any host, so a different host or scheme must be rejected.
-     */
     @Test
     fun urlThatChangesHostIsRejected() {
         assertNull(resolveArtifactUrl("https://panel.example.com/api/mobile/v1", "https://attacker.example/x.hdiff"))

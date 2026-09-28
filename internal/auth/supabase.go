@@ -1,21 +1,3 @@
-// supabase.go — the migration to Supabase Auth (GoTrue).
-//
-// This layer does ONE specific job: validate a username+password combination
-// against the self-hosted GoTrue shared with northwind-web.
-// It does not mint the v2 JWT (that stays r.auth.Issue), does not touch
-// sessions, does not touch TOTP. It only replaces bcrypt.CompareHashAndPassword.
-//
-// Why the boundary is this narrow:
-//   - The v2 JWT stays HS256 with the same secret as GoTrue (an earlier step
-//     synchronised them). The 5 jwt.Parse sites keep working byte-identically.
-//   - Supabase refresh/logout/MFA arrive in later steps.
-//   - Rollback is switching PANEL_AUTH_BACKEND=local — local bcrypt remained
-//     viable until it was retired.
-//
-// Classified errors (the caller decides what to do):
-//   - ErrSupabaseInvalidCredentials → 401 to the user, audit "login.fail.supabase"
-//   - ErrSupabaseNetworkError       → fall back to local bcrypt when backend=both
-//   - ErrSupabaseUnexpected         → 500, audit + logging with a short payload
 package auth
 
 import (
@@ -30,25 +12,18 @@ import (
 	"time"
 )
 
-// Errors classified for the caller.
 var (
 	ErrSupabaseInvalidCredentials = errors.New("supabase: invalid credentials")
 	ErrSupabaseNetworkError       = errors.New("supabase: network error")
 	ErrSupabaseUnexpected         = errors.New("supabase: unexpected response")
 )
 
-// SupabaseClient is the minimal facade over calls to the self-hosted GoTrue.
-// It is stateless beyond the credentials — it can be instantiated per request
-// or reused. http.Client with a configured timeout.
 type SupabaseClient struct {
-	BaseURL    string // ex.: https://db.northwind.example
-	AnonKey    string // SUPABASE_ANON_KEY (public — apikey header)
+	BaseURL    string
+	AnonKey    string
 	HTTPClient *http.Client
 }
 
-// NewSupabaseClient returns a client with a 5s timeout. The caller must ensure
-// BaseURL and AnonKey are not empty — if they are, it returns nil (presence is
-// checked in main.go at boot).
 func NewSupabaseClient(baseURL, anonKey string) *SupabaseClient {
 	baseURL = strings.TrimRight(baseURL, "/")
 	if baseURL == "" || anonKey == "" {
@@ -63,8 +38,6 @@ func NewSupabaseClient(baseURL, anonKey string) *SupabaseClient {
 	}
 }
 
-// gotrueTokenRespPartial captures just enough to infer success (the presence
-// of access_token) and to classify errors.
 type gotrueTokenRespPartial struct {
 	AccessToken  string `json:"access_token,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
@@ -73,36 +46,18 @@ type gotrueTokenRespPartial struct {
 	ErrorCode    string `json:"error_code,omitempty"`
 	ErrorDesc    string `json:"error_description,omitempty"`
 	Msg          string `json:"msg,omitempty"`
-	// User is the identity object GoTrue returns alongside the session. We
-	// capture only the email — used on a cookie-based refresh (with no valid
-	// access token in the header) to remap email → canonical username via
-	// UUIDMap.
-	User struct {
+	User         struct {
 		Email string `json:"email,omitempty"`
 	} `json:"user,omitempty"`
 }
 
-// SupabaseSession captures the tokens returned by /auth/v1/token.
-// RefreshToken is what POST /auth/v1/logout uses for server-side revocation;
-// the remaining fields are kept for future evolution (transparent refresh).
 type SupabaseSession struct {
 	AccessToken  string
 	RefreshToken string
 	ExpiresIn    int
-	// Email is the email of the user who owns the session (when GoTrue includes
-	// it in the response — always on the refresh_token grant). It lets us remap
-	// the identity without decoding the access_token JWT by hand.
-	Email string
+	Email        string
 }
 
-// VerifyPassword attempts POST /auth/v1/token?grant_type=password against
-// GoTrue. On success it returns *SupabaseSession + nil; on failure, nil plus
-// one of the Err* values.
-//
-// The caller decides what to do with the Session:
-//   - discard it (the v2 JWT is still minted locally)
-//   - keep refresh_token in an httpOnly cookie for logout
-//   - future: refresh_token cycled via /auth/v1/token?grant_type=refresh_token
 func (c *SupabaseClient) VerifyPassword(ctx context.Context, email, password string) (*SupabaseSession, error) {
 	if c == nil {
 		return nil, ErrSupabaseNetworkError
@@ -162,13 +117,6 @@ func (c *SupabaseClient) VerifyPassword(ctx context.Context, email, password str
 	return nil, fmt.Errorf("%w: status=%d error_code=%q msg=%q", ErrSupabaseUnexpected, resp.StatusCode, rb.ErrorCode, rb.Msg)
 }
 
-// RefreshSession trades a refresh_token for a new session. Used by the
-// transparent supabaseCallWithRefresh when the access_token expires.
-//
-// Errors:
-//   - ErrSupabaseInvalidCredentials → refresh invalid/expired (re-login needed)
-//   - ErrSupabaseNetworkError       → 5xx or the network is down
-//   - ErrSupabaseUnexpected         → unexpected state
 func (c *SupabaseClient) RefreshSession(ctx context.Context, refreshToken string) (*SupabaseSession, error) {
 	if c == nil {
 		return nil, ErrSupabaseNetworkError
@@ -211,29 +159,12 @@ func (c *SupabaseClient) RefreshSession(ctx context.Context, refreshToken string
 	return nil, fmt.Errorf("%w: status=%d code=%q", ErrSupabaseUnexpected, resp.StatusCode, rb.ErrorCode)
 }
 
-// AuthCallResult returns the parsed body of an authenticated, user-scoped call,
-// plus the effective Session (which may have been rotated if a refresh
-// happened). The caller checks Refreshed to update the cookies in the
-// operator's response.
 type AuthCallResult struct {
 	StatusCode int
 	Body       []byte
-	Refreshed  *SupabaseSession // non-nil when access_token was rotated during the call
+	Refreshed  *SupabaseSession
 }
 
-// AuthenticatedRequest makes a user-scoped call (Bearer access_token) to
-// GoTrue with transparent refresh. If the first call returns 401, it tries the
-// refresh_token, updates the access_token, and retries ONCE. Failure:
-//   - if the refresh also fails → ErrSupabaseInvalidCredentials (re-login needed)
-//   - if the network is down → ErrSupabaseNetworkError
-//
-// method/path/body are the parameters of the GoTrue call; e.g.:
-//
-//	AuthenticatedRequest(ctx, access, refresh, "POST", "/auth/v1/factors",
-//	    map[string]any{"factor_type":"totp","friendly_name":"panel"})
-//
-// The caller is responsible for writing the updated cookie from Refreshed.AccessToken
-// (when non-nil) — keep it response-aware.
 func (c *SupabaseClient) AuthenticatedRequest(ctx context.Context, accessToken, refreshToken, method, path string, body any) (*AuthCallResult, error) {
 	if c == nil {
 		return nil, ErrSupabaseNetworkError
@@ -259,12 +190,6 @@ func (c *SupabaseClient) AuthenticatedRequest(ctx context.Context, accessToken, 
 			return nil, fmt.Errorf("%w: %v", ErrSupabaseNetworkError, err)
 		}
 		defer resp.Body.Close()
-		// No LimitReader here — GoTrue's response on /factors enroll-start
-		// includes an inline SVG QR code that can exceed 100KB. A silent limit
-		// truncates the body without an error and produces "unexpected end of
-		// JSON input" at Unmarshal — poor diagnostics. http.Client has a 5s
-		// Timeout that already covers runaway responses. The caller is trusted
-		// (internal handlers).
 		buf, readErr := io.ReadAll(resp.Body)
 		if readErr != nil {
 			return nil, fmt.Errorf("%w: read body (got %d bytes): %v", ErrSupabaseNetworkError, len(buf), readErr)
@@ -272,16 +197,14 @@ func (c *SupabaseClient) AuthenticatedRequest(ctx context.Context, accessToken, 
 		return &AuthCallResult{StatusCode: resp.StatusCode, Body: buf}, nil
 	}
 
-	// First attempt with the current access_token.
 	res, err := doCall(accessToken)
 	if err != nil {
 		return nil, err
 	}
-	// 401 → refresh + retry. 403 as well (factor enforcement can return 403).
 	if (res.StatusCode == 401 || res.StatusCode == 403) && refreshToken != "" {
 		newSess, rerr := c.RefreshSession(ctx, refreshToken)
 		if rerr != nil {
-			return res, rerr // devolve o res original + refresh err
+			return res, rerr
 		}
 		retryRes, rerr := doCall(newSess.AccessToken)
 		if rerr != nil {
@@ -293,13 +216,6 @@ func (c *SupabaseClient) AuthenticatedRequest(ctx context.Context, accessToken, 
 	return res, nil
 }
 
-// RevokeRefreshToken calls POST /auth/v1/logout with the refresh_token as the
-// Bearer. GoTrue invalidates the refresh server-side. Errors here are
-// best-effort: network failure, GoTrue 500, etc. — the local logout ALWAYS
-// proceeds even if the remote revocation fails (clearing the cookie on the
-// user's side is what matters).
-//
-// Idempotent: calling it with an already-revoked token returns without error.
 func (c *SupabaseClient) RevokeRefreshToken(ctx context.Context, refreshToken string) error {
 	if c == nil || refreshToken == "" {
 		return nil
@@ -321,17 +237,11 @@ func (c *SupabaseClient) RevokeRefreshToken(ctx context.Context, refreshToken st
 		return nil
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
-		// Already revoked or expired — best-effort, not an error.
 		return nil
 	}
 	return fmt.Errorf("%w: status=%d", ErrSupabaseUnexpected, resp.StatusCode)
 }
 
-// Fast GoTrue health probe (used by /api/api/health). Issues GET /auth/v1/settings
-// (a public endpoint that still requires the apikey — it confirms both that ANON
-// authentication works AND that the server answers). Short timeout (2s) so it does
-// not slow down the server-control-panel health check.
-// Returns nil = OK; an error means unreachable/down.
 func (c *SupabaseClient) Health(ctx context.Context) error {
 	if c == nil {
 		return fmt.Errorf("%w: client not configured", ErrSupabaseUnexpected)

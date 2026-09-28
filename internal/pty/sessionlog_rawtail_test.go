@@ -7,7 +7,6 @@ import (
 	"testing"
 )
 
-// writeLog builds both generations of a session's log and returns the dataDir.
 func writeLog(t *testing.T, prevGeneration, current string) string {
 	t.Helper()
 	dd := t.TempDir()
@@ -26,8 +25,6 @@ func writeLog(t *testing.T, prevGeneration, current string) string {
 	return dd
 }
 
-// A log that fits entirely in the request comes out whole, and Total is the real
-// size — Total is how the app can say "this is all there is".
 func TestRawLogTail_WholeLogWhenItFits(t *testing.T) {
 	dd := writeLog(t, "old\n", "new\n")
 
@@ -41,15 +38,10 @@ func TestRawLogTail_WholeLogWhenItFits(t *testing.T) {
 	}
 }
 
-// Cutting by byte can land in the middle of an escape sequence, and half a
-// sequence is garbage PRINTED on the operator's screen (the rest of it becomes
-// text). The cut advances past the first line break, and this test proves the
-// split sequence does not survive.
 func TestRawLogTail_CutsAtNewlineNeverMidEscape(t *testing.T) {
 	full := strings.Repeat("padding\n", 100) + "\x1b[31mred\x1b[0m\nend\n"
 	dd := writeLog(t, "", full)
 
-	// A ceiling that lands INSIDE the "\x1b[31m" if nobody fixes the start.
 	target := len("red\x1b[0m\nend\n") + 4
 
 	data, total := rawLogTail(dd, "sam", "App", target)
@@ -64,14 +56,12 @@ func TestRawLogTail_CutsAtNewlineNeverMidEscape(t *testing.T) {
 		t.Fatalf("slice started in the middle of an escape: %q", string(data))
 	}
 	if strings.Contains(string(data), "\n") {
-		// If any break survived, whatever follows it has to be intact.
 		if !strings.HasSuffix(string(data), "end\n") {
 			t.Fatalf("slice did not end at the end of the log: %q", string(data))
 		}
 	}
 }
 
-// A session with no log at all (it never had a client attached) is a normal case, not an error.
 func TestRawLogTail_NoLogReturnsEmpty(t *testing.T) {
 	data, total := rawLogTail(t.TempDir(), "sam", "never-existed", 1<<20)
 	if data != nil || total != 0 {

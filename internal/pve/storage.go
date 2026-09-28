@@ -1,13 +1,5 @@
 package pve
 
-// storage.go: the node's two CAPACITY routes (storage and ZFS), and the
-// privilege verdict that says whether they have anything to tell.
-//
-// Without Datastore.Audit on /storage the hypervisor does not refuse: it
-// returns 200 with an empty list. That is why CanAuditDatastore measures
-// PRIVILEGE instead of trusting an empty answer. Scope: capacity and health,
-// never content.
-
 import (
 	"context"
 	"fmt"
@@ -17,21 +9,10 @@ import (
 	"strings"
 )
 
-// Storage is one row of /nodes/{node}/storage.
-//
-// 🔴 Active, Enabled and Shared are int because the hypervisor sends 0|1, not a
-// JSON boolean. Declaring `bool` would make the unmarshal of the WHOLE LIST
-// fail — the same disaster Disk.Wearout avoids on the other side (node.go).
-// Whoever wants a boolean uses IsActive()/IsEnabled()/IsShared().
-//
-// UsedFraction arrives READY from the hypervisor (0.0686… = 6.9%). It is
-// preferred over used/total because for `pbs` storage the two are not the same
-// sum: PBS reports the remote datastore's space, and the fraction is what it
-// computes itself. Recomputing it here would be disagreeing with the source.
 type Storage struct {
-	Storage      string  `json:"storage"` // "local-zfs"
-	Type         string  `json:"type"`    // "zfspool" | "dir" | "pbs" | …
-	Content      string  `json:"content"` // "images,rootdir" — a comma-separated list, not an array
+	Storage      string  `json:"storage"`
+	Type         string  `json:"type"`
+	Content      string  `json:"content"`
 	Total        int64   `json:"total"`
 	Used         int64   `json:"used"`
 	Avail        int64   `json:"avail"`
@@ -45,9 +26,6 @@ func (s Storage) IsActive() bool  { return s.Active == 1 }
 func (s Storage) IsEnabled() bool { return s.Enabled == 1 }
 func (s Storage) IsShared() bool  { return s.Shared == 1 }
 
-// ContentList splits the `content` field into the list the screen consumes, in a
-// stable order. Doing this here and not in the browser is the same rule as
-// loadavg in inventory/hypervisor.go: the screen FORMATS, it does not interpret.
 func (s Storage) ContentList() []string {
 	out := []string{}
 	for _, c := range strings.Split(s.Content, ",") {
@@ -59,10 +37,6 @@ func (s Storage) ContentList() []string {
 	return out
 }
 
-// StorageList returns the capacity of each of the node's storages. Measured: 168 ms.
-//
-// ⚠️ Reading a 200 with an empty list here does NOT mean "there is no storage".
-// It means "there is no storage THIS TOKEN CAN SEE". CanAuditDatastore breaks the tie.
 func (c *Client) StorageList(ctx context.Context, node string) ([]Storage, error) {
 	if node == "" {
 		return nil, fmt.Errorf("pve: empty node in StorageList")
@@ -72,23 +46,13 @@ func (c *Client) StorageList(ctx context.Context, node string) ([]Storage, error
 	if err := c.do(ctx, http.MethodGet, p, &ss); err != nil {
 		return nil, err
 	}
-	// The hypervisor promises no ordering. A document that changes order on every
-	// tick becomes noise in the diff of the persisted inventory — the same reason as sortByID().
 	sort.SliceStable(ss, func(i, j int) bool { return ss[i].Storage < ss[j].Storage })
 	return ss, nil
 }
 
-// ZPool is one row of /nodes/{node}/disks/zfs.
-//
-// 🔴 Health is the reason this type exists. The whole lab lands on a
-// SINGLE-DISK pool with no redundancy: the pool leaving ONLINE is the most
-// expensive news in the laboratory, and it is exactly the news that today only
-// reaches whoever opens the Proxmox UI — which the operator cannot get to.
-//
-// Frag is a whole PERCENTAGE (17 = 17%) and zero is a MEASUREMENT, not absence.
 type ZPool struct {
 	Name   string  `json:"name"`
-	Health string  `json:"health"` // "ONLINE" | "DEGRADED" | "FAULTED" | …
+	Health string  `json:"health"`
 	Size   int64   `json:"size"`
 	Alloc  int64   `json:"alloc"`
 	Free   int64   `json:"free"`
@@ -96,13 +60,8 @@ type ZPool struct {
 	Dedup  float64 `json:"dedup"`
 }
 
-// Healthy is the only verdict this package emits about a pool: ONLINE, and
-// nothing else. DEGRADED, FAULTED, SUSPENDED, UNAVAIL and REMOVED are all "no" —
-// and none of them may be normalised to green anywhere along the path.
 func (p ZPool) Healthy() bool { return p.Health == "ONLINE" }
 
-// ZFSList returns the node's ZFS pools. Measured: 96 ms — it fits inside the
-// poller tick, unlike /disks/list (597 ms), which was left on demand.
 func (c *Client) ZFSList(ctx context.Context, node string) ([]ZPool, error) {
 	if node == "" {
 		return nil, fmt.Errorf("pve: empty node in ZFSList")
@@ -116,10 +75,6 @@ func (c *Client) ZFSList(ctx context.Context, node string) ([]ZPool, error) {
 	return ps, nil
 }
 
-// datastorePrivs are the privileges that make /nodes/{n}/storage answer with
-// content. Datastore.Audit is the read one; the allocation privileges imply it
-// (whoever can write to the datastore can read it), and listing them keeps a
-// token more powerful than audit from being read as blind.
 var datastorePrivs = []string{
 	"Datastore.Audit",
 	"Datastore.Allocate",
@@ -127,19 +82,6 @@ var datastorePrivs = []string{
 	"Datastore.AllocateTemplate",
 }
 
-// CanAuditDatastore says whether a map from /access/permissions authorises
-// READING storage capacity. It is the ONLY source of that verdict in the panel
-// — the /permissions handler and the poller call this function, never a copy of
-// the rule. Two truths about the same question have already produced a measured
-// defect in this codebase (see credentialKey in internal/api/handlers_nodes.go).
-//
-// The verdict is by PRIVILEGE, not by the presence of a path: a token with
-// PVEVMUser propagated from the root has /storage in the map without
-// Datastore.Audit, and the list comes back 200 with [] (a false green).
-//
-// The paths that count are the ones that COVER storage: the root (which
-// propagates), /storage itself, and each named storage. `/storagefoo` is none of
-// the three.
 func CanAuditDatastore(perms map[string]map[string]int) bool {
 	for path, privs := range perms {
 		if !coversStorage(path) {
@@ -154,65 +96,35 @@ func CanAuditDatastore(perms map[string]map[string]int) bool {
 	return false
 }
 
-// coversStorage says whether an ACL path reaches the datastores. Cutting at
-// "/storage/" (with the slash) is what stops a neighbouring path from getting in
-// by prefix — the classic defect of whoever uses a raw HasPrefix.
 func coversStorage(path string) bool {
 	return path == "/" || path == "/storage" || strings.HasPrefix(path, "/storage/")
 }
 
-// Pool topology
-//
-// 🔴 THE MISSING LINK. `ZFSList` says there is an `rpool` with 70 GB allocated;
-// `DiskList` says there is a 1 TB Lexar NVMe. Nothing said that one lived inside
-// the other — and that is precisely the question that matters when a disk starts
-// to fail: "what do I lose?".
-//
-// `/nodes/{n}/disks/zfs/{pool}` returns the vdev tree. THREE things come out of
-// it that no other call gives:
-//
-//  1. the physical device holding the pool up (the by-id path, which carries the
-//     serial — that is what allows pool ↔ disk to be matched);
-//  2. the read/write/cksum error counters PER device, which are the signal of
-//     silent rot in a pool with no mirror;
-//  3. REDUNDANCY, derived from the topology instead of assumed. In this
-//     laboratory it is zero, and the project constraints say so — but a screen
-//     that asserts "no redundancy" by hardcode lies on the day somebody adds a
-//     mirror.
-
-// ZDevice is a leaf of the vdev tree: a real physical device.
 type ZDevice struct {
-	Path  string `json:"path"`  // /dev/disk/by-id/nvme-eui.…-part3
-	State string `json:"state"` // ONLINE | DEGRADED | FAULTED | UNAVAIL | REMOVED
+	Path  string `json:"path"`
+	State string `json:"state"`
 	Read  int64  `json:"read"`
 	Write int64  `json:"write"`
 	Cksum int64  `json:"cksum"`
 }
 
-// ZVdev is a group of devices: `mirror-0`, `raidz1-0`, or the pool itself when
-// the disks hang off the root with no group at all.
 type ZVdev struct {
 	Name      string    `json:"name"`
-	Type      string    `json:"type"` // mirror | raidz1 | raidz2 | raidz3 | stripe | special; values are wire contract
+	Type      string    `json:"type"`
 	Redundant bool      `json:"redundant"`
 	Devices   []ZDevice `json:"devices"`
 }
 
-// ZPoolTopology is the complete verdict about a pool.
 type ZPoolTopology struct {
-	Name      string  `json:"name"`
-	State     string  `json:"state"`
-	Errors    string  `json:"errors"` // "No known data errors" | a description
-	Vdevs     []ZVdev `json:"vdevs"`
-	Redundant bool    `json:"redundant"`
-	NDisp     int     `json:"n_devices"`
-	// ErrorCount sums read+write+cksum across ALL devices. In a pool with no
-	// mirror, any one of them different from zero is lost data — there is no second
-	// copy to rebuild from.
-	ErrorCount int64 `json:"errors_counted"`
+	Name       string  `json:"name"`
+	State      string  `json:"state"`
+	Errors     string  `json:"errors"`
+	Vdevs      []ZVdev `json:"vdevs"`
+	Redundant  bool    `json:"redundant"`
+	NDisp      int     `json:"n_devices"`
+	ErrorCount int64   `json:"errors_counted"`
 }
 
-// zfsNode is the raw shape of a tree node as the hypervisor returns it.
 type zfsNode struct {
 	Name     string    `json:"name"`
 	State    string    `json:"state"`
@@ -231,12 +143,6 @@ type zfsRawDetail struct {
 	Children []zfsNode `json:"children"`
 }
 
-// vdevType classifies a group by its name, the way `zpool status` writes it.
-//
-// Only mirror and raidz survive the loss of one device. `stripe` (the pool
-// hanging disks straight off the root) and anything unknown do NOT count as
-// redundancy: when in doubt the verdict is "does not protect", because the error
-// in the other direction makes the operator trust a mirror that does not exist.
 func vdevType(name string) (string, bool) {
 	switch {
 	case strings.HasPrefix(name, "mirror"):
@@ -255,7 +161,6 @@ func vdevType(name string) (string, bool) {
 	}
 }
 
-// ZFSTopology reads a pool's vdev tree and emits the verdict.
 func (c *Client) ZFSTopology(ctx context.Context, node, pool string) (ZPoolTopology, error) {
 	var out ZPoolTopology
 	if node == "" || pool == "" {
@@ -271,9 +176,6 @@ func (c *Client) ZFSTopology(ctx context.Context, node, pool string) (ZPoolTopol
 		out.Name = pool
 	}
 
-	// The root the hypervisor returns is a node named after the pool; the real
-	// vdevs are its children. Going down one level is what separates "the pool"
-	// from "the pool's disk groups".
 	root := rawValue.Children
 	if len(root) == 1 && root[0].Leaf == 0 && root[0].Name == out.Name {
 		root = root[0].Children
@@ -281,7 +183,6 @@ func (c *Client) ZFSTopology(ctx context.Context, node, pool string) (ZPoolTopol
 
 	for _, n := range root {
 		if n.Leaf == 1 {
-			// A disk hanging straight off the root: it is a stripe, with no protection.
 			out.Vdevs = append(out.Vdevs, ZVdev{
 				Name: n.Name, Type: "stripe", Redundant: false,
 				Devices: []ZDevice{{Path: n.Name, State: n.State,
@@ -304,7 +205,7 @@ func (c *Client) ZFSTopology(ctx context.Context, node, pool string) (ZPoolTopol
 
 	for _, v := range out.Vdevs {
 		if v.Type == "special" {
-			continue // log/cache/spare do not hold the pool's data
+			continue
 		}
 		if v.Redundant {
 			out.Redundant = true
@@ -317,18 +218,6 @@ func (c *Client) ZFSTopology(ctx context.Context, node, pool string) (ZPoolTopol
 	return out, nil
 }
 
-// SerialFromPath extracts the serial from a `/dev/disk/by-id/...` path, which
-// is what allows a pool device to be matched to a `DiskList` row.
-//
-// The two formats measured in this laboratory:
-//
-//	/dev/disk/by-id/usb-Seagate_Expansion_NAA9N1KZ-0:0-part1  → NAA9N1KZ
-//	/dev/disk/by-id/nvme-eui.0000000625124629caf25b035000017e-part3 → (none)
-//
-// The NVMe addressed by `eui.` carries no readable serial; returning empty is
-// the right answer — matching by serial simply does not happen for it, and the
-// screen falls back to matching by type. Inventing a serial would make the
-// screen tie the pool to the WRONG disk, which is worse than not tying it.
 func SerialFromPath(path string) string {
 	base := path
 	if i := strings.LastIndex(base, "/"); i >= 0 {
@@ -348,60 +237,28 @@ func SerialFromPath(path string) string {
 	return ""
 }
 
-// Backup freshness
-//
-// 🔴 THIS CALL DID NOT EXIST UNTIL THE ACL WAS WIDENED. Until then the panel's
-// token had `PVEAuditor` on `/` with propagate=1 — it passed the permission
-// check with no error — and still received `{"data":[]}` about a datastore with
-// 46.9 GB used. Only `root@pam` could see the content. Once the operator granted
-// full access, the listing started answering: 65 backups, 9 guests.
-//
-// This matters because the off-site chain has already died for 14 days in
-// silence, and the screen had no way to know. "Having a copy" and "being able to
-// say when the last one was" are different things, and only the second becomes
-// an alarm.
-
-// BackupItem is one copy in the datastore.
 type BackupItem struct {
 	VolID  string `json:"volid"`
 	VMID   int    `json:"vmid"`
-	CTime  int64  `json:"ctime"` // unix epoch
+	CTime  int64  `json:"ctime"`
 	Size   int64  `json:"size"`
 	Format string `json:"format"`
 	Notes  string `json:"notes"`
 }
 
-// BackupFreshness is the per-datastore verdict.
 type BackupFreshness struct {
-	Storage string `json:"storage"`
-	Total   int    `json:"total"`
-	// LastCTime is 0 when THERE IS NO BACKUP AT ALL — and zero here is absence,
-	// not "1970". Whoever consumes it has to tell the two apart: an empty datastore
-	// and a datastore with an ancient backup call for opposite actions.
+	Storage   string `json:"storage"`
+	Total     int    `json:"total"`
 	LastCTime int64  `json:"last_ctime"`
 	Guests    []int  `json:"guests"`
 	Error     string `json:"error,omitempty"`
 
-	// Scheduler separates "deliberately disarmed" from "failed", in THREE states
-	// (the values are wire contract):
-	//
-	//   "active"       active: the hypervisor job exists and is on
-	//   "disarmed"   disarmed: the hypervisor job exists and is OFF
-	//   "outside-pve" outside PVE: no hypervisor job for this datastore (e.g. a
-	//                 copy fed by a systemd timer on the host)
-	//
-	// A boolean would paint a layer fed from outside the hypervisor as disarmed.
 	Scheduler string `json:"schedule_state"`
 	Schedule  string `json:"schedule,omitempty"`
 
-	// SameDiskAs names the other layers that share the physical disk. Two layers
-	// on the same disk are ONE layer with two names: the disk failing takes both
-	// together, and that is what the operator needs to see before trusting a count
-	// of "two copies".
 	SameDiskAs []string `json:"same_disk_as,omitempty"`
 }
 
-// DatastoreBackups lists a datastore's copies and summarises freshness.
 func (c *Client) DatastoreBackups(ctx context.Context, node, storage string) (BackupFreshness, error) {
 	out := BackupFreshness{Storage: storage}
 	if node == "" || storage == "" {
@@ -428,47 +285,22 @@ func (c *Client) DatastoreBackups(ctx context.Context, node, storage string) (Ba
 	return out, nil
 }
 
-// Backup jobs
-//
-// 🔴 WITHOUT THIS, THE SCREEN CONFUSES "DISARMED" WITH "FAILED" — and permanent red
-// trains people to ignore it, which is the disease that has already cost this lab's
-// alarm channel its credibility.
-//
-// The `backupusb` datastore of this laboratory has had no fresh copy for two weeks,
-// and that is NOT a failure: the schedule was turned off by a dated decision of the
-// operator, after PBS was up, a full backup taken, verify by
-// content and a restore rehearsal. The layer was DISARMED, not demolished — the
-// job still exists with `enabled 0`, the storage is still declared and mounted
-// and no dump was deleted, precisely to preserve the way back.
-//
-// A screen that paints this red is wrong about the fact, not about the colour.
-
-// BackupJob is one entry of /cluster/backup.
 type BackupJob struct {
-	ID      string `json:"id"`
-	Storage string `json:"storage"`
-	// 🔴 A POINTER, not an int. `enabled` is OPTIONAL with `default => 1`: absent
-	// means ON. An `int` would read absence as zero and the screen would call a job
-	// that runs every day "disarmed" — a screen that says there is no backup when
-	// there is is the most expensive lie it can tell.
+	ID       string `json:"id"`
+	Storage  string `json:"storage"`
 	Enabled  *int   `json:"enabled"`
 	Schedule string `json:"schedule"`
 	Comment  string `json:"comment"`
 	All      int    `json:"all"`
 }
 
-// IsScheduled says whether this job actually fires. An absent `enabled` in the
-// hypervisor means ON — the field only shows up when somebody turns it off — so
-// the read has to distinguish "explicit 0" from "field absent". Treating absence
-// as off would make the screen call a layer that runs every day disarmed.
 func (j BackupJob) IsScheduled() bool {
 	if j.Schedule == "" {
-		return false // with no schedule it does not fire, enabled or not
+		return false
 	}
 	return j.Enabled == nil || *j.Enabled != 0
 }
 
-// BackupJobs lists the cluster's vzdump jobs.
 func (c *Client) BackupJobs(ctx context.Context) ([]BackupJob, error) {
 	var js []BackupJob
 	if err := c.do(ctx, http.MethodGet, "/api2/json/cluster/backup", &js); err != nil {

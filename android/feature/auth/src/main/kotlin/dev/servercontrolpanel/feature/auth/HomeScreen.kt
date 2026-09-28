@@ -63,16 +63,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
-/**
- * Home: the operations dashboard (tile grid, attention card, quick actions,
- * session footer).
- *
- * The screen knows no routes: it emits a [DashboardTarget] and the host maps it
- * via [onOpenSection] or [onOpenTerminal], so it is testable without a `NavHost`.
- */
 @Composable
 fun HomeScreen(
-    /** Opens this device's security screen, from the Session card. */
     onOpenSecurity: () -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -83,7 +75,6 @@ fun HomeScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // Wired here so the ViewModel does not need a Context to store the widget summary.
     val context = LocalContext.current
     LaunchedEffect(context) {
         viewModel.publishSummaryWith { snapshot ->
@@ -107,13 +98,6 @@ fun HomeScreen(
     )
 }
 
-/**
- * Fires [onTick] every [intervalMillis] only while the screen is resumed, saving
- * battery and refreshing promptly on return.
- *
- * `<= 0` disables it; tests need that because an infinite `delay` keeps
- * `waitForIdle` waiting forever.
- */
 @Composable
 private fun AutoRefreshWhileResumed(intervalMillis: Long, onTick: () -> Unit) {
     if (intervalMillis <= 0) return
@@ -142,9 +126,6 @@ private fun AutoRefreshWhileResumed(intervalMillis: Long, onTick: () -> Unit) {
     }
 }
 
-/**
- * The content without a ViewModel, so tests can compose any state directly.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun HomeDashboard(
@@ -189,8 +170,6 @@ private fun DashboardContent(
     val warning = snapshot.attention
     val context = LocalContext.current
 
-    // Tapping Home must scroll to the top: the drawer's `restoreState = true`
-    // would otherwise restore a mid-page position. See ScrollToTopRequest.
     val scroll = rememberLazyListState()
     val scrollToTopRequest by ScrollToTopRequest.counter.collectAsStateWithLifecycle()
     LaunchedEffect(scrollToTopRequest) {
@@ -227,8 +206,6 @@ private fun DashboardContent(
                 onRetry = onRetry,
             )
         }
-        // The tile grid comes first (the at-a-glance answer); the attention card
-        // below explains what is wrong and where to go.
         item("panel") {
             TileDashboard(
                 tiles = visible,
@@ -240,12 +217,9 @@ private fun DashboardContent(
                 onRequestCatalog = { catalogOpen = true },
             )
         }
-        // Routes crossed thresholds and failed deploys to the right screen; must stay.
         if (warning.isNotEmpty()) {
             item("warning") { AttentionCard(signals = warning, onTarget = onTarget) }
         }
-        // No permanent health or resources cards: the grid and the attention card
-        // cover them. Anything added here should appear only when something is wrong.
         if (snapshot.resourceSignals.isEmpty()) {
             item("resources-missing") { ResourcesUnavailableCard() }
         }
@@ -261,10 +235,6 @@ private fun DashboardContent(
     }
 }
 
-/**
- * The freshness timestamp, plus a warning when the last fetch failed, so stale
- * numbers never pass for current ones.
- */
 @Composable
 private fun FreshnessLine(fetchedAtEpochMs: Long, staleError: String?, onRetry: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -321,7 +291,6 @@ private fun FreshnessLine(fetchedAtEpochMs: Long, staleError: String?, onRetry: 
     }
 }
 
-/** Shown when the server does not expose `system`, instead of showing zeros. */
 @Composable
 private fun ResourcesUnavailableCard() {
     DashboardCard(title = "Resources", subtitle = "unavailable") {
@@ -336,7 +305,6 @@ private fun ResourcesUnavailableCard() {
 
 @Composable
 private fun HomeLoading() {
-    // Skeleton cards in the final positions so the layout does not jump.
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
@@ -356,7 +324,6 @@ private fun HomeLoading() {
                 )
             }
         }
-        // These titles must match the cards the screen actually shows.
         items(listOf("Quick actions", "Session")) { title ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -382,9 +349,6 @@ private fun HomeLoading() {
     }
 }
 
-/**
- * A hard error with nothing to preserve. The text says what to do, not only what happened.
- */
 @Composable
 private fun HomeError(message: String, onRetry: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -422,19 +386,13 @@ private fun HomeError(message: String, onRetry: () -> Unit) {
     }
 }
 
-/** Time of day in the device's time zone, the clock the operator sees. */
 internal fun timeOf(epochMillis: Long): String =
     Instant.ofEpochMilli(epochMillis)
         .atZone(ZoneId.systemDefault())
         .format(DateTimeFormatter.ofPattern("HH:mm:ss"))
 
-/**
- * Clock drift worth reporting. Below 60 s it is just latency and rounding;
- * above it, real drift explains odd log times, cron runs and early token expiry.
- */
 private const val CLOCK_DRIFT_SECONDS = 60L
 
-/** The drift sentence, or `null` when the two clocks agree. */
 internal fun clockDriftText(snapshot: DashboardSnapshot): String? {
     val system = snapshot.ops.system ?: return null
     val deviceSeconds = snapshot.fetchedAtEpochMs / 1_000
@@ -445,10 +403,6 @@ internal fun clockDriftText(snapshot: DashboardSnapshot): String? {
 }
 
 
-/**
- * The tile grid with its edit header. The edit button lives here, not in the
- * shell's app bar, because editing only applies to this screen.
- */
 @Composable
 private fun TileDashboard(
     tiles: List<DashboardTile>,
@@ -475,7 +429,6 @@ private fun TileDashboard(
             }
         }
         if (tiles.isEmpty() && !editing) {
-            // The user removed everything; do not restore the defaults, just invite them to add.
             OutlinedCard(
                 modifier = Modifier.fillMaxWidth().clickable(onClick = onRequestCatalog),
             ) {

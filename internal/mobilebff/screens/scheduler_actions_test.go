@@ -12,13 +12,6 @@ import (
 	"server-control-panel/internal/scheduler"
 )
 
-// fakeSchedulerBackend is an in-memory stand-in for internal/scheduler's real
-// store, plus spy counters so tests can assert a call NEVER happened (e.g.
-// SaveJob/DeleteJob must not be reached when validation or confirmation
-// rejects the request first). Mutating methods lock mu — actionregistry_test.go's
-// precedent shows test functions in this package run sequentially, but the
-// registry itself is process-global and RunAction dispatches through it, so
-// a lock costs nothing and removes any ordering assumption.
 type fakeSchedulerBackend struct {
 	mu   sync.Mutex
 	jobs map[string]*scheduler.Job
@@ -109,11 +102,6 @@ func (b *fakeSchedulerBackend) deps() SchedulerDeps {
 			return "queue-job-1", nil
 		},
 		NextFires: func(expr string, n int) ([]time.Time, error) {
-			// A minimal stand-in for the real cron parser: only
-			// "not a cron" (the plan's own example of an invalid
-			// expression) and the empty string are rejected; every
-			// job fixture above and every test input otherwise uses a
-			// plausible 5-field expression.
 			if expr == "" || expr == "not a cron" {
 				return nil, errors.New("invalid cron expression")
 			}
@@ -144,7 +132,6 @@ func (b *fakeSchedulerBackend) auditLog() []auditRecord {
 	return out
 }
 
-// job returns a snapshot of a fixture job by id, for assertions.
 func (b *fakeSchedulerBackend) job(id string) *scheduler.Job {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -165,7 +152,6 @@ func mustJSON(t *testing.T, v any) json.RawMessage {
 	return b
 }
 
-// Test 1: bad cron -> FieldErrors keyed only "schedule"; MatchesForm passes.
 func TestSchedulerAction_Save_BadCronKeysSchedule(t *testing.T) {
 	backend := newFakeSchedulerBackend()
 	handle := handleSchedulerJobSave(backend.deps())
@@ -198,7 +184,6 @@ func TestSchedulerAction_Save_BadCronKeysSchedule(t *testing.T) {
 	}
 }
 
-// Test 2: empty name -> "name"; unknown kind -> "kind".
 func TestSchedulerAction_Save_EmptyNameAndUnknownKind(t *testing.T) {
 	backend := newFakeSchedulerBackend()
 	handle := handleSchedulerJobSave(backend.deps())
@@ -227,8 +212,6 @@ func TestSchedulerAction_Save_EmptyNameAndUnknownKind(t *testing.T) {
 	}
 }
 
-// Test 3 (RBAC parity): run_as_root:true from a non-admin -> FieldErrors
-// keyed "run_as_root", SaveJob never called, audit event recorded.
 func TestSchedulerAction_Save_NonAdminRunAsRootDenied(t *testing.T) {
 	backend := newFakeSchedulerBackend()
 	handle := handleSchedulerJobSave(backend.deps())
@@ -255,7 +238,6 @@ func TestSchedulerAction_Save_NonAdminRunAsRootDenied(t *testing.T) {
 	}
 }
 
-// Test 4: a non-admin saving or deleting another user's job -> ErrActionNotFound.
 func TestSchedulerAction_NonAdminOnAnotherUsersJob_NotFound(t *testing.T) {
 	backend := newFakeSchedulerBackend()
 	_, nonAdmin := testSchedulerViewers()
@@ -278,7 +260,6 @@ func TestSchedulerAction_NonAdminOnAnotherUsersJob_NotFound(t *testing.T) {
 	}
 }
 
-// Test 5: save returns Invalidate; run_now returns Patch.
 func TestSchedulerAction_ResponseModes(t *testing.T) {
 	backend := newFakeSchedulerBackend()
 	admin, _ := testSchedulerViewers()
@@ -310,12 +291,6 @@ func TestSchedulerAction_ResponseModes(t *testing.T) {
 	}
 }
 
-// registerSchedulerActionsOnce guards the ONE registration of the real
-// scheduler.job.* actions in this test binary's global sdui action registry
-// — RegisterAction panics on a duplicate ActionID (actionregistry.go), and
-// only Test 6 below needs the real registry (to exercise RunAction's
-// confirmation gate end to end); every other test in this file calls the
-// handler-producing functions directly, bypassing the registry entirely.
 var (
 	registerSchedulerActionsTestOnce sync.Once
 	registerSchedulerActionsTestDeps *fakeSchedulerBackend
@@ -329,15 +304,10 @@ func registerSchedulerActionsForTest() *fakeSchedulerBackend {
 	return registerSchedulerActionsTestDeps
 }
 
-// Test 6: delete with no confirmation -> "_confirmation" field
-// error, DeleteJob never called; with {"confirmed":true} it deletes.
 func TestSchedulerAction_DeleteRequiresConfirmation(t *testing.T) {
 	backend := registerSchedulerActionsForTest()
 	admin, _ := testSchedulerViewers()
 
-	// job-admin-root is only ever deleted by this test; guard against
-	// interference if a future test in this file also deletes it by
-	// checking presence before proceeding.
 	before := backend.job("job-admin-root")
 	if before == nil {
 		t.Fatal("fixture job-admin-root missing before the test")
@@ -376,8 +346,6 @@ func TestSchedulerAction_DeleteRequiresConfirmation(t *testing.T) {
 	}
 }
 
-// Test 7: run_now on a job whose kind is no longer authorized for the caller
-// -> ErrActionNotFound.
 func TestSchedulerAction_RunNow_ReauthorizesKind(t *testing.T) {
 	backend := newFakeSchedulerBackend()
 	_, nonAdmin := testSchedulerViewers()

@@ -18,28 +18,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/**
- * What [AdminScreen] renders for a section id. Section-agnostic: every section
- * uses the same states.
- */
 sealed interface AdminUiState {
     data object Loading : AdminUiState
 
-    /**
-     * The section is not available to this account (404 or 403 from `/screens/{id}`).
-     *
-     * Kept separate from [Error]: the catalog is only a hint and the server hides
-     * forbidden screens behind 404, so this is a normal outcome and is shown as a
-     * quiet notice rather than an error.
-     */
     data class Unavailable(val message: String, val retry: () -> Unit) : AdminUiState
 
     data class Error(val message: String, val retry: () -> Unit) : AdminUiState
 
-    /**
-     * [refreshTick] is bumped when an [ActionOutcome] requires components to
-     * reload their data; `rememberComponentDataState` is keyed on it.
-     */
     data class Ready(
         val envelope: SduiEnvelope,
         val screenState: ScreenState,
@@ -48,14 +33,6 @@ sealed interface AdminUiState {
     ) : AdminUiState
 }
 
-/**
- * Section-agnostic SDUI plumbing: fetches the descriptor, holds the
- * [ScreenState]/[ActionRunner] pair and refetches when an action reports drift.
- * [sectionId] is opaque and never branched on.
- *
- * [SduiScreenPort] and [ComponentDataFetcher] are injectable seams so tests can
- * fake the data boundary without an HTTP server (forbidden outside `:data`).
- */
 class AdminViewModel(
     private val sectionId: String,
     private val screenPort: SduiScreenPort = SduiRepository(),
@@ -69,7 +46,6 @@ class AdminViewModel(
         load()
     }
 
-    /** Re-runs the initial fetch; also the retry action. */
     fun load() {
         _uiState.value = AdminUiState.Loading
         viewModelScope.launch {
@@ -97,8 +73,6 @@ class AdminViewModel(
             initialEnvelope = envelope,
             componentDataFetcher = componentDataFetcher,
             screenRefetcher = ScreenRefetcher {
-                // Best effort: on failure keep the last good envelope instead of
-                // failing the action that triggered the refetch.
                 when (val refetched = screenPort.screen(sectionId)) {
                     is SduiScreenResult.Success -> refetched.envelope
                     else -> screenState.envelope
@@ -113,11 +87,6 @@ class AdminViewModel(
         return AdminUiState.Ready(envelope = screenState.envelope, screenState = screenState, actionRunner = actionRunner)
     }
 
-    /**
-     * Receives every action outcome on the screen. [ActionRunner] has already
-     * resynced [ScreenState] for [ActionOutcome.Stale]; this re-emits
-     * [AdminUiState.Ready] and bumps [AdminUiState.Ready.refreshTick] so components reload.
-     */
     fun handleOutcome(outcome: ActionOutcome) {
         val current = _uiState.value as? AdminUiState.Ready ?: return
         when (outcome) {
@@ -126,7 +95,7 @@ class AdminViewModel(
             is ActionOutcome.Invalidated, ActionOutcome.Patched ->
                 _uiState.value = current.copy(refreshTick = current.refreshTick + 1)
             ActionOutcome.Gone, is ActionOutcome.ValidationFailed, is ActionOutcome.Failed ->
-                Unit // Shown inline by the dispatching component.
+                Unit
         }
     }
 }

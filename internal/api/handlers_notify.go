@@ -1,24 +1,5 @@
 package api
 
-// handlers_notify.go — CRUD + history for the event-driven notification spine
-// All endpoints are primary-only (mustPrimary, mirroring the
-// alerting handlers) and registered on the `protected` mux so auth.Middleware
-// has populated the request context (feedback_gated_route_needs_middleware).
-//
-// Routes (sub-path actions + method switch, matching handlers_alerting.go's
-// style rather than ServeMux {id} wildcards):
-//
-//   GET  /api/notify/rules            list rules
-//   POST /api/notify/rules            upsert a rule (empty id → create)
-//   POST /api/notify/rules/delete     {id}
-//   GET  /api/notify/channels         list channels
-//   POST /api/notify/channels         upsert a channel
-//   POST /api/notify/channels/delete  {id}
-//   POST /api/notify/channels/test    {id} — send a synthetic event now
-//   POST /api/notify/dryrun           {rule} — preview matching recent events
-//   GET  /api/notify/events           ?source=&type=&limit= history + dropped
-//   GET  /api/notify/catalog          event-type + runner-kind catalog (UI)
-
 import (
 	"encoding/json"
 	"net/http"
@@ -27,7 +8,6 @@ import (
 	"server-control-panel/internal/notify"
 )
 
-// notifyReady gates every handler: 503 when the spine failed to boot.
 func (r *Router) notifyReady(w http.ResponseWriter) bool {
 	if r.notify == nil {
 		writeErr(w, http.StatusServiceUnavailable, "notify unavailable")
@@ -136,8 +116,6 @@ func (r *Router) handleNotifyChannelDelete(w http.ResponseWriter, req *http.Requ
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
-// handleNotifyChannelTest sends a synthetic event through one channel right now,
-// returning the real delivery outcome so the UI's "test" button is honest.
 func (r *Router) handleNotifyChannelTest(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -168,8 +146,6 @@ func (r *Router) handleNotifyChannelTest(w http.ResponseWriter, req *http.Reques
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
-// handleNotifyDryRun previews which recent history events a candidate rule would
-// match — without sending anything. Builds confidence before saving.
 func (r *Router) handleNotifyDryRun(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -190,8 +166,6 @@ func (r *Router) handleNotifyDryRun(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]any{"matches": matches, "count": len(matches)})
 }
 
-// handleNotifyEvents returns the history feed (newest-first) plus the dropped
-// counter — silence is never success, so the operator can see an overflowing bus.
 func (r *Router) handleNotifyEvents(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -211,8 +185,6 @@ func (r *Router) handleNotifyEvents(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// handleNotifyInbox returns the in-app inbox (events routed to an "inapp"
-// channel), newest-first — drives the topbar notification bell.
 func (r *Router) handleNotifyInbox(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -224,9 +196,6 @@ func (r *Router) handleNotifyInbox(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]any{"events": r.notify.Inbox(limit)})
 }
 
-// handleNotifyCatalog feeds the rule-builder + channel-builder UI: event types,
-// the live runner-kind list, AND the channel-type catalog (which fields each
-// channel needs), so the channel form can render type-specific inputs.
 func (r *Router) handleNotifyCatalog(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -244,10 +213,6 @@ func (r *Router) handleNotifyCatalog(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// notifyChannelCatalog describes each channel type for the UI form: an id, PT
-// label, icon, one-line help, and the config fields to render. `fields` keys
-// map to notify.ChannelConfig json tags. `secret:true` renders a password input
-// (blank = keep on edit).
 var notifyChannelCatalog = []map[string]any{
 	{"type": notify.TypeInApp, "label": "In-app notification", "icon": "🔔",
 		"help":   "Shows a notice on the 🔔 bell in the panel's bottom bar. Nothing external — works right away.",
@@ -294,8 +259,6 @@ var notifyChannelCatalog = []map[string]any{
 		}},
 }
 
-// notifyEventCatalog is the catalog the UI rule-builder renders. type_prefix
-// is what a rule sets; "job." matches all four job.* terminal events.
 var notifyEventCatalog = []map[string]string{
 	{"type_prefix": "metric.threshold", "label": "Metric threshold crossed", "icon": "📊"},
 	{"type_prefix": "metric.resolved", "label": "Metric recovered (back to normal)", "icon": "✅"},
@@ -309,8 +272,6 @@ var notifyEventCatalog = []map[string]string{
 	{"type_prefix": "agent.done", "label": "Agent finished the task", "icon": "🤖"},
 }
 
-// bodyOrQueryID extracts an id from either a JSON body {"id":...} or the ?id=
-// query param, so delete/test work from forms and fetch alike.
 func (r *Router) bodyOrQueryID(req *http.Request) string {
 	if id := req.URL.Query().Get("id"); id != "" {
 		return id

@@ -10,19 +10,10 @@ import (
 	"testing"
 )
 
-// committedContractPath is the path, relative to this package, of the
-// committed manifest the CLI (cmd/sdui-contract) writes and that this drift
-// test compares byte for byte.
 const committedContractPath = "../../../contracts/sdui/contract.json"
 
-// fixturesDir is the directory of the golden fixture corpus.
 const fixturesDir = "../../../contracts/sdui/fixtures"
 
-// TestContractComponentTypesMatchVocabulary proves that componentGoTypes (the
-// map GenerateContract uses to know what to reflect over) has exactly the
-// same keys as AllComponentTypes() — if an eighth type were added to the
-// vocabulary without entering componentGoTypes, GenerateContract would panic
-// at run time; this test catches it at test time.
 func TestContractComponentTypesMatchVocabulary(t *testing.T) {
 	if len(componentGoTypes) != len(AllComponentTypes()) {
 		t.Fatalf("componentGoTypes has %d entries, AllComponentTypes() has %d", len(componentGoTypes), len(AllComponentTypes()))
@@ -34,8 +25,6 @@ func TestContractComponentTypesMatchVocabulary(t *testing.T) {
 	}
 }
 
-// TestContractHasExactlySevenComponentTypes is Test 1: the ComponentTypes
-// map has exactly the 7 keys of AllComponentTypes().
 func TestContractHasExactlySevenComponentTypes(t *testing.T) {
 	c := GenerateContract()
 	if len(c.ComponentTypes) != 7 {
@@ -48,12 +37,6 @@ func TestContractHasExactlySevenComponentTypes(t *testing.T) {
 	}
 }
 
-// TestContractTableRequiredOptionalSplit is Test 2: for "table",
-// type/id/columns/rows_source are mandatory and
-// permission_hint/critical/row_actions/empty_state are optional — derived
-// from the presence of omitempty in the struct tag, never from a list written
-// by hand in this test (hence the test iterating a map of expectations
-// instead of hardcoding an "if field X then Y" per field).
 func TestContractTableRequiredOptionalSplit(t *testing.T) {
 	c := GenerateContract()
 	table, ok := c.ComponentTypes["table"]
@@ -88,11 +71,6 @@ func TestContractTableRequiredOptionalSplit(t *testing.T) {
 	}
 }
 
-// TestContractDriftAgainstCommittedFile is Test 3 (the tamper gate):
-// GenerateContract(), formatted exactly as the CLI formats it
-// (MarshalContract), has to match the committed
-// contracts/sdui/contract.json byte for byte. A manual edit of the file, or
-// a struct change without regenerating, fails here.
 func TestContractDriftAgainstCommittedFile(t *testing.T) {
 	generated, err := MarshalContract(GenerateContract())
 	if err != nil {
@@ -109,9 +87,6 @@ func TestContractDriftAgainstCommittedFile(t *testing.T) {
 	}
 }
 
-// TestContractNoDanglingRefs is Test 4: every Ref/ItemRef referenced by any
-// field (of a component or of an object) exists as a key in
-// Contract.Objects.
 func TestContractNoDanglingRefs(t *testing.T) {
 	c := GenerateContract()
 
@@ -139,15 +114,6 @@ func TestContractNoDanglingRefs(t *testing.T) {
 	checkFields("action_descriptor", c.ActionDescriptor.Fields)
 }
 
-// ---------------------------------------------------------------------------
-// Conformance of the golden fixture corpus against the contract.
-// ---------------------------------------------------------------------------
-
-// fixtureScreen is the minimum shape needed to validate a fixture against
-// the Contract — it deliberately does not use Envelope/UnmarshalScreen,
-// because the unknown-* fixtures contain exactly what UnmarshalScreen would
-// reject (that is their point: to exercise the CLIENT's tolerance path, not
-// the server's strict path).
 type fixtureScreen struct {
 	SDUIVersion *int               `json:"sdui_version"`
 	Screen      *fixtureScreenBody `json:"screen"`
@@ -159,13 +125,6 @@ type fixtureScreenBody struct {
 	Components []map[string]interface{} `json:"components"`
 }
 
-// TestFixtureConformance is the corpus gate: every *.json fixture under
-// contracts/sdui/fixtures/ whose top level has an sdui_version key has to
-// (a) parse and (b), for every component whose "type" IS in the contract,
-// contain every field the contract marks mandatory, with no field absent
-// from the contract UNLESS the file name starts with "unknown-". Fixtures
-// are discovered with os.ReadDir, so a new fixture is covered automatically
-// without editing this test.
 func TestFixtureConformance(t *testing.T) {
 	entries, err := os.ReadDir(fixturesDir)
 	if err != nil {
@@ -191,8 +150,6 @@ func TestFixtureConformance(t *testing.T) {
 			t.Fatalf("%s: invalid JSON: %v", name, err)
 		}
 		if _, hasVersion := top["sdui_version"]; !hasVersion {
-			// Not an SDUI screen (e.g. validation-error.json) — outside the
-			// scope of this conformance test.
 			continue
 		}
 		found++
@@ -241,32 +198,6 @@ func TestFixtureConformance(t *testing.T) {
 	}
 }
 
-// TestFixtureRoundTripMatchesRealMarshaller closes the hole
-// TestFixtureConformance leaves open: structural conformance against the
-// contract (mandatory fields present, no field outside the contract) does
-// NOT prove that Go's real marshaller emits that exact shape — an omitempty
-// can make a field disappear, a custom MarshalJSON (such as Screen's) can
-// change the shape, and no structural conformance test notices. This is the
-// same failure mode this project has already paid for once: a hand-written
-// fixture that matched the wrong assumption about the wire format stayed
-// green while the real consumer broke on first contact.
-//
-// For each screen fixture (all but the "unknown-*" ones, see the
-// justification below), this test deserializes with UnmarshalScreen — the
-// same path the server uses to read back what it produced itself — and
-// reserializes with json.Marshal(*Envelope), which invokes
-// Screen.MarshalJSON, the SAME marshalling path used in production. The
-// result is compared as canonicalized JSON (deserialized values, not a raw
-// string) so that key order/spacing can never cause a false negative. A
-// divergence points at the exact field and it is always the FIXTURE that is
-// wrong — it must be corrected to match the marshaller's real output, never
-// the test relaxed to swallow the difference.
-//
-// The "unknown-*" fixtures are left out by design: they exist specifically
-// to carry a "type" or a field the server's Go types cannot represent
-// (tolerance for that is the Kotlin client's responsibility) —
-// UnmarshalScreen would reject all three with an error, so there is no "real
-// marshaller output" to compare against. See fixtures/README.md.
 func TestFixtureRoundTripMatchesRealMarshaller(t *testing.T) {
 	entries, err := os.ReadDir(fixturesDir)
 	if err != nil {
@@ -294,8 +225,6 @@ func TestFixtureRoundTripMatchesRealMarshaller(t *testing.T) {
 			t.Fatalf("%s: invalid JSON: %v", name, err)
 		}
 		if _, hasVersion := top["sdui_version"]; !hasVersion {
-			// Not an SDUI screen (e.g. validation-error.json) — it does not go
-			// through Envelope/UnmarshalScreen, outside this test's scope.
 			continue
 		}
 		checked++
@@ -323,9 +252,6 @@ func TestFixtureRoundTripMatchesRealMarshaller(t *testing.T) {
 	}
 }
 
-// diffCanonicalJSON compares two JSON blobs by VALUE (not by raw string),
-// returning a list of divergences with the exact field path, or "" if they
-// are semantically identical.
 func diffCanonicalJSON(t *testing.T, label string, a, b []byte) string {
 	t.Helper()
 	var va, vb interface{}
@@ -342,9 +268,6 @@ func diffCanonicalJSON(t *testing.T, label string, a, b []byte) string {
 	return strings.Join(diffs, "\n")
 }
 
-// diffJSONValues walks recursively through two already deserialized JSON
-// values (map[string]interface{}, []interface{}, or a scalar) and returns
-// one divergence per field path where they differ.
 func diffJSONValues(path string, a, b interface{}) []string {
 	switch av := a.(type) {
 	case map[string]interface{}:

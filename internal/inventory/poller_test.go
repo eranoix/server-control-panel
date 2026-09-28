@@ -18,8 +18,6 @@ import (
 	"server-control-panel/internal/pve"
 )
 
-// fakePVE is the fake hypervisor. No mock framework: the repo does not use one,
-// and a two-method interface does not justify introducing one.
 type fakePVE struct {
 	mu        sync.Mutex
 	resources []pve.Resource
@@ -29,9 +27,6 @@ type fakePVE struct {
 	delay     time.Duration
 	calls     int32
 
-	// The health of the hypervisor. statusErr injects the failure that invariant 2
-	// requires handling without erasing anything; nodeStatusName records WITH WHICH
-	// NAME the poller asked — it is the pin for invariant 3.
 	status         pve.NodeStatus
 	statusErr      error
 	nodeStatusName string
@@ -49,11 +44,6 @@ func (f *fakePVE) NodeStatus(ctx context.Context, node string) (pve.NodeStatus, 
 	return f.status, nil
 }
 
-// The three remaining routes of the interface. In this double they answer EMPTY
-// and without error: the tests in this file are about discovery, health and
-// credentials, and their behaviour has a double of its own in
-// poller_storage_test.go — two doubles with separate responsibilities instead
-// of one with ten fields.
 func (f *fakePVE) StorageList(ctx context.Context, node string) ([]pve.Storage, error) {
 	return nil, nil
 }
@@ -90,8 +80,6 @@ func (f *fakePVE) GuestAddress(ctx context.Context, node string, vmid int, typ s
 	return f.addrs[vmid], nil
 }
 
-// fixedClock is the injected clock: no criterion may be satisfied by waiting
-// for it, so time advances by function call, not by sleep.
 type fixedClock struct {
 	mu sync.Mutex
 	t  time.Time
@@ -142,10 +130,6 @@ func nodesByID(t *testing.T, st *Store) map[string]Node {
 	return m
 }
 
-// 🔴 TestPollerStampsOnServer is the pin for the server-side timestamp: it comes
-// from the SERVER clock, injected, at the instant of the tick. A zero timestamp
-// would be "never observed" and the screen would show age -1 for a node that
-// has just answered.
 func TestPollerStampsOnServer(t *testing.T) {
 	f := &fakePVE{resources: testResources(), addrs: map[int]string{207: "192.168.100.47"}}
 	p, st, rel := newTestPoller(t, f, Sources{}, PollerConfig{})
@@ -155,7 +139,6 @@ func TestPollerStampsOnServer(t *testing.T) {
 	}
 	nodes := requireSet(t, st, pveSet()...)
 	want := rel.now().Unix()
-	// The host comes in through the SAME door: it answered the API at this instant.
 	if nodes["node/pve"].Kind != NodeKindHost || nodes["node/pve"].Status.ObservedAt != want {
 		t.Errorf("host = %+v, want kind=host timestamped at %d", nodes["node/pve"], want)
 	}
@@ -174,12 +157,10 @@ func TestPollerStampsOnServer(t *testing.T) {
 	if got := nodes["lxc/207"].Address; got != "192.168.100.47" {
 		t.Errorf("address = %q, want 192.168.100.47", got)
 	}
-	// DHCP: no declared address is NOT an error, nor a broken node.
 	if got := nodes["qemu/208"].Address; got != "" {
 		t.Errorf("address of the guest with no ip = %q, want empty", got)
 	}
 
-	// Second tick with the clock moved forward: the timestamp ADVANCES.
 	rel.advance(30 * time.Second)
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatalf("tick 2: %v", err)
@@ -189,10 +170,6 @@ func TestPollerStampsOnServer(t *testing.T) {
 	}
 }
 
-// TestPollerTickTimeout: a hypervisor that does not answer must not stall the
-// poller. The hypervisor delays EVERY 401 response by 3 s on
-// purpose; with no per-tick timeout, a handful of invalid nodes makes the cycle
-// never close.
 func TestPollerTickTimeout(t *testing.T) {
 	f := &fakePVE{resources: testResources(), delay: 5 * time.Second}
 	p, st, _ := newTestPoller(t, f, Sources{}, PollerConfig{Timeout: 50 * time.Millisecond})
@@ -206,13 +183,11 @@ func TestPollerTickTimeout(t *testing.T) {
 	if took > 2*time.Second {
 		t.Fatalf("the tick took %v — the 50ms timeout was not respected", took)
 	}
-	// TOTAL discovery failure does NOT erase the inventory nor create an empty node.
 	inv, _ := st.Snapshot()
 	if len(inv.Nodes) != 0 {
 		t.Fatalf("a failed tick created nodes: %+v", inv.Nodes)
 	}
 
-	// And the NEXT tick runs: the poller did not get stuck.
 	f.mu.Lock()
 	f.delay = 0
 	f.mu.Unlock()
@@ -222,9 +197,6 @@ func TestPollerTickTimeout(t *testing.T) {
 	requireSet(t, st, pveSet()...)
 }
 
-// 🔴 TestPollerTotalFailurePreservesNodes: PVE being down must NOT zero the
-// inventory. The node stays there with the OLD timestamp — that is how the screen says
-// "data from X min ago" instead of lying "there is no node at all".
 func TestPollerTotalFailurePreservesNodes(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	p, st, rel := newTestPoller(t, f, Sources{}, PollerConfig{})
@@ -247,9 +219,6 @@ func TestPollerTotalFailurePreservesNodes(t *testing.T) {
 	}
 }
 
-// TestPollerPartialFailure: a guest whose address fails must not contaminate the
-// others. The fan-out isolates per node — a partial failure never turns into a
-// frozen inventory.
 func TestPollerPartialFailure(t *testing.T) {
 	f := &fakePVE{
 		resources: testResources(),
@@ -261,15 +230,12 @@ func TestPollerPartialFailure(t *testing.T) {
 		t.Fatalf("a partial failure took down the whole tick: %v", err)
 	}
 	nodes := requireSet(t, st, pveSet()...)
-	// The healthy guest has an address and the timestamp of the tick.
 	if nodes["qemu/208"].Address != "192.168.100.48" {
 		t.Errorf("a healthy guest was left with no address: %+v", nodes["qemu/208"])
 	}
 	if nodes["qemu/208"].Status.ObservedAt != rel.now().Unix() {
 		t.Errorf("a healthy guest was not timestamped")
 	}
-	// The guest with an unreadable address is STILL observed — what failed was the
-	// address, not its existence.
 	if nodes["lxc/207"].Status.ObservedAt != rel.now().Unix() {
 		t.Errorf("a guest with an unreadable address lost its status timestamp")
 	}
@@ -278,8 +244,6 @@ func TestPollerPartialFailure(t *testing.T) {
 	}
 }
 
-// TestPollerRunRespectsCtx: Run() is a loop; it has to finish when the ctx
-// dies, and it must not panic and take the panel process down with it.
 func TestPollerRunRespectsCtx(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	p, st, _ := newTestPoller(t, f, Sources{}, PollerConfig{Interval: 5 * time.Millisecond})
@@ -288,7 +252,6 @@ func TestPollerRunRespectsCtx(t *testing.T) {
 	done := make(chan struct{})
 	go func() { p.Run(ctx); close(done) }()
 
-	// Wait for the first tick to happen, without sleeping a fixed amount.
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) && atomic.LoadInt32(&f.calls) == 0 {
 		time.Sleep(time.Millisecond)
@@ -307,9 +270,6 @@ func TestPollerRunRespectsCtx(t *testing.T) {
 	}
 }
 
-// TestPollerPanicDoesNotKillLoop: a source that panics must not kill the
-// poller goroutine — the whole panel would be left with no inventory until the
-// next restart, in silence.
 func TestPollerPanicDoesNotKillLoop(t *testing.T) {
 	var n int32
 	deps := Sources{Jobs: func() ([]JobRef, error) {
@@ -330,7 +290,6 @@ func TestPollerPanicDoesNotKillLoop(t *testing.T) {
 	requireSet(t, st, pveSet()...)
 }
 
-// sorted is the helper for SET assertions — never counting.
 func sortedIDs(nodes map[string]Node) []string {
 	var ids []string
 	for id := range nodes {
@@ -342,9 +301,6 @@ func sortedIDs(nodes map[string]Node) []string {
 
 func fmtIDs(ids []string) string { return fmt.Sprint(ids) }
 
-// requireSet is the default assertion here: SET, never count.
-// `len(nos) == 3` would turn a new guest into a failure and a vanished guest
-// into a wrong pass; the set says exactly WHO came in or went out.
 func requireSet(t *testing.T, st *Store, want ...string) map[string]Node {
 	t.Helper()
 	nodes := nodesByID(t, st)
@@ -355,21 +311,8 @@ func requireSet(t *testing.T, st *Store, want ...string) map[string]Node {
 	return nodes
 }
 
-// pveSet is what a successful tick over testResources() produces: the two
-// guests PLUS the hypervisor itself, derived from the `node` field of each row
-// of /cluster/resources (no hostname hand-written in the poller).
 func pveSet() []string { return []string{"node/pve", "lxc/207", "qemu/208"} }
 
-// 🔴 TestDiscoveryAddsUnknownGuest is the headline requirement turned into a
-// test: "a new guest shows up in the inventory WITHOUT anyone editing JSON by
-// hand".
-//
-// The second tick uses the SAME configuration, the SAME store and the SAME
-// poller — nothing is edited between them. The only new fact is that the
-// hypervisor started returning `lxc/299 surprise`. If this test passed with the
-// guest missing, auto-discovery would be decorative and the inventory would go
-// back to being a hand-written JSON — which is exactly what auto-discovery
-// exists to end.
 func TestDiscoveryAddsUnknownGuest(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	p, st, rel := newTestPoller(t, f, Sources{}, PollerConfig{})
@@ -379,7 +322,6 @@ func TestDiscoveryAddsUnknownGuest(t *testing.T) {
 	}
 	requireSet(t, st, pveSet()...)
 
-	// The hypervisor gained a guest. NOTHING else changed.
 	f.mu.Lock()
 	f.resources = append(f.resources, pve.Resource{
 		ID: "lxc/299", VMID: 299, Name: "surprise", Node: "pve", Type: "lxc", Status: "running", Uptime: 42,
@@ -404,10 +346,6 @@ func TestDiscoveryAddsUnknownGuest(t *testing.T) {
 	}
 }
 
-// 🔴 TestDiscoveryRemovalKeepsHistory: a guest that vanishes from the hypervisor
-// is NOT deleted. It keeps the old timestamp and freshness marks it stale —
-// "not seen for 5 min" is information; disappearing from the list is amnesia presented as
-// truth.
 func TestDiscoveryRemovalKeepsHistory(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	p, st, rel := newTestPoller(t, f, Sources{}, PollerConfig{TTL: 90 * time.Second})
@@ -416,7 +354,6 @@ func TestDiscoveryRemovalKeepsHistory(t *testing.T) {
 	}
 	oldStamp := nodesByID(t, st)["lxc/207"].Status.ObservedAt
 
-	// The guest vanished from the hypervisor (powered off, migrated or ACL removed).
 	f.mu.Lock()
 	f.resources = f.resources[1:]
 	f.mu.Unlock()
@@ -430,20 +367,15 @@ func TestDiscoveryRemovalKeepsHistory(t *testing.T) {
 	if gone.Status.ObservedAt != oldStamp {
 		t.Fatalf("timestamp of the vanished one = %d, want the OLD %d", gone.Status.ObservedAt, oldStamp)
 	}
-	// And freshness has to see it as stale, without anyone waiting 5 min.
 	seen := View(Inventory{Nodes: []Node{gone}}, 90*time.Second, rel.now())
 	if !seen[0].Stale || seen[0].AgeSeconds != 300 {
 		t.Fatalf("view of the vanished one = %+v, want stale with 300s", seen[0])
 	}
-	// What still shows up advanced normally.
 	if nodes["qemu/208"].Status.ObservedAt != rel.now().Unix() {
 		t.Fatal("the guest that is present did not advance its timestamp")
 	}
 }
 
-// TestNodeTransport pins the transport enum at both ends: whatever comes from
-// the hypervisor is "pve-api"; a seed declares its own; a value outside the set
-// is refused by the model.
 func TestNodeTransport(t *testing.T) {
 	seeds := []Node{{ID: "canary", Name: "canary", Transport: TransportAgent, Address: "127.0.0.1:9", Kind: NodeKindExternal}}
 	f := &fakePVE{resources: testResources()}
@@ -464,16 +396,11 @@ func TestNodeTransport(t *testing.T) {
 	if nodes["canary"].Transport != TransportAgent {
 		t.Errorf("the seed lost the transport: %+v", nodes["canary"])
 	}
-	// The enum is closed: anyone inventing a fourth value is refused at validation.
 	if err := (Node{ID: "x", Transport: "telnet", Kind: NodeKindExternal}).Validate(); err == nil {
 		t.Error("a transport outside the enum was accepted")
 	}
 }
 
-// TestAggregatesReferences: Projects/Deployments/Jobs/Services come in on the SAME
-// tick, from injected sources. The inventory references; it does not execute —
-// JobRef points at queue.Job (queue.go:55) and scheduler.Job (scheduler.go:30),
-// and duplicating an executor here would be the worst regression possible.
 func TestAggregatesReferences(t *testing.T) {
 	deps := Sources{
 		Projects: func() ([]Project, []Deployment, error) {
@@ -510,10 +437,6 @@ func TestAggregatesReferences(t *testing.T) {
 	}
 }
 
-// TestRevokedCredentialOnlyForUnexpired is the revoked-versus-expired
-// trap on the loop side: the hypervisor's 401 is INDISTINGUISHABLE between a revoked token and an expired
-// one. Marking everything "revoked" would erase the only clue that the problem
-// is the calendar.
 func TestRevokedCredentialOnlyForUnexpired(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	p, st, rel := newTestPoller(t, f, Sources{}, PollerConfig{})
@@ -521,7 +444,6 @@ func TestRevokedCredentialOnlyForUnexpired(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := rel.now().Unix()
-	// One token that expired yesterday, another valid for another month.
 	if err := st.Replace(func(inv *Inventory) {
 		for i := range inv.Nodes {
 			switch inv.Nodes[i].ID {
@@ -549,17 +471,12 @@ func TestRevokedCredentialOnlyForUnexpired(t *testing.T) {
 	if got := nodes["lxc/207"].Credential.State; got == CredRevoked {
 		t.Errorf("an ALREADY EXPIRED token was marked revoked — the clue that this is a calendar matter disappears")
 	}
-	// And the final read for the screen, which is what resolves the state:
 	seen := View(Inventory{Nodes: []Node{nodes["lxc/207"]}}, time.Minute, rel.now())
 	if seen[0].Credential.State != CredExpired {
 		t.Errorf("view of the expired one = %q, want %q", seen[0].Credential.State, CredExpired)
 	}
 }
 
-// TestNoCredentialErrorMarksNothing: a transport error (unreachable node) is
-// mute about the credential. Merging "I could not talk to it" with "the
-// credential died" would make the screen ask for a revocation because of a
-// loose cable.
 func TestNoCredentialErrorMarksNothing(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	p, st, _ := newTestPoller(t, f, Sources{}, PollerConfig{})
@@ -579,14 +496,6 @@ func TestNoCredentialErrorMarksNothing(t *testing.T) {
 	}
 }
 
-// 🔴 TestRedeclaredSeedUpdates closes a blind spot found by mutation testing:
-// the transport test only exercised a NEW seed, so removing the update of the
-// declarative fields of an already existing seed went unnoticed.
-//
-// The real case is banal and frequent: the operator fixes the address (or the
-// transport) of a node in seeds.json. Without this assertion the panel would go
-// on dialling the old address forever — and the versioned file would say one
-// thing while the inventory did another.
 func TestRedeclaredSeedUpdates(t *testing.T) {
 	seeds := []Node{{ID: "vps", Name: "vps", Transport: TransportSSH, Address: "203.0.113.10:22", Kind: NodeKindExternal}}
 	f := &fakePVE{resources: testResources()}
@@ -599,7 +508,6 @@ func TestRedeclaredSeedUpdates(t *testing.T) {
 		t.Fatalf("initial transport = %q, want ssh", got)
 	}
 
-	// The operator rewrites the seed: another address, another transport, another name.
 	seeds[0] = Node{ID: "vps", Name: "vps-new", Transport: TransportAgent, Address: "10.0.0.9:8099", Kind: NodeKindExternal}
 	deps.AgentPing = func(ctx context.Context, addr string) error { return errors.New("no response") }
 	p2, _, _ := newTestPoller(t, f, deps, PollerConfig{})
@@ -631,9 +539,6 @@ func writeSeeds(t *testing.T, dataDir, content string) {
 	}
 }
 
-// TestSeedsLoad: a missing file is zero seeds WITHOUT an error (a fresh install
-// must not refuse to come up because of an optional file); a file that is there
-// goes in through the model's validation.
 func TestSeedsLoad(t *testing.T) {
 	dir := t.TempDir()
 
@@ -652,9 +557,6 @@ func TestSeedsLoad(t *testing.T) {
 	}
 }
 
-// TestSeedsInvalid: everything that is refused is refused AT LOAD, quoting the
-// value. Accepting first and validating later would mean the bad node was
-// already in the inventory by the time anyone noticed.
 func TestSeedsInvalid(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -683,14 +585,6 @@ func TestSeedsInvalid(t *testing.T) {
 	}
 }
 
-// 🔴 TestAgentPollDeadNode is the antidote on the loop side: the dead node (the
-// discard port 127.0.0.1:9, connection ALWAYS refused) does NOT get a new
-// timestamp, while the hypervisor's nodes on the SAME tick advance. It is that
-// asymmetry — not a global counter — that the live verifier proves.
-//
-// The real ping is used on purpose: a fake returning an error would only prove
-// the code reads the return value. Port 9 is refused on any Linux machine with
-// no service on it, which makes the case deterministic without external network.
 func TestAgentPollDeadNode(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	deps := Sources{Seeds: func() ([]Node, error) {
@@ -713,7 +607,6 @@ func TestAgentPollDeadNode(t *testing.T) {
 	if got := nodes["lxc/207"].Status.ObservedAt; got != rel.now().Unix() {
 		t.Fatalf("the PVE node did not advance on the same tick (%d) — the canary failure contaminated it", got)
 	}
-	// And the read for the screen: the canary is stale, the guest is not.
 	seen := View(Inventory{Nodes: []Node{nodes["canary"], nodes["lxc/207"]}}, 90*time.Second, rel.now())
 	if !seen[0].Stale || seen[0].AgeSeconds != -1 {
 		t.Errorf("canary = %+v, want stale with age -1 (never observed)", seen[0])
@@ -723,8 +616,6 @@ func TestAgentPollDeadNode(t *testing.T) {
 	}
 }
 
-// TestAgentPollAliveStamps is the contrapositive: without it, "never stamps
-// anything" would pass as if it were dead-node detection.
 func TestAgentPollAliveStamps(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/healthz" {
@@ -748,10 +639,6 @@ func TestAgentPollAliveStamps(t *testing.T) {
 	}
 }
 
-// TestSSHSeedHasNoActivePoll: "ssh" already exists in the enum but has NO
-// implementation yet — agent-based reach comes later. Stamping
-// liveness nobody observed would be a lie; the node stays without a timestamp and the
-// screen shows "never observed", which is the truth.
 func TestSSHSeedHasNoActivePoll(t *testing.T) {
 	var pinged bool
 	f := &fakePVE{resources: testResources()}
@@ -773,8 +660,6 @@ func TestSSHSeedHasNoActivePoll(t *testing.T) {
 	}
 }
 
-// TestPollerAppliesCredentials: without the credential source, Credential stays
-// zeroed and credentialState() reports every node as missing despite a full vault.
 func TestPollerAppliesCredentials(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	deps := Sources{Credentials: func(nodes []Node) (map[string]Credential, error) {
@@ -797,8 +682,6 @@ func TestPollerAppliesCredentials(t *testing.T) {
 	if got := nodes["lxc/207"].Credential.Expire; got != 1802645875 {
 		t.Fatalf("expire = %d — without it the Trap 10 warning never fires", got)
 	}
-	// The state is left EMPTY on disk on purpose: the view is what resolves it,
-	// with the clock of whoever serializes. And the view has to say "ok".
 	if nodes["lxc/207"].Credential.State != "" {
 		t.Errorf("state written to disk = %q, want empty (the verdict belongs to the view)", nodes["lxc/207"].Credential.State)
 	}
@@ -808,10 +691,6 @@ func TestPollerAppliesCredentials(t *testing.T) {
 	}
 }
 
-// 🔴 TestPollerRevokedBeatsMissing: after a revocation the key VANISHES from
-// the vault, so the source returns no entry. Overwriting at that point would
-// erase the record of the revocation itself and the screen would say "never had
-// a credential" for a token that was just revoked.
 func TestPollerRevokedBeatsMissing(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	var withKey bool
@@ -832,7 +711,6 @@ func TestPollerRevokedBeatsMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The handler flagged the revocation and the key is gone from the vault.
 	if err := st.Replace(func(iv *Inventory) {
 		for i := range iv.Nodes {
 			if iv.Nodes[i].ID == "lxc/207" {
@@ -851,16 +729,11 @@ func TestPollerRevokedBeatsMissing(t *testing.T) {
 	if got := nodes["lxc/207"].Credential.State; got != CredRevoked {
 		t.Fatalf("state = %q, want revoked — the tick erased the record of the revocation", got)
 	}
-	// And the neighbour, which also lost its entry but was NEVER revoked, goes back
-	// to missing, which is the truth for it.
 	if got := nodes["qemu/208"].Credential.State; got != "" {
 		t.Errorf("neighbour = %q, want empty (the view will say missing)", got)
 	}
 }
 
-// TestPollerBrokenCredentialSourceDeletesNothing: a source that errors (vault down)
-// must NOT zero the credentials — the panel keeps the last known state instead
-// of announcing that the whole lab lost its credentials.
 func TestPollerBrokenCredentialSourceDeletesNothing(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	var broken bool
@@ -889,22 +762,6 @@ func TestPollerBrokenCredentialSourceDeletesNothing(t *testing.T) {
 	}
 }
 
-// ══ a node that VANISHED from the hypervisor is FLAGGED, never erased ══════
-//
-// The operator watched a destroyed guest stay listed as "stale", inflating the
-// total and the stale count on the health strip.
-//
-// The first attempt was to REMOVE it, and two existing pins knocked that down with
-// good reason: a guest drops off the list because it is powered down, migrated or has had its
-// ACL withdrawn, and erasing it is amnesia presented as truth.
-//
-// The fix is to tell the two silences apart: "stale" = the panel could not
-// look; "absent" = the panel looked and did not find it.
-//
-// The negative tests here are worth more than the positive one: flagging by absence is still
-// an assertion about the hypervisor, and each guard covers a distinct way of
-// confusing "nobody told me" with "it is not there".
-
 func TestGoneNodeMarkedMissingNotDeleted(t *testing.T) {
 	inv := Inventory{Nodes: []Node{
 		{ID: "lxc/207", Name: "apps", Kind: NodeKindGuest, Transport: TransportPVEAPI, VMID: 207},
@@ -931,9 +788,6 @@ func TestGoneNodeMarkedMissingNotDeleted(t *testing.T) {
 	}
 }
 
-// 🔴 THE TIMESTAMP IS NOT REWRITTEN on every tick: it is what says how long the
-// node has been gone. Rewriting it would make the absence always look freshly
-// discovered.
 func TestAbsenceStampNotRewritten(t *testing.T) {
 	inv := Inventory{Nodes: []Node{{ID: "lxc/101", Kind: NodeKindGuest, Transport: TransportPVEAPI, VMID: 101}}}
 	markGone(&inv, testResources(), nil, 1800000000)
@@ -946,8 +800,6 @@ func TestAbsenceStampNotRewritten(t *testing.T) {
 	}
 }
 
-// And showing up again CLEARS the mark — a node that reappeared is not an
-// absent node.
 func TestReturningNodeLosesMissingMark(t *testing.T) {
 	inv := Inventory{Nodes: []Node{{ID: "lxc/207", Kind: NodeKindGuest, Transport: TransportPVEAPI, VMID: 207, MissingSince: 1799999999}}}
 	markGone(&inv, testResources(), nil, 1800000000)
@@ -956,11 +808,6 @@ func TestReturningNodeLosesMissingMark(t *testing.T) {
 	}
 }
 
-// 🔴 GUARD 2: a response with NO guest at all marks nothing.
-//
-// A /cluster/resources that comes back empty because of a passing hiccup on the
-// hypervisor would mark the whole lab absent in a single tick. An empty list is
-// precisely the answer that can be trusted the least.
 func TestEmptyResponseMarksNobody(t *testing.T) {
 	inv := Inventory{Nodes: []Node{
 		{ID: "lxc/207", Kind: NodeKindGuest, Transport: TransportPVEAPI, VMID: 207},
@@ -979,9 +826,6 @@ func TestEmptyResponseMarksNobody(t *testing.T) {
 	}
 }
 
-// 🔴 GUARD 3: a node that is NOT discovered by the hypervisor is not judged by
-// it. The `canary` seed has the agent transport and comes from seeds; its absence from
-// /cluster/resources means nothing.
 func TestOtherTransportNodeNotMarked(t *testing.T) {
 	inv := Inventory{Nodes: []Node{
 		{ID: "canary", Kind: "external", Transport: TransportAgent, Address: "127.0.0.1:9"},
@@ -998,8 +842,6 @@ func TestOtherTransportNodeNotMarked(t *testing.T) {
 	}
 }
 
-// A seed that declares transport pve-api is spared too: it is DECLARED, not
-// discovered.
 func TestDeclaredSeedNotMarkedMissing(t *testing.T) {
 	inv := Inventory{Nodes: []Node{{ID: "lxc/999", Kind: NodeKindGuest, Transport: TransportPVEAPI, VMID: 999}}}
 	seeds := []Node{{ID: "lxc/999", Transport: TransportPVEAPI}}
@@ -1008,9 +850,6 @@ func TestDeclaredSeedNotMarkedMissing(t *testing.T) {
 	}
 }
 
-// 🔴 GUARD 1, at tick level: discovery that FAILS neither marks nor erases
-// anyone. It is invariant 2 of the poller, and the pin exists because the
-// marking is exactly the kind of code someone moves to the wrong place.
 func TestDiscoveryFailureDoesNotMarkAbsence(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	p, st, _ := newTestPoller(t, f, Sources{}, PollerConfig{})

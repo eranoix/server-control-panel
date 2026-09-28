@@ -13,7 +13,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// serverWithRecorder brings up a real HostShell over a dataDir of its own.
 func serverWithRecorder(t *testing.T, name string) (dir string, dial func(string) *websocket.Conn) {
 	t.Helper()
 	if _, err := exec.LookPath("dtach"); err != nil {
@@ -54,26 +53,18 @@ func serverWithRecorder(t *testing.T, name string) (dir string, dial func(string
 	}
 }
 
-// WHAT HAPPENS WITH NOBODY ATTACHED HAS TO GO INTO THE LOG.
-//
-// Before the recorder, the tee lived inside the connection: close the tab and the
-// session stayed alive with its output written nowhere. This very test, run
-// before the fix, lost all five markers — and reattaching recovered none of them.
-// It is the interval in which a person closes the laptop and moves to another
-// computer, that is, exactly the stretch they come back wanting to read.
 func TestRecorderLeavesNoLogGapWithNobodyAttached(t *testing.T) {
 	name := "recorder-gap"
 	dir, dial := serverWithRecorder(t, name)
 
 	c := dial("")
 	time.Sleep(1500 * time.Millisecond)
-	// Five markers, one every 2s — all AFTER I left.
 	cmd := `(for i in 1 2 3 4 5; do sleep 2; echo MARK_$i; done) &` + "\r"
 	_ = c.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"type":"input","data":%q}`, cmd)))
 	time.Sleep(600 * time.Millisecond)
 	_ = c.Close()
 
-	time.Sleep(14 * time.Second) // the markers come out with nobody attached
+	time.Sleep(14 * time.Second)
 
 	data, _ := os.ReadFile(sessionLogPath(dir, "u", name))
 	var missing []string
@@ -88,8 +79,6 @@ func TestRecorderLeavesNoLogGapWithNobodyAttached(t *testing.T) {
 	}
 }
 
-// A session with the recorder attached still responds to the real client's size
-// — the recorder is invisible to the minimum rule.
 func TestSessionWithRecorderStillFollowsRealClient(t *testing.T) {
 	dial := testSession(t, "recorder-min")
 
@@ -107,18 +96,10 @@ func TestSessionWithRecorderStillFollowsRealClient(t *testing.T) {
 	}
 }
 
-// THE WHOLE CHAIN: a live session -> the recorder -> the server's emulator ->
-// the history file -> what the panel fetches when it opens the session.
-//
-// Every piece has a test of its own; this is the only one that proves they are
-// WIRED TOGETHER. It was exactly one correct piece with a cut wire (the
-// `forgetSize` whose return value nobody used) that let the original defect
-// slip through a green battery — see session_size_e2e_test.go.
 func TestHistoryFlowsFromLiveSessionToPanelFetch(t *testing.T) {
 	name := "hist-chain"
 	dir, dial := serverWithRecorder(t, name)
 
-	// SessionHistory reads from the package's ACTIVE dataDir.
 	reg, err := LoadRegistry(dir + "/reg-active.json")
 	if err != nil {
 		t.Fatal(err)
@@ -127,8 +108,6 @@ func TestHistoryFlowsFromLiveSessionToPanelFetch(t *testing.T) {
 
 	c := dial("")
 	time.Sleep(1500 * time.Millisecond)
-	// Write more lines than fit on the screen (24): the excess scrolls off and
-	// that is what becomes history.
 	cmd := `for i in $(seq 1 60); do echo HISTORY_LINE_$i; done` + "\r"
 	_ = c.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"type":"input","data":%q}`, cmd)))
 	time.Sleep(3 * time.Second)
@@ -141,7 +120,7 @@ func TestHistoryFlowsFromLiveSessionToPanelFetch(t *testing.T) {
 	}
 	text := stripANSI(string(data))
 	missing := 0
-	for i := 1; i <= 20; i++ { // the first ones have certainly scrolled out by now
+	for i := 1; i <= 20; i++ {
 		if !strings.Contains(text, fmt.Sprintf("HISTORY_LINE_%d", i)) {
 			missing++
 		}

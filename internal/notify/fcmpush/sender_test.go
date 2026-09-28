@@ -16,9 +16,6 @@ type stubDeviceStore struct{ tokens []DeviceToken }
 func (s stubDeviceStore) TokensForUser(string) []DeviceToken { return s.tokens }
 func (s stubDeviceStore) AllTokens() []DeviceToken           { return s.tokens }
 
-// fakeCredential builds a credential with a deterministic bearer token
-// (oauth2.StaticTokenSource) — no real Google OAuth2 endpoint is ever
-// contacted by these tests.
 func fakeCredential(projectID, token string) *credential {
 	return &credential{projectID: projectID, tokens: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})}
 }

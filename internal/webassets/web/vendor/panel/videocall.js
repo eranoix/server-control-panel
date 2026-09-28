@@ -1,54 +1,13 @@
-/* panel-videocall — WebRTC P2P client integrated with server-control-panel signaling.
- *
- * Exposed as: window.PanelVideoCall = { connect(opts), disconnect() }
- *
- * Architecture (matches internal/videocall in the Go backend):
- *   - One WebSocket to /ws/videocall?token=&room_id= for signaling.
- *   - One RTCPeerConnection per remote peer. For 1-on-1 calls there is
- *     exactly one. For mesh up to 4, N-1 connections per peer.
- *   - Perfect negotiation pattern (W3C) — peers compare ids lexicographically
- *     to elect the "polite" side; eliminates glare without flips.
- *   - Codec preference AV1 > VP9 > H264 (server has no opinion; the SDP is
- *     negotiated peer-to-peer).
- *   - Hard cap maxBitrate via setParameters; do NOT loop over getStats and
- *     micromanage bitrate (Google Congestion Control already does that
- *     better than we can).
- *   - getStats(1s) feeds the bandwidth dashboard but does NOT influence
- *     transmission decisions.
- *   - ICE restart on iceConnectionState==='failed' or window.online.
- *   - Local recording uses MediaRecorder (zero server bandwidth).
- *     [Recording UI is phase 2; the API is here for the next phase.]
- *
- * Browser compat: Chrome/Edge 88+, Firefox 91+, Safari 15+. AV1 falls back
- * automatically when both peers don't support it.
- */
 (function () {
   'use strict';
 
-  if (window.PanelVideoCall) return; // idempotent load
-
-  // ---- constants ------------------------------------------------------
+  if (window.PanelVideoCall) return;
 
   const CODEC_PREF = ['video/AV1', 'video/VP9', 'video/H264', 'video/VP8'];
-  const DEFAULT_BUDGET_KBPS = 500; // medium-mode default; user can override
+  const DEFAULT_BUDGET_KBPS = 500;
   const STATS_INTERVAL_MS = 1000;
   const RECONNECT_BACKOFF_MIN = 1000;
   const RECONNECT_BACKOFF_MAX = 30000;
-  // Quality presets — knob for the user's "Economy / Medium / High" buttons.
-  // Numbers picked to match what real codecs actually deliver at each level:
-  //  - economy: 320x180@15 at 60kbps video + 16kbps audio Opus = ~80kbps total,
-  //    holds on mobile 3G or weak Wi-Fi. Video is grainy but recognizable.
-  //  - medium:  640x360@24, ~500kbps video + 32kbps audio = ~540kbps. Smooth,
-  //    looks fine on a phone or in a small window on desktop.
-  //  - high:    1280x720@30, ~2000kbps video + 48kbps audio = ~2050kbps. The
-  //    "HD" experience on home Wi-Fi.
-  //
-  // Codec stays on the user's previous choice ('auto' picks AV1→VP9→H264).
-  // Changing codec live needs renegotiation; we apply it on the next call.
-  // Phone/Minimum/Economy enable the Opus tweak (usedtx + maxaveragebitrate +
-  // useinbandfec=0); Medium/High keep FEC on for resilience on unstable networks.
-  // Phone sets videoOff: Call.start skips video in getUserMedia, and
-  // applyQualityProfile drops the video sender when switching to it mid-call.
   const QUALITY_MODES = {
     phone:   { videoOff: true,  width: 0,    height: 0,   fps: 0,  videoKbps: 0,    audioKbps: 16, opusTweak: true,  label: 'Phone'    },
     low:     { videoOff: false, width: 160,  height: 90,  fps: 8,  videoKbps: 25,   audioKbps: 16, opusTweak: true,  label: 'Minimum'  },
@@ -56,23 +15,12 @@
     medium:  { videoOff: false, width: 640,  height: 360, fps: 24, videoKbps: 500,  audioKbps: 32, opusTweak: false, label: 'Medium'   },
     high:    { videoOff: false, width: 1280, height: 720, fps: 30, videoKbps: 2000, audioKbps: 48, opusTweak: false, label: 'High'     },
   };
-  // Absolute floor for the budget slider — below this, even audio Opus DTX
-  // doesn't reconstruct cleanly. Above it, the network stack can do its
-  // adaptive thing. The 6 Mbps ceiling is enough for 1080p AV1.
   const BUDGET_FLOOR_KBPS = 8;
   const BUDGET_CEILING_KBPS = 6000;
 
-  // tweakOpusSdp munges the SDP to force Opus into an ultra-economical mode:
-  //   - usedtx=1            : discontinuous transmission (nothing sent during silence).
-  //   - useinbandfec=0      : disables FEC; less resilience, ~20% less bandwidth.
-  //   - maxaveragebitrate=N : hard cap; without it Opus sometimes ignores the
-  //                           RTCRtpSender maxBitrate.
-  //   - cbr=0; stereo=0     : VBR mono (voice); stereo would double the bandwidth.
-  // Applied before setLocalDescription. Only touches the Opus fmtp, never video.
   function tweakOpusSdp(sdp, audioKbps) {
     if (!sdp) return sdp;
     const lines = sdp.split(/\r?\n/);
-    // The Opus payload type varies between browsers and sessions.
     let opusPt = null;
     for (const l of lines) {
       const m = l.match(/^a=rtpmap:(\d+)\s+opus\/48000/i);
@@ -105,7 +53,6 @@
         out.push(l);
       }
     }
-    // No fmtp line: inject one right after the Opus rtpmap.
     if (!hasFmtp) {
       const final = [];
       const inject = 'a=fmtp:' + opusPt + ' ' + Object.keys(want).map(k => k + '=' + want[k]).join(';');
@@ -118,13 +65,7 @@
     return out.join('\r\n');
   }
 
-  // ---- state ----------------------------------------------------------
-
-  // Singleton call state. We disallow more than one active call per tab —
-  // the panel UI enforces this (no "join another room while in a call").
   let active = null;
-
-  // ---- public API -----------------------------------------------------
 
   /**
    * Open a videocall.
@@ -158,21 +99,17 @@
     }
   }
 
-  /** Hangup and tear down everything. Safe to call when idle. */
   function disconnect() {
     if (!active) return;
     active.stop();
     active = null;
   }
 
-  /** Send a chat message to all peers via DataChannel. */
   function sendChat(text) {
     if (!active) return;
     active.sendChat(text);
   }
 
-  /** Broadcast a `state` signaling message to all peers in the room (via WS),
-      e.g. the owner forcing a quality mode on everyone. */
   function sendState(payload) {
     if (!active) return false;
     try {
@@ -181,80 +118,55 @@
     } catch (_) { return false; }
   }
 
-  /** Toggle local audio mute. Returns new muted state. */
   function setMuted(muted) {
     if (!active) return false;
     return active.setMuted(muted);
   }
 
-  /** Toggle local video off. Returns new camera-off state. */
   function setVideoOff(off) {
     if (!active) return false;
     return active.setVideoOff(off);
   }
 
-  /** Adjust the outgoing bandwidth cap in kbps. */
   function setBudgetKbps(kbps) {
     if (!active) return;
     active.setBudgetKbps(kbps);
   }
 
-  /** Start/stop screen sharing. Returns the new screen-share state. */
   async function setScreenShare(on) {
     if (!active) return false;
     return active.setScreenShare(on);
   }
 
-  /** Start local-only recording. Returns true if started. */
   function startRecording() {
     if (!active) return false;
     return active.startRecording();
   }
 
-  /** Stop and download the local recording. */
   function stopRecording() {
     if (!active) return;
     active.stopRecording();
   }
 
-  /** Toggle audio-first mode (auto-pause video on bad network). */
   function setAudioFirstMode(on) {
     if (!active) return;
     active.audioFirstMode = !!on;
   }
 
-  /** Get the static preset definitions (for UI to read out values). */
   function getQualityPresets() {
     return JSON.parse(JSON.stringify(QUALITY_MODES));
   }
 
-  /**
-   * Apply a quality profile live to the active call. Accepts either a
-   * preset name ('economy'|'medium'|'high') OR a custom object
-   * { width, height, fps, videoKbps, audioKbps }. Returns the effective
-   * profile applied (post-clamping).
-   *
-   * - width/height/fps go through MediaStreamTrack.applyConstraints — the
-   *   browser may downgrade to the nearest supported value.
-   * - videoKbps + audioKbps go through RTCRtpSender.setParameters which
-   *   doesn't need SDP renegotiation; effect is immediate.
-   */
   async function applyQualityProfile(profileOrName) {
     if (!active) return null;
     return active.applyQualityProfile(profileOrName);
   }
 
-  // -- Device APIs (work in-call AND out-of-call) -----------------------
-  // enumerateDevices() returns empty labels until the user has granted
-  // permission at least once. probeDevicePermission triggers a one-shot
-  // getUserMedia just so labels populate; the stream is dropped immediately.
   async function listDevices() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
       return { cameras: [], mics: [], speakers: [] };
     }
     const list = await navigator.mediaDevices.enumerateDevices();
-    // Before permission is granted deviceId is "", and duplicate empty keys
-    // crash the whole Alpine x-for. Synthesize a stable id and dedup by it.
     const sanitize = (arr) => {
       const seen = new Set();
       const out = [];
@@ -264,7 +176,6 @@
         const id = d.deviceId || ('synth-' + d.kind + '-' + i);
         if (seen.has(id)) continue;
         seen.add(id);
-        // Plain-object wrapper: MediaDeviceInfo is read-only.
         out.push({
           deviceId: id,
           kind: d.kind,
@@ -280,7 +191,6 @@
       speakers: sanitize(list.filter(d => d.kind === 'audiooutput')),
     };
   }
-  // Turns a getUserMedia DOMException into an actionable sentence.
   function humanizeGumError(e, kindLabel) {
     const name = e && e.name;
     const target = kindLabel || 'camera/microphone';
@@ -304,8 +214,6 @@
     }
     return (e && e.message) || ('Unknown error while accessing the ' + target + '.');
   }
-  // Probes ONE kind in isolation: getUserMedia is all-or-nothing, so asking
-  // for {audio,video} with only a mic present fails as if nothing existed.
   async function probeKind(kind) {
     try {
       const s = await navigator.mediaDevices.getUserMedia(
@@ -316,14 +224,10 @@
       return { ok: false, name: e && e.name, error: humanizeGumError(e, kind === 'audio' ? 'microphone' : 'camera') };
     }
   }
-  // Returns { ok, audio, video, error, detail }. `ok` means "can join with
-  // SOMETHING", not "everything works"; block joining only when both are missing.
   async function probeDevicePermission() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       return { ok: false, audio: false, video: false, error: 'Browser does not support getUserMedia (HTTPS required).' };
     }
-    // Check permission state BEFORE prompting: if both are already denied,
-    // retrying is pointless and the fix is the padlock settings.
     let camDenied = false, micDenied = false;
     try {
       if (navigator.permissions && navigator.permissions.query) {
@@ -350,8 +254,6 @@
       // Combined request failed; one missing device is enough for that, so
       // probe each kind to find out which side works.
     }
-    // Always probe for real: Chromium reports 'denied' for a camera that
-    // simply does not exist, so permissions.query cannot tell the reason.
     const [a, v] = await Promise.all([probeKind('audio'), probeKind('video')]);
     if (a.ok && v.ok) return { ok: true, audio: true, video: true };
     let error;
@@ -378,8 +280,6 @@
     if (!active) return false;
     return active.setMicDevice(id);
   }
-  // Outside a call there is nothing to apply: the shell stores the preference
-  // and it takes effect on the next connect().
   function setMicGain(v) {
     if (!active) return clampMicGain(v);
     return active.setMicGain(v);
@@ -396,9 +296,6 @@
     if (!active) return false;
     return active.setSpeakerDevice(id);
   }
-  // Test tone routed through a given sinkId — used by the lobby "Test"
-  // button so the user can confirm audio is coming out of the right device
-  // before joining. 440Hz, 0.5s, gentle envelope to avoid clicks.
   async function playTestTone(sinkId) {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -423,11 +320,6 @@
       return true;
     } catch (e) { return false; }
   }
-  // Mic level monitor — returns a controller you call .stop() on.
-  // Used by the lobby to show a live VU meter. opts.gain (number or function)
-  // and opts.processing reproduce the call pipeline (gain + limiter + processing)
-  // so the meter shows what the other side will hear, not the raw mic.
-  // onLevel(level 0..100, {limiting}).
   function createMicLevelMonitor(deviceId, onLevel, opts) {
     opts = opts || {};
     let ctx, stream, raf, running = true;
@@ -469,41 +361,34 @@
     };
   }
 
-  /** Send a file to all peers via DataChannel. Returns a promise. */
   function sendFile(file) {
     if (!active) return Promise.reject(new Error('no active call'));
     return active.sendFile(file);
   }
 
-  /** Toggle privacy frost (full-frame blur). honest label — NOT background-only. */
   function setPrivacyFrost(on) {
     if (!active) return false;
     return active.setPrivacyFrost(on);
   }
 
-  /** Send a whiteboard stroke / clear to all peers. */
   function sendWhiteboardEvent(ev) {
     if (!active) return;
     active.broadcastWhiteboard(ev);
   }
 
-  /** Full buffered whiteboard board (normalized strokes) for redraw on resize. */
   function getWhiteboardStrokes() {
     return active ? active._wbStrokes : [];
   }
 
-  /** Full buffered screen-annotation strokes (normalized) for redraw. */
   function getAnnotStrokes() {
     return active ? active._annotStrokes : [];
   }
 
-  /** Start/stop live subtitles via Web Speech API. opts.lang = BCP-47 locale. */
   function setSubtitles(on, opts) {
     if (!active) return false;
     return active.setSubtitles(on, opts || {});
   }
 
-  /** Changes the STT language in place without broadcasting off/on. */
   function changeSubtitlesLang(lang) {
     if (!active) return false;
     return active.changeSubtitlesLang(lang);
@@ -530,13 +415,10 @@
     setSubtitles: setSubtitles,
     changeSubtitlesLang: changeSubtitlesLang,
     isSubtitlesSupported: function () {
-      // Web Speech (native Chrome/Edge) OR local whisper (PanelSTT bridge to
-      // WhisperLive), so Firefox/Safari also get subtitles when the backend exists.
       const webSpeech = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
       const whisperLocal = !!(window.PanelSTT && typeof window.PanelSTT.connect === 'function');
       return webSpeech || whisperLocal;
     },
-    // Device control (camera / mic / speaker) — works in-call and out-of-call
     listDevices: listDevices,
     probeDevicePermission: probeDevicePermission,
     setCameraDevice: setCameraDevice,
@@ -558,8 +440,6 @@
     sendState: sendState,
   };
 
-  // Send gain range. 4x (+12 dB) is safe only because the pipeline limiter
-  // holds the peaks; without it, voice clipped above ~2x.
   const MIC_GAIN_MIN = 0.25;
   const MIC_GAIN_MAX = 4.0;
   function clampMicGain(v) {
@@ -567,8 +447,6 @@
     if (!isFinite(n) || n <= 0) return 1.0;
     return Math.min(MIC_GAIN_MAX, Math.max(MIC_GAIN_MIN, n));
   }
-  // Browser capture processing, all on by default. Disabling echo cancellation
-  // without headphones makes the other side hear itself (the UI warns).
   function normMicProc(p) {
     p = p || {};
     return {
@@ -582,9 +460,6 @@
     if (deviceId && deviceId !== 'default') a.deviceId = { exact: deviceId };
     return a;
   }
-  // Meter level: RMS in dBFS mapped to 0..100 (-60 dB .. 0 dB), a scale that
-  // follows the ear. `limiting` = the limiter is holding back more than 4 dB,
-  // i.e. the gain is too high for this microphone.
   function readMicLevel(analyser, buf, limiter) {
     analyser.getFloatTimeDomainData(buf);
     let sum = 0, peak = 0;
@@ -601,9 +476,6 @@
     const reduction = comp && typeof comp.reduction === 'number' ? comp.reduction : 0;
     return { level: level, peak: peak, limiting: reduction < -4 };
   }
-  // Limiter: DynamicsCompressor at -3 dBFS, ratio 20. The Web Audio node applies
-  // an AUTOMATIC makeup gain of (1/full_scale_gain)^0.6 (+1.71 dB here) to every
-  // signal, so we compensate it. `comp` is exposed so the meter can read `reduction`.
   const MIC_LIM_THRESHOLD = -3;
   const MIC_LIM_RATIO = 20;
   function makeMicLimiter(ctx) {
@@ -621,26 +493,14 @@
     return { input: comp, output: compensate, comp: comp };
   }
 
-  // ---- Call -----------------------------------------------------------
-
   function Call(opts) {
     this.opts = opts || {};
     this.roomId = opts.roomId;
     this.token = opts.token;
-    // ticketProvider: async () => string. When set, the signaling WS uses
-    // ?ticket=<X> instead of ?token=<JWT>, keeping the JWT out of access logs.
     this.ticketProvider = opts.ticketProvider || null;
-    // Stable client identity so a reconnect evicts our own ghost. Authenticated:
-    // uuid in sessionStorage (per tab, per room); guests: empty (the server
-    // derives it from the token jti).
     this.clientId = this._resolveClientId();
     this.displayName = opts.displayName || 'You';
     this.codecPref = opts.codec || 'auto';
-    // Quality profile resolves into 4 pieces: width/height/fps for the
-    // local camera, videoKbps for the outbound video cap, audioKbps for
-    // Opus. If a name is given, fold the preset into the explicit fields;
-    // explicit fields in opts win over preset (so a "custom" caller can
-    // override one knob).
     const presetName = (typeof opts.quality === 'string') ? opts.quality : null;
     const preset = presetName && QUALITY_MODES[presetName] ? QUALITY_MODES[presetName] : QUALITY_MODES.medium;
     this.qualityName = presetName || 'custom';
@@ -649,22 +509,13 @@
     this.videoFps    = opts.videoFps    || preset.fps;
     this.videoKbps   = (opts.videoKbps != null ? opts.videoKbps : preset.videoKbps);
     this.audioKbps   = opts.audioKbps   || preset.audioKbps;
-    // Keep this for back-compat with old budget slider (mirrors videoKbps).
     this.budgetKbps  = opts.budgetKbps  || this.videoKbps || 60;
-    // audioOnly: from opts (legacy) OR the preset's videoOff; skips the camera.
     this.audioOnly   = !!opts.audioOnly || !!preset.videoOff;
-    // micOff: join without a microphone (video only), counterpart of audioOnly.
     this.micOff      = !!opts.micOff;
-    // Mic send gain (1.0 = neutral) and browser processing, from the shell's
-    // saved preference, so the slider value is actually applied.
     this._micGain    = clampMicGain(opts.micGain);
     this._micProc    = normMicProc(opts.micProcessing);
-    // opusTweak: DTX/FEC-off/maxaveragebitrate via SDP munging in PeerConn.
     this.opusTweak   = (opts.opusTweak != null ? !!opts.opusTweak : !!preset.opusTweak);
     this.videosEl = opts.videosEl;
-    // Device IDs picked by the user in the lobby. Empty / 'default' = let
-    // browser pick. Stored per-Call so a hot reload of preferences doesn't
-    // disturb an active call.
     this.deviceIds = {
       camera:  (opts.deviceIds && opts.deviceIds.camera)  || '',
       mic:     (opts.deviceIds && opts.deviceIds.mic)     || '',
@@ -676,7 +527,6 @@
     const userOnError = opts.onError || function () {};
     this.cbError = function (msg) {
       console.error('[panel:vc] ERROR:', msg);
-      // Maps raw legacy server errors to friendly messages.
       const translated = translateLegacyError(msg);
       try { userOnError(translated); } catch (_) {}
     };
@@ -685,93 +535,59 @@
     this.cbWhiteboard = opts.onWhiteboard || function () {};
     this.cbRecordingReady = opts.onRecordingReady || null;
 
-    // Whiteboard shared state: every stroke this peer has seen (drawn locally
-    // OR received live), in normalized [0..1] coords. Source of truth for the
-    // snapshot sent to a (re)joining peer on DC open, and for the resize redraw.
-    // Each entry: {from,to,color,width,alpha?,_from?} — _from set for remote-origin
-    // strokes (used for per-author coloring); absent => locally drawn.
-    //
-    // the SAME transport carries two surfaces, kept in separate buffers
-    // so a clear/snapshot on one never bleeds into the other. `_wbStrokes` is the
-    // opaque collaborative board (surface 'board', the default); `_annotStrokes`
-    // is the transparent annotation layer anchored over the shared screen
-    // (surface 'screen'). Routing is by `ev.surface` in _wbRecord.
     this._wbStrokes = [];
     this._annotStrokes = [];
 
     this.ws = null;
     this.wsBackoff = RECONNECT_BACKOFF_MIN;
     this.peerId = null;
-    this.iceServers = []; // populated from server `joined` message
-    this.peers = Object.create(null); // peerId -> PeerConn
+    this.iceServers = [];
+    this.peers = Object.create(null);
     this.localStream = null;
     this.statsTimer = null;
     this.stopped = false;
     this.networkListenerInstalled = false;
 
-    // E2EE: stored so PeerConns created later (e.g. peer-joined mid-call)
-    // can hook frame encryption from the start.
     this.e2eePassphrase = opts.e2eePassphrase || '';
     this.e2eeActive = false;
 
-    // Screen share: separate track replaced into the existing sender.
-    this.cameraTrack = null;   // original camera track (saved for revert)
+    this.cameraTrack = null;
     this.screenStream = null;
     this.screenSharing = false;
 
-    // Recording: client-side only. Composes local + remote video onto a
-    // hidden canvas, captures via canvas.captureStream() into MediaRecorder.
     this.recorder = null;
     this.recorderChunks = [];
     this.recordingStarted = 0;
 
-    // Privacy frost (full-frame blur). Honest label — does NOT do
-    // background-only segmentation. Useful when you need to step away
-    // from the camera without disabling video entirely.
     this.frostCanvas = null;
     this.frostVideoEl = null;
     this.frostRAF = 0;
     this.frostActive = false;
 
-    // Audio-first auto-degrade
     this.audioFirstMode = !!opts.audioFirstMode;
     this.poorNetworkSince = 0;
     this.autoVideoOff = false;
 
-    // AV1 runtime fallback
     this.av1Probe = { lowFpsSince: 0, downgraded: false };
 
-    // Session totals (POSTed to /api/videocall/sessions on hangup so the
-    // server can show "bandwidth history" in the dashboard).
     this.callStartedAt = 0;
     this.cumBytesSent = 0;
     this.cumBytesRecv = 0;
     this.lastCodec = '';
     this.lastConnType = 'direct';
 
-    // Auto-reconnect state preservation. When the signaling WS closes
-    // without a clean leave, we hang on to the original opts and retry —
-    // device picks, passphrase, quality preset all survive untouched.
     this._origOpts = opts;
     this._userInitiatedHangup = false;
 
-    // Active speaker detection: one AnalyserNode per peer's incoming
-    // audio stream. Cheap (~256 FFT) and gives us a 0-100 level value.
-    this._peerAudioMonitors = {}; // peerId → { ctx, analyser, data, level, raf }
+    this._peerAudioMonitors = {};
     this._activeSpeaker = null;
 
-    // "You are muted but speaking" detector — runs only when localStream
-    // is muted, samples local mic level, fires onState({type:'speaking-while-muted'})
-    // when level stays above threshold for >800ms.
     this._localSpeakingMon = null;
 
-    // File transfer offset tracking per (peerID, fileID) for resume.
-    this._fileTxOffsets = {}; // fid → { offset, file, peerID }
+    this._fileTxOffsets = {};
   }
 
   Call.prototype.start = async function () {
-    // Wake Lock keeps the screen on during the call (critical on mobile);
-    // re-acquired on visibilitychange when back in the foreground.
     (async () => {
       try {
         if (navigator.wakeLock && !this._wakeLock) {
@@ -786,10 +602,6 @@
       }
     };
     document.addEventListener('visibilitychange', this._wakeLockVisListener);
-    // 1. Local media (mic + maybe camera). Honor the lobby's device picks
-    //    when they're not "default".
-    // micOff: the lobby already found no usable mic; requesting audio anyway
-    // would fail the whole getUserMedia and take video down with it.
     let audio = false;
     if (!this.micOff) {
       audio = micConstraints(this.deviceIds.mic, this._micProc);
@@ -804,14 +616,10 @@
       if (this.deviceIds.camera && this.deviceIds.camera !== 'default') {
         video.deviceId = { exact: this.deviceIds.camera };
       } else if (this.deviceIds.camera === 'environment' || this.deviceIds.camera === 'user') {
-        // Mobile facingMode shortcut (set by mobile flip-camera button).
         delete video.deviceId;
         video.facingMode = { ideal: this.deviceIds.camera };
       }
     }
-    // getUserMedia is all-or-nothing: one missing kind fails the WHOLE request.
-    // Try a degrading plan and join with whatever exists. This lives here because
-    // every entry path (lobby, skip-lobby, recovery, guest) goes through start().
     const plan = [];
     const noId = (c) => {
       if (!c || typeof c !== 'object') return c;
@@ -837,24 +645,17 @@
       } catch (e) { lastError = e; }
     }
     if (!this.localStream) {
-      // Empty plan = audioOnly AND micOff (nothing to request).
       throw new Error(lastError
         ? humanizeGumError(lastError)
         : 'No usable camera or microphone on this computer. Connect a device and try again.');
     }
     this.cameraTrack = this.localStream.getVideoTracks()[0] || null;
-    // audioOnly must reflect what ACTUALLY came back, or the rest of the engine
-    // operates on a null camera track.
     if (!this.cameraTrack) this.audioOnly = true;
     if (this.degradedNote) {
       try { this.cbState({ type: 'devices-degraded', note: this.degradedNote }); } catch (_) {}
     }
     this.callStartedAt = Date.now();
 
-    // raw mic -> GainNode -> limiter -> destination -> SENT track. The sent track
-    // stays stable for the whole call: switching mic or processing only rewires
-    // the source (_attachMicSource), with no replaceTrack on peers. The raw track
-    // (_micGainRawTrack) is what transcription reads (getMicStreamForSTT).
     try {
       this._buildMicPipeline(this.localStream.getAudioTracks()[0]);
     } catch (e) {
@@ -865,14 +666,10 @@
 
     this._startLocalSpeakingMonitor();
 
-    // 2. Signaling WS. The promise resolves when we receive `joined`.
     await this.openSignaling();
 
-    // 3. Stats loop.
     this.statsTimer = setInterval(() => this.collectStats(), STATS_INTERVAL_MS);
 
-    // 4. Network listeners for ICE restart. Keep the handler ref so Call.stop
-    // can remove it; otherwise reconnects pile up listeners and cascade ICE restarts.
     if (!this.networkListenerInstalled) {
       this.networkListenerInstalled = true;
       this._netHandler = () => this.handleNetworkChange();
@@ -882,13 +679,8 @@
       }
     }
 
-    // 5. Background keepalive via Web Worker. Browsers throttle timers in hidden
-    // tabs, freezing the app ping and reconnect so proxies close the WS as idle.
-    // Workers are NOT throttled.
     this._startBgKeepalive();
 
-    // 6. On returning to the tab, health-check immediately and reconnect if the
-    // connection died in the background. Guarded against double installation.
     if (this._visHandler) {
       try { document.removeEventListener('visibilitychange', this._visHandler); } catch (_) {}
     }
@@ -896,9 +688,6 @@
       if (document.visibilityState === 'visible' && !this.stopped) {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
           try { this.ws.send(JSON.stringify({ type: 'ping' })); } catch (_) {}
-          // Silent-death detection: >70s without any server message (pong takes
-          // ~25s) means a middlebox probably dropped us. Reopen BEFORE the
-          // browser notices via onclose (which can take 100s+).
           if (this._lastWsMessageAt && Date.now() - this._lastWsMessageAt > 70000) {
             console.warn('[panel:vc] WS silent >70s, forcing reconnect');
             try { this.ws.close(4000, 'silent-death'); } catch (_) {}
@@ -907,8 +696,6 @@
         } else if (this.ws && this.ws.readyState >= WebSocket.CLOSING) {
           this.reopenSignaling();
         }
-        // Health-check peers, debounced to one restartIce per peer per 15s;
-        // quick tab switching otherwise cascades restarts and jams signaling.
         const now = Date.now();
         for (const id in this.peers) {
           const peer = this.peers[id];
@@ -930,7 +717,6 @@
     this.cbState({ type: 'connected' });
   };
 
-  // Inline worker that ticks outside background-tab throttling.
   Call.prototype._startBgKeepalive = function () {
     if (this._bgWorker) return;
     try {
@@ -951,18 +737,14 @@
       this._bgWorkerURL = url;
       this._bgWorker.onmessage = () => {
         if (this.stopped) return;
-        // App ping: the server's 'pong' resets its pong deadline and any
-        // middlebox (Cloudflare/Traefik/NAT) idle counter.
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
           try { this.ws.send(JSON.stringify({ type: 'ping' })); } catch (_) {}
         }
-        // Run a reconnect that got stuck in a throttled setTimeout.
         if (this._pendingReconnect && !this.stopped) {
           this._pendingReconnect = false;
           this.reopenSignaling();
         }
       };
-      // 20s: well inside common idle timeouts (Cloudflare 100s, Traefik 60s).
       this._bgWorker.postMessage({ cmd: 'start', interval: 20000 });
     } catch (_) { /* no Worker: degrade gracefully */ }
   };
@@ -993,8 +775,6 @@
       try { this._wakeLock.release(); } catch (_) {}
       this._wakeLock = null;
     }
-    // Null the handlers BEFORE stop() so ondataavailable cannot keep pushing
-    // chunks into an orphaned closure.
     if (this.recorder && this.recorder.state !== 'inactive') {
       try { this.recorder.ondataavailable = null; } catch (_) {}
       try { this.recorder.onstop = null; } catch (_) {}
@@ -1019,8 +799,6 @@
       this.screenStream.getTracks().forEach(t => t.stop());
       this.screenStream = null;
     }
-    // Must stop the muted-speaking detector: its track clone + AudioContext keep
-    // the mic "in use" and the next call fails with "device busy".
     this._stopLocalSpeakingMonitor();
     if (this._micGainCtx) {
       try {
@@ -1044,8 +822,6 @@
       this.frostCanvas = null;
       if (this.frostVideoEl) { try { this.frostVideoEl.srcObject = null; } catch (_) {} this.frostVideoEl = null; }
     }
-    // Stop subtitles, or the local-whisper WS + AudioContext leak and the next
-    // call gets NotReadableError (mic still "in use").
     if (this._subtitlesActive) {
       this._subtitlesActive = false;
       try { this._subtitlesHandle && this._subtitlesHandle.stop && this._subtitlesHandle.stop(); } catch (_) {}
@@ -1064,7 +840,6 @@
       this.networkListenerInstalled = false;
       this._netHandler = null;
     }
-    // visibilitychange handler + bg keepalive worker.
     if (this._visHandler) {
       try { document.removeEventListener('visibilitychange', this._visHandler); } catch (_) {}
       this._visHandler = null;
@@ -1078,8 +853,6 @@
       }
       this._peerAudioMonitors = {};
     }
-    // Close any preserved PiP window BEFORE clearing the grid; innerHTML=''
-    // would otherwise orphan the OS window and the pending timer.
     if (this._pipReattachTimer) { try { clearTimeout(this._pipReattachTimer); } catch (_) {} this._pipReattachTimer = null; }
     if (this._pipDetached) {
       for (const cid in this._pipDetached) {
@@ -1094,11 +867,7 @@
     }
     if (this.videosEl) this.videosEl.innerHTML = '';
 
-    // POST final session totals so the dashboard history knows about it.
-    // Fire-and-forget; no auth header here because the existing JWT cookie
-    // covers the request (same-origin POST).
     const durationS = this.callStartedAt ? Math.round((Date.now() - this.callStartedAt) / 1000) : 0;
-    // Guests cannot access /api/videocall/sessions (logged-in users only).
     if (durationS > 0 && (this.cumBytesSent + this.cumBytesRecv) > 0 && !this.opts.guestMode) {
       try {
         const headers = { 'Content-Type': 'application/json' };
@@ -1122,12 +891,6 @@
     this.cbState({ type: 'disconnected' });
   };
 
-  // -- Signaling -------------------------------------------------------
-
-  // Stable client identity for authenticated users, in sessionStorage keyed by
-  // room: survives WS reconnects but NOT shared across tabs (each tab is a
-  // distinct participant, preserving the server's two-tab guard). Guests get ''
-  // (the server derives it from the token jti). Ephemeral if storage is unavailable.
   Call.prototype._resolveClientId = function () {
     if (this.opts.guestMode) return '';
     const key = 'panel:vc:cid:' + this.roomId;
@@ -1146,12 +909,8 @@
   Call.prototype.openSignaling = function () {
     return new Promise(async (resolve, reject) => {
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      // Guest mode (PIN entry): the guest token embeds the room, so no room_id
-      // in the query (the server would reject a mismatch).
       const wsPath = this.opts.guestMode ? '/ws/videocall-guest' : '/ws/videocall';
       const roomParam = this.opts.guestMode ? '' : ('&room_id=' + encodeURIComponent(this.roomId));
-      // ticketProvider preferred (mobile cookie-auth flow); fallback token.
-      // Guest mode ALWAYS uses the guest JWT (guests have no ws-ticket).
       let authParam = '';
       if (!this.opts.guestMode && this.ticketProvider) {
         try {
@@ -1160,16 +919,10 @@
         } catch (_) {}
       }
       if (!authParam) authParam = '?token=' + encodeURIComponent(this.token);
-      // client_id for authenticated users only; guests omit it (server uses jti).
       const clientParam = (!this.opts.guestMode && this.clientId)
         ? ('&client_id=' + encodeURIComponent(this.clientId)) : '';
-      // `resume=1` tells the server this WS REOPENS an ongoing call, so the
-      // rejoin does not ring the other devices. The flag can only SILENCE:
-      // the server uses it to suppress ringing, never to trigger it.
       const resumeParam = this._resuming ? '&resume=1' : '';
       const url = proto + '//' + location.host + wsPath + authParam + roomParam + clientParam + resumeParam;
-      // Log client_id on every (re)connect: a changing value (or 'none')
-      // explains a ghost the server-side eviction could not match.
       console.log('[panel:vc] WS connecting guest=' + (!!this.opts.guestMode) +
         ' client_id=' + (this.clientId ? this.clientId.slice(-8) : 'none'));
       const ws = new WebSocket(url);
@@ -1181,7 +934,6 @@
         this._lastWsMessageAt = Date.now();
       };
       ws.onmessage = (ev) => {
-        // Last-message timestamp for the silent-death watchdog.
         this._lastWsMessageAt = Date.now();
         let msg;
         try { msg = JSON.parse(ev.data); } catch (_) { return; }
@@ -1199,16 +951,12 @@
       ws.onclose = (ev) => {
         if (this.stopped) return;
         if (!resolved) { reject(new Error('WS closed: ' + ev.code)); return; }
-        // Reconnect with backoff, capped at 8 attempts, then 'reconnect-gave-up';
-        // otherwise guests with an expired token loop forever.
         this._wsRetries = (this._wsRetries || 0) + 1;
         if (this._wsRetries > 8) {
           this.cbState({ type: 'reconnect-gave-up' });
           return;
         }
         this.cbState({ type: 'reconnecting' });
-        // setTimeout is throttled in background tabs; mark pending so the
-        // (unthrottled) worker tick can also trigger the reopen.
         this._pendingReconnect = true;
         setTimeout(() => {
           if (!this.stopped && this._pendingReconnect) {
@@ -1221,7 +969,6 @@
     });
   };
 
-  // Tears down ONE peer audio monitor (AudioContext + analyser + RAF).
   Call.prototype._teardownPeerMonitor = function (id) {
     if (!this._peerAudioMonitors || !this._peerAudioMonitors[id]) return;
     const m = this._peerAudioMonitors[id];
@@ -1231,12 +978,6 @@
   };
 
   Call.prototype.reopenSignaling = function () {
-    // Mid-call reconnect that SURVIVES a server restart: media is P2P/TURN and
-    // does not go through signaling, so `connected` PCs stay up (ICE consent is
-    // peer-to-peer, RFC 7675). We PRESERVE them and ADOPT them under the new
-    // peer id once the WS reopens (re-key via stable ClientID in ensurePeer ->
-    // _rekeyPeer). Only non-`connected` PCs are closed and recreated from the
-    // snapshot; a monitor is torn down only together with the PC it observes.
     if (this._userInitiatedHangup) return;
     this.cbState({ type: 'reconnecting' });
     let preserved = 0, dropped = 0;
@@ -1254,7 +995,6 @@
       dropped++;
     }
     console.log('[panel:vc] reopen: preserved=' + preserved + ' dropped=' + dropped);
-    // While this cycle lasts, the WS carries resume=1 (see openSignaling).
     this._resuming = true;
     this.openSignaling()
       .then(() => this.cbState({ type: 'reconnected' }))
@@ -1274,22 +1014,14 @@
       if (payload.turn.username) ice.username = payload.turn.username;
       if (payload.turn.credential) ice.credential = payload.turn.credential;
       this.iceServers = [ice];
-      // Refresh TURN credentials at 0.8 * TTL so calls longer than the TTL
-      // keep TURN (critical behind CGNAT).
       const ttlSec = (payload.turn.ttl > 0) ? payload.turn.ttl : 3600;
       this._scheduleTURNRefresh(Math.floor(ttlSec * 0.8));
     } else {
       this.iceServers = [{ urls: ['stun:stun.l.google.com:19302'] }];
     }
-    // payload.peers is the authoritative room roster. A `peer-left` missed while
-    // the socket was down would leave a ghost tile, so drop local peers that are
-    // NOT in the snapshot (except ourselves).
     const live = new Set((payload.peers || []).map(p => p.id));
     for (const id in this.peers) {
       if (id === this.peerId || live.has(id)) continue;
-      // Do NOT close a `connected` PC here: it is a restart survivor under its
-      // OLD id, awaiting adoption in the ensurePeer loop below (the snapshot lists
-      // it under the NEW id). connected = adopt; any other state = real ghost.
       const peer = this.peers[id];
       const cs = peer && peer.pc && peer.pc.connectionState;
       if (cs === 'connected') {
@@ -1305,10 +1037,8 @@
         delete this._captionClearTimers[id];
       }
     }
-    // Snapshot of existing peers — we initiate offers to each of them (we're
-    // the "newcomer", they're "existing").
     for (const p of payload.peers || []) {
-      this.ensurePeer(p.id, p.user, /*initiator=*/true, p.client_id);
+      this.ensurePeer(p.id, p.user, true, p.client_id);
     }
     this._notifyPeerCount();
     this._pruneOrphanTiles();
@@ -1332,8 +1062,6 @@
       if (tu.username) ice.username = tu.username;
       if (tu.credential) ice.credential = tu.credential;
       this.iceServers = [ice];
-      // setConfiguration does not force an ICE restart; new credentials apply
-      // to future candidates.
       for (const id in this.peers) {
         try { this.peers[id].pc.setConfiguration({ iceServers: this.iceServers }); }
         catch (_) {}
@@ -1343,7 +1071,6 @@
       const ttlSec = (tu.ttl > 0) ? tu.ttl : 3600;
       this._scheduleTURNRefresh(Math.floor(ttlSec * 0.8));
     } catch (e) {
-      // Exponential backoff, capped at 10 min and 5 attempts.
       this._turnRetries = (this._turnRetries || 0) + 1;
       if (this._turnRetries <= 5) {
         const backoff = Math.min(60 * Math.pow(2, this._turnRetries - 1), 600);
@@ -1352,7 +1079,6 @@
       } else {
         console.error('[panel:vc] TURN refresh exhausted after 5 attempts');
         try { this.cbState({ type: 'turn-exhausted' }); } catch (_) {}
-        // One more try in 10 min, in case the network recovers.
         this._turnRetries = 0;
         this._scheduleTURNRefresh(600);
       }
@@ -1368,7 +1094,7 @@
         if (msg.from && msg.from !== this.peerId) {
           console.log('[panel:vc] peer-joined ' + msg.from.slice(-6) + ' — preparing PeerConn (as answerer)');
           const info = safeParse(msg.payload) || {};
-          this.ensurePeer(msg.from, info.user || 'Peer', /*initiator=*/false, info.client_id);
+          this.ensurePeer(msg.from, info.user || 'Peer', false, info.client_id);
         }
         break;
       case 'peer-left':
@@ -1378,9 +1104,7 @@
           delete this.peers[msg.from];
           this._notifyPeerCount();
         }
-        // Safety net: sweep orphan tiles (e.g. a "no camera" placeholder).
         this._pruneOrphanTiles();
-        // Without this, each departing peer leaks an AudioContext + RAF.
         this._teardownPeerMonitor(msg.from);
         if (this._captionClearTimers && this._captionClearTimers[msg.from]) {
           clearTimeout(this._captionClearTimers[msg.from]);
@@ -1388,7 +1112,6 @@
         }
         break;
       case 'reset':
-        // The other side detected a stuck connection and is rebuilding its end.
         if (msg.from && this.peers[msg.from]) this._rebuildPeer(msg.from, 'requested by the other side', false);
         break;
       case 'offer':
@@ -1402,8 +1125,6 @@
         break;
       }
       case 'chat': {
-        // Chat may also flow through DataChannel — server-side relay is the
-        // fallback when the DC isn't open yet.
         const data = safeParse(msg.payload) || {};
         this.cbChat({ from: msg.from, text: data.text || '', ts: Date.now() });
         break;
@@ -1413,8 +1134,6 @@
         this.cbState({ type: 'peer-state', from: msg.from, state: data });
         break;
       }
-      // Owner actions (the server validated the sender is the owner); applied
-      // locally when we are the target.
       case 'owner-mute': {
         if (msg.to === this.peerId) {
           this._applyOwnerMute(true, msg.from);
@@ -1424,7 +1143,6 @@
       }
       case 'owner-unmute': {
         if (msg.to === this.peerId) {
-          // Privacy: the owner can only ASK to unmute, never force the mic open.
           this.cbState({ type: 'owner-request-unmute', by: msg.from });
         }
         break;
@@ -1464,9 +1182,7 @@
       case 'error':
       case 'error-full':
       case 'error-conflict':
-        // The server sends specific types with ready-to-show messages in
-        // msg.error; the type lets the UI tell "room full" from "account in use".
-        this._userInitiatedHangup = true; // no reopenSignaling after fatal join errors
+        this._userInitiatedHangup = true;
         this.cbError(msg.error || translateLegacyError(msg.error));
         if (msg.type === 'error-full') {
           this.cbState({ type: 'room-full' });
@@ -1475,29 +1191,19 @@
         }
         break;
       case 'kicked':
-        // Tell the UI BEFORE the WS closes, so the user sees the reason
-        // instead of reconnect-gave-up.
-        this._userInitiatedHangup = true; // no reopenSignaling
+        this._userInitiatedHangup = true;
         this.cbState({ type: 'kicked', reason: msg.error || 'Removed from the call' });
         break;
     }
   };
 
-  // -- Peers -----------------------------------------------------------
-
-  // Re-keys (adopts) a LIVE PeerConn from its OLD id to the NEW id assigned
-  // after reconnect. Migrates EVERYTHING keyed by id in the SAME synchronous
-  // tick so no consumer sees intermediate state.
   Call.prototype._rekeyPeer = function (oldId, newId) {
     if (oldId === newId) return;
     const peer = this.peers[oldId];
     if (!peer) return;
-    // (0) Critical: all PC handlers read this.remoteId at fire time, so
-    //     rerouting here is atomic.
     delete this.peers[oldId];
     peer.remoteId = newId;
     this.peers[newId] = peer;
-    // (a) The tile's id-keyed DOM attributes.
     if (this.videosEl) {
       const attrs = ['data-vc-peer-tile', 'data-vc-peer-avatar', 'data-vc-peer-name',
                      'data-vc-peer-sub', 'data-vc-peer', 'data-vc-peer-caption'];
@@ -1506,24 +1212,18 @@
         if (el) el.setAttribute(attrs[i], newId);
       }
     }
-    // (b) Audio monitor: its RAF re-reads _peerAudioMonitors[remoteId] lazily,
-    //     so moving it is enough.
     if (this._peerAudioMonitors && this._peerAudioMonitors[oldId]) {
       const mon = this._peerAudioMonitors[oldId];
       mon.peerId = newId;
       this._peerAudioMonitors[newId] = mon;
       delete this._peerAudioMonitors[oldId];
     }
-    // (c) _captionClearTimers (currently never written; migrated for safety).
     if (this._captionClearTimers && this._captionClearTimers[oldId]) {
       this._captionClearTimers[newId] = this._captionClearTimers[oldId];
       delete this._captionClearTimers[oldId];
     }
-    // (d) Load-bearing: _activeSpeaker drives the CSS ring via data-vc-peer, and
-    //     _sendSubsStatus looks up this.peers[_subtitlesRequestedById].
     if (this._activeSpeaker === oldId) this._activeSpeaker = newId;
     if (this._subtitlesRequestedById === oldId) this._subtitlesRequestedById = newId;
-    // (e) _fileTxOffsets[*].peerID: cosmetic (never read), kept consistent.
     if (this._fileTxOffsets) {
       for (const fid in this._fileTxOffsets) {
         const o = this._fileTxOffsets[fid];
@@ -1533,32 +1233,21 @@
   };
 
   Call.prototype.ensurePeer = function (remoteId, user, initiator, clientId) {
-    // Idempotent: also absorbs a second call for an already adopted peer
-    // (snapshot and peer-joined can arrive in either order).
     if (this.peers[remoteId]) return this.peers[remoteId];
-    // Same stable clientId under ANOTHER id: either a restart survivor (adopt)
-    // or the ghost of the same client's previous connection (close).
     if (clientId) {
       for (const id of Object.keys(this.peers)) {
         if (id === remoteId) continue;
         const old = this.peers[id];
         if (!old || old.remoteClientId !== clientId) continue;
         const cs = old.pc && old.pc.connectionState;
-        // Still `connected`: media never dropped, only signaling. Re-key instead
-        // of close+renegotiate; no new PeerConn means no addTrack and no
-        // onnegotiationneeded, so ZERO renegotiation.
         if (cs === 'connected') {
           this._rekeyPeer(id, remoteId);
           const adopted = this.peers[remoteId];
-          // Recompute politeness with the NEW ids (deterministic and symmetric),
-          // covering glare during the brief asymmetric adoption window.
           adopted.polite = this.peerId < remoteId;
           console.log('[panel:vc] adopted ' + id.slice(-6) + '->' + remoteId.slice(-6) + ' (connected, media preserved, no renegotiation)');
           this._notifyPeerCount();
           return adopted;
         }
-        // Not `connected`: the ghost of this client's dead connection. Close it
-        // before creating the new one.
         try { old.close(); } catch (_) {}
         delete this.peers[id];
         this._teardownPeerMonitor(id);
@@ -1570,20 +1259,12 @@
       remoteUser: user,
       remoteClientId: clientId || '',
       initiator: initiator,
-      // Perfect negotiation: the LEXICOGRAPHICALLY LARGER id is impolite.
-      // Both peers compute this from the same source of truth (their own
-      // assigned ids), so the answer is deterministic and identical on both
-      // sides.
       polite: this.peerId < remoteId,
     });
     this.peers[remoteId] = peer;
     this._notifyPeerCount();
     return peer;
   };
-  // Rebuilds a peer connection from scratch. `warn`: we are the stuck side, so
-  // send `reset` for the other side to rebuild and come back as initiator. The
-  // reset goes over the same WS before the new offer, so it arrives first.
-  // At most 3 per peer.
   Call.prototype._rebuildPeer = function (remoteId, reason, warn) {
     const old = this.peers[remoteId];
     if (!old || this.stopped) return;
@@ -1601,15 +1282,12 @@
     try { old.close(); } catch (_) {}
     delete this.peers[remoteId];
     this._teardownPeerMonitor(remoteId);
-    this.ensurePeer(remoteId, user, /*initiator=*/!!warn, clientId);
+    this.ensurePeer(remoteId, user, !!warn, clientId);
   };
 
-  // Alpine does not see mutations of `this.peers` (not reactive), so notify the UI.
   Call.prototype._notifyPeerCount = function () {
     try {
       const list = [];
-      // Dedup by clientId (guests can share a name) so a residual ghost never
-      // inflates the participant count.
       const seen = new Set();
       for (const id in this.peers) {
         const p = this.peers[id];
@@ -1622,8 +1300,6 @@
     } catch (_) {}
   };
 
-  // Safety net: removes any peer tile without a live PeerConn behind it.
-  // Idempotent.
   Call.prototype._pruneOrphanTiles = function () {
     if (!this.videosEl) return;
     try {
@@ -1637,17 +1313,11 @@
     } catch (_) {}
   };
 
-  // PiP survives reconnects: _preservePipTile unbinds the tile from the peer id
-  // (which changes on rejoin) without removing the <video>, so the native PiP
-  // window stays open. Indexed by stable clientId; _adoptDetachedPipTile
-  // reattaches it, _dropDetachedPip cleans up if the peer never returns.
   Call.prototype._preservePipTile = function (v, tile, cid) {
     try {
       v.removeAttribute('data-vc-peer');
       v.setAttribute('data-vc-pip-detached', cid);
       if (tile) {
-        // Out of _pruneOrphanTiles' reach and hidden from the grid; the OS
-        // window keeps showing the video even with display:none.
         tile.removeAttribute('data-vc-peer-tile');
         tile.setAttribute('data-vc-pip-detached-tile', cid);
         tile.style.display = 'none';
@@ -1672,7 +1342,6 @@
         tile.setAttribute('data-vc-peer-tile', newId);
         tile.removeAttribute('data-vc-pip-detached-tile');
         tile.style.display = '';
-        // Re-key the tile children, or onTrack's avatar/caption logic cannot find them.
         ['data-vc-peer-avatar', 'data-vc-peer-name', 'data-vc-peer-sub', 'data-vc-peer-caption'].forEach(function (a) {
           const el = tile.querySelector('[' + a + ']');
           if (el) el.setAttribute(a, newId);
@@ -1697,13 +1366,10 @@
   };
 
   Call.prototype.handleNetworkChange = function () {
-    // network came back / changed. Ask every PC to restart ICE.
     for (const id in this.peers) {
       try { this.peers[id].pc.restartIce(); } catch (_) {}
     }
   };
-
-  // -- Stats -----------------------------------------------------------
 
   Call.prototype.collectStats = async function () {
     const agg = {
@@ -1711,7 +1377,7 @@
       bytesSentPerSec: 0, bytesRecvPerSec: 0,
       packetsLost: 0, rtt: 0,
       codec: '', resolution: '', framerate: 0,
-      connectionType: 'direct', // direct | relay | unknown
+      connectionType: 'direct',
     };
     const samples = [];
     for (const id in this.peers) {
@@ -1728,22 +1394,17 @@
       if (s.framerate > agg.framerate) agg.framerate = s.framerate;
       if (s.connectionType === 'relay') agg.connectionType = 'relay';
     }
-    // Accumulate session totals for /api/videocall/sessions POST on hangup.
     this.cumBytesSent += agg.bytesSentPerSec;
     this.cumBytesRecv += agg.bytesRecvPerSec;
     if (agg.codec) this.lastCodec = agg.codec;
     if (agg.connectionType) this.lastConnType = agg.connectionType;
-    // Adaptive degrade hooks (audio-first + AV1 fallback).
     this.applyAdaptiveDegrade(agg);
-    // Update active-speaker indicator. Threshold of ~12 (out of 0-255 avg)
-    // distinguishes voice from line noise.
     let topPeer = null, topLevel = 12;
     for (const id in this._peerAudioMonitors) {
       const lvl = this._peerAudioMonitors[id].level;
       if (lvl > topLevel) { topLevel = lvl; topPeer = id; }
     }
     if (topPeer !== this._activeSpeaker) {
-      // Toggle .speaking class on video elements so the CSS ring fires.
       if (this.videosEl) {
         if (this._activeSpeaker) {
           const old = this.videosEl.querySelector('[data-vc-peer="' + this._activeSpeaker + '"]');
@@ -1760,8 +1421,6 @@
     this.cbStats(agg);
   };
 
-  // -- Local controls --------------------------------------------------
-
   Call.prototype.attachLocalPreview = function () {
     if (!this.videosEl) return;
     let v = this.videosEl.querySelector('[data-vc-local="1"]');
@@ -1769,7 +1428,6 @@
       v = document.createElement('video');
       v.setAttribute('data-vc-local', '1');
       v.autoplay = true; v.muted = true; v.playsInline = true;
-      // Do NOT set width inline: it overrides the data-local-size CSS rules.
       v.style.cssText = 'background:#000;';
       this.videosEl.appendChild(v);
     }
@@ -1779,14 +1437,10 @@
   Call.prototype.setMuted = function (muted) {
     if (!this.localStream) return false;
     this._userMutedExplicit = !!muted;
-    this.muted = !!muted; // read by the STT loop guard to skip the mute period
+    this.muted = !!muted;
     for (const t of this.localStream.getAudioTracks()) t.enabled = !muted;
-    // The raw track too: transcription reads it, so otherwise muted speech would
-    // be sent as captions. (The muted-speaking alert reads its own clone.)
     if (this._micGainRawTrack) this._micGainRawTrack.enabled = !muted;
     this.send({ type: 'state', payload: jsonRaw({ mic: muted ? 'off' : 'on' }) });
-    // On unmute, give STT a grace window so the loop guard does not trip on
-    // counts left over from the mute period.
     if (!muted && this._subtitlesActive) {
       this._subtitlesRestartCount = 0;
       this._subtitlesLastSuccessAt = Date.now();
@@ -1794,7 +1448,6 @@
         clearTimeout(this._subtitlesRestartGuard);
         this._subtitlesRestartGuard = null;
         if (window.PANEL_DEBUG) console.log('[panel:vc] unmute: kick STT restart');
-        // Short delay so track.enabled propagates before restarting.
         setTimeout(() => {
           if (this._subtitlesActive && !this._subtitlesHandle && this._restartSubtitlesLocalOnly) {
             this._restartSubtitlesLocalOnly(this._subtitlesBackend || 'web-speech', this._subtitlesLang);
@@ -1808,19 +1461,12 @@
   Call.prototype.setVideoOff = function (off) {
     if (!this.localStream) return false;
     for (const t of this.localStream.getVideoTracks()) t.enabled = !off;
-    // Manual "video on" must reset autoVideoOff, or the auto-degrade state
-    // machine never emits auto-video-on again.
     if (!off && this.autoVideoOff) {
       this.autoVideoOff = false;
     }
     this.send({ type: 'state', payload: jsonRaw({ cam: off ? 'off' : 'on' }) });
     return !!off;
   };
-
-  // -- Live device hot-swap (works mid-call without renegotiation) -----
-  // RTCRtpSender.replaceTrack lets us swap the underlying camera/mic
-  // without touching SDP. setSinkId on remote <video> changes which
-  // speaker/headset the remote audio plays through.
 
   Call.prototype.setCameraDevice = async function (deviceId) {
     if (this.frostActive) await this.setPrivacyFrost(false);
@@ -1835,14 +1481,11 @@
     catch (e) { this.cbError('camera: ' + e.message); return false; }
     const newTrack = s.getVideoTracks()[0];
     if (!newTrack) return false;
-    // Stop the old camera track (release the device).
     if (this.cameraTrack && this.cameraTrack !== newTrack) {
       try { this.cameraTrack.stop(); } catch (_) {}
     }
     this.cameraTrack = newTrack;
     this.deviceIds.camera = deviceId;
-    // During screen share do NOT replace the sender (it would silently drop the
-    // shared screen); the new camera takes effect when sharing stops.
     if (!this.screenSharing) {
       await this.swapVideoSenderTrack(newTrack);
     } else {
@@ -1862,9 +1505,6 @@
     return true;
   };
 
-  // Toggles noise suppression, echo cancellation and auto gain by reopening the
-  // mic: many browsers silently ignore applyConstraints for these three keys.
-  // Goes through the device-swap path, so peers do not notice.
   Call.prototype.setMicProcessing = async function (proc) {
     const next = normMicProc(Object.assign({}, this._micProc, proc || {}));
     const prev = this._micProc;
@@ -1885,9 +1525,6 @@
     return next;
   };
 
-  // Builds the gain pipeline on the raw getUserMedia track. localStream (peers,
-  // recording) gets the pipeline output; the raw track is kept for transcription
-  // and source swaps.
   Call.prototype._buildMicPipeline = function (rawTrack) {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!rawTrack || !AC) return false;
@@ -1906,8 +1543,6 @@
       try { ctx.close().catch(() => {}); } catch (_) {}
       return false;
     }
-    // A context created outside a user gesture may start suspended, which
-    // sends pure silence to peers.
     if (ctx.state === 'suspended') { try { ctx.resume(); } catch (_) {} }
     this._micGainCtx = ctx;
     this._micGainNode = gain;
@@ -1929,8 +1564,6 @@
     this._micGainRawTrack = rawTrack;
   };
 
-  // Swaps the raw track (another mic, or new processing). With the pipeline only
-  // the source is rewired: the sent track is unchanged and no replaceTrack is needed.
   Call.prototype._replaceMicRaw = async function (newTrack) {
     newTrack.enabled = !this._userMutedExplicit;
     let old;
@@ -1938,7 +1571,6 @@
       old = this._micGainRawTrack;
       this._attachMicSource(newTrack);
     } else {
-      // No pipeline (AudioContext refused): replace directly on the senders.
       old = this.localStream && this.localStream.getAudioTracks()[0];
       for (const id in this.peers) {
         const pc = this.peers[id].pc;
@@ -1955,9 +1587,7 @@
     }
     if (old && old !== newTrack) { try { old.stop(); } catch (_) {} }
     this._startLocalSpeakingMonitor();
-    // Transcription reads the raw track: restart it locally, no broadcast to peers.
     if (this._subtitlesActive && this._restartSubtitlesLocalOnly) {
-      // A scheduled restart (mute/backoff pause) would start a second handle.
       if (this._subtitlesRestartGuard) { clearTimeout(this._subtitlesRestartGuard); this._subtitlesRestartGuard = null; }
       try { this._subtitlesHandle && this._subtitlesHandle.stop && this._subtitlesHandle.stop(); } catch (_) {}
       this._subtitlesHandle = null;
@@ -1965,14 +1595,11 @@
     }
   };
 
-  // Level of what is SENT to peers (after gain and limiter); null = no pipeline.
   Call.prototype.getMicLevel = function () {
     if (!this._micAnalyser) return null;
     return readMicLevel(this._micAnalyser, this._micLevelBuf, this._micLimiter);
   };
 
-  // Muted-speaking alert. Reads a CLONE of the raw track with its own enabled
-  // flag, so muting does not silence the analyser. Restarted on every source swap.
   Call.prototype._startLocalSpeakingMonitor = function () {
     this._stopLocalSpeakingMonitor();
     try {
@@ -1992,7 +1619,6 @@
       this._localSpeakingMon = mon;
       const tick = () => {
         if (this.stopped || this._localSpeakingMon !== mon) return;
-        // Resume if the browser suspended the context in a background tab.
         if (ctx.state === 'suspended') { try { ctx.resume(); } catch (_) {} }
         analyser.getByteFrequencyData(data);
         let sum = 0;
@@ -2049,22 +1675,13 @@
     for (const id in this.peers) this.peers[id].applyBitrates(this.videoKbps, this.audioKbps);
   };
 
-  /**
-   * Apply a quality profile live. Honored mid-call:
-   *  - track.applyConstraints  → camera renegotiates resolution / fps
-   *  - sender.setParameters    → video maxBitrate + audio maxBitrate
-   *
-   * If profileOrName is a preset name, the preset object is looked up;
-   * otherwise an explicit { width, height, fps, videoKbps, audioKbps }
-   * is taken as-is. Returns the effective profile actually applied.
-   */
   Call.prototype.applyQualityProfile = async function (profileOrName) {
     let p, name;
     if (typeof profileOrName === 'string') {
       name = profileOrName;
       p = QUALITY_MODES[name];
       if (!p) return null;
-      p = Object.assign({}, p); // shallow copy so we can mutate locally
+      p = Object.assign({}, p);
     } else if (profileOrName && typeof profileOrName === 'object') {
       name = 'custom';
       p = {
@@ -2079,7 +1696,6 @@
     } else {
       return null;
     }
-    // Clamp the bitrates within sane absolute bounds.
     p.videoKbps = p.videoOff ? 0 : Math.max(BUDGET_FLOOR_KBPS, Math.min(BUDGET_CEILING_KBPS, p.videoKbps));
     p.audioKbps = Math.max(6, Math.min(128, p.audioKbps));
     this.qualityName = name;
@@ -2089,13 +1705,10 @@
     this.videoKbps   = p.videoKbps;
     this.audioKbps   = p.audioKbps;
     this.budgetKbps  = p.videoKbps;
-    // (1) Toggle video on/off (the phone profile goes audio-only mid-call).
     const wantsAudioOnly = !!p.videoOff;
     if (wantsAudioOnly !== this.audioOnly) {
       this.audioOnly = wantsAudioOnly;
       if (wantsAudioOnly) {
-        // Hot-disable: drop the video sender and stop the camera. The peer keeps
-        // receiving audio only; no renegotiation required.
         for (const id in this.peers) {
           const pc = this.peers[id].pc;
           for (const sender of pc.getSenders()) {
@@ -2111,8 +1724,6 @@
           }
         }
       } else {
-        // Hot-enable: reacquire the camera and put it on the existing
-        // transceiver, or add a new track if there is none.
         try {
           const constraints = {
             video: {
@@ -2135,7 +1746,6 @@
         } catch (e) { this.cbError('re-enable video: ' + e.message); }
       }
     }
-    // (2) Apply camera constraints (no renegotiation needed).
     if (!wantsAudioOnly && this.cameraTrack && this.cameraTrack.applyConstraints) {
       try {
         await this.cameraTrack.applyConstraints({
@@ -2145,16 +1755,10 @@
         });
       } catch (e) { /* device might not support; non-fatal */ }
     }
-    // (3) Update Opus SDP tweak state. The new fmtp only reaches the peer on
-    // the next renegotiation.
     const newOpusTweak = (p.opusTweak != null ? !!p.opusTweak : this.opusTweak);
     const opusChanged = newOpusTweak !== this.opusTweak;
     this.opusTweak = newOpusTweak;
-    // (4) Apply bitrates on every active sender.
     for (const id in this.peers) this.peers[id].applyBitrates(p.videoKbps, p.audioKbps);
-    // (5) Never dispatch 'negotiationneeded' by hand: without the native flag
-    // dirty it causes an endless offer/answer loop. The Opus tweak is applied
-    // by tweakOpusSdp on the next spontaneous renegotiation, or the next call.
     void opusChanged;
     this.cbState({ type: 'quality', profile: { name: name, ...p } });
     return { name, ...p };
@@ -2167,23 +1771,18 @@
     for (const id in this.peers) {
       if (this.peers[id].sendChat(text)) dcSent = true;
     }
-    // Fallback: relay through signaling for any peer whose DC isn't open.
     if (!dcSent) {
-      // Broadcast via server — server only forwards to same room (ACL OK).
-      // We use Forward by sending one msg per peer.
       for (const id in this.peers) {
         this.send({ type: 'chat', to: id, payload: jsonRaw({ text: text }) });
       }
     }
   };
 
-  // -- Screen share / Recording / Audio-first -------------------------
-
   Call.prototype.setScreenShare = async function (on) {
     if (on && !this.screenSharing) {
       try {
         this.screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: { frameRate: { ideal: 15 } }, // 15fps is plenty for slides
+          video: { frameRate: { ideal: 15 } },
           audio: false,
         });
       } catch (e) {
@@ -2191,7 +1790,6 @@
         return false;
       }
       const screenTrack = this.screenStream.getVideoTracks()[0];
-      // Auto-stop when user clicks "Stop sharing" in the browser UI.
       screenTrack.addEventListener('ended', () => { this.setScreenShare(false); });
       await this.swapVideoSenderTrack(screenTrack);
       this.screenSharing = true;
@@ -2200,11 +1798,8 @@
       return true;
     }
     if (!on && this.screenSharing) {
-      // Swap back to the camera BEFORE stopping the screen track, otherwise the
-      // sender keeps sending a black frame until replaceTrack completes.
       let camTrack = this.cameraTrack;
       if (!camTrack || camTrack.readyState !== 'live') {
-        // The camera track can die during the share (e.g. background tab).
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ video: true });
           camTrack = stream.getVideoTracks()[0];
@@ -2232,9 +1827,6 @@
   Call.prototype.swapVideoSenderTrack = async function (newTrack) {
     for (const id in this.peers) {
       const pc = this.peers[id].pc;
-      // Wait up to 2s for 'connected' before replaceTrack: on slow networks the
-      // remote otherwise sees black frames. If it never connects, skip it (the
-      // normal onnegotiationneeded path updates it).
       if (pc.connectionState !== 'connected') {
         let retries = 0;
         while (pc.connectionState !== 'connected' && retries < 20) {
@@ -2245,16 +1837,13 @@
       }
       for (const sender of pc.getSenders()) {
         if (sender.track && sender.track.kind === 'video') {
-          // Promise.resolve wrapper for Safari < 15.2, where replaceTrack may return synchronously.
           try { await Promise.resolve(sender.replaceTrack(newTrack)); } catch (_) {}
         }
       }
     }
-    // Update local preview to show what we're broadcasting.
     if (this.videosEl) {
       const v = this.videosEl.querySelector('[data-vc-local="1"]');
       if (v && this.localStream) {
-        // Replace the video track in localStream.
         const old = this.localStream.getVideoTracks()[0];
         if (old) this.localStream.removeTrack(old);
         this.localStream.addTrack(newTrack);
@@ -2266,9 +1855,6 @@
   Call.prototype.startRecording = function () {
     if (this.recorder && this.recorder.state !== 'inactive') return false;
     if (!this.videosEl) return false;
-    // Compose local + remote videos onto a hidden canvas + capture stream
-    // from it. This gives us a single-file recording even with multiple
-    // peers. For 1-on-1 it's just local PiP over remote.
     const canvas = document.createElement('canvas');
     canvas.width = 1280; canvas.height = 720;
     const ctx = canvas.getContext('2d');
@@ -2276,7 +1862,6 @@
       if (this.stopped || !this.recorder || this.recorder.state === 'inactive') return;
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      // Remote first (full-frame)
       const remotes = this.videosEl.querySelectorAll('video[data-vc-peer]');
       if (remotes.length) {
         const v = remotes[0];
@@ -2284,7 +1869,6 @@
           ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
         }
       }
-      // Local PiP (bottom-right, 25% width)
       const local = this.videosEl.querySelector('video[data-vc-local="1"]');
       if (local && local.videoWidth) {
         const w = canvas.width * 0.25, h = (w * local.videoHeight) / local.videoWidth;
@@ -2294,7 +1878,6 @@
     };
     let canvasStream;
     try { canvasStream = canvas.captureStream(20); } catch (_) { return false; }
-    // Mix audio tracks (local mic + each peer's incoming audio).
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const dst = audioCtx.createMediaStreamDestination();
     try {
@@ -2311,7 +1894,6 @@
     }
     dst.stream.getAudioTracks().forEach(t => canvasStream.addTrack(t));
 
-    // Pick the best supported codec for the recording container.
     let mime = 'video/webm;codecs=vp9,opus';
     if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp8,opus';
     if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
@@ -2346,8 +1928,6 @@
     if (!chunks.length) return;
     const blob = new Blob(chunks, { type: chunks[0].type || 'video/webm' });
     const durationS = this.recordingStarted ? Math.round((Date.now() - this.recordingStarted) / 1000) : 0;
-    // If the caller registered onRecordingReady it decides (cloud upload,
-    // local save, or both); otherwise fall back to a local download.
     if (typeof this.cbRecordingReady === 'function') {
       try { this.cbRecordingReady({ blob, durationS, mimeType: blob.type }); return; }
       catch (e) { /* fallback */ }
@@ -2360,10 +1940,6 @@
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
-  // -- Privacy frost (full-frame blur) -------------------------------
-  // We route the camera through a hidden <video> → blurred canvas →
-  // captureStream → replaceTrack. Not background-only segmentation — just
-  // a privacy curtain. Toggle off restores the camera track unchanged.
   Call.prototype.setPrivacyFrost = async function (on) {
     if (on && !this.frostActive) {
       if (!this.cameraTrack) return false;
@@ -2381,7 +1957,6 @@
         ctx.filter = 'blur(18px) saturate(0.6)';
         try { ctx.drawImage(src, 0, 0, canvas.width, canvas.height); } catch (_) {}
         ctx.filter = 'none';
-        // Discreet "Privacy on" label overlay
         ctx.fillStyle = 'rgba(0,0,0,0.6)';
         ctx.fillRect(0, canvas.height - 36, canvas.width, 36);
         ctx.fillStyle = '#fff';
@@ -2396,7 +1971,6 @@
       try {
         await this.swapVideoSenderTrack(blurTrack);
       } catch (e) {
-        // Tear down the canvas and video on failure so the blur does not outlive the toggle.
         this.frostActive = false;
         if (this.frostRAF) { cancelAnimationFrame(this.frostRAF); this.frostRAF = 0; }
         this.frostCanvas = null;
@@ -2421,16 +1995,6 @@
     return this.frostActive;
   };
 
-  // -- File transfer (DataChannel chunked) ---------------------------
-  // Each file gets its own JSON-framed protocol over the per-peer
-  // `panel-files` channel:
-  //
-  //   [{type:'file-start', id, name, size, mime, chunks}]
-  //   binary chunks (ArrayBuffer) — 16KB each, in order, by id
-  //   [{type:'file-end', id}]
-  //
-  // We don't multiplex transfers — if two start at once, the second
-  // waits. Keeps the receiver state minimal.
   Call.prototype.sendFile = async function (file) {
     const peers = Object.values(this.peers);
     if (!peers.length) return;
@@ -2439,21 +2003,8 @@
     }
   };
 
-  // -- Whiteboard broadcast ------------------------------------------
-  // Soft cap on buffered strokes. A stroke is ~100 bytes of JSON; 4000 keeps a
-  // full snapshot well under the ~256KB DataChannel message ceiling. Beyond the
-  // cap we drop the oldest segments (chunked snapshots are a future option).
   Call.WB_STROKE_CAP = 4000;
 
-  // Record a whiteboard event into the shared buffer so it can be replayed to a
-  // (re)joining peer and redrawn after a resize. `wb-line` accumulates; any
-  // `wb-clear` (from any side) resets the board. `_from` is undefined for
-  // locally-drawn strokes and the origin peer id for received ones.
-  //
-  // route by `ev.surface`. 'screen' => the annotation overlay buffer;
-  // anything else (including absent, for backward-compat with pre-surface peers)
-  // => the collaborative board. A `wb-clear` only zeroes its own surface so the
-  // two layers never clobber each other. `alpha` rides along for the highlighter.
   Call.prototype._wbRecord = function (ev) {
     if (!ev) return;
     const buf = ev.surface === 'screen' ? this._annotStrokes : this._wbStrokes;
@@ -2466,20 +2017,14 @@
   };
 
   Call.prototype.broadcastWhiteboard = function (ev) {
-    // Buffer the local stroke (no _from => authored here) before sending so the
-    // snapshot to a future joiner includes strokes WE drew, not just received.
     this._wbRecord(ev);
     for (const id in this.peers) {
       this.peers[id].sendWhiteboard(ev);
     }
   };
 
-  // Update the caption under a peer's tile (remote captions arrive over the
-  // DataChannel, local ones from our own STT). Empty text hides it.
   Call.prototype.updatePeerCaption = function (peerId, text, isLocal) {
     if (!this.videosEl) return;
-    // _showCaptions only controls the video overlay; text still flows through
-    // cbState to the transcript panel and summary. Defaults to on.
     if (this._showCaptions === false) {
       try {
         const localCap = this.videosEl.querySelector('[data-vc-local-caption]');
@@ -2489,11 +2034,7 @@
       } catch (_) {}
       return;
     }
-    // The local caption is a separate overlay (data-vc-local-caption) because
-    // the local video has no tile.
     if (isLocal || peerId === 'me') {
-      // Remove duplicates first: orphan captions pile up in a different
-      // parentElement when videosEl changes between renegotiations.
       try {
         const scopes = [this.videosEl, this.videosEl.parentElement].filter(Boolean);
         const allCaps = [];
@@ -2526,14 +2067,10 @@
     else { cap.style.display = 'none'; }
   };
 
-  // setShowCaptions only controls the visual overlay. When false, STT keeps
-  // running and the transcript panel and summary keep filling.
   Call.prototype.setShowCaptions = function (show) {
     this._showCaptions = !!show;
     if (!this._showCaptions) {
       try {
-        // The local caption may live in videosEl OR its parent, so clear both
-        // scopes (this also removes orphan duplicates).
         const scopes = [this.videosEl, this.videosEl && this.videosEl.parentElement].filter(Boolean);
         for (const scope of scopes) {
           scope.querySelectorAll('[data-vc-local-caption]').forEach(el => {
@@ -2550,11 +2087,6 @@
     this.cbState({ type: 'subtitles-show', show: this._showCaptions });
   };
 
-  // -- Live subtitles (PanelSTT adapter — whisper-local OR web-speech) --------
-  // Ask EVERY active peer to turn its local STT on/off. Each peer transcribes
-  // its own audio and sends the text over the DC, so one user enabling it
-  // shows everyone's speech to everyone. Idempotent on the receiving side.
-  // Returns {sent, pending, total} so the caller can give feedback.
   Call.prototype._broadcastSubtitlesRequest = function (on, lang) {
     if (!this.peers) return { sent: 0, pending: 0, total: 0 };
     const payload = JSON.stringify({
@@ -2573,8 +2105,6 @@
         catch (e) { console.warn('[panel:vc] subs broadcast fail peer=' + id.slice(-6) + ': ' + e.message); }
       } else {
         pending++;
-        // DC not open yet: dc.onopen checks _subtitlesActive and sends then.
-        // No local queue needed; the Call flag is the source of truth.
       }
     }
     console.log('[panel:vc] subtitles-request broadcast: on=' + on +
@@ -2582,11 +2112,6 @@
     return { sent, pending, total };
   };
 
-  // _assignSubsHandle: startWithBackend returns a sync session (web-speech),
-  // a Promise (whisper-local) or null (no backend). Normalize it so
-  // _subtitlesHandle is never a raw Promise (.stop/.setGain would be no-ops).
-  // If subtitles were turned off while the Promise resolved, stop the new
-  // handle instead of leaving it orphaned.
   Call.prototype._assignSubsHandle = function (p) {
     Promise.resolve(p).then((h) => {
       if (!this._subtitlesActive) {
@@ -2594,15 +2119,10 @@
         return;
       }
       this._subtitlesHandle = h;
-      // start returned null (no backend): report the failure to the initiator.
       if (!h && this._sendSubsStatus) this._sendSubsStatus(false, 'start-failed', this._subtitlesBackend);
     });
   };
 
-  // _sendSubsStatus: when THIS peer was remotely enabled by an initiator, tell
-  // the initiator over its DC whether STT actually started. The ack is one-shot
-  // (_subtitlesAckSent); failure statuses may repeat. Only the enabled peer
-  // confirms (1-to-1 for now).
   Call.prototype._sendSubsStatus = function (ok, reason, backend) {
     const id = this._subtitlesRequestedById;
     if (!id) return;
@@ -2621,7 +2141,6 @@
 
   Call.prototype.setSubtitles = function (on, opts) {
     opts = opts || {};
-    // Ignore a flip within 500ms of the last toggle: rapid stutter confuses remote peers.
     const now = Date.now();
     if (this._lastSubtitlesToggleAt && now - this._lastSubtitlesToggleAt < 500) {
       const prev = this._lastSubtitlesToggleValue;
@@ -2636,8 +2155,6 @@
     if (on && !this._subtitlesActive) {
       if (!window.PanelSTT) { this.cbError('subtitles: STT module not loaded'); return false; }
 
-      // Throttle partials to ~4/s (web-speech emits 10-20/s); finals always go
-      // through. A trailing-edge send guarantees the latest text is shown.
       this._lastCaptionPartialAt = 0;
       this._captionTrailingTimer = null;
       this._captionTrailingPayload = null;
@@ -2649,8 +2166,6 @@
         }
         this.cbState({ type: 'caption', from: 'me', text: payload.text, final: !!payload.final, words: payload.words, confidence: payload.confidence });
         this.updatePeerCaption('me', payload.text, true);
-        // Auto-clear on every update (not only on final, which may never come):
-        // hide 6s after the last partial or 2.5s after a final.
         if (this._localCapClearTimer) clearTimeout(this._localCapClearTimer);
         const delay = payload.final ? 2500 : 6000;
         this._localCapClearTimer = setTimeout(() => {
@@ -2668,8 +2183,6 @@
           if (typeof extra.startMs === 'number') payload.startMs = extra.startMs;
           if (typeof extra.endMs === 'number') payload.endMs = extra.endMs;
         }
-        // Include displayName so the receiver does not depend on peer-count
-        // arriving before the first caption.
         if (this.displayName && this.displayName !== 'You') {
           payload.displayName = this.displayName;
         }
@@ -2708,8 +2221,6 @@
         }
       };
 
-      // Anti-loop guard counts consecutive restarts with no result. Fully
-      // reset on manual enable so it can recover after a previous trip.
       this._subtitlesRestartCount = 0;
       this._subtitlesLastSuccessAt = Date.now();
       if (this._subtitlesRestartGuard) {
@@ -2717,21 +2228,16 @@
         this._subtitlesRestartGuard = null;
       }
       const startWithBackend = (backend) => {
-        // Raw microphone track (see getMicStreamForSTT).
         const sttStream = this.getMicStreamForSTT ? this.getMicStreamForSTT() : this.localStream;
         return window.PanelSTT.start({
           backend,
           continuous: true,
           interimResults: true,
           lang: opts.lang || 'en-US',
-          // Token priority: opts.token > this.token (the call WS token, which
-          // also works for invited guests) > global __PANELTOKEN__ (logged-in only).
           token: opts.token || this.token || (window.__PANELTOKEN__ || null),
           stream: sttStream,
           prompt: opts.prompt || '',
           idleMs: 20000,
-          // onReady = STT really started (web-speech onstart / whisper
-          // SERVER_READY): ack the initiator and cancel the connect timeout.
           onReady: () => {
             this._subtitlesLastSuccessAt = Date.now();
             if (this._subsAckTimer) { clearTimeout(this._subsAckTimer); this._subsAckTimer = null; }
@@ -2740,7 +2246,6 @@
           onPartial: (p) => {
             this._subtitlesLastSuccessAt = Date.now();
             this._subtitlesRestartCount = 0;
-            // Backstop for onReady: text arrived, so STT is alive. Idempotent.
             if (this._subsAckTimer) { clearTimeout(this._subsAckTimer); this._subsAckTimer = null; }
             this._sendSubsStatus(true, '', this._subtitlesBackend);
             broadcastCaption(p.text, false, null);
@@ -2758,23 +2263,18 @@
           onError: (e) => {
             if (e.fatal && backend === 'whisper-local') {
               console.warn('[panel:vc] whisper-local failed (' + e.code + '), falling back to web-speech');
-              this._subtitlesActive = false; // blocks the onEnd restart below
-              // Stop the old handle first, or whisper-local's WebSocket,
-              // AudioContext and worklet are orphaned and can lock the mic.
+              this._subtitlesActive = false;
               try { this._subtitlesHandle && this._subtitlesHandle.stop && this._subtitlesHandle.stop(); } catch (_) {}
               this._subtitlesHandle = null;
               setTimeout(() => {
                 this._subtitlesActive = true;
-                this._subtitlesRestartCount = 0; // reset when switching driver
-                this._subtitlesLastSuccessAt = Date.now(); // grace window
+                this._subtitlesRestartCount = 0;
+                this._subtitlesLastSuccessAt = Date.now();
                 this._subtitlesBackend = 'web-speech';
                 this._assignSubsHandle(startWithBackend('web-speech'));
                 this.cbState({ type: 'subtitles-backend', backend: 'web-speech' });
               }, 250);
             } else if (e.fatal) {
-              // web-speech fatal too: report it but do NOT turn off here; the
-              // onEnd loop-guard decides. This is a real dead end, so tell the
-              // initiator and cancel the connect timeout.
               this.cbError('subtitles: ' + (e.message || e.code));
               if (this._subsAckTimer) { clearTimeout(this._subsAckTimer); this._subsAckTimer = null; }
               this._sendSubsStatus(false, e.code || 'fatal', this._subtitlesBackend);
@@ -2782,15 +2282,10 @@
           },
           onEnd: (e) => {
             if (!this._subtitlesActive) return;
-            // While muted, STT ends on silence: that is NOT a failure, or the
-            // loop-guard would trip for anyone muted for a while.
             const isMuted = this.muted || (this.localStream && this.localStream.getAudioTracks().some(t => !t.enabled));
             if (isMuted) {
-              // Slower retry (5s) without bumping the counter; unmute resumes fast.
               if (window.PANEL_DEBUG) console.log('[panel:vc] subtitles onEnd while muted, pausing restart');
               if (this._subtitlesRestartGuard) return;
-              // The session already ended: null the handle so the unmute kick in
-              // setMuted (guarded by `!_subtitlesHandle`) can restart it.
               this._subtitlesHandle = null;
               this._subtitlesRestartGuard = setTimeout(() => {
                 this._subtitlesRestartGuard = null;
@@ -2798,8 +2293,6 @@
               }, 5000);
               return;
             }
-            // Loop-guard: 5 restarts with no result for 15s. Browsers restart
-            // web-speech on idle, so a tighter guard trips on silence.
             const now = Date.now();
             const sinceLastSuccess = now - (this._subtitlesLastSuccessAt || 0);
             if (sinceLastSuccess > 15000) {
@@ -2813,7 +2306,6 @@
               return;
             }
             if (this._subtitlesRestartGuard) return;
-            // Exponential backoff: 1s, 2s, 4s, 8s, 16s (cap)
             const delay = Math.min(16000, 1000 * Math.pow(2, this._subtitlesRestartCount));
             console.log('[panel:vc] subtitles restart in ' + delay + 'ms (attempt ' + (this._subtitlesRestartCount + 1) + ', backend=' + backend + ', reason=' + (e.reason || 'unknown') + ', code=' + (e.code || '?') + ')');
             this._subtitlesRestartGuard = setTimeout(() => {
@@ -2827,17 +2319,12 @@
       this._subtitlesActive = true;
       this._subtitlesLang = opts.lang || 'en-US';
       this._subtitlesBackend = 'web-speech';
-      // Lets changeSubtitlesLang restart in place without an off/on broadcast.
       this._restartSubtitlesLocalOnly = (backend, lang) => {
         opts.lang = lang;
         this._subtitlesBackend = backend;
         this._assignSubsHandle(startWithBackend(backend));
       };
-      // Every on/off transition emits state so the UI button stays in sync,
-      // including remote activation (_silentPropagate).
       this.cbState({ type: 'subtitles-state', active: true, source: opts._silentPropagate ? 'remote' : 'local' });
-      // whisper-local (WhisperLive) is the default; web-speech is the fallback
-      // when it is offline or when the user picks it in the call settings.
       const requestedBackend = opts.backend ||
         (typeof localStorage !== 'undefined' && localStorage.getItem('panel_vc_stt_backend')) ||
         'whisper-local';
@@ -2856,9 +2343,6 @@
         try { window.PanelSTT.setBackend(backend); } catch (_) {}
         this._assignSubsHandle(startWithBackend(backend));
         this.cbState({ type: 'subtitles-backend', backend });
-        // If remotely enabled (an initiator is waiting), report 'connect-timeout'
-        // when no ack happens within 6s. Cleared on onReady/partial/final,
-        // terminal onError and OFF.
         if (this._subtitlesRequestedById) {
           if (this._subsAckTimer) clearTimeout(this._subsAckTimer);
           this._subsAckTimer = setTimeout(() => {
@@ -2867,11 +2351,7 @@
           }, 6000);
         }
       })();
-      // Ask every peer to start its local STT too, unless this start came from
-      // a remote request (avoids an amplification loop).
       if (!opts._silentPropagate) {
-        // We are the initiator: clear any stale remote requester so onReady
-        // does not ack an old peer.
         this._subtitlesRequestedById = null;
         this._subtitlesAckSent = false;
         const r = this._broadcastSubtitlesRequest(true, this._subtitlesLang);
@@ -2883,8 +2363,6 @@
           total: r.total,
           initiator: 'me',
         });
-        // Rescue retries at 1.5/4/8s for peers whose DC opened but whose send
-        // failed silently (dc.onopen already covers DCs that open later).
         if (r.pending > 0 || r.sent < r.total) {
           const retries = [1500, 4000, 8000];
           retries.forEach((delay, i) => {
@@ -2902,17 +2380,13 @@
       this._subtitlesActive = false;
       this.cbState({ type: 'subtitles-state', active: false, source: opts._silentPropagate ? 'remote' : 'local' });
       if (this._subtitlesRestartGuard) { clearTimeout(this._subtitlesRestartGuard); this._subtitlesRestartGuard = null; }
-      // Cancel the pending trailing caption so nothing is sent after off.
       if (this._captionTrailingTimer) { clearTimeout(this._captionTrailingTimer); this._captionTrailingTimer = null; }
       this._captionTrailingPayload = null;
-      // Reset the round-trip so no connect-timeout fires a false status after off.
       this._subtitlesRequestedById = null;
       this._subtitlesAckSent = false;
       if (this._subsAckTimer) { clearTimeout(this._subsAckTimer); this._subsAckTimer = null; }
       try { this._subtitlesHandle && this._subtitlesHandle.stop && this._subtitlesHandle.stop(); } catch (_) {}
       this._subtitlesHandle = null;
-      // Off does NOT stop other peers' STT (each controls its own mic); the
-      // request is informational only.
       if (!opts._silentPropagate) {
         const r = this._broadcastSubtitlesRequest(false, this._subtitlesLang || 'en-US');
         this.cbState({
@@ -2929,9 +2403,6 @@
     return this._subtitlesActive;
   };
 
-  // getMicStreamForSTT: transcription ALWAYS reads the raw mic track, before
-  // send gain, limiter, Opus and network. Send gain is for listeners; the STT
-  // engines normalize level themselves and pre-amplifying only risks clipping.
   Call.prototype.getMicStreamForSTT = function () {
     const raw = this._micGainRawTrack;
     if (raw && raw.readyState === 'live') {
@@ -2940,8 +2411,6 @@
     return this.localStream;
   };
 
-  // ---- Owner action helpers ------------------------------------------------
-  // The server already validated that these came from the room owner.
   Call.prototype._applyOwnerMute = function (mute, byPeerId) {
     if (mute && !this.muted) {
       this.setMuted(true);
@@ -2958,8 +2427,6 @@
     }
   };
 
-  // Owner API for the UI. The server validates ownership before relaying and
-  // silently ignores requests from non-owners.
   Call.prototype.ownerMutePeer = function (peerId) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
     try {
@@ -3005,8 +2472,6 @@
     return n;
   };
 
-  // Live mic send gain: affects what peers hear and the recording, not STT
-  // (which reads the raw track). A short ramp keeps slider drags from clicking.
   Call.prototype.setMicGain = function (v) {
     const g = clampMicGain(v);
     this._micGain = g;
@@ -3015,7 +2480,6 @@
       catch (_) { try { this._micGainNode.gain.value = g; } catch (_) {} }
       this.cbState({ type: 'mic-gain', value: g });
     } else {
-      // No gain pipeline: keep the value but there is nothing to apply it to.
       this.cbState({ type: 'mic-gain', value: g, unavailable: true });
     }
     return g;
@@ -3032,7 +2496,6 @@
     this._subtitlesHandle = null;
     this._subtitlesRestartCount = 0;
     this._subtitlesLastSuccessAt = Date.now();
-    // Restart locally only (no re-broadcast), reusing the error/restart lifecycle.
     setTimeout(() => {
       if (this._subtitlesActive && this._restartSubtitlesLocalOnly) {
         this._restartSubtitlesLocalOnly(backend, this._subtitlesLang);
@@ -3041,20 +2504,12 @@
     return true;
   };
 
-  // applyAdaptiveDegrade is called from collectStats once per second. Two
-  // safety nets:
-  //   1. Audio-first mode: if packet loss is sustained for 5s, kill outgoing
-  //      video so audio stays clean. Restored when loss subsides.
-  //   2. AV1 fallback: if AV1 is the active codec but framerate stays below
-  //      20 fps for 5s, force a renegotiation with VP9 preferred.
   Call.prototype.applyAdaptiveDegrade = function (stats) {
     const now = Date.now();
-    // (1) audio-first
     if (this.audioFirstMode) {
-      const lossPct = stats.packetsLost > 50 ? 100 : 0; // simple threshold
+      const lossPct = stats.packetsLost > 50 ? 100 : 0;
       if (lossPct > 10 || (stats.rtt > 500)) {
         if (!this.poorNetworkSince) this.poorNetworkSince = now;
-        // Warn about the weak connection BEFORE auto-video-off so the user knows why.
         if (now - this.poorNetworkSince > 2500 && !this.weakConnectionNotified) {
           this.weakConnectionNotified = true;
           this.cbState({ type: 'weak-connection', loss: lossPct, rtt: Math.round(stats.rtt || 0) });
@@ -3077,14 +2532,10 @@
         }
       }
     }
-    // (2) AV1 fallback
     if (!this.av1Probe.downgraded && stats.codec && /AV1/i.test(stats.codec) && stats.framerate && stats.framerate < 20) {
       if (!this.av1Probe.lowFpsSince) this.av1Probe.lowFpsSince = now;
       if (now - this.av1Probe.lowFpsSince > 5000) {
         this.av1Probe.downgraded = true;
-        // No restartIce here: it only belongs to ICE 'failed' and would keep the
-        // negotiation flag dirty (renegotiation loop). The renegotiation after
-        // setCodecPreferences already reselects the codec.
         for (const id in this.peers) {
           this.peers[id].forcePreferredCodec('video/VP9');
         }
@@ -3095,14 +2546,10 @@
     }
   };
 
-  // ---- PeerConn -------------------------------------------------------
-
   function PeerConn(opt) {
     this.call = opt.call;
     this.remoteId = opt.remoteId;
     this.remoteUser = opt.remoteUser;
-    // Stable remote identity (PeerInfo.client_id), empty for old clients.
-    // Used by the visual dedup in ensurePeer.
     this.remoteClientId = opt.remoteClientId || '';
     this.initiator = !!opt.initiator;
     this.polite = !!opt.polite;
@@ -3116,8 +2563,6 @@
     const cfg = { iceServers: this.call.iceServers, bundlePolicy: 'max-bundle' };
     this.pc = new RTCPeerConnection(cfg);
 
-    // Attach local tracks. addTrack auto-creates transceivers — easier than
-    // managing them ourselves.
     for (const t of this.call.localStream.getTracks()) {
       this.pc.addTrack(t, this.call.localStream);
     }
@@ -3125,13 +2570,8 @@
     this.applyCodecPreferences();
     this.applyBitrates(this.call.videoKbps, this.call.audioKbps);
 
-    // E2EE: wire frame encryption before the first SDP exchange. If
-    // unsupported on this browser, surface a clear error and continue
-    // unencrypted only if the user already accepted (Call sets the
-    // passphrase only when they did).
     if (this.call.e2eePassphrase && window.PanelVideoCallE2EE) {
       window.PanelVideoCallE2EE.setup(this.pc, this.call.e2eePassphrase, this.call.roomId, {
-        // Fires when 30+ frames fail to decrypt, almost always a wrong passphrase.
         onDecryptFail: (count) => {
           this.call.cbError('E2EE: ' + count + ' frames failed to decrypt. The passphrase may be wrong; check with the other side.');
         },
@@ -3153,8 +2593,6 @@
         console.log('[panel:vc] ICE gathering complete peer=' + this.remoteId.slice(-6));
       }
     };
-    // Shared by the ICE and connection state handlers; the _restartPending flag
-    // prevents a double restart when both turn 'failed' at the same time.
     const tryRestartIce = (reason) => {
       if (this._restartPending) return;
       const now = Date.now();
@@ -3176,10 +2614,6 @@
       console.log('[panel:vc] connectionState peer=' + this.remoteId.slice(-6) + ' = ' + cs);
       if (cs === 'failed') tryRestartIce('connectionState failed');
     };
-    // Negotiation is throttled per CYCLE (until back to 'stable'), not by time:
-    //   _negotiationCycleEnd: when we last returned to 'stable'
-    //   _negotiationFiredInCycle: an offer was already sent this cycle
-    //   _lastNegotiationAt: time of the last offer
     this._negotiationCycleEnd = 0;
     this._negotiationFiredInCycle = false;
     this.pc.onsignalingstatechange = () => {
@@ -3187,12 +2621,7 @@
       console.log('[panel:vc] signalingState peer=' + this.remoteId.slice(-6) + ' = ' + st);
       if (st === 'stable') {
         this._negotiationCycleEnd = Date.now();
-        this._negotiationFiredInCycle = false; // reset for the next cycle
-        // Safety net: signaling finished but ICE never left 'new', so the
-        // 'failed' restart never fires. Sometimes an RTCPeerConnection gathers
-        // NO local candidates even after restartIce, while a new one works:
-        //   - zero local candidates: this instance is stuck, rebuild the peer;
-        //   - candidates present: a path problem, restartIce.
+        this._negotiationFiredInCycle = false;
         if (this._iceStallTimer) clearTimeout(this._iceStallTimer);
         this._iceStallTimer = setTimeout(() => {
           this._iceStallTimer = null;
@@ -3204,26 +2633,19 @@
       }
     };
     this.pc.onnegotiationneeded = async () => {
-      // Anti-loop protection.
-      // (1) only negotiate in stable
       if (this.pc.signalingState !== 'stable') {
         console.warn('[panel:vc] onnegotiationneeded ignored — state=' + this.pc.signalingState + ' peer=' + this.remoteId.slice(-6));
         return;
       }
-      // (2) only ONE offer per cycle (until back to stable)
       if (this._negotiationFiredInCycle) {
         console.log('[panel:vc] onnegotiationneeded coalesced (already-fired-this-cycle) peer=' + this.remoteId.slice(-6));
         return;
       }
       const now = Date.now();
-      // (3) 500ms cooldown after stable: absorbs the rebound event from
-      // setCodecPreferences/replaceTrack already covered by the previous round.
       if (this._negotiationCycleEnd && now - this._negotiationCycleEnd < 500) {
         console.log('[panel:vc] onnegotiationneeded coalesced (cooldown post-stable) peer=' + this.remoteId.slice(-6));
         return;
       }
-      // (4) 200ms throttle: coalesces the burst of addTrack events from the
-      // constructor into one offer.
       if (now - (this._lastNegotiationAt || 0) < 200) {
         console.log('[panel:vc] onnegotiationneeded coalesced (throttled) peer=' + this.remoteId.slice(-6));
         return;
@@ -3231,8 +2653,6 @@
       this._lastNegotiationAt = now;
       this._negotiationFiredInCycle = true;
       console.log('[panel:vc] onnegotiationneeded FIRE peer=' + this.remoteId.slice(-6) + ' signalingState=' + this.pc.signalingState);
-      // Offer in flight: a polite side receiving an offer now waits for this
-      // to settle and rolls back explicitly (see handleSignal).
       let offerSettled;
       this._offerInFlight = new Promise((r) => { offerSettled = r; });
       try {
@@ -3243,12 +2663,10 @@
         }
         if (this.pc.signalingState !== 'stable') {
           console.warn('[panel:vc] onnegotiationneeded aborted post-createOffer — state=' + this.pc.signalingState);
-          this._negotiationFiredInCycle = false; // let the next attempt through
+          this._negotiationFiredInCycle = false;
           return;
         }
         await this.pc.setLocalDescription(offer);
-        // If a remote offer was applied on top (rollback), this offer is dead;
-        // sending it would make the other side answer a session that is gone.
         if (this.pc.signalingState !== 'have-local-offer') {
           console.warn('[panel:vc] offer superseded before sending, state=' + this.pc.signalingState + ' peer=' + this.remoteId.slice(-6));
           return;
@@ -3265,16 +2683,10 @@
     };
 
     if (this.initiator) {
-      // Initiator opens all DCs up-front; the polite side listens via
-      // ondatachannel and routes by label.
       this.dc = this.pc.createDataChannel('panel-chat', { ordered: true });
       this.setupDataChannel(this.dc);
       this.dcFiles = this.pc.createDataChannel('panel-files', { ordered: true });
       this.setupFilesChannel(this.dcFiles);
-      // Whiteboard: reliable + ordered. A dropped stroke leaves a permanent gap
-      // in a shared drawing (no way to backfill a single missing segment), and
-      // the on-open snapshot below relies on guaranteed delivery to bootstrap a
-      // (re)joining peer. Latency cost is negligible for sparse stroke events.
       this.dcWB = this.pc.createDataChannel('panel-wb', { ordered: true });
       this.setupWhiteboardChannel(this.dcWB);
     } else {
@@ -3286,18 +2698,14 @@
       };
     }
 
-    // File transfer receiver state — declared once per PeerConn.
     this._fileRx = {
-      incoming: new Map(), // id → {meta, chunks, received}
-      expecting: null,     // id we're currently receiving binary for
+      incoming: new Map(),
+      expecting: null,
     };
   }
 
   PeerConn.prototype.setupDataChannel = function (dc) {
-    // Consistent binaryType across browsers (Safari historically defaulted to 'blob').
     try { dc.binaryType = 'arraybuffer'; } catch (_) {}
-    // If local transcription is on, send the request to THIS peer so late
-    // joiners also start STT. Idempotent on the receiver.
     const sendSubsReqIfActive = () => {
       if (!this.call || !this.call._subtitlesActive) return;
       try {
@@ -3311,11 +2719,9 @@
         console.log('[panel:vc] subtitles-request sent (DC open) → peer=' + this.remoteId.slice(-6));
       } catch (e) { console.warn('[panel:vc] subs req send fail: ' + e.message); }
     };
-    // The polite peer gets the DC via ondatachannel and it may already be open.
     if (dc.readyState === 'open') {
       sendSubsReqIfActive();
     } else {
-      // Chain any existing onopen.
       const prevOnOpen = dc.onopen;
       dc.onopen = (ev) => {
         if (typeof prevOnOpen === 'function') { try { prevOnOpen(ev); } catch (_) {} }
@@ -3326,13 +2732,10 @@
       let payload;
       try { payload = JSON.parse(ev.data); } catch (_) { return; }
       if (!payload || !payload.type) return;
-      // Cap string length: a hostile peer could send megabytes of text and freeze the UI.
       const safeText = (s) => (typeof s === 'string') ? s.slice(0, 8000) : '';
       if (payload.type === 'chat') {
         this.call.cbChat({ from: this.remoteId, text: safeText(payload.text), ts: Date.now() });
       } else if (payload.type === 'caption') {
-        // Live subtitle from this peer.
-        // Enriched payload: words[], confidence, lang, startMs/endMs (whisper-local).
         const captionText = safeText(payload.text);
         this.call.cbState({
           type: 'caption',
@@ -3346,22 +2749,17 @@
           startMs: typeof payload.startMs === 'number' ? payload.startMs : undefined,
           endMs: typeof payload.endMs === 'number' ? payload.endMs : undefined,
         });
-        // Shown under the peer's tile; cleared 3.5s after a final.
         this.call.updatePeerCaption(this.remoteId, captionText);
         if (payload.final) {
           clearTimeout(this._captionClearTimer);
           this._captionClearTimer = setTimeout(() => this.call.updatePeerCaption(this.remoteId, ''), 3500);
         }
       } else if (payload.type === 'subtitles-request') {
-        // A remote peer asked everyone to turn local STT on/off. Each peer
-        // transcribes only its own voice, so all must run STT to see all speech.
-        // payload: { type: 'subtitles-request', on: bool, lang?: string, requestedBy?: string, ts?: number }
         const requesterLabel = payload.requestedBy || ('peer ' + this.remoteId.slice(-4));
         console.log('[panel:vc] subtitles-request received: on=' + payload.on +
                     ' from=' + this.remoteId.slice(-6) + ' by=' + requesterLabel +
                     ' lang=' + (payload.lang || 'en-US'));
         if (typeof payload.on !== 'boolean') return;
-        // Tell the UI WHO asked, even if local STT is already on.
         this.call.cbState({
           type: 'subtitles-requested',
           from: this.remoteId,
@@ -3370,22 +2768,16 @@
           lang: payload.lang || 'en-US',
         });
         if (payload.on) {
-          // Remember the initiator to send ack/status when STT starts or fails.
-          // Single requester only; needs a per-peer map for 3+ peers.
           this.call._subtitlesRequestedById = this.remoteId;
           this.call._subtitlesAckSent = false;
           if (this.call._subtitlesActive) {
             console.log('[panel:vc] STT already on, skipping idempotent request');
-            // Already transcribing: ack now, or a re-request would never be acked.
             this.call._sendSubsStatus(true, '', this.call._subtitlesBackend);
             return;
           }
-          // Enable locally WITHOUT re-propagating (the requester already
-          // broadcast to everyone; avoids an amplification loop).
           const attemptActivate = (retries) => {
             if (!window.PanelSTT) {
               if (retries > 0) {
-                // PanelSTT may still be lazy-loading.
                 console.log('[panel:vc] PanelSTT not loaded, retrying in 500ms (' + retries + ' left)');
                 setTimeout(() => attemptActivate(retries - 1), 500);
                 return;
@@ -3394,7 +2786,6 @@
                           requesterLabel + ' enabled STT but I cannot transcribe my voice');
               this.call.cbError('Transcription: ' + requesterLabel +
                                 ' turned it on but your browser has no STT loaded');
-              // Tell the initiator explicitly that we could not enable it.
               try { this.dc.send(JSON.stringify({ type: 'subtitles-status', ok: false, reason: 'no-stt-module' })); } catch (_) {}
               return;
             }
@@ -3408,14 +2799,9 @@
               console.error('[panel:vc] STT remote-activate error: ' + e.message);
             }
           };
-          // Up to 5 retries of 500ms for PanelSTT to load
           attemptActivate(5);
         }
-        // An off request does NOT stop our STT (each peer controls its own mic);
-        // the cbState above is informational.
       } else if (payload.type === 'subtitles-status' || payload.type === 'subtitles-ack') {
-        // ack/status from a peer we enabled remotely: the real confirmation
-        // that its STT started (or failed). Forwarded to the UI.
         this.call.cbState({
           type: payload.type,
           from: this.remoteId,
@@ -3433,7 +2819,6 @@
     catch (_) { return false; }
   };
 
-  // ---- File transfer (per-peer DataChannel `panel-files`) ----
   PeerConn.prototype.setupFilesChannel = function (dc) {
     dc.binaryType = 'arraybuffer';
     dc.onmessage = (ev) => {
@@ -3441,19 +2826,16 @@
       if (typeof ev.data === 'string') {
         let msg; try { msg = JSON.parse(ev.data); } catch (_) { return; }
         if (msg.type === 'file-start') {
-          // Already had a partial? Keep it for resume; otherwise fresh.
           if (!rx.incoming.has(msg.id)) {
             rx.incoming.set(msg.id, { meta: msg, chunks: [], received: 0 });
           }
           rx.expecting = msg.id;
           this.call.cbFileProgress({ id: msg.id, name: msg.name, size: msg.size, received: rx.incoming.get(msg.id).received, direction: 'in', from: this.remoteId });
         } else if (msg.type === 'file-resume?') {
-          // Sender asks where we are in the transfer.
           const x = rx.incoming.get(msg.id);
           const offset = x ? x.received : 0;
           try { dc.send(JSON.stringify({ type: 'file-resume', id: msg.id, offset })); } catch (_) {}
         } else if (msg.type === 'file-resume') {
-          // We are the sender; remote tells us where to resume from.
           const tx = this.call._fileTxOffsets[msg.id];
           if (tx) { tx.resumeOffset = msg.offset || 0; tx.resumeSignal && tx.resumeSignal(); }
         } else if (msg.type === 'file-end') {
@@ -3485,12 +2867,9 @@
     const CHUNK = 16 * 1024;
     const chunks = Math.ceil(file.size / CHUNK);
     let startOffset = 0;
-    // Track tx state for the receiver's resume protocol.
     this.call._fileTxOffsets[id] = { offset: 0, file, peerID: this.remoteId, resumeOffset: 0 };
     if (resumeId) {
-      // Ask the receiver where they left off.
       try { this.dcFiles.send(JSON.stringify({ type: 'file-resume?', id })); } catch (_) {}
-      // Wait up to 2s for the resume response.
       const tx = this.call._fileTxOffsets[id];
       await new Promise(res => {
         tx.resumeSignal = res;
@@ -3511,7 +2890,6 @@
         await new Promise(r => setTimeout(r, 50));
       }
       if (this.dcFiles.readyState !== 'open') {
-        // DC dropped mid-send. Remember offset for resume.
         this.call._fileTxOffsets[id].offset = offset;
         return;
       }
@@ -3524,17 +2902,9 @@
     delete this.call._fileTxOffsets[id];
   };
 
-  // ---- Whiteboard (per-peer DataChannel `panel-wb`, reliable + ordered) ----
   PeerConn.prototype.setupWhiteboardChannel = function (dc) {
-    // On DC open, hand THIS peer the full board so a (re)joiner sees everything
-    // drawn before they connected. Mirrors the subtitles-request bootstrap on
-    // the chat channel. Reliable transport guarantees the snapshot lands.
     const sendSnapshot = () => {
       if (!this.call) return;
-      // one envelope per non-empty surface, each carrying its own
-      // `surface` tag so the receiver routes board strokes to the board buffer
-      // and screen-annotation strokes to the annotation buffer. An older
-      // peers simply never set `surface` (treated as 'board' on receive).
       try {
         if (this.call._wbStrokes.length) {
           dc.send(JSON.stringify({ type: 'wb-snapshot', surface: 'board', strokes: this.call._wbStrokes }));
@@ -3557,16 +2927,6 @@
       let msg; try { msg = JSON.parse(ev.data); } catch (_) { return; }
       if (!msg || !msg.type) return;
       if (msg.type === 'wb-snapshot') {
-        // Strokes carry their own _from (author). Fill missing ones with the
-        // sender id (their own locally-drawn strokes) so attribution survives,
-        // then buffer them locally too — keeps OUR board complete for any peer
-        // we later snapshot. Drawing a duplicate stroke is visually idempotent
-        // (identical normalized coords), so cross-relay overlap is harmless.
-        //
-        // the envelope's `surface` tag routes the whole batch to the
-        // right buffer; re-inject it on every stroke so _wbRecord lands them in
-        // the matching layer (board strokes never leak into the annotation
-        // buffer and vice-versa). Absent => 'board' (an older sender).
         const surface = msg.surface === 'screen' ? 'screen' : 'board';
         const strokes = Array.isArray(msg.strokes) ? msg.strokes : [];
         for (const s of strokes) {
@@ -3576,8 +2936,6 @@
         this.call.cbWhiteboard(msg);
         return;
       }
-      // Stamp with peer id so the UI can color strokes per author, and buffer it
-      // so we can replay/redraw it.
       msg._from = this.remoteId;
       this.call._wbRecord(msg);
       this.call.cbWhiteboard(msg);
@@ -3591,7 +2949,6 @@
 
   PeerConn.prototype.applyCodecPreferences = function () {
     if (this.call.codecPref === 'auto') {
-      // Use the global CODEC_PREF order.
       this.tryReorderCodecs(CODEC_PREF);
       return;
     }
@@ -3599,13 +2956,8 @@
     this.tryReorderCodecs([explicit].concat(CODEC_PREF.filter(c => c !== explicit)));
   };
 
-  // forcePreferredCodec moves `mime` (e.g. "video/VP9") to the front and
-  // triggers renegotiation. Used by Call.applyAdaptiveDegrade for the AV1
-  // runtime fallback.
   PeerConn.prototype.forcePreferredCodec = function (mime) {
     this.tryReorderCodecs([mime].concat(CODEC_PREF.filter(c => c !== mime)));
-    // Do NOT dispatch 'negotiationneeded' by hand: setCodecPreferences already
-    // sets the native flag, and a manual dispatch causes a renegotiation loop.
   };
 
   PeerConn.prototype.tryReorderCodecs = function (prefOrder) {
@@ -3616,11 +2968,7 @@
     for (const want of prefOrder) {
       for (const c of caps.codecs) if (c.mimeType === want) sorted.push(c);
     }
-    // Append the rest so we never strip codecs the browser supports — that
-    // would break negotiation when the remote side only has those.
     for (const c of caps.codecs) if (!sorted.includes(c)) sorted.push(c);
-    // Detect video transceivers by sender OR receiver track: in audio-only mode
-    // sender.track is null, and losing codec prefs there causes a renegotiation loop.
     for (const tx of this.pc.getTransceivers()) {
       const senderKind = tx.sender && tx.sender.track && tx.sender.track.kind;
       const receiverKind = tx.receiver && tx.receiver.track && tx.receiver.track.kind;
@@ -3632,13 +2980,6 @@
     }
   };
 
-  /**
-   * Apply video + audio bitrate caps. Both go through setParameters which
-   * is non-renegotiating (no SDP roundtrip), so it's safe to call multiple
-   * times per second. degradationPreference is 'maintain-framerate' on
-   * low budgets (under 200kbps prefer keeping motion over sharpness) and
-   * 'maintain-resolution' otherwise.
-   */
   PeerConn.prototype.applyBitrates = function (videoKbps, audioKbps) {
     for (const sender of this.pc.getSenders()) {
       if (!sender.track) continue;
@@ -3650,14 +2991,11 @@
       } else if (sender.track.kind === 'audio') {
         params.encodings[0].maxBitrate = (audioKbps || 32) * 1000;
       }
-      // Log setParameters failures: Firefox (no transactionId) and Chrome
-      // (degradationPreference changed mid-call) reject with OperationError.
       sender.setParameters(params).catch(e => {
         console.warn('[panel:vc] setParameters failed kind=' + (sender.track && sender.track.kind) + ': ' + e.message);
       });
     }
   };
-  // back-compat alias — older code paths still call applyBudget(kbps).
   PeerConn.prototype.applyBudget = function (kbps) {
     this.applyBitrates(kbps, this.call.audioKbps || 32);
   };
@@ -3666,18 +3004,13 @@
     const stream = ev.streams && ev.streams[0];
     if (!stream) return;
     let v = this.call.videosEl && this.call.videosEl.querySelector('[data-vc-peer="' + this.remoteId + '"]');
-    // If a tile of the same client (stable clientId) was preserved in PiP,
-    // re-adopt THAT <video> so the OS window kept open during the reconnect
-    // gets the restored media.
     if (!v) {
       v = this.call._adoptDetachedPipTile(this.remoteClientId || '', this.remoteId) || null;
     }
     if (!v) {
-      // Wrapper tile: video plus a caption overlay under this peer's video.
       const tile = document.createElement('div');
       tile.setAttribute('data-vc-peer-tile', this.remoteId);
       tile.style.cssText = 'position:relative;display:flex;flex-direction:column;align-items:center;max-width:640px;width:100%;min-height:180px;';
-      // Avatar fallback, shown when there is no video. Color derived from the peer id.
       const avatar = document.createElement('div');
       avatar.setAttribute('data-vc-peer-avatar', this.remoteId);
       const hue = (function (s) { let h = 0; for (let i = 0; i < s.length; i++) h = ((h<<5)-h + s.charCodeAt(i)) | 0; return Math.abs(h) % 360; })(this.remoteId);
@@ -3700,9 +3033,6 @@
       v = document.createElement('video');
       v.setAttribute('data-vc-peer', this.remoteId);
       v.autoplay = true; v.playsInline = true;
-      // The video is ALWAYS visible; the avatar sits above it (z-index) until
-      // frames render. Never display:none the video: remote tracks arrive muted
-      // and Chrome does not reliably fire 'unmute'.
       v.style.cssText = 'width:100%;height:auto;border-radius:8px;border:1px solid #1f2937;background:#000;position:relative;z-index:1;';
       tile.appendChild(v);
       const cap = document.createElement('div');
@@ -3712,9 +3042,6 @@
       this.call.videosEl && this.call.videosEl.appendChild(tile);
     }
     v.srcObject = stream;
-    // Hide the avatar once the first frame decodes (videoWidth > 0), using
-    // events reliable in every browser (loadedmetadata, resize, playing); show
-    // it again when the track ends.
     const tileEl = this.call.videosEl && this.call.videosEl.querySelector('[data-vc-peer-tile="' + this.remoteId + '"]');
     const avEl = tileEl && tileEl.querySelector('[data-vc-peer-avatar="' + this.remoteId + '"]');
     const hideAvatar = () => {
@@ -3734,8 +3061,6 @@
       trackEndedHandlers.push({ track: t, handler: showAvatarIfNoVideo });
     });
     stream.addEventListener('removetrack', showAvatarIfNoVideo);
-    // Kept so PeerConn.close can remove the listeners; their closures would
-    // otherwise leak this.call across calls.
     this._videoElCleanup = () => {
       try { v.removeEventListener('loadedmetadata', hideAvatar); } catch (_) {}
       try { v.removeEventListener('resize', hideAvatar); } catch (_) {}
@@ -3751,9 +3076,6 @@
     if (spk && spk !== 'default' && typeof v.setSinkId === 'function') {
       v.setSinkId(spk).catch(() => {});
     }
-    // Attach an audio analyser to this remote stream for active-speaker
-    // detection. Done only once per peer; if onTrack fires again (e.g.
-    // after renegotiation) we reuse the existing monitor.
     if (!this.call._peerAudioMonitors[this.remoteId]) {
       try {
         const audioTracks = stream.getAudioTracks();
@@ -3782,8 +3104,6 @@
     }
   };
 
-  // A peer's signaling messages are processed IN ORDER, one at a time (W3C
-  // perfect negotiation); interleaving them left the call silent during glare.
   PeerConn.prototype.handleSignal = function (msg) {
     this._sigChain = (this._sigChain || Promise.resolve())
       .then(() => this._handleSignal(msg))
@@ -3796,28 +3116,18 @@
     if (!payload) return;
     try {
       if (msg.type === 'offer') {
-        // Polite side with its own offer between createOffer and
-        // setLocalDescription: still 'stable', so the browser's IMPLICIT
-        // rollback would race setLocalDescription (Chrome then gathers no ICE
-        // candidates). Wait for the offer to settle and use the explicit rollback.
         if (this.polite && this._offerInFlight) {
           try { await this._offerInFlight; } catch (_) {}
         }
         const offerCollision = this.makingOffer || this.pc.signalingState !== 'stable';
         this.ignoreOffer = !this.polite && offerCollision;
         if (this.ignoreOffer) return;
-        // Glare: the rollback MUST complete before setRemoteDescription (in
-        // parallel Chrome throws InvalidStateError), and is only valid in
-        // have-local-offer.
         if (offerCollision && this.pc.signalingState === 'have-local-offer') {
           await this.pc.setLocalDescription({ type: 'rollback' });
-          // Reset now: onsignalingstatechange may arrive late and the next
-          // offer would be silently coalesced.
           this._negotiationFiredInCycle = false;
           this._negotiationCycleEnd = Date.now();
         }
         await this.pc.setRemoteDescription(payload);
-        // Drain ICE candidates that arrived before the remote description.
         if (this._pendingIce && this._pendingIce.length) {
           const queue = this._pendingIce;
           this._pendingIce = [];
@@ -3843,15 +3153,13 @@
           }
         }
       } else if (msg.type === 'ice') {
-        // Queue candidates that arrive before the remote description.
         if (!this.pc.remoteDescription || !this.pc.remoteDescription.type) {
           if (!this._pendingIce) this._pendingIce = [];
-          // Cap at 200 against a hostile peer spamming ICE (normal is ~30).
           if (this._pendingIce.length < 200) {
             this._pendingIce.push(payload);
           } else if (this._pendingIce.length === 200) {
             console.warn('[panel:vc] _pendingIce cap reached peer=' + this.remoteId.slice(-6));
-            this._pendingIce.push(payload); // keep the one that triggers the warning
+            this._pendingIce.push(payload);
           }
           return;
         }
@@ -3888,7 +3196,6 @@
         if (r.roundTripTime) rtt = Math.max(rtt, r.roundTripTime * 1000);
       } else if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded') {
         if (r.currentRoundTripTime) rtt = Math.max(rtt, r.currentRoundTripTime * 1000);
-        // Look up the local candidate to detect relay.
         stats.forEach(c => {
           if (c.id === r.localCandidateId && c.candidateType === 'relay') connType = 'relay';
         });
@@ -3913,7 +3220,6 @@
   };
 
   PeerConn.prototype.close = function () {
-    // Remove video element listeners first, or their closures leak this.call.
     if (this._videoElCleanup) {
       try { this._videoElCleanup(); } catch (_) {}
       this._videoElCleanup = null;
@@ -3922,7 +3228,6 @@
     if (this._iceStallTimer) { clearTimeout(this._iceStallTimer); this._iceStallTimer = null; }
     this._pendingIce = null;
     try { if (this.dc) this.dc.close(); } catch (_) {}
-    // Null the handlers so closed PCs are not kept alive through closures.
     try {
       this.pc.onnegotiationneeded = null;
       this.pc.onicecandidate = null;
@@ -3933,40 +3238,28 @@
     } catch (_) {}
     try { this.pc.close(); } catch (_) {}
     if (this.call.videosEl) {
-      // Remove the whole tile (avatar, name, caption), not just the <video>,
-      // or an orphan ghost placeholder stays in the DOM.
       const v = this.call.videosEl.querySelector('[data-vc-peer="' + this.remoteId + '"]');
       const tile = this.call.videosEl.querySelector('[data-vc-peer-tile="' + this.remoteId + '"]');
-      // If THIS peer is in native Picture-in-Picture, do NOT destroy the
-      // <video>: the OS window is bound to the element. Preserve it (frozen on
-      // the last frame) and reattach media when the same clientId returns.
-      // Only on a reconnect drop; our own hangup tears everything down.
       const cid = this.remoteClientId || '';
       if (v && cid && !this.call._userInitiatedHangup &&
           document.pictureInPictureElement && document.pictureInPictureElement === v) {
         this.call._preservePipTile(v, tile, cid);
         const cap = this.call.videosEl.querySelector('[data-vc-peer-caption="' + this.remoteId + '"]');
         if (cap) { try { cap.remove(); } catch (_) {} }
-        return; // tile preserved, do not remove
+        return;
       }
       if (v) { try { v.srcObject = null; } catch (_) {} }
       if (tile) {
         tile.remove();
       } else if (v) {
-        v.remove(); // defensive fallback (no tile, legacy layout)
+        v.remove();
       }
-      // The peer caption may have been created outside the tile; remove any orphan.
       const cap = this.call.videosEl.querySelector('[data-vc-peer-caption="' + this.remoteId + '"]');
       if (cap) { try { cap.remove(); } catch (_) {} }
     }
   };
 
-  // ---- utilities ------------------------------------------------------
-
   function jsonRaw(obj) {
-    // SignalingMsg.Payload is json.RawMessage server-side, so we send it
-    // as a JSON-encoded JSON string. Here we just pass the object — the
-    // outer JSON.stringify on the WS send wraps it.
     return obj;
   }
 
@@ -3976,8 +3269,6 @@
     try { return JSON.parse(v); } catch (_) { return null; }
   }
 
-  // Stable client id (32 hex chars), persisted per tab in sessionStorage so a
-  // WS reconnect evicts the previous ghost peer instead of duplicating its tile.
   function _genClientId() {
     try {
       if (window.crypto && crypto.getRandomValues) {
@@ -3989,8 +3280,6 @@
     return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   }
 
-  // Map raw English errors from older servers to user-facing messages
-  // (newer servers already send them via mapJoinErrorPT). Case-insensitive.
   function translateLegacyError(msg) {
     if (!msg || typeof msg !== 'string') return msg;
     const m = msg.toLowerCase();

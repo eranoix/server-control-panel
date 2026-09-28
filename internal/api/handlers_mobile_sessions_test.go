@@ -1,24 +1,5 @@
 package api
 
-// handlers_mobile_sessions_test.go — proof, against a real *Router, of the
-// security properties of the paired-device panel:
-//
-//  1. Isolation between users by construction: approving/denying/revoking an
-//     ID that belongs to another user always returns 404, never 403, and never
-//     mutates the other user's record.
-//  2. Approving is the ONLY path that makes a passkey login-capable, and
-//     revoking/denying makes a credential IMMEDIATELY unusable for login —
-//     proved with a REAL WebAuthn ceremony (not a stub), using the official
-//     W3C WebAuthn Level 3 §16 test vectors that go-webauthn itself embeds in
-//     its own tests
-//     (protocol/specification_vectors_e2e_test.go, case "NoneES256"/§16.2).
-//  3. The edge cases asked for explicitly: approving twice (idempotent),
-//     approving an already revoked credential (404 — Remove() deletes the
-//     record, leaving no remnant for Approve() to revive), and revoking the
-//     credential in use does not drop the current desktop session
-//     (sessions.Store and WebAuthnCredentialsStore are completely separate
-//     stores).
-
 import (
 	"bytes"
 	"encoding/base64"
@@ -38,16 +19,6 @@ import (
 	"server-control-panel/internal/sessions"
 )
 
-// ---------- Official W3C WebAuthn Level 3 §16.2 vectors (None Attestation, ES256) ----------
-//
-// The same credential in both vectors (registration and authentication) —
-// replicated byte for byte from protocol/specification_vectors_e2e_test.go of
-// module go-webauthn/webauthn@v0.18.0 (already a pinned dependency of this
-// project), which in turn copies them from the official text of the
-// specification
-// (https://www.w3.org/TR/webauthn-3/#sctn-test-vectors-none-es256). RPID
-// "example.org" / origin "https://example.org" are the vector's fixed values —
-// not something this test made up.
 const (
 	specRPID   = "example.org"
 	specOrigin = "https://example.org"
@@ -72,10 +43,6 @@ func specHexToB64URL(t *testing.T, h string) string {
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
-// specBuildRegistrationJSON builds the JSON body the browser would send to the
-// backend at the end of navigator.credentials.create() — the same shape
-// FinishRegistrationForUser (internal/auth/webauthn.go) expects to receive from
-// the Android app via mobilebff.
 func specBuildRegistrationJSON(t *testing.T) []byte {
 	t.Helper()
 	id := specHexToB64URL(t, specRegCredentialIDHex)
@@ -93,12 +60,6 @@ func specBuildRegistrationJSON(t *testing.T) []byte {
 	return data
 }
 
-// specBuildAssertionJSON builds the JSON body of navigator.credentials.get(),
-// with userHandle set to the test username — userHandle is not part of any
-// signed data (neither clientDataJSON nor authenticatorData), so assigning it
-// freely here does not invalidate the official vector's signature; it is exactly
-// the datum auth.FinishDiscoverableLogin uses to resolve WHICH user store to
-// open (see webauthnUser.WebAuthnID in webauthn.go).
 func specBuildAssertionJSON(t *testing.T, username string) []byte {
 	t.Helper()
 	id := specHexToB64URL(t, specRegCredentialIDHex)
@@ -118,11 +79,6 @@ func specBuildAssertionJSON(t *testing.T, username string) []byte {
 	return data
 }
 
-// specRegisterRealCredential runs the REAL registration ceremony (real
-// cryptography, via auth.FinishRegistrationForUser) against the §16.2 vector and
-// returns the resulting *webauthn.Credential, ready for
-// WebAuthnCredentialsStore.Add — the same code path FinishPasskeyRegistration
-// (internal/api/passkey.go) uses in production.
 func specRegisterRealCredential(t *testing.T, w *webauthn.WebAuthn, username string) *webauthn.Credential {
 	t.Helper()
 	session := webauthn.SessionData{
@@ -143,10 +99,6 @@ func specRegisterRealCredential(t *testing.T, w *webauthn.WebAuthn, username str
 	return cred
 }
 
-// specRealWebAuthnRP builds a *webauthn.WebAuthn pointing at the official
-// vector's fixed RPID/origin (example.org / https://example.org) — not the test
-// Router's PublicHostname, because the vector's RPID is hard-coded by the
-// specification.
 func specRealWebAuthnRP(t *testing.T) *webauthn.WebAuthn {
 	t.Helper()
 	w, err := webauthn.New(auth.NewWebAuthnConfig(specRPID, specOrigin, "Server Control Panel test"))
@@ -156,9 +108,6 @@ func specRealWebAuthnRP(t *testing.T) *webauthn.WebAuthn {
 	return w
 }
 
-// doMobileSessionsRequest injects the authenticated user into the context (the
-// way auth.Middleware would after validating the JWT) and dispatches straight
-// into the handler, without going through the mux — the same pattern as handlers_terminal_assign_test.go.
 func doMobileSessionsRequest(t *testing.T, handler http.HandlerFunc, user, method string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	var reader *bytes.Reader
@@ -178,10 +127,6 @@ func doMobileSessionsRequest(t *testing.T, handler http.HandlerFunc, user, metho
 	return rec
 }
 
-// TestMobileSessions_CrossUserApproveRevoke404NeverResurrects proves the
-// cross-user isolation rule: approving or revoking ANOTHER user's ID always
-// returns 404 (never 403 — that would confirm the ID exists to somebody who
-// does not own it), and never mutates the real owner's record.
 func TestMobileSessions_CrossUserApproveRevoke404NeverResurrects(t *testing.T) {
 	r := newPasskeyRouter(t, "panel.example.com")
 
@@ -191,9 +136,6 @@ func TestMobileSessions_CrossUserApproveRevoke404NeverResurrects(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	// "intruder" does not exist in Config.Users — but the isolation is by FILE
-	// path (WebAuthnCredentialsPath), not by a valid-user check, so even an
-	// arbitrary username cannot reach the other user's record.
 	respApprove := doMobileSessionsRequest(t, r.handleApproveMobileCredential, "intruder", http.MethodPost, map[string]string{"id": rec.ID})
 	if respApprove.Code != 404 {
 		t.Fatalf("approve of someone else's credential: status = %d, expected 404 (never 403 — would leak existence)", respApprove.Code)
@@ -203,8 +145,6 @@ func TestMobileSessions_CrossUserApproveRevoke404NeverResurrects(t *testing.T) {
 		t.Fatalf("revoke of someone else's credential: status = %d, expected 404", respRevoke.Code)
 	}
 
-	// The victim's record must not have been touched by either of the two
-	// attempts.
 	got, found, err := victimStore.CredentialByID(rec.ID)
 	if err != nil || !found {
 		t.Fatalf("victim's credential disappeared after the other user's attempt: found=%v err=%v", found, err)
@@ -214,9 +154,6 @@ func TestMobileSessions_CrossUserApproveRevoke404NeverResurrects(t *testing.T) {
 	}
 }
 
-// TestMobileSessions_ListSelfScoped proves that handleListMobileSessions only
-// sees the caller's OWN credentials — another user in the same DataDir does not
-// show up in the list.
 func TestMobileSessions_ListSelfScoped(t *testing.T) {
 	r := newPasskeyRouter(t, "panel.example.com")
 
@@ -243,8 +180,6 @@ func TestMobileSessions_ListSelfScoped(t *testing.T) {
 	}
 }
 
-// TestMobileSessions_ApproveTwiceIsIdempotent proves the edge case asked for
-// explicitly: approving an already approved credential is not an error.
 func TestMobileSessions_ApproveTwiceIsIdempotent(t *testing.T) {
 	r := newPasskeyRouter(t, "panel.example.com")
 	store := r.credentialStore("sam")
@@ -267,9 +202,6 @@ func TestMobileSessions_ApproveTwiceIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestMobileSessions_ApproveAfterRevokeFails proves the edge case asked for
-// explicitly: approving an already revoked credential fails (404) — Remove()
-// deletes the record entirely, leaving no remnant for Approve() to revive.
 func TestMobileSessions_ApproveAfterRevokeFails(t *testing.T) {
 	r := newPasskeyRouter(t, "panel.example.com")
 	store := r.credentialStore("sam")
@@ -285,9 +217,6 @@ func TestMobileSessions_ApproveAfterRevokeFails(t *testing.T) {
 	}
 }
 
-// TestMobileSessions_DenyReusesRevokeSemantics proves that denying a PENDING
-// pairing uses the same removal operation as revoking an approved one —
-// Remove() does not look at status.
 func TestMobileSessions_DenyReusesRevokeSemantics(t *testing.T) {
 	r := newPasskeyRouter(t, "panel.example.com")
 	store := r.credentialStore("sam")
@@ -303,10 +232,6 @@ func TestMobileSessions_DenyReusesRevokeSemantics(t *testing.T) {
 	}
 }
 
-// TestMobileSessions_RevokeCurrentCredentialDoesNotTouchDesktopSession proves
-// the edge case asked for explicitly: revoking the credential in use does NOT
-// drop the current desktop session — sessions.Store (JWT/jti) and
-// WebAuthnCredentialsStore (passkey) are separate stores.
 func TestMobileSessions_RevokeCurrentCredentialDoesNotTouchDesktopSession(t *testing.T) {
 	r := newPasskeyRouter(t, "panel.example.com")
 	sessStore := r.auth.Sessions()
@@ -334,30 +259,10 @@ func TestMobileSessions_RevokeCurrentCredentialDoesNotTouchDesktopSession(t *tes
 	}
 }
 
-// TestPasskeyLogin_ApproveIsSoleGateAndRevokeKillsLoginImmediately is the
-// central proof: using a REAL WebAuthn ceremony (official W3C §16.2 vectors,
-// see the spec* constants above — no cryptography in this test is
-// hand-rolled), it confirms that:
-//
-//  1. A freshly registered (pending) credential CANNOT log in even with a
-//     cryptographically valid signature — not through the pairing ticket, not
-//     from the device itself: FinishPasskeyLogin is the only way to try, and
-//     it checks the status in the SAME store.
-//  2. Approve() is what unlocks it — the SAME signature, with nothing else
-//     changed, starts issuing a token.
-//  3. Revoking makes the credential IMMEDIATELY unusable: the same signature,
-//     in the same desktop session, now fails (the credential no longer exists
-//     in the store, so it lands on ErrPasskeyInvalidCredential — never on
-//     "pending", which would reveal the difference between "never existed" and
-//     "existed and was revoked").
 func TestPasskeyLogin_ApproveIsSoleGateAndRevokeKillsLoginImmediately(t *testing.T) {
 	const username = "sam"
 	r := newPasskeyRouter(t, "panel.example.com")
 
-	// The ceremony itself runs against the official vector's fixed RPID
-	// (example.org), not against the Router's test hostname — it swaps the RP
-	// for this proof only, exactly as initPasskey would swap it if
-	// PublicHostname were "example.org".
 	specRP := specRealWebAuthnRP(t)
 	r.webauthnRP = specRP
 
@@ -386,25 +291,16 @@ func TestPasskeyLogin_ApproveIsSoleGateAndRevokeKillsLoginImmediately(t *testing
 		return cont
 	}
 
-	// 1. PENDING: a valid signature, but the credential has not yet been
-	// approved by any desktop session — only the (public) login continuation
-	// token was used, never the pairing ticket nor a session from the device
-	// itself. It must fail with "pending", never issue a token.
 	if _, err := r.FinishPasskeyLogin(beginLoginSession(), specBuildAssertionJSON(t, username), "10.0.0.1", "vector-test"); err == nil {
 		t.Fatal("login with a pending credential should fail, but returned success (nil error)")
 	} else if err != mobilebff.ErrPasskeyPendingApproval {
 		t.Fatalf("login with a pending credential: err = %v, expected ErrPasskeyPendingApproval", err)
 	}
 
-	// 2. APPROVE through the real HTTP handler, exactly as the authenticated
-	// desktop panel would.
 	if resp := doMobileSessionsRequest(t, r.handleApproveMobileCredential, username, http.MethodPost, map[string]string{"id": credRec.ID}); resp.Code != 200 {
 		t.Fatalf("approve: status = %d, body = %s", resp.Code, resp.Body.String())
 	}
 
-	// 3. APPROVED: the SAME signature now issues the access+refresh pair —
-	// passkey is the product's primary path and needs the SAME silent renewal
-	// that password login already has (never the access token alone).
 	result, err := r.FinishPasskeyLogin(beginLoginSession(), specBuildAssertionJSON(t, username), "10.0.0.1", "vector-test")
 	if err != nil {
 		t.Fatalf("login with an approved credential should work, err = %v", err)
@@ -416,15 +312,10 @@ func TestPasskeyLogin_ApproveIsSoleGateAndRevokeKillsLoginImmediately(t *testing
 		t.Fatal("approved login returned an empty refresh_token — passkey would silently stop renewing the session")
 	}
 
-	// 4. REVOKE.
 	if resp := doMobileSessionsRequest(t, r.handleRevokeMobileSession, username, http.MethodPost, map[string]string{"id": credRec.ID}); resp.Code != 200 {
 		t.Fatalf("revoke: status = %d, body = %s", resp.Code, resp.Body.String())
 	}
 
-	// 5. REVOKED: the SAME signature now fails — the credential no longer
-	// exists, and the error is the invalid-credential sentinel (not "pending",
-	// which would tell "never existed" apart from "was revoked" for anyone
-	// trying to log in with a stolen/cloned credential).
 	if _, err := r.FinishPasskeyLogin(beginLoginSession(), specBuildAssertionJSON(t, username), "10.0.0.1", "vector-test"); err == nil {
 		t.Fatal("login with a revoked credential should fail, but returned success")
 	} else if err != mobilebff.ErrPasskeyInvalidCredential {
@@ -432,13 +323,6 @@ func TestPasskeyLogin_ApproveIsSoleGateAndRevokeKillsLoginImmediately(t *testing
 	}
 }
 
-// TestPasskeyLogin_RefreshTokenRotatesAndInvalidatesOldToken proves that the
-// refresh token issued by an approved passkey login goes through the SAME
-// auth.MobileRefreshStore as password login: it rotates successfully once, and
-// reusing the OLD token afterwards (replay) always fails with
-// ErrMobileRefreshInvalid — it never "almost works" on a second attempt.
-// Without this, passkey — the product's primary path — would have worse session
-// continuity than the password fallback.
 func TestPasskeyLogin_RefreshTokenRotatesAndInvalidatesOldToken(t *testing.T) {
 	const username = "sam"
 	r := newPasskeyRouter(t, "panel.example.com")
@@ -487,9 +371,6 @@ func TestPasskeyLogin_RefreshTokenRotatesAndInvalidatesOldToken(t *testing.T) {
 		t.Fatal("refresh_token did not rotate — returned the same token")
 	}
 
-	// Replay of the ORIGINAL refresh_token (issued by the passkey login,
-	// already rotated) — it must always fail, never "unlock" on a second
-	// attempt.
 	if _, err := r.MobileRefresh(login.RefreshToken); err != mobilebff.ErrMobileRefreshInvalid {
 		t.Fatalf("replay of the old token: err = %v, expected ErrMobileRefreshInvalid", err)
 	}

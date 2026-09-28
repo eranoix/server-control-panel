@@ -1,15 +1,4 @@
 #!/usr/bin/env node
-// Copying from the panel terminal broke accented text: it reached the
-// clipboard as mojibake. Terminal apps (vim, tmux, CLI tools) copy
-// through OSC 52, which sends the text as base64, and the handler called atob()
-// directly. atob returns one character per BYTE, so every multi-byte UTF-8
-// character became two or more Latin-1 characters.
-//
-// This harness extracts the REAL base64ToText from the shipped code, feeds it
-// what a terminal actually sends, and fails if anything reads text with atob
-// outside of it again.
-//
-//   run: node scripts/test-base64-text.mjs
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -20,14 +9,13 @@ const src = readFileSync(join(APP, '00-shell.js'), 'utf8');
 
 const m = src.match(/\nfunction base64ToText\(b64\) \{([\s\S]*?)\n\}\n/);
 if (!m) { console.error('FATAL: base64ToText not found in 00-shell.js'); process.exit(2); }
-const base64ToText = new Function('b64', m[1]); // trusted local source
+const base64ToText = new Function('b64', m[1]);
 
 let pass = 0, fail = 0;
 const check = (name, ok, detail) => {
   console.log((ok ? 'PASS ' : 'FAIL ') + name);
   if (ok) pass++; else { fail++; if (detail) console.log('   ' + detail); }
 };
-// How a terminal encodes OSC 52 text: UTF-8 bytes in base64.
 const osc52 = (s) => Buffer.from(s, 'utf8').toString('base64');
 const roundTrip = (s) => {
   const got = base64ToText(osc52(s));
@@ -40,17 +28,14 @@ roundTrip('done → ready ✓ 🚀');
 roundTrip('plain ASCII stays the same');
 check('empty input', base64ToText('') === '');
 
-// The defect this file exists to prevent: raw atob.
 const raw = atob(osc52('Zürich'));
 check('raw atob reproduces the defect (proves the test measures something)', raw === 'Z\u00c3\u00bcrich', `atob gave ${JSON.stringify(raw)}`);
 check('base64ToText does not reproduce it', base64ToText(osc52('Zürich')) === 'Zürich');
 
-// Terminals wrap long base64 into lines; OSC 52 may arrive without padding.
 const long = 'Grüße '.repeat(200);
 check('base64 wrapped at 76 columns', base64ToText(osc52(long).replace(/(.{76})/g, '$1\n')) === long);
 check('base64 without padding', base64ToText(osc52('Müller').replace(/=+$/, '')) === 'Müller');
 
-// JWT: the payload is base64url (uses - and _) without padding; atob refused it.
 const payload = { sub: 'zoë', name: 'Zoë Müller', exp: 1790000000, x: '>>>???' };
 const b64url = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 check('test payload contains - or _ (otherwise base64url is not exercised)', /[-_]/.test(b64url), b64url);
@@ -58,7 +43,6 @@ let jwt;
 try { jwt = JSON.parse(base64ToText(b64url)); } catch (e) { jwt = String(e); }
 check('base64url JWT payload with accents', jwt && jwt.name === 'Zoë Müller' && jwt.exp === 1790000000, JSON.stringify(jwt));
 
-// No app code reads text with atob outside base64ToText.
 const start = m.index, end = m.index + m[0].length;
 let atobs = 0;
 for (const name of readdirSync(APP)) {

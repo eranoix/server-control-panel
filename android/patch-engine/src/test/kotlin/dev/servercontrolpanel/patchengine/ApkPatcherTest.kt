@@ -8,15 +8,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Host JVM tests of the logic around the native call: missing inputs, disk
- * space, error-code translation and, most importantly, the native side
- * reporting success with the wrong bytes.
- *
- * The bionic `.so` does not load on a host JVM or Robolectric, hence the
- * [NativePatcher] seam. The real native path is covered by the instrumented
- * `ApkPatcherSmokeTest` and `ApkPatcherRealApkTest`.
- */
 class ApkPatcherTest {
 
     private val tempDir: File = Files.createTempDirectory("patch-engine-test").toFile()
@@ -29,7 +20,6 @@ class ApkPatcherTest {
     private fun file(name: String, bytes: ByteArray = ByteArray(0)): File =
         File(tempDir, name).apply { writeBytes(bytes) }
 
-    /** Fake native that writes [produces] to the output and returns [returns]. */
     private fun fakeNative(returns: Int, produces: ByteArray? = null) = NativePatcher {
         _, _, outNewFileName, _, _, _ ->
         if (produces != null) File(outNewFileName).writeBytes(produces)
@@ -56,8 +46,6 @@ class ApkPatcherTest {
 
     @Test
     fun apply_whenNativeSaysOkButBytesAreWrong_failsAndDeletesOutput() {
-        // Measured with real hpatchz: a wrong base of the same size returns 0
-        // and writes a complete but wrong file.
         val patcher = ApkPatcher(fakeNative(returns = 0, produces = "something else".toByteArray()))
         val out = File(tempDir, "out.apk")
 
@@ -131,8 +119,6 @@ class ApkPatcherTest {
 
     @Test
     fun apply_diskFullMidWrite_becomesInsufficientStorageNotNativeCode() {
-        // 24 = HPATCH_FILEWRITE_NO_SPACE_ERROR; the caller should not need the
-        // native enum to ask the user to free up space.
         val patcher = ApkPatcher(fakeNative(returns = 24))
 
         val result = patcher.apply(
@@ -199,8 +185,6 @@ class ApkPatcherTest {
 
         patcher.apply(file("base.apk", byteArrayOf(1)), file("p.hdiff", byteArrayOf(2)), File(tempDir, "out.apk"), expected)
 
-        // With _IS_NEED_CACHE_OLD_ALL=1 in Android.mk, a cacheMemory >= the old
-        // APK size loads the whole APK into memory; this guards the default.
         assertEquals(4L * 1024 * 1024, seenCache)
         assertEquals(4L * 1024 * 1024, ApkPatcher.DEFAULT_CACHE_MEMORY_BYTES)
         assertEquals(1, seenThreads)
@@ -218,7 +202,6 @@ class ApkPatcherTest {
 
     @Test
     fun sha256Of_fileLargerThanReadBuffer() {
-        // 64 KiB is the size of the internal buffer; going past it exercises the loop.
         val bytes = ByteArray(200_000) { (it % 251).toByte() }
         val f = File(tempDir, "large.bin").apply { writeBytes(bytes) }
 
@@ -230,8 +213,6 @@ class ApkPatcherTest {
 
     @Test
     fun hPatchCode_translatesUpstreamEnumGaps() {
-        // Upstream jumps from 18 to 20 and from 25 to 103; translating by
-        // `ordinal` would fail silently on exactly the checksum codes.
         assertEquals(HPatchCode.OPTIONS_ERROR, HPatchCode.fromRaw(1))
         assertEquals(HPatchCode.DECOMPRESSER_OPEN_ERROR, HPatchCode.fromRaw(20))
         assertEquals(HPatchCode.FILE_WRITE_NO_SPACE_ERROR, HPatchCode.fromRaw(24))
@@ -251,7 +232,6 @@ class ApkPatcherTest {
             File(tempDir, "out.apk"),
             expected,
         )
-        // The raw integer survives: it is the only way to trace it in upstream's source.
         assertEquals(PatchResult.NativeFailure(HPatchCode.UNKNOWN, 201), result)
     }
 }

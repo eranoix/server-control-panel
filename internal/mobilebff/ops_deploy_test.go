@@ -1,8 +1,5 @@
 package mobilebff
 
-// ops_deploy_test.go proves the two server-side deploy gates and the
-// live deploy.<jobID> bridge against a stub deploy command (the same
-// technique as runners_selfdeploy_test.go), never a real deploy.
 import (
 	"context"
 	"encoding/json"
@@ -20,10 +17,6 @@ import (
 	"server-control-panel/internal/queue"
 )
 
-// useStubDeployCommand mirrors the helper in internal/queue (unexported
-// there): it points queue.DeployCommandEnv at a script that prints
-// three deterministic lines and exits with exitCode, so no test here ever
-// runs a real deploy.
 func useStubDeployCommand(t *testing.T, exitCode int) {
 	t.Helper()
 	script := "#!/bin/sh\necho stub-line-1\necho stub-line-2\necho stub-line-3\nexit " + strconv.Itoa(exitCode) + "\n"
@@ -49,10 +42,6 @@ const testPrimary = "sam"
 
 func adminCfg() *config.Config { return &config.Config{Primary: testPrimary} }
 
-// TestOpsDeploy_MissingConfirm_400 is the server-side confirmation gate:
-// a client with NO confirmation dialog — one that never sends confirm:true —
-// must be refused even though it is the primary account. Both an absent
-// body field and a literal confirm:false take this path.
 func TestOpsDeploy_MissingConfirm_400(t *testing.T) {
 	useStubDeployCommand(t, 0)
 	q := newTestOpsQueue(t)
@@ -75,9 +64,6 @@ func TestOpsDeploy_MissingConfirm_400(t *testing.T) {
 	}
 }
 
-// TestOpsDeploy_NonAdmin_403 is the primary-only gate: a non-admin user
-// WITH confirm:true is still refused — confirmation never substitutes for
-// the RBAC check.
 func TestOpsDeploy_NonAdmin_403(t *testing.T) {
 	useStubDeployCommand(t, 0)
 	q := newTestOpsQueue(t)
@@ -98,8 +84,6 @@ func TestOpsDeploy_NonAdmin_403(t *testing.T) {
 	}
 }
 
-// TestOpsDeploy_QueueUnavailable_503 proves the endpoint fails closed (never
-// panics) when the queue subsystem never started.
 func TestOpsDeploy_QueueUnavailable_503(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: adminCfg()})
@@ -114,11 +98,6 @@ func TestOpsDeploy_QueueUnavailable_503(t *testing.T) {
 	}
 }
 
-// TestOpsDeploy_Success_EnqueuesAndBridgesLiveEvents is Task 2's literal
-// <done> criterion: primary + confirm:true returns a job_id, and a
-// subsequent /ws/mobile-events subscription to deploy.<jobID> receives
-// progress/log events ending in a distinct terminal event. The stub deploy
-// command stands in for the real one, so this test never deploys anything.
 func TestOpsDeploy_Success_EnqueuesAndBridgesLiveEvents(t *testing.T) {
 	useStubDeployCommand(t, 0)
 	q := newTestOpsQueue(t)
@@ -131,9 +110,6 @@ func TestOpsDeploy_Success_EnqueuesAndBridgesLiveEvents(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	// Trigger the deploy in-process (matches the other REST tests here); the
-	// Hub instance is shared with the httptest.Server above, so
-	// bridgeSelfDeployJob's Publish calls reach a WS client dialed against it.
 	req := httptest.NewRequest(http.MethodPost, "/api/mobile/v1/ops/deploy", strings.NewReader(`{"confirm":true}`))
 	req.Header.Set("Content-Type", "application/json")
 	req = req.WithContext(auth.WithUser(req.Context(), testPrimary))
@@ -163,9 +139,6 @@ func TestOpsDeploy_Success_EnqueuesAndBridgesLiveEvents(t *testing.T) {
 		t.Fatalf("ack = %#v", ack)
 	}
 
-	// GET /ops/deploy/{jobID} gives the initial paint — assert it resolves to
-	// a real, known job of the right kind (T-06's "screen paints before the
-	// WS subscription catches up" contract), independent of the live stream.
 	statusReq := httptest.NewRequest(http.MethodGet, "/api/mobile/v1/ops/deploy/"+out.JobID, nil)
 	statusReq = statusReq.WithContext(auth.WithUser(statusReq.Context(), testPrimary))
 	statusRec := httptest.NewRecorder()
@@ -174,9 +147,6 @@ func TestOpsDeploy_Success_EnqueuesAndBridgesLiveEvents(t *testing.T) {
 		t.Fatalf("GET status = %d, want 200 (body=%s)", statusRec.Code, statusRec.Body.String())
 	}
 
-	// Drain live events on the deploy.<jobID> channel until the terminal
-	// "status" event with status=done arrives — proving a DISTINCT terminal
-	// message closes the stream, not just silence.
 	deadline := time.Now().Add(5 * time.Second)
 	sawLog := false
 	terminalSeen := false
@@ -204,14 +174,6 @@ func TestOpsDeploy_Success_EnqueuesAndBridgesLiveEvents(t *testing.T) {
 	_ = conn.Close()
 }
 
-// TestOpsDeploy_RunnerFailure_ReflectsInStatus proves a forced runner failure
-// (stub exits non-zero) surfaces as a failed status with a non-empty Error
-// via GET /ops/deploy/{jobID} — the terminal-job notification itself
-// (job.failed dispatched to notify.Router) is generic, pre-existing
-// plumbing wired once at the internal/api.Router level for EVERY job kind
-// (see internal/api/notify_wire.go's initNotify/SetNotifier), not something
-// self_deploy adds or this package can reach — mobilebff.Deps carries no
-// notify.Router reference by design.
 func TestOpsDeploy_RunnerFailure_ReflectsInStatus(t *testing.T) {
 	useStubDeployCommand(t, 1)
 	q := newTestOpsQueue(t)
@@ -261,8 +223,6 @@ func TestOpsDeploy_RunnerFailure_ReflectsInStatus(t *testing.T) {
 	t.Fatal("job never reached failed status")
 }
 
-// TestOpsDeployStatus_UnknownJob_404 and wrong-kind isolation: a job id from
-// another kind must never be exposed via this endpoint.
 func TestOpsDeployStatus_UnknownJob_404(t *testing.T) {
 	q := newTestOpsQueue(t)
 	mux := http.NewServeMux()
@@ -277,9 +237,6 @@ func TestOpsDeployStatus_UnknownJob_404(t *testing.T) {
 	}
 }
 
-// TestOpsDeployStatus_NonAdmin_403 mirrors the trigger endpoint's RBAC gate
-// on the status read path — a non-primary caller must not learn anything
-// about a deploy job, not even that it exists.
 func TestOpsDeployStatus_NonAdmin_403(t *testing.T) {
 	useStubDeployCommand(t, 0)
 	q := newTestOpsQueue(t)

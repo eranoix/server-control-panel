@@ -10,23 +10,16 @@ import (
 	"server-control-panel/internal/httpx"
 )
 
-// read3.go — INSPECTION endpoints: blame by line, the history of a file and
-// comparison between two refs. All primary-gated (through s.gate) and
-// read-only (git shell-out, no writes).
-
-// ---- GET /blame?repo=&path=&ref= ----
-
-// blameLine is an annotated line: authorship + originating commit + content.
 type blameLine struct {
-	Line     int    `json:"line"`               // line number in the final file
-	Hash     string `json:"hash"`               // full commit
-	Short    string `json:"short"`              // short hash
-	Author   string `json:"author"`             // author's name
-	Email    string `json:"email"`              // author's e-mail
-	Date     string `json:"date"`               // ISO (da author-time)
-	Summary  string `json:"summary"`            // the commit's subject
-	Content  string `json:"content"`            // the line's text
-	Boundary bool   `json:"boundary,omitempty"` // boundary commit (the root of the window)
+	Line     int    `json:"line"`
+	Hash     string `json:"hash"`
+	Short    string `json:"short"`
+	Author   string `json:"author"`
+	Email    string `json:"email"`
+	Date     string `json:"date"`
+	Summary  string `json:"summary"`
+	Content  string `json:"content"`
+	Boundary bool   `json:"boundary,omitempty"`
 }
 
 var blameHdrRe = regexp.MustCompile(`^([0-9a-f]{40}) (\d+) (\d+)(?: (\d+))?$`)
@@ -63,7 +56,6 @@ func (s *svc) handleBlame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if res.Code != 0 {
-		// binary / nonexistent / history-less file → a clean 422
 		httpx.WriteErr(w, http.StatusUnprocessableEntity, "blame unavailable (binary, missing, or no history)")
 		return
 	}
@@ -71,10 +63,6 @@ func (s *svc) handleBlame(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"path": path, "lines": lines})
 }
 
-// parseBlamePorcelain interprets `git blame --line-porcelain`: each line of
-// the file arrives as a header "<hash> <origLine> <finalLine> [grp]" followed
-// by "key value" pairs (author, author-mail, author-time, summary…) and,
-// finally, the content line prefixed by a TAB.
 func parseBlamePorcelain(out string) []blameLine {
 	res := []blameLine{}
 	var cur blameLine
@@ -117,9 +105,6 @@ func parseBlamePorcelain(out string) []blameLine {
 	return res
 }
 
-// ---- GET /filelog?repo=&path=&limit= ----
-
-// fileLogEntry is a commit that touched a file (with that file's +/−).
 type fileLogEntry struct {
 	Hash    string `json:"hash"`
 	Short   string `json:"short"`
@@ -149,8 +134,6 @@ func (s *svc) handleFileLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := clampLimit(atoiDefault(q.Get("limit"), 100), 100)
-	// --follow follows renames (it demands exactly 1 pathspec). numstat gives the
-	// file's +/−; we separate commit-meta and numstat by NUL markers.
 	res, err := run(r.Context(), repo.Path, "log", "--follow",
 		"--max-count="+strconv.Itoa(limit), "--numstat",
 		"--pretty=format:\x01%H%x00%an%x00%ae%x00%aI%x00%s", "--", path)
@@ -161,10 +144,6 @@ func (s *svc) handleFileLog(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{"path": path, "commits": parseFileLog(res.Stdout)})
 }
 
-// parseFileLog interprets the log with numstat: each commit starts with \x01
-// and has its fields separated by NUL; the following lines (up to the next
-// \x01) are numstat "<add>\t<del>\t<path>" — we sum the +/− (renames carry a
-// path with "{a => b}", so we take only the numbers).
 func parseFileLog(out string) []fileLogEntry {
 	res := []fileLogEntry{}
 	var cur *fileLogEntry
@@ -202,11 +181,6 @@ func parseFileLog(out string) []fileLogEntry {
 	return res
 }
 
-// ---- GET /compare?repo=&a=&b=&mode= ----
-
-// handleCompare compares two refs: changed files (name-status + numstat) and
-// the commits on each side. mode=threedot (a...b, the default) uses the
-// merge-base (useful for "what B brings on top of A"); mode=twodot (a..b) is the direct difference.
 func (s *svc) handleCompare(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.gate(w, r); !ok {
 		return
@@ -230,7 +204,6 @@ func (s *svc) handleCompare(w http.ResponseWriter, r *http.Request) {
 	}
 	rangeSpec := a + sep + b
 
-	// Changed files (name-status + numstat) between the two.
 	fres, _ := run(r.Context(), repo.Path, "diff", "--name-status", "-z", rangeSpec)
 	files := parseNameStatusZ(fres.Stdout)
 	nres, _ := run(r.Context(), repo.Path, "diff", "--numstat", "-z", rangeSpec)
@@ -244,11 +217,10 @@ func (s *svc) handleCompare(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The commits on each side (always a...b, with a </> marker).
 	cres, _ := run(r.Context(), repo.Path, "log", "--left-right", "--date-order",
 		"--max-count=500", "--pretty=format:%m%x00%H%x00%an%x00%aI%x00%s", a+"..."+b)
 	type cmpCommit struct {
-		Side    string `json:"side"` // "a" (<) or "b" (>)
+		Side    string `json:"side"`
 		Hash    string `json:"hash"`
 		Short   string `json:"short"`
 		Author  string `json:"author"`

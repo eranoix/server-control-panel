@@ -1,18 +1,5 @@
 package main
 
-// agent.go — agent-action subcommands. These are the integration
-// surface the cockpit shells out to (/opt/panel/bin/panelctl <subcmd>):
-//
-//	agent-ship     — ticket→PR "ship": verify, commit, push, open PR (or print compare URL)
-//	agent-fixbuild — run the build; on failure spawn a Claude session to fix it
-//	agent-budget   — show/set alert-only spend ceilings
-//	agent-permmode — set a session's Claude permission mode
-//
-// Anti-injection: ticket/user/session/branch values are ALWAYS passed
-// as discrete argv elements to git/gh (never shell-concatenated). Only the
-// operator-supplied verify/build command is run through a shell (bash -lc), same
-// posture as internal/pty.Exec.
-
 import (
 	"encoding/json"
 	"flag"
@@ -26,11 +13,6 @@ import (
 	ptysvc "server-control-panel/internal/pty"
 )
 
-// ─── shared helpers ─────────────────────────────────────────────────────────
-
-// sessionCWD resolves a dtach session name → its recorded cwd via
-// <DataDir>/session-cwd.json (the same sidecar the server writes at spawn).
-// Errors clearly when the session has no mapping.
 func sessionCWD(dataDir, session string) (string, error) {
 	path := filepath.Join(dataDir, "session-cwd.json")
 	m := map[string]string{}
@@ -50,8 +32,6 @@ func sessionCWD(dataDir, session string) (string, error) {
 	return "", fmt.Errorf("session %q has no cwd in %s — cannot locate the worktree", session, path)
 }
 
-// writeSessionCWD best-effort records name→cwd in the sidecar (used after
-// spawning a fix session). Whole-map rewrite, atomic temp+rename.
 func writeSessionCWD(dataDir, name, cwd string) error {
 	path := filepath.Join(dataDir, "session-cwd.json")
 	m := map[string]string{}
@@ -73,7 +53,6 @@ func writeSessionCWD(dataDir, name, cwd string) error {
 	return os.Rename(tmp, path)
 }
 
-// git runs `git -C dir <args...>` (argv-exec) and returns trimmed combined output.
 func git(dir string, args ...string) (string, error) {
 	full := append([]string{"-C", dir}, args...)
 	cmd := exec.Command("git", full...)
@@ -82,15 +61,11 @@ func git(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// gitInsideWorkTree reports whether dir is inside a git work tree.
 func gitInsideWorkTree(dir string) bool {
 	out, err := git(dir, "rev-parse", "--is-inside-work-tree")
 	return err == nil && out == "true"
 }
 
-// runShellCapture runs an operator-supplied command line in dir via bash -lc and
-// returns combined output + error. The command is operator config (a verify or
-// build line), NOT ticket/user/session input.
 func runShellCapture(dir, cmdline string) (string, error) {
 	cmd := exec.Command("/bin/bash", "-lc", cmdline)
 	cmd.Dir = dir
@@ -98,8 +73,6 @@ func runShellCapture(dir, cmdline string) (string, error) {
 	return string(out), err
 }
 
-// ticketFromSession extracts the ticket key from a "panel-<user>-jira-<KEY>"
-// session name. Returns "" when the name doesn't match that shape.
 func ticketFromSession(session string) string {
 	rest, ok := strings.CutPrefix(session, "panel-")
 	if !ok {
@@ -112,8 +85,6 @@ func ticketFromSession(session string) string {
 	return strings.TrimSpace(rest[i+len("-jira-"):])
 }
 
-// remoteToCompareURL turns an origin remote URL into a GitHub-style compare URL
-// for branch. Handles https and ssh (scp-like) forms; returns "" when it can't.
 func remoteToCompareURL(remote, branch string) string {
 	remote = strings.TrimSpace(remote)
 	remote = strings.TrimSuffix(remote, ".git")
@@ -122,7 +93,6 @@ func remoteToCompareURL(remote, branch string) string {
 	case strings.HasPrefix(remote, "https://"):
 		base = remote
 	case strings.HasPrefix(remote, "git@"):
-		// git@github.com:owner/repo → https://github.com/owner/repo
 		if i := strings.Index(remote, ":"); i > 0 {
 			host := strings.TrimPrefix(remote[:i], "git@")
 			base = "https://" + host + "/" + remote[i+1:]
@@ -137,7 +107,6 @@ func remoteToCompareURL(remote, branch string) string {
 	return base + "/compare/" + branch + "?expand=1"
 }
 
-// ghAvailable reports whether the gh CLI is installed AND authenticated.
 func ghAvailable() bool {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return false
@@ -145,8 +114,6 @@ func ghAvailable() bool {
 	cmd := exec.Command("gh", "auth", "status")
 	return cmd.Run() == nil
 }
-
-// ─── agent-ship ─────────────────────────────────────────────────────────────
 
 func cmdAgentShip(args []string) error {
 	fs := flag.NewFlagSet("agent-ship", flag.ContinueOnError)
@@ -182,17 +149,14 @@ func cmdAgentShip(args []string) error {
 	}
 	ticket := ticketFromSession(*session)
 
-	// 1. Verify (abort on failure — never ship broken code).
 	if err := runShipVerify(cwd, *verify); err != nil {
 		return err
 	}
 
-	// 2. Stage + commit (skip commit when nothing is staged; still push).
 	if _, err := git(cwd, "add", "-A"); err != nil {
 		return fmt.Errorf("git add: %w", err)
 	}
 	if _, staged := git(cwd, "diff", "--cached", "--quiet"); staged != nil {
-		// non-nil error from --quiet means there ARE staged changes → commit.
 		msg := strings.TrimSpace(*title)
 		if msg == "" {
 			if ticket != "" {
@@ -209,13 +173,11 @@ func cmdAgentShip(args []string) error {
 		fmt.Println("nothing new to commit — publishing the branch as it stands")
 	}
 
-	// 3. Push (never force). -u sets upstream on first push; re-runs push new commits.
 	if out, err := git(cwd, "push", "-u", "origin", branch); err != nil {
 		return fmt.Errorf("git push failed: %s", out)
 	}
 	fmt.Printf("branch published: %s\n", branch)
 
-	// 4. PR via gh (if available+authed and not suppressed), else compare URL.
 	if !*noPR && ghAvailable() {
 		prTitle := strings.TrimSpace(*title)
 		if prTitle == "" {
@@ -235,7 +197,6 @@ func cmdAgentShip(args []string) error {
 		out, err := cmd.CombinedOutput()
 		fmt.Print(string(out))
 		if err != nil {
-			// gh failed (e.g. PR already exists) — fall through to compare URL.
 			fmt.Fprintln(os.Stderr, "warning: gh pr create failed; printing the compare URL")
 		} else {
 			return nil
@@ -249,8 +210,6 @@ func cmdAgentShip(args []string) error {
 	return nil
 }
 
-// runShipVerify runs the configurable verify command. When --verify is empty it
-// defaults to `go build ./...` for a Go module and is skipped otherwise.
 func runShipVerify(cwd, verify string) error {
 	cmdline := strings.TrimSpace(verify)
 	if cmdline == "" {
@@ -267,8 +226,6 @@ func runShipVerify(cwd, verify string) error {
 	fmt.Println("verify: OK")
 	return nil
 }
-
-// ─── agent-fixbuild ─────────────────────────────────────────────────────────
 
 func cmdAgentFixbuild(args []string) error {
 	fs := flag.NewFlagSet("agent-fixbuild", flag.ContinueOnError)
@@ -300,7 +257,6 @@ func cmdAgentFixbuild(args []string) error {
 		fmt.Println("build OK, nothing to fix")
 		return nil
 	}
-	// Build failed → spawn a NEW Claude session in the worktree to fix it.
 	reg, _ := ptysvc.LoadRegistry(filepath.Join(cfg.DataDir, "session-registry.json"))
 	ptysvc.InitSessionBackend(cfg.DataDir, reg)
 
@@ -310,15 +266,12 @@ func cmdAgentFixbuild(args []string) error {
 	if err != nil {
 		return fmt.Errorf("spawn fix session: %w", err)
 	}
-	_ = writeSessionCWD(cfg.DataDir, created, cwd) // best-effort telemetry mapping
+	_ = writeSessionCWD(cfg.DataDir, created, cwd)
 	fmt.Fprintln(os.Stderr, "build failed — fix session started:")
-	fmt.Println(created) // session name on stdout (contract for the caller)
+	fmt.Println(created)
 	return nil
 }
 
-// ─── agent-budget ───────────────────────────────────────────────────────────
-
-// agentBudgetFile mirrors api.AgentBudget's JSON contract (same file).
 type agentBudgetFile struct {
 	DailyUSD   float64 `json:"daily_usd,omitempty"`
 	MonthlyUSD float64 `json:"monthly_usd,omitempty"`
@@ -388,8 +341,6 @@ func budgetLabel(v float64) string {
 	}
 	return fmt.Sprintf("$%.2f", v)
 }
-
-// ─── agent-permmode ─────────────────────────────────────────────────────────
 
 func cmdAgentPermmode(args []string) error {
 	fs := flag.NewFlagSet("agent-permmode", flag.ContinueOnError)

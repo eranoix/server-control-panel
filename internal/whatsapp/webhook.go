@@ -12,8 +12,6 @@ import (
 	"time"
 )
 
-// webhookEnvelope is the WAHA event wrapper. Payload is opaque JSON whose
-// shape depends on `event` — we type the events we handle.
 type webhookEnvelope struct {
 	Event     string          `json:"event"`
 	Session   string          `json:"session"`
@@ -21,16 +19,6 @@ type webhookEnvelope struct {
 	Timestamp int64           `json:"timestamp"`
 }
 
-// HandleWebhook is the WAHA -> control plane event endpoint. This is the ONLY
-// whatsapp route outside auth.Middleware; HMAC-SHA512 over the raw body in
-// `X-Webhook-Hmac` stands in for auth.
-//
-// Return codes (WAHA retries on anything that is not 2xx):
-//   - 200 when processed successfully
-//   - 400/401 on a PERMANENT error (bad HMAC, broken JSON) — retrying is pointless
-//   - 503 on an INTERNAL error (store I/O, panic) — WAHA redelivers and we get
-//     another go. Answering 200 in those cases hides the problem and loses the
-//     message.
 func (s *Service) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -88,10 +76,6 @@ func (s *Service) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("ok"))
 }
 
-// handleMediaRecovered: the daemon recovered an old message's media key (via
-// history sync). This enqueues the download — the worker fetches it through
-// /api/files/<id>, writes it to MediaRoot and broadcasts, so the bubble swaps
-// "Download" for the live image.
 func (s *Service) handleMediaRecovered(raw json.RawMessage) {
 	var p struct {
 		Chat     string `json:"chat"`
@@ -105,8 +89,6 @@ func (s *Service) handleMediaRecovered(raw json.RawMessage) {
 	s.EnqueueDownload(chat, p.ID, "/api/files/"+p.ID, p.Mimetype, "")
 }
 
-// markHookErr surfaces a webhook-processing failure to the UI without flipping
-// the connection state itself.
 func (s *Service) markHookErr(msg string) {
 	log.Printf("whatsapp webhook: %s", msg)
 	_, _ = s.Store.SetState(func(st *State) {
@@ -115,8 +97,6 @@ func (s *Service) markHookErr(msg string) {
 		st.HookLastTS = time.Now().Unix()
 	})
 }
-
-// --- per-event handlers ---
 
 type sessionStatusPayload struct {
 	Name   string `json:"name"`
@@ -141,7 +121,6 @@ func (s *Service) handleSessionStatus(raw json.RawMessage) {
 			st.Engine = p.Engine.Engine
 		}
 		if p.Me.ID != "" {
-			// "55119...@c.us" → "55119..."
 			st.Phone = strings.SplitN(p.Me.ID, "@", 2)[0]
 		}
 		if p.Me.PushName != "" {
@@ -155,7 +134,6 @@ func (s *Service) handleSessionStatus(raw json.RawMessage) {
 			st.LastQRTS = time.Now().Unix()
 		}
 	})
-	// Pull fresh QR when entering SCAN_QR_CODE.
 	if p.Status == StatusScanQR && s.Client != nil {
 		if qr, err := s.Client.GetQR(); err == nil && qr != "" {
 			st, _ = s.Store.SetState(func(st *State) { st.QRDataURL = qr })
@@ -164,15 +142,6 @@ func (s *Service) handleSessionStatus(raw json.RawMessage) {
 	s.Broadcaster.Send(WSEvent{Kind: "status", State: &st, TS: time.Now().Unix()})
 }
 
-// wahaMessagePayload captures the commonly-used fields. WAHA emits many more
-// edge-case fields; we keep the original JSON in Message.RawJSON for debugging
-// or future-proofing without burying every minor field into the schema.
-//
-// GOWS engine quirk: the top-level `type` field is empty and `media` is null
-// until /api/chats/.../messages?downloadMedia=true is called. The real media
-// type lives in `_data.Info.MediaType` (image/video/audio/document) and a
-// `Type=media` marker in `_data.Info.Type`. We unmarshal that nested struct
-// too so handleMessage can fill Message.Type even without auto-download.
 type wahaMessagePayload struct {
 	ID        string `json:"id"`
 	From      string `json:"from"`
@@ -180,7 +149,7 @@ type wahaMessagePayload struct {
 	FromMe    bool   `json:"fromMe"`
 	Body      string `json:"body"`
 	Caption   string `json:"caption"`
-	Type      string `json:"type"` // chat / image / audio / ptt / video / document / sticker / location / vcard
+	Type      string `json:"type"`
 	Timestamp int64  `json:"timestamp"`
 	HasMedia  bool   `json:"hasMedia"`
 	MediaURL  string `json:"mediaUrl,omitempty"`
@@ -193,12 +162,12 @@ type wahaMessagePayload struct {
 	Filename   string `json:"filename,omitempty"`
 	QuotedID   string `json:"quotedMsgId,omitempty"`
 	Ack        int    `json:"ack"`
-	NotifyName string `json:"notifyName,omitempty"` // sender's display name (WhatsApp push name)
+	NotifyName string `json:"notifyName,omitempty"`
 	Data       *struct {
 		Info *struct {
-			Type      string `json:"Type"`      // "media" / "text" / "reaction" / etc
-			MediaType string `json:"MediaType"` // image / video / audio / document / sticker / ptt
-			Sender    string `json:"Sender"`    // sender JID (in groups: the participant, not the group)
+			Type      string `json:"Type"`
+			MediaType string `json:"MediaType"`
+			Sender    string `json:"Sender"`
 		} `json:"Info,omitempty"`
 		Message *struct {
 			ReactionMessage *struct {
@@ -208,8 +177,8 @@ type wahaMessagePayload struct {
 					FromMe      bool   `json:"FromMe"`
 					Participant string `json:"Participant"`
 				} `json:"Key"`
-				Text              string `json:"Text"`              // emoji ("" = remove)
-				SenderTimestampMS int64  `json:"SenderTimestampMS"` // ms unix
+				Text              string `json:"Text"`
+				SenderTimestampMS int64  `json:"SenderTimestampMS"`
 			} `json:"reactionMessage,omitempty"`
 		} `json:"Message,omitempty"`
 	} `json:"_data,omitempty"`
@@ -221,33 +190,16 @@ func (s *Service) handleMessage(raw json.RawMessage, _ string) {
 		s.markHookErr("msg parse: " + err.Error())
 		return
 	}
-	// Resolve the conversation in a group-aware way: outbound 1:1 -> To (the
-	// peer); inbound -> From (the peer); a group -> the @g.us side (NEVER the To,
-	// which on a fromMe group message is our own number, dumping everything into
-	// the chat with ourselves).
 	chat := resolveChatJID(p.From, p.To, p.FromMe)
-	// Canonicalise: normalise @s.whatsapp.net -> @c.us AND resolve @lid -> @c.us
-	// through the in-memory whatsmeow_lid_map cache. Without converting right
-	// here, a reply to a @c.us creates a new chat under @lid that stays orphaned
-	// until the next 30s poll merges it.
-	chat = s.CanonicalChatJIDLazy(chat) // lazy lookup in gows.db on a cache miss
+	chat = s.CanonicalChatJIDLazy(chat)
 	if chat == "" || p.ID == "" {
 		return
 	}
-	// Reaction: WhatsApp sends one message event per emoji applied. It must NOT
-	// become a separate bubble — attach the Reaction to the target message.
-	// Without this, reactions would litter the UI as "empty bubbles" (filtered
-	// in the frontend now, but still wasting an AppendMessage plus a broadcast).
-	// Detected via _data.Info.Type=="reaction" + _data.Message.reactionMessage.
 	if p.Data != nil && p.Data.Info != nil && p.Data.Info.Type == "reaction" &&
 		p.Data.Message != nil && p.Data.Message.ReactionMessage != nil {
 		rxn := p.Data.Message.ReactionMessage
 		if rxn.Key != nil && rxn.Key.ID != "" {
 			emoji := rxn.Text
-			// In a group the sender is in _data.Info.Sender or rxn.Key.Participant
-			// (in a 1-on-1 both can be empty — we fall back to p.From). Without this,
-			// group reactions were attributed to the group itself (the chip showed
-			// "5522xxxxx@g.us" instead of the reactor's name).
 			fromRaw := ""
 			if p.Data.Info.Sender != "" {
 				fromRaw = p.Data.Info.Sender
@@ -273,10 +225,6 @@ func (s *Service) handleMessage(raw json.RawMessage, _ string) {
 		}
 		return
 	}
-	// Idempotency: WAHA retries the webhook on a network failure. If the message
-	// is already in the store, return without doing anything. Append is expensive
-	// (lock + flush) and triggers a broadcast that re-renders the UI — duplicating
-	// it is bad UX, not just wasted I/O.
 	if exists, err := s.Store.HasMessage(chat, p.ID, p.Timestamp); err == nil && exists {
 		return
 	}
@@ -284,15 +232,10 @@ func (s *Service) handleMessage(raw json.RawMessage, _ string) {
 	if body == "" && p.Caption != "" {
 		body = p.Caption
 	}
-	// The GOWS engine emits an empty `type` for media; the real type is in
-	// _data.Info.MediaType. An explicit fallback keeps us from classifying a
-	// photo/audio/video as "text" and losing the right rendering.
 	rawType := p.Type
 	if rawType == "" && p.Data != nil && p.Data.Info != nil && p.Data.Info.MediaType != "" {
 		rawType = p.Data.Info.MediaType
 	}
-	// Media but no MediaType (sticker, location, etc.) — mark it as "media" so
-	// the UI at least shows a placeholder instead of empty text.
 	if rawType == "" && p.HasMedia {
 		rawType = "media"
 	}
@@ -317,7 +260,6 @@ func (s *Service) handleMessage(raw json.RawMessage, _ string) {
 	}
 	mediaWAHAURL := ""
 	if p.HasMedia {
-		// MimeType may arrive top-level OR inside media{}; take whichever is there.
 		mime := p.MimeType
 		filename := p.Filename
 		url := p.MediaURL
@@ -333,10 +275,6 @@ func (s *Service) handleMessage(raw json.RawMessage, _ string) {
 			}
 		}
 		mediaWAHAURL = url
-		// Path STAYS empty until the worker downloads it — the frontend shows a
-		// "Download" button as a placeholder until the WSEvent{Kind:"message"}
-		// broadcast arrives with Media.Path filled in. Mime and filename help the
-		// UI pick an icon.
 		m.Media = &Media{
 			MimeType: mime,
 			Filename: filename,
@@ -347,16 +285,6 @@ func (s *Service) handleMessage(raw json.RawMessage, _ string) {
 		s.markHookErr("append: " + err.Error())
 		return
 	}
-	// Auto-download of inbound IMAGES as they arrive (a user requirement):
-	// images and stickers should appear on their own, without the user pressing
-	// "Download" or "Sync". Previously only opening the chat (handleMessagesList)
-	// enqueued the download, so media arriving while the chat was already open
-	// stayed stuck on the placeholder. normalizeType maps sticker->"image", so
-	// this gate covers images and stickers alike. LARGE media (video, document,
-	// audio) stays on demand (the "Download" button, or opening the chat) so we
-	// do not burn bandwidth and disk on chats the user never opens. The worker
-	// downloads in the background and RE-broadcasts with Media.Path set, so the
-	// bubble swaps the placeholder for a live <img>. Non-blocking, best effort.
 	if p.HasMedia && m.Type == "image" && m.Media != nil {
 		s.EnqueueDownload(chat, m.ID, "/api/files/"+m.ID, m.Media.MimeType, m.Media.Filename)
 	}
@@ -364,11 +292,6 @@ func (s *Service) handleMessage(raw json.RawMessage, _ string) {
 	if err := s.Store.TouchChatWithMessage(m); err != nil {
 		s.markHookErr("touch: " + err.Error())
 	}
-	// Best effort: when the message arrives carrying `notifyName` (the sender's
-	// WhatsApp push name) and the chat has no Name resolved from the address
-	// book yet, use the push name as a fallback. The periodic name sync
-	// (state.go:syncChatNames) eventually overwrites it with the name saved in
-	// the address book, once that is available.
 	if !p.FromMe && p.NotifyName != "" {
 		_ = s.Store.MergeChatName(chat, p.NotifyName, false)
 	}
@@ -387,8 +310,6 @@ func (s *Service) handleAck(raw json.RawMessage) {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return
 	}
-	// Group-aware (same as handleMessage): otherwise the ack of a group message
-	// resolved to our own number and did not match the message filed under the group.
 	chat := resolveChatJID(p.From, p.To, true)
 	chat = s.CanonicalChatJID(chat)
 	if p.ID == "" || chat == "" {
@@ -407,7 +328,7 @@ func (s *Service) handleRevoked(raw json.RawMessage) {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return
 	}
-	chat := resolveChatJID(p.From, p.To, true) // group-aware (see handleAck)
+	chat := resolveChatJID(p.From, p.To, true)
 	chat = s.CanonicalChatJID(chat)
 	if p.ID == "" {
 		return
@@ -416,15 +337,11 @@ func (s *Service) handleRevoked(raw json.RawMessage) {
 	s.Broadcaster.Send(WSEvent{Kind: "revoked", AckID: p.ID, TS: time.Now().Unix()})
 }
 
-// presencePayload mirrors WAHA's `presence.update` event. The `presences[]`
-// list holds one item per participant (a group may have several; a 1-on-1
-// only has the contact). Each says online/offline + lastSeen + whether they
-// are typing or recording a voice note.
 type presencePayload struct {
-	ID        string `json:"id"` // chat JID
+	ID        string `json:"id"`
 	Presences []struct {
 		Participant string `json:"participant"`
-		LastKnown   string `json:"lastKnownPresence"` // available/unavailable/composing/recording
+		LastKnown   string `json:"lastKnownPresence"`
 		LastSeen    int64  `json:"lastSeen"`
 	} `json:"presences"`
 }
@@ -438,9 +355,6 @@ func (s *Service) handlePresence(raw json.RawMessage) {
 	if p.ID == "" || len(p.Presences) == 0 {
 		return
 	}
-	// For a 1-on-1, take the first (and only) one. For groups we aggregate: if
-	// any participant is composing or recording, show that. Otherwise use the
-	// first one available.
 	state := ""
 	lastSeen := int64(0)
 	for _, pr := range p.Presences {
@@ -463,39 +377,28 @@ func (s *Service) handlePresence(raw json.RawMessage) {
 	})
 }
 
-// normalizeType maps WAHA's wire types to our canonical types. It accepts
-// both `payload.type` (WEBJS mode) and `_data.Info.MediaType` (GOWS mode),
-// and "media" as a fallback when hasMedia=true without a specific MediaType.
 func normalizeType(t string) string {
 	switch t {
 	case "chat", "":
 		return "text"
 	case "url", "extendedTextMessage":
-		// A WhatsApp link preview: the body already carries the URL and text, so
-		// the frontend renders it as ordinary text (CSS linkify auto-links it).
 		return "text"
 	case "ptt", "audio":
-		// GOWS distinguishes ptt (a voice note) from audio (a file). The frontend
-		// treats both as an audio control — mapping to "voice" is enough to reuse
-		// the same bubble. An audio file still lands on the control, which is fine.
 		if t == "audio" {
 			return "audio"
 		}
 		return "voice"
 	case "sticker":
-		// A sticker is WebP, so the image bubble covers it. The different size
-		// (max-height 160px) is handled by frontend CSS where needed.
 		return "image"
 	case "vcard":
 		return "contact"
 	case "media":
-		return "document" // generic fallback — a bubble with icon + filename
+		return "document"
 	default:
 		return t
 	}
 }
 
-// AckLabel maps the integer ack code to a human label (exported for CLI use).
 func AckLabel(a int) string {
 	switch {
 	case a >= 4:
@@ -511,20 +414,6 @@ func AckLabel(a int) string {
 	}
 }
 
-// hmacMatches validates the signature against the in-memory secret and, if
-// that fails, RE-READS the secret from the source (the vault) and tries again
-// before refusing.
-//
-// The re-read exists because the secret was cached on the *Service forever:
-// once the panel and the daemon diverged, EVERY inbound message was discarded
-// until somebody restarted the control plane — and nobody notices, because
-// the discard is silent and the panel keeps reporting "connected". It
-// happened with both sides stable and no restart, and two real messages were
-// lost; the daemon already knew how to recover by re-reading disk, but the
-// panel held no half of that contract. Now it does, and the self-healing
-// closes on both sides.
-//
-// Zero cost on the happy path: the reload only runs when the comparison fails.
 func (s *Service) hmacMatches(body []byte, got string) bool {
 	current := s.currentHMAC()
 	if hmacMatches(current, body, got) {
@@ -545,15 +434,12 @@ func (s *Service) hmacMatches(body []byte, got string) bool {
 	return true
 }
 
-// currentHMAC returns the secret in use, under a read lock. It is the ONLY way
-// to read the field — see the comment on Service.hmacSecret.
 func (s *Service) currentHMAC() string {
 	s.hmacMu.RLock()
 	defer s.hmacMu.RUnlock()
 	return s.hmacSecret
 }
 
-// hmacRotate adopts the secret reloaded from the vault, under a write lock.
 func (s *Service) hmacRotate(fresh string) {
 	s.hmacMu.Lock()
 	defer s.hmacMu.Unlock()

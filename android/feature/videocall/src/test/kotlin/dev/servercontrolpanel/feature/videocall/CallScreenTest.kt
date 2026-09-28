@@ -29,11 +29,6 @@ private val testJson = Json { ignoreUnknownKeys = true }
 private inline fun <reified T> jsonPayload(value: T): JsonElement = testJson.encodeToJsonElement(value)
 private const val ROOM_ID = "room-1"
 
-/**
- * Renders [CallScreen] under Robolectric across every reachable [CallUiState]. The fake
- * controller never yields a real [VideoTrack], so [VideoTile] shows its placeholder and no
- * real WebRTC rendering runs; SDP and video frames need a real device.
- */
 @RunWith(RobolectricTestRunner::class)
 class CallScreenTest {
 
@@ -49,10 +44,6 @@ class CallScreenTest {
         fun push(message: SignalingMessage) = check(inbound.tryEmit(message))
     }
 
-    /**
-     * [throwOnStartMedia] mirrors real devices: `startLocalMedia` throws when there is no
-     * camera, the native library fails, or another app holds the camera.
-     */
     private class FakeSessionController(
         private val throwOnStartMedia: Boolean = false,
     ) : VideoCallSessionController {
@@ -85,7 +76,6 @@ class CallScreenTest {
         ),
     )
 
-    /** Starting media may throw; that must degrade to an audio-only lobby, never a crash. */
     @Test
     fun `media that throws does NOT crash the screen, it becomes a lobby without camera`() {
         val viewModel = CallViewModel(
@@ -100,7 +90,6 @@ class CallScreenTest {
         composeRule.onNodeWithText("Join with audio only").assertExists()
     }
 
-    /** Joining is public and irreversible, so the screen opens on the lobby first. */
     @Test
     fun `the screen opens on the lobby, not straight into the call`() {
         val viewModel = CallViewModel(
@@ -128,12 +117,10 @@ class CallScreenTest {
         composeRule.onNodeWithText("Joining the call…").assertExists()
     }
 
-    /** A busy camera is common, so the lobby must degrade to audio instead of blocking. */
     @Test
     fun `without a camera the lobby offers audio only and does not block`() {
         val viewModel = CallViewModel(
             permissionChecker = CallPermissionChecker { emptyList() },
-            // localVideoTrack null = the camera did not open.
             sessionController = FakeSessionController(),
             signaling = FakeSignaling(),
         )
@@ -195,10 +182,6 @@ class CallScreenTest {
     }
 }
 
-/**
- * Leaves the lobby and joins the call. The join label depends on the camera state, and
- * the fake controller has no video track, so it is always the audio-only label.
- */
 private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.enterThroughLobby() {
     waitForIdle()
     onNodeWithText("Join with audio only").performClick()

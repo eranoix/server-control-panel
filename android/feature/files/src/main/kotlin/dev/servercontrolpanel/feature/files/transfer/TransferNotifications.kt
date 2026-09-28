@@ -9,10 +9,6 @@ import androidx.work.ForegroundInfo
 import androidx.work.WorkManager
 import java.util.UUID
 
-/**
- * Shared notification channel and builder for download and upload progress, including the
- * cancel action and the foreground service type required on minSdk 34.
- */
 internal object TransferNotifications {
     const val CHANNEL_ID = "file_transfers"
     private const val CHANNEL_NAME = "File transfers"

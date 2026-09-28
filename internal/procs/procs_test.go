@@ -55,7 +55,6 @@ func TestIsDeniedSelf(t *testing.T) {
 }
 
 func TestIsDeniedUnknownPID(t *testing.T) {
-	// 2^30 is essentially never a valid PID on linux
 	if !IsDenied(context.Background(), 1<<30) {
 		t.Error("unknown PID should fall closed (deny)")
 	}
@@ -79,7 +78,6 @@ func TestListBasic(t *testing.T) {
 	if len(infos) > 5 {
 		t.Errorf("List limit ignored: got %d, want <=5", len(infos))
 	}
-	// CPU-sorted: each successive value <= previous
 	for i := 1; i < len(infos); i++ {
 		if infos[i].CPU > infos[i-1].CPU {
 			t.Errorf("not CPU-sorted at index %d: %v > %v", i, infos[i].CPU, infos[i-1].CPU)
@@ -88,9 +86,7 @@ func TestListBasic(t *testing.T) {
 }
 
 func TestListFilterByUser(t *testing.T) {
-	// At minimum the test binary itself runs under some user; filter by it
-	// and we should get back at least our PID.
-	me, err := os.Hostname() // any non-empty string is fine; just to ensure cfg loaded
+	me, err := os.Hostname()
 	_ = me
 	_ = err
 	uid := os.Getenv("USER")
@@ -103,7 +99,7 @@ func TestListFilterByUser(t *testing.T) {
 	}
 	for _, i := range infos {
 		if i.User == "" {
-			continue // some kernel threads have no user
+			continue
 		}
 		if i.User != uid {
 			t.Errorf("filter leaked: got user %q in result for filter %q", i.User, uid)

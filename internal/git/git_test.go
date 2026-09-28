@@ -7,8 +7,6 @@ import (
 	"server-control-panel/internal/config"
 )
 
-// TestParseLog validates the deserialization of the %H\0%P\0%an\0%aI\0%D\0%s
-// format, including multiple parents and an empty %D (a commit with no decoration).
 func TestParseLog(t *testing.T) {
 	out := strings.Join([]string{
 		"aaaa\x00bbbb cccc\x00Alice\x00alice@x.com\x002026-01-01T00:00:00Z\x00HEAD -> main, origin/main\x00merge feature",
@@ -32,16 +30,6 @@ func TestParseLog(t *testing.T) {
 	}
 }
 
-// TestLayoutMergeUsesMultipleLanes is the central machine-checked (not
-// eyeballed) test of the "SVG graph required" requirement: over a graph with
-// a merge, the layout MUST use ≥2 lanes and the merge must emit one edge per parent.
-//
-// Graph (date-order, top→bottom):
-//
-//	A  merge, parents B,C
-//	B  parent D
-//	C  parent D
-//	D  root
 func TestLayoutMergeUsesMultipleLanes(t *testing.T) {
 	commits := []Commit{
 		{Hash: "A", Parents: []string{"B", "C"}},
@@ -54,7 +42,6 @@ func TestLayoutMergeUsesMultipleLanes(t *testing.T) {
 	if g.MaxLane < 1 {
 		t.Fatalf("a merge should use ≥2 lanes (max_lane≥1), got max_lane=%d", g.MaxLane)
 	}
-	// Merge A must have exactly 2 edges (one per parent), in distinct lanes.
 	var aEdges []Edge
 	for _, e := range g.Edges {
 		if e.FromRow == 0 {
@@ -68,7 +55,6 @@ func TestLayoutMergeUsesMultipleLanes(t *testing.T) {
 		t.Errorf("the merge's two parents should land in distinct lanes, got %d/%d",
 			aEdges[0].ToLane, aEdges[1].ToLane)
 	}
-	// B and C occupy distinct lanes (they do not collapse into the same column).
 	laneOf := map[string]int{}
 	for _, c := range g.Commits {
 		laneOf[c.Hash] = c.Lane
@@ -78,16 +64,11 @@ func TestLayoutMergeUsesMultipleLanes(t *testing.T) {
 	}
 }
 
-// TestLayoutEdgesPointToRealParents makes sure that NO edge between two
-// commits that are both present points at an absent hash; and that edges to
-// parents outside the window are marked Dangling (truncated), never pointing
-// off into nothing with a valid ToRow.
 func TestLayoutEdgesPointToRealParents(t *testing.T) {
-	// E has a parent F that is NOT in the window (dangling at the edge of the limit).
 	commits := []Commit{
 		{Hash: "A", Parents: []string{"B"}},
 		{Hash: "B", Parents: []string{"E"}},
-		{Hash: "E", Parents: []string{"F"}}, // F absent
+		{Hash: "E", Parents: []string{"F"}},
 	}
 	g := layoutGraph(commits)
 	rowOf := map[string]int{"A": 0, "B": 1, "E": 2}
@@ -99,11 +80,9 @@ func TestLayoutEdgesPointToRealParents(t *testing.T) {
 			}
 			continue
 		}
-		// Non-dangling: ToRow has to be a real row.
 		if e.ToRow < 0 || e.ToRow >= len(g.Commits) {
 			t.Errorf("non-dangling edge with an invalid ToRow: %+v", e)
 		}
-		// And FromRow→ToRow has to match a real parent.
 		child := g.Commits[e.FromRow]
 		parent := g.Commits[e.ToRow]
 		found := false
@@ -117,7 +96,6 @@ func TestLayoutEdgesPointToRealParents(t *testing.T) {
 		}
 		_ = rowOf
 	}
-	// There must be exactly one dangling edge (E→F).
 	dangling := 0
 	for _, e := range g.Edges {
 		if e.Dangling {
@@ -176,7 +154,6 @@ func TestClampLimit(t *testing.T) {
 }
 
 func TestParseStatusV2(t *testing.T) {
-	// 1 ordinary modified-staged + 1 untracked.
 	out := strings.Join([]string{
 		"# branch.head main",
 		"1 M. N... 100644 100644 100644 aaa bbb file1.go",
@@ -198,7 +175,6 @@ func TestParseStatusV2(t *testing.T) {
 }
 
 func TestParseNameStatusZ(t *testing.T) {
-	// M file1, R100 oldname->newname
 	out := "M\x00file1.go\x00R100\x00old.go\x00new.go\x00"
 	files := parseNameStatusZ(out)
 	if len(files) != 2 {
@@ -213,20 +189,16 @@ func TestParseNameStatusZ(t *testing.T) {
 }
 
 func TestEffectiveReposMergeAndDefaults(t *testing.T) {
-	// nil cfg → only the seed (3 repos: venice/supabase removed).
 	seed := effectiveRepos(nil)
 	if len(seed) != 3 {
 		t.Fatalf("the seed should have 3 repos, got %d", len(seed))
 	}
-	// server-control-panel is writable (changed at the user's request) with the personal identity.
 	if r, ok := findRepo(seed, "server-control-panel"); !ok || r.Policy != policyWrite || r.ExpEmail != "sam.rivera@personal.example" {
 		t.Errorf("server-control-panel should be write/personal in the seed: %+v", r)
 	}
-	// northwind-web is write with the work identity.
 	if r, ok := findRepo(seed, "northwind-web"); !ok || r.Policy != policyWrite || r.ExpEmail != "sam@northwind.example" {
 		t.Errorf("northwind-web seed wrong: %+v", r)
 	}
-	// acme-booking NEVER with a work e-mail.
 	if r, ok := findRepo(seed, "css-lee"); !ok || r.ExpEmail == "sam@northwind.example" {
 		t.Errorf("css-lee cannot carry a work e-mail: %+v", r)
 	}

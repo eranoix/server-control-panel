@@ -1,6 +1,3 @@
-// app.go — panelctl app-*: management of the Heroku-style PaaS. The
-// post-receive hook of each bare repo calls `panelctl app-deploy --name <n> --hook`,
-// which runs the core deploy.Deploy and streams the output back to `git push`.
 package main
 
 import (
@@ -23,12 +20,6 @@ func openDeployStore() (*deploy.Store, error) {
 	if cfg.DataDir == "" {
 		return nil, fmt.Errorf("config.DataDir empty")
 	}
-	// The SINGLE point where panelctl touches the deploy registry, and therefore
-	// the point where the refusal belongs. This binary NEVER migrates apps.json
-	// (the server-control-panel boot is what migrates it); faced with a shape it does not
-	// write, it fails closed BEFORE opening the store. The hot path here is the
-	// post-receive hook: better a rejected `git push` with a message that names the
-	// binary than a push that "works" and rewrites the envelope back to v1.
 	if err := deploy.GuardCLI(cfg.DataDir); err != nil {
 		return nil, err
 	}
@@ -119,7 +110,6 @@ func cmdAppDeploy(args []string) error {
 					firstErr = e
 				}
 			} else {
-				// Per-branch preview env: an isolated, ephemeral stack.
 				slug := deploy.PreviewSlug(hr.Ref)
 				if slug == "" {
 					continue
@@ -406,7 +396,6 @@ func cmdAppPreviewTeardown(args []string) error {
 	return nil
 }
 
-// multiFlag accumulates repeatable flags (--set a=1 --set b=2).
 type multiFlag []string
 
 func (m *multiFlag) String() string { return strings.Join(*m, ",") }

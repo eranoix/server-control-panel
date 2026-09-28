@@ -5,11 +5,6 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/**
- * The decision table for the vertical drag. This is where it is easy to be
- * silently wrong — scrolling the local history inside an `htop` raises no
- * error, it just does not work — so every row of the table has its own test.
- */
 class ScrollGesturePolicyTest {
 
     private val shell = TerminalModes.NONE
@@ -20,7 +15,6 @@ class ScrollGesturePolicyTest {
         assertEquals(ScrollAction.Viewport(5), decideScroll(shell, 5))
     }
 
-    /** `htop`, `vim` with mouse, `less`: the gesture belongs to the program, not to us. */
     @Test
     fun programAskedForMouse_becomesWheel_evenOnNormalScreen() {
         val withMouse = shell.copy(mouseTracking = true)
@@ -33,18 +27,12 @@ class ScrollGesturePolicyTest {
         assertEquals(ScrollAction.Wheel(-2), decideScroll(htop, -2))
     }
 
-    /** `less`/`man`: alternate screen, no mouse, 1007 on (the default). */
     @Test
     fun altScreenWithAltScroll_becomesArrow() {
         val less = shell.copy(altScreen = true, altScroll = true)
         assertEquals(ScrollAction.Arrows(-4), decideScroll(less, -4))
     }
 
-    /**
-     * Alternate screen without 1007 and without mouse: there is no history and
-     * the program has declared it does not want a wheel. Doing nothing is the
-     * right answer — faking movement here would be lying.
-     */
     @Test
     fun altScreenWithoutAltScroll_doesNothing() {
         val full = shell.copy(altScreen = true, altScroll = false)
@@ -57,15 +45,12 @@ class ScrollGesturePolicyTest {
         assertEquals(ScrollAction.Nothing, decideScroll(shell.copy(mouseTracking = true), 0))
     }
 
-    // ---- arrow bytes -----------------------------------------------------
-
     @Test
     fun normalArrow_usesCSI() {
         assertArrayEquals("\u001b[A".toByteArray(), arrowBytes(-1, cursorKeysApplication = false))
         assertArrayEquals("\u001b[B".toByteArray(), arrowBytes(1, cursorKeysApplication = false))
     }
 
-    /** DECCKM on: SS3, not CSI. The wrong form does not scroll — it becomes garbage. */
     @Test
     fun applicationModeArrow_usesSS3() {
         assertArrayEquals("\u001bOA".toByteArray(), arrowBytes(-1, cursorKeysApplication = true))
